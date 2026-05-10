@@ -1,0 +1,35 @@
+# Build output
+build/
+build-*/
+out/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.cmake/
+.cache/
+
+# Qt Creator / IDE
+*.user
+*.user.*
+*.autosave
+.qtc_clangd/
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local DB / runtime artifacts
+*.sqlite-journal
+*.log
