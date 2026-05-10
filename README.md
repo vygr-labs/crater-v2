@@ -32,19 +32,24 @@ canonical service pattern; `SongService`, `ThemeService`, `StrongsService`,
 
 ## Building
 
-Requirements: Qt **6.5+** (Core, Gui, Qml, Quick, QuickControls2, Sql,
+Requirements: Qt **6.11+** (Core, Gui, Qml, Quick, QuickControls2, Sql,
 Multimedia, WebSockets), CMake 3.21+, a C++20 compiler (MSVC 2022, Clang 14+,
 or GCC 11+).
 
+We pin to recent Qt deliberately — the QML compiler (`qmlsc`) and the RHI
+backends have improved measurably each release, which matters on the weak
+hardware Crater targets. See [`docs/INSTALL.md`](docs/INSTALL.md) for a
+first-time Windows setup walkthrough.
+
 ```powershell
 # From qt/
-cmake -S . -B build -DCMAKE_PREFIX_PATH="C:/Qt/6.7.0/msvc2022_64"
+cmake -S . -B build -DCMAKE_PREFIX_PATH="C:/Qt/6.11.0/msvc2022_64"
 cmake --build build --config Release
-.\build\app\Release\crater.exe
+.\build\Release\crater.exe
 ```
 
 On Linux/macOS, set `CMAKE_PREFIX_PATH` to your Qt install (e.g.
-`~/Qt/6.7.0/gcc_64`) and use the standard `cmake --build build` flow.
+`~/Qt/6.11.0/gcc_64`) and use the standard `cmake --build build` flow.
 
 ## Layout
 

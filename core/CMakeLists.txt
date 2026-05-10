@@ -20,6 +20,10 @@ target_link_libraries(crater-core
     PUBLIC
         Qt6::Core
         Qt6::Sql
+        # Qml gives us the QML_ELEMENT/QML_SINGLETON macros so services can
+        # be auto-registered with QML by name. NOT a GUI dependency
+        # (that would be Qt6::Quick, which crater-core must never link).
+        Qt6::Qml
 )
 
 target_compile_definitions(crater-core

@@ -1,0 +1,48 @@
+# https://editorconfig.org/ — applies across editors automatically
+root = true
+
+[*]
+charset                  = utf-8
+end_of_line              = lf
+insert_final_newline     = true
+trim_trailing_whitespace = true
+indent_style             = space
+indent_size              = 4
+
+# C++ / headers
+[*.{cpp,h,hpp,inl}]
+indent_size              = 4
+
+# CMake
+[{CMakeLists.txt,*.cmake}]
+indent_size              = 4
+
+# QML / JavaScript
+[*.{qml,js,mjs}]
+indent_size              = 4
+
+# Web-style configs
+[*.{json,jsonc}]
+indent_size              = 2
+
+[*.{yml,yaml,toml}]
+indent_size              = 2
+
+# Markdown — preserve trailing whitespace because it's syntactic
+# (two-space line break)
+[*.md]
+trim_trailing_whitespace = false
+indent_size              = 2
+
+# Windows-native files keep CRLF
+[*.{bat,cmd,ps1}]
+end_of_line              = crlf
+
+# Generated files we don't touch
+[{build/**,**/moc_*.cpp,**/qrc_*.cpp,**/ui_*.h}]
+charset                  = unset
+end_of_line              = unset
+insert_final_newline     = unset
+trim_trailing_whitespace = unset
+indent_style             = unset
+indent_size              = unset

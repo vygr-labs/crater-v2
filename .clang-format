@@ -1,0 +1,91 @@
+# Crater C++ style — derived from LLVM, with Qt-friendly accommodations.
+# Run on save (most editors auto-pick this up) or manually:
+#   clang-format -i core/src/**/*.{cpp,h}
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++20
+
+# Indentation
+IndentWidth:                4
+TabWidth:                   4
+UseTab:                     Never
+ContinuationIndentWidth:    4
+AccessModifierOffset:       -4
+NamespaceIndentation:       None
+IndentCaseLabels:           true
+IndentPPDirectives:         AfterHash
+ConstructorInitializerIndentWidth: 4
+
+# Width
+ColumnLimit:                100
+
+# Braces — Allman for namespaces/classes/functions to match modern Qt style.
+BreakBeforeBraces:          Custom
+BraceWrapping:
+  AfterClass:               true
+  AfterStruct:              true
+  AfterFunction:            true
+  AfterNamespace:           false
+  AfterEnum:                true
+  AfterControlStatement:    Never
+  BeforeCatch:              false
+  BeforeElse:               false
+  BeforeLambdaBody:         false
+  BeforeWhile:              false
+  IndentBraces:             false
+  SplitEmptyFunction:       false
+  SplitEmptyRecord:         false
+  SplitEmptyNamespace:      true
+
+# Spacing
+SpaceBeforeParens:                ControlStatements
+SpaceAfterCStyleCast:             false
+SpaceAfterTemplateKeyword:        true
+SpaceBeforeAssignmentOperators:   true
+SpaceBeforeCpp11BracedList:       false
+SpacesInAngles:                   Never
+SpacesInParentheses:              false
+SpacesInSquareBrackets:           false
+SpacesBeforeTrailingComments:     1
+
+# Pointer alignment — `Type* var` (Qt convention)
+PointerAlignment:           Left
+ReferenceAlignment:         Pointer
+
+# Line breaks
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+BreakConstructorInitializers: BeforeComma
+BreakBeforeTernaryOperators: true
+BreakStringLiterals:        false
+AlwaysBreakTemplateDeclarations: Yes
+PackConstructorInitializers: Never
+BinPackArguments:           false
+BinPackParameters:          false
+
+# Includes — group system / Qt / project, sort within groups.
+IncludeBlocks:              Regroup
+SortIncludes:               CaseSensitive
+IncludeCategories:
+  - Regex:    '^<Q[A-Z][A-Za-z0-9]*>'    # Qt headers (no extension)
+    Priority: 3
+  - Regex:    '^<.*\.h>'                 # C system headers
+    Priority: 1
+  - Regex:    '^<.*>'                    # C++ system / other library
+    Priority: 2
+  - Regex:    '^"crater/'                # Crater public headers
+    Priority: 4
+  - Regex:    '^".*"'                    # Local headers
+    Priority: 5
+
+# Misc
+FixNamespaceComments:       true
+ReflowComments:             true
+CompactNamespaces:          false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep:        1
+SortUsingDeclarations:      true

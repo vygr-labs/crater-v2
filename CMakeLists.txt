@@ -18,8 +18,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Target: Qt 6.5+ (LTS line; ships with the QML toolchain we rely on).
-find_package(Qt6 6.5 REQUIRED COMPONENTS
+# Target: Qt 6.11+. We track the latest Qt to stay on the newest QML
+# compiler (qmlsc) and RHI improvements — meaningful perf gains on the
+# weak hardware Crater targets (Intel HD 4000 / 4 GB RAM).
+find_package(Qt6 6.11 REQUIRED COMPONENTS
     Core
     Gui
     Qml
@@ -30,7 +32,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     WebSockets
 )
 
-qt_standard_project_setup(REQUIRES 6.5)
+qt_standard_project_setup(REQUIRES 6.11)
 
 add_subdirectory(core)
 add_subdirectory(app)

@@ -6,11 +6,23 @@ qt_add_executable(crater
     src/main.cpp
 )
 
+# Mark singletons before qt_add_qml_module so the metadata is honored.
+set_source_files_properties(qml/Theme.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
+
 qt_add_qml_module(crater
     URI Crater
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/Theme.qml
+        qml/PaneHeader.qml
+        qml/Badge.qml
+        qml/IconButton.qml
+        qml/Monitor.qml
+        qml/LibraryRow.qml
+        qml/ScheduleRow.qml
 )
 
 target_link_libraries(crater
@@ -25,7 +37,6 @@ set_target_properties(crater PROPERTIES
     MACOSX_BUNDLE  ON
 )
 
-# Installation rules so `cmake --install` produces a redistributable bundle.
 install(TARGETS crater
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION bin
