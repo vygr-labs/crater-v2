@@ -23,6 +23,7 @@ qt_add_qml_module(crater
         qml/Monitor.qml
         qml/LibraryRow.qml
         qml/ScheduleRow.qml
+        qml/EmptyState.qml
 )
 
 target_link_libraries(crater

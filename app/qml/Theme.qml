@@ -30,6 +30,10 @@ QtObject {
         readonly property color liveSubtle:    "#3a1a17"
         readonly property color preview:       "#5b9df0"
         readonly property color previewSubtle: "#152538"
+        readonly property color goLive:        "#22c55e"   // green: the "send it" action color
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
         readonly property color success:       "#4fc285"
         readonly property color warning:       "#f0b341"
 

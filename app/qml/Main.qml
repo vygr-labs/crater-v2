@@ -15,7 +15,8 @@ ApplicationWindow {
     color: Theme.color.canvas
 
     // ─────────────────────────────────────────────────────────────────────
-    // Top bar — brand, service context, output target, ON-AIR indicator
+    // Top bar — schedule selector + import on the left,
+    //           projection actions on the right.
     // ─────────────────────────────────────────────────────────────────────
     Rectangle {
         id: topBar
@@ -34,129 +35,51 @@ ApplicationWindow {
             color: Theme.color.borderSubtle
         }
 
-        // Left cluster: brand mark + service context
+        // Left cluster
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: Theme.space.xl
+            anchors.leftMargin: Theme.space.lg
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space.xl
+            spacing: Theme.space.sm
 
-            Row {
-                spacing: Theme.space.sm
-
-                Rectangle {
-                    width: 24; height: 24
-                    radius: Theme.radius.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    gradient: Gradient {
-                        orientation: Gradient.Vertical
-                        GradientStop { position: 0.0; color: Theme.color.brand }
-                        GradientStop { position: 1.0; color: Qt.darker(Theme.color.brand, 1.4) }
-                    }
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: 8; height: 8
-                        radius: 1
-                        color: Theme.color.brandInk
-                        rotation: 45
-                    }
-                }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Crater"
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: 16
-                    font.weight: Theme.font.weightSemiBold
-                    font.letterSpacing: 0.3
-                }
-            }
-
-            Rectangle {
-                width: 1; height: 22
-                anchors.verticalCenter: parent.verticalCenter
-                color: Theme.color.borderStrong
-            }
-
-            Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-                Text {
-                    text: qsTr("Sunday Morning")
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    font.weight: Theme.font.weightMedium
-                }
-                Text {
-                    text: qsTr("10:00 AM  ·  8 items  ·  ~75 min")
-                    color: Theme.color.textTertiary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
-                }
-            }
-        }
-
-        // Right cluster: timer, output target, settings, ON-AIR
-        Row {
-            anchors.right: parent.right
-            anchors.rightMargin: Theme.space.lg
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space.md
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("00:42:18")
-                color: Theme.color.textSecondary
-                font.family: Theme.font.monoFamily
-                font.pixelSize: Theme.font.bodySize
-            }
-
-            Rectangle {
-                width: 1; height: 22
-                anchors.verticalCenter: parent.verticalCenter
-                color: Theme.color.borderStrong
-            }
-
-            // Output target chip
+            // Schedule dropdown
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                height: 30
-                width: outRow.implicitWidth + Theme.space.lg * 2
+                height: 34
+                width: scheduleDropdownRow.implicitWidth + Theme.space.lg * 2
                 radius: Theme.radius.md
-                color: outMa.containsMouse ? Theme.color.overlay : Theme.color.raised
-                border.width: 1
-                border.color: Theme.color.borderSubtle
+                color: scheduleDropdownMa.containsMouse ? Theme.color.overlay : "transparent"
 
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
                 Row {
-                    id: outRow
+                    id: scheduleDropdownRow
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Rectangle {
+                    Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 6; height: 6; radius: 3
-                        color: Theme.color.success
+                        text: "📄"
+                        color: Theme.color.textSecondary
+                        font.pixelSize: 14
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Projector 1")
+                        text: qsTr("Schedule")
                         color: Theme.color.textPrimary
                         font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
+                        font.pixelSize: Theme.font.bodySize
                         font.weight: Theme.font.weightMedium
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "▾"
                         color: Theme.color.textTertiary
-                        font.pixelSize: 9
+                        font.pixelSize: 10
                     }
                 }
                 MouseArea {
-                    id: outMa
+                    id: scheduleDropdownMa
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -166,570 +89,579 @@ ApplicationWindow {
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
                 symbol: "⚙"
-                symbolSize: 15
+                symbolSize: 14
             }
 
-            // ON-AIR pill — pulses while live
+            Item { width: Theme.space.md; height: 1 }
+
+            // Import button
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                height: 32
-                width: liveRow.implicitWidth + Theme.space.lg * 2
+                height: 34
+                width: importRow.implicitWidth + Theme.space.lg * 2
                 radius: Theme.radius.md
-                color: Theme.color.live
+                color: importMa.containsMouse ? Theme.color.overlay : "transparent"
+
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
                 Row {
-                    id: liveRow
+                    id: importRow
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "↗"
+                        color: Theme.color.textSecondary
+                        font.pixelSize: 13
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Import")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                }
+                MouseArea {
+                    id: importMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                }
+            }
+        }
+
+        // Right cluster
+        Row {
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space.lg
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.space.sm
+
+            // Logo button (ghost)
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                height: 34
+                width: logoRow.implicitWidth + Theme.space.lg * 2
+                radius: Theme.radius.md
+                color: logoMa.containsMouse ? Theme.color.overlay : "transparent"
+                border.color: Theme.color.borderStrong
+                border.width: 1
+
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                Row {
+                    id: logoRow
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 7; height: 7; radius: 3.5
-                        color: "#ffffff"
-
-                        SequentialAnimation on opacity {
-                            running: true
-                            loops: Animation.Infinite
-                            NumberAnimation { from: 1.0; to: 0.35; duration: 700; easing.type: Easing.InOutQuad }
-                            NumberAnimation { from: 0.35; to: 1.0; duration: 700; easing.type: Easing.InOutQuad }
+                        width: 14; height: 14
+                        radius: 3
+                        gradient: Gradient {
+                            orientation: Gradient.Vertical
+                            GradientStop { position: 0; color: Theme.color.brand }
+                            GradientStop { position: 1; color: Qt.darker(Theme.color.brand, 1.4) }
                         }
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("ON AIR")
-                        color: "#ffffff"
+                        text: qsTr("Logo")
+                        color: Theme.color.textPrimary
                         font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        font.weight: Theme.font.weightSemiBold
-                        font.letterSpacing: 1.0
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
                     }
+                }
+                MouseArea {
+                    id: logoMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                }
+            }
+
+            // Clear button (ghost)
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                height: 34
+                width: clearRow.implicitWidth + Theme.space.lg * 2
+                radius: Theme.radius.md
+                color: clearMa.containsMouse ? Theme.color.overlay : "transparent"
+                border.color: Theme.color.borderStrong
+                border.width: 1
+
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                Row {
+                    id: clearRow
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "≡"
+                        color: Theme.color.textSecondary
+                        font.pixelSize: 14
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Clear")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                }
+                MouseArea {
+                    id: clearMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                }
+            }
+
+            // Go Live (primary)
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                height: 34
+                width: goLiveRow.implicitWidth + Theme.space.lg * 2
+                radius: Theme.radius.md
+                color: goLiveMa.pressed       ? Theme.color.goLivePressed
+                     : goLiveMa.containsMouse ? Theme.color.goLiveHover
+                                              : Theme.color.goLive
+
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                Row {
+                    id: goLiveRow
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "▶"
+                        color: Theme.color.goLiveInk
+                        font.pixelSize: 11
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Go Live")
+                        color: Theme.color.goLiveInk
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightSemiBold
+                        font.letterSpacing: 0.3
+                    }
+                }
+                MouseArea {
+                    id: goLiveMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                 }
             }
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Main work surface — three panes
+    // Main work surface — top operating row + bottom library section
     // ─────────────────────────────────────────────────────────────────────
     Item {
         id: mainArea
 
         anchors.top: topBar.bottom
-        anchors.bottom: statusBar.top
+        anchors.bottom: footerBar.top
         anchors.left: parent.left
         anchors.right: parent.right
 
-        // ── Library rail (left)
-        Rectangle {
-            id: leftRail
+        // Tunable: ratio of vertical space the top operating row claims.
+        property real topRowRatio: 0.58
 
-            width: Theme.size.leftRailWidth
+        // ── TOP ROW: Schedule | Preview | Live
+        Item {
+            id: topRow
+
             anchors.top: parent.top
-            anchors.bottom: parent.bottom
             anchors.left: parent.left
-            color: Theme.color.elevated
+            anchors.right: parent.right
+            height: parent.height * mainArea.topRowRatio
 
+            // Schedule pane (~30%)
             Rectangle {
-                anchors.right: parent.right
+                id: schedulePane
+
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 1
-                color: Theme.color.borderSubtle
-            }
+                anchors.left: parent.left
+                width: parent.width * 0.30
+                color: "transparent"
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.topMargin: Theme.space.lg
-                spacing: 0
-
-                PaneHeader {
-                    Layout.fillWidth: true
-                    label: qsTr("Library")
-                }
-
-                // Search field
+                // Header
                 Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    Layout.leftMargin: Theme.space.lg
-                    Layout.rightMargin: Theme.space.lg
-                    Layout.topMargin: Theme.space.xs
-                    Layout.bottomMargin: Theme.space.md
+                    id: scheduleHeader
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 40
 
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Theme.radius.md
-                        color: Theme.color.canvas
-                        border.color: searchInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
-                        border.width: 1
-
-                        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
-
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.space.sm
                         Text {
-                            anchors.left: parent.left
-                            anchors.leftMargin: Theme.space.md
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "⌕"
-                            color: Theme.color.textTertiary
-                            font.pixelSize: 16
+                            text: "≡"
+                            color: Theme.color.textSecondary
+                            font.pixelSize: 14
                         }
-                        TextInput {
-                            id: searchInput
-                            anchors.left: parent.left
-                            anchors.leftMargin: 36
-                            anchors.right: shortcutHint.left
-                            anchors.rightMargin: Theme.space.sm
+                        Text {
                             anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Schedule")
                             color: Theme.color.textPrimary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
-                            selectByMouse: true
-                            clip: true
-
-                            Text {
-                                visible: !searchInput.activeFocus && searchInput.text.length === 0
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Search anywhere…")
-                                color: Theme.color.textTertiary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.bodySize
-                            }
-                        }
-
-                        // ⌘K hint
-                        Rectangle {
-                            id: shortcutHint
-                            anchors.right: parent.right
-                            anchors.rightMargin: 6
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 26; height: 18
-                            radius: 3
-                            color: Theme.color.elevated
-                            border.color: Theme.color.borderStrong
-                            border.width: 1
-                            visible: !searchInput.activeFocus
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "⌘K"
-                                color: Theme.color.textTertiary
-                                font.family: Theme.font.monoFamily
-                                font.pixelSize: 9
-                            }
+                            font.weight: Theme.font.weightMedium
                         }
                     }
-                }
 
-                LibraryRow { Layout.fillWidth: true; symbol: "✠"; label: qsTr("Bible");  count: 31102; active: true }
-                LibraryRow { Layout.fillWidth: true; symbol: "♪"; label: qsTr("Songs");  count: 248 }
-                LibraryRow { Layout.fillWidth: true; symbol: "◐"; label: qsTr("Themes"); count: 12 }
-                LibraryRow { Layout.fillWidth: true; symbol: "▤"; label: qsTr("Media");  count: 87 }
-                LibraryRow { Layout.fillWidth: true; symbol: "✎"; label: qsTr("Notes");  count: 0 }
-
-                Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
-
-                PaneHeader {
-                    Layout.fillWidth: true
-                    label: qsTr("Quick access")
-                }
-
-                LibraryRow { Layout.fillWidth: true; symbol: "↻"; label: qsTr("Last service") }
-                LibraryRow { Layout.fillWidth: true; symbol: "★"; label: qsTr("Favorites") }
-                LibraryRow { Layout.fillWidth: true; symbol: "↧"; label: qsTr("Recent verses") }
-
-                Item { Layout.fillWidth: true; Layout.fillHeight: true }
-
-                // Footer card — operator identity / quick switch
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 56
-                    color: Theme.color.canvas
+                    IconButton {
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.space.md
+                        anchors.verticalCenter: parent.verticalCenter
+                        symbol: "▦"
+                        symbolSize: 13
+                    }
 
                     Rectangle {
-                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
                         height: 1
                         color: Theme.color.borderSubtle
                     }
+                }
 
-                    Row {
-                        anchors.fill: parent
-                        anchors.leftMargin: Theme.space.lg
-                        anchors.rightMargin: Theme.space.sm
-                        spacing: Theme.space.md
+                EmptyState {
+                    anchors.top: scheduleHeader.bottom
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    symbol: "♬"
+                    title: qsTr("No items in schedule")
+                    body: qsTr("Add songs, scriptures, or media from the tabs below")
+                }
 
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 28; height: 28
-                            radius: 14
-                            color: Theme.color.brandSubtle
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "K"
-                                color: Theme.color.brand
-                                font.family: Theme.font.family
-                                font.pixelSize: 13
-                                font.weight: Theme.font.weightSemiBold
-                            }
-                        }
-
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 1
-                            Text {
-                                text: qsTr("Kingsley")
-                                color: Theme.color.textPrimary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.smallSize + 1
-                                font.weight: Theme.font.weightMedium
-                            }
-                            Text {
-                                text: qsTr("Operator")
-                                color: Theme.color.textTertiary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.microSize
-                            }
-                        }
-                    }
+                // Right divider
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 1
+                    color: Theme.color.borderSubtle
                 }
             }
-        }
 
-        // ── Schedule (center)
-        Item {
-            id: scheduleArea
-
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.left: leftRail.right
-            anchors.right: rightPanel.left
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.topMargin: Theme.space.lg
-                spacing: 0
-
-                PaneHeader {
-                    Layout.fillWidth: true
-                    label: qsTr("Schedule  ·  Sunday morning")
-                    action: qsTr("+ Add item")
-                }
-
-                ListView {
-                    id: scheduleList
-
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.topMargin: Theme.space.sm
-                    clip: true
-                    spacing: 0
-                    boundsBehavior: Flickable.StopAtBounds
-
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                    model: ListModel {
-                        ListElement { itype: "Welcome";   title: "Welcome & Announcements"; subtitle: "Pastor James  ·  ~5 min";                live: false; queued: false; tcolor: "#a3a3b0" }
-                        ListElement { itype: "Song";      title: "10,000 Reasons (Bless the Lord)"; subtitle: "Matt Redman  ·  Key of G  ·  4 verses"; live: true;  queued: false; tcolor: "#d4a574" }
-                        ListElement { itype: "Scripture"; title: "John 3:16 – 21";          subtitle: "ESV  ·  6 verses";                       live: false; queued: true;  tcolor: "#5b9df0" }
-                        ListElement { itype: "Song";      title: "Amazing Grace (My Chains Are Gone)"; subtitle: "Chris Tomlin  ·  Key of G  ·  5 verses"; live: false; queued: false; tcolor: "#d4a574" }
-                        ListElement { itype: "Sermon";    title: "The Cost of Discipleship"; subtitle: "Pastor Adeyemi  ·  Luke 9:23 – 27  ·  ~30 min"; live: false; queued: false; tcolor: "#c084fc" }
-                        ListElement { itype: "Video";     title: "Closing reflection — \"Be still\""; subtitle: "1 minute 24 seconds  ·  1080p";  live: false; queued: false; tcolor: "#4fc285" }
-                        ListElement { itype: "Song";      title: "Great Are You Lord";      subtitle: "All Sons & Daughters  ·  Key of A  ·  3 verses"; live: false; queued: false; tcolor: "#d4a574" }
-                        ListElement { itype: "Note";      title: "Benediction";             subtitle: "Numbers 6:24 – 26";                      live: false; queued: false; tcolor: "#a3a3b0" }
-                    }
-
-                    delegate: ScheduleRow {
-                        width: scheduleList.width
-                        rowIndex: model.index + 1
-                        title: model.title
-                        subtitle: model.subtitle
-                        typeName: model.itype
-                        typeColor: model.tcolor
-                        isLive: model.live
-                        isQueued: model.queued
-                    }
-                }
-
-                // Add-item affordance at the bottom
-                Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 48
-                    Layout.leftMargin: Theme.space.lg
-                    Layout.rightMargin: Theme.space.lg
-                    Layout.bottomMargin: Theme.space.md
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: Theme.radius.lg
-                        color: addMa.containsMouse ? Theme.color.elevated : "transparent"
-                        border.width: 1
-                        border.color: Theme.color.borderSubtle
-
-                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: Theme.space.sm
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "+"
-                                color: Theme.color.textTertiary
-                                font.pixelSize: 16
-                                font.weight: Theme.font.weightLight
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Add scripture, song, video, or note")
-                                color: Theme.color.textTertiary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.smallSize
-                            }
-                        }
-                        MouseArea {
-                            id: addMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Output panel (right)
-        Rectangle {
-            id: rightPanel
-
-            width: Theme.size.outputPanelWidth
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.right: parent.right
-            color: Theme.color.elevated
-
+            // Preview pane (flex)
             Rectangle {
-                anchors.left: parent.left
+                id: previewPane
+
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 1
-                color: Theme.color.borderSubtle
-            }
+                anchors.left: schedulePane.right
+                anchors.right: livePane.left
+                color: "transparent"
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.topMargin: Theme.space.lg
-                anchors.leftMargin: Theme.space.lg
-                anchors.rightMargin: Theme.space.lg
-                anchors.bottomMargin: Theme.space.lg
-                spacing: Theme.space.lg
-
-                // PREVIEW
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.space.sm
+                Item {
+                    id: previewHeader
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 40
 
                     Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space.sm
+
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 6; height: 6; radius: 3
+                            width: 7; height: 7; radius: 3.5
                             color: Theme.color.preview
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("PREVIEW")
-                            color: Theme.color.textTertiary
+                            text: qsTr("Preview")
+                            color: Theme.color.textPrimary
                             font.family: Theme.font.family
-                            font.pixelSize: Theme.font.microSize
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 1.2
+                            font.pixelSize: Theme.font.bodySize
+                            font.weight: Theme.font.weightMedium
                         }
-                        Item { width: Theme.space.sm; height: 1 }
+                    }
+
+                    IconButton {
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.space.md
+                        anchors.verticalCenter: parent.verticalCenter
+                        symbol: "⚙"
+                        symbolSize: 13
+                    }
+
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 1
+                        color: Theme.color.borderSubtle
+                    }
+                }
+
+                EmptyState {
+                    anchors.top: previewHeader.bottom
+                    anchors.bottom: previewMonitorWrap.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    symbol: "👁"
+                    title: qsTr("No item selected")
+                    body: qsTr("Select an item from the schedule to preview")
+                }
+
+                // Bottom thumbnail
+                Item {
+                    id: previewMonitorWrap
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Theme.space.lg
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 280
+                    height: 158
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radius.md
+                        color: "#000000"
+                        border.color: Theme.color.borderStrong
+                        border.width: 1
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: parent.radius - 1
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#0d0d12" }
+                                GradientStop { position: 1.0; color: "#050508" }
+                            }
+                        }
+
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Queued — John 3:16")
-                            color: Theme.color.textSecondary
+                            anchors.centerIn: parent
+                            text: qsTr("No preview")
+                            color: Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
                         }
                     }
-
-                    Monitor {
-                        Layout.fillWidth: true
-                        monitorState: "preview"
-                        caption: qsTr("For God so loved the world that he gave his only Son…")
-                        subCaption: qsTr("John 3:16  ·  English Standard Version")
-                    }
                 }
 
-                // Send to Live — primary action
                 Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 48
-                    radius: Theme.radius.md
-                    color: sendMa.pressed       ? Qt.darker(Theme.color.brand, 1.15)
-                         : sendMa.containsMouse ? Theme.color.brandHover
-                                                : Theme.color.brand
-
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
-                    // Soft brand glow
-                    layer.enabled: sendMa.containsMouse
-                    layer.effect: ShaderEffect { property real strength: 0 }
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: Theme.space.md
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Send to Live")
-                            color: Theme.color.brandInk
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.bodySize + 1
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 0.4
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "→"
-                            color: Theme.color.brandInk
-                            font.pixelSize: Theme.font.titleSize
-                        }
-                        Item { width: Theme.space.md; height: 1 }
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: kbdHint.implicitWidth + 10; height: 18
-                            radius: 3
-                            color: "#26ffffff"
-
-                            Text {
-                                id: kbdHint
-                                anchors.centerIn: parent
-                                text: qsTr("Space")
-                                color: Theme.color.brandInk
-                                font.family: Theme.font.monoFamily
-                                font.pixelSize: 9
-                                font.weight: Theme.font.weightSemiBold
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: sendMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                    }
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 1
+                    color: Theme.color.borderSubtle
                 }
+            }
 
-                // LIVE
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.space.sm
+            // Live pane (~36%)
+            Rectangle {
+                id: livePane
+
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                width: parent.width * 0.36
+                color: "transparent"
+
+                Item {
+                    id: liveHeader
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 40
 
                     Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Theme.space.lg
+                        anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space.sm
+
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 6; height: 6; radius: 3
+                            width: 8; height: 16
+                            radius: 3
                             color: Theme.color.live
-
-                            SequentialAnimation on opacity {
-                                running: true
-                                loops: Animation.Infinite
-                                NumberAnimation { from: 1.0; to: 0.35; duration: 700; easing.type: Easing.InOutQuad }
-                                NumberAnimation { from: 0.35; to: 1.0; duration: 700; easing.type: Easing.InOutQuad }
-                            }
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("LIVE")
-                            color: Theme.color.textTertiary
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.microSize
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 1.2
-                        }
-                        Item { width: Theme.space.sm; height: 1 }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("On screen — 10,000 Reasons")
-                            color: Theme.color.textSecondary
+                            color: Theme.color.live
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 1.0
                         }
                     }
 
-                    Monitor {
-                        Layout.fillWidth: true
-                        monitorState: "live"
-                        caption: qsTr("Bless the Lord, O my soul")
-                        subCaption: qsTr("10,000 Reasons  ·  Verse 1")
+                    IconButton {
+                        anchors.right: parent.right
+                        anchors.rightMargin: Theme.space.md
+                        anchors.verticalCenter: parent.verticalCenter
+                        symbol: "⚙"
+                        symbolSize: 13
+                    }
+
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 1
+                        color: Theme.color.borderSubtle
                     }
                 }
 
-                // Quick actions — Black, Logo, Clear
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.space.sm
+                EmptyState {
+                    anchors.top: liveHeader.bottom
+                    anchors.bottom: liveMonitorWrap.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    symbol: "◉"
+                    title: qsTr("Nothing live")
+                    body: qsTr("Double-click a preview item to go live")
+                }
+
+                Item {
+                    id: liveMonitorWrap
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Theme.space.lg
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 320
+                    height: 180
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radius.md
+                        color: "#000000"
+                        border.color: Theme.color.borderStrong
+                        border.width: 1
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: parent.radius - 1
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#0d0d12" }
+                                GradientStop { position: 1.0; color: "#050508" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Horizontal divider between operating row and library section
+        Rectangle {
+            id: midDivider
+            anchors.top: topRow.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Theme.color.borderSubtle
+        }
+
+        // ── BOTTOM SECTION: tabs + library nav + library content
+        Item {
+            id: bottomRow
+
+            anchors.top: midDivider.bottom
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            // Tab bar
+            Item {
+                id: tabBar
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 42
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
 
                     Repeater {
                         model: [
-                            { l: qsTr("Black"), c: "#0d0d12", t: qsTr("B") },
-                            { l: qsTr("Logo"),  c: Theme.color.brand,     t: qsTr("L") },
-                            { l: qsTr("Clear"), c: Theme.color.textSecondary, t: qsTr("C") }
+                            { l: qsTr("Songs"),     s: "♪", active: true  },
+                            { l: qsTr("Scripture"), s: "✠", active: false },
+                            { l: qsTr("Strong's"),  s: "𝓢", active: false },
+                            { l: qsTr("Media"),     s: "▤", active: false },
+                            { l: qsTr("Themes"),    s: "◐", active: false }
                         ]
-                        delegate: Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 36
-                            radius: Theme.radius.md
-                            color: actionMa.containsMouse ? Theme.color.overlay : Theme.color.raised
-                            border.width: 1
-                            border.color: Theme.color.borderSubtle
 
-                            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                        delegate: Item {
+                            width: tabRow.implicitWidth + Theme.space.lg * 2
+                            height: tabBar.height
 
                             Row {
+                                id: tabRow
                                 anchors.centerIn: parent
                                 spacing: Theme.space.sm
 
-                                Rectangle {
+                                Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 8; height: 8
-                                    radius: 2
-                                    color: modelData.c
-                                    border.width: modelData.l === qsTr("Black") ? 1 : 0
-                                    border.color: Theme.color.borderStrong
+                                    text: modelData.s
+                                    color: modelData.active ? Theme.color.brand
+                                         : tabMa.containsMouse ? Theme.color.textPrimary
+                                                               : Theme.color.textTertiary
+                                    font.family: Theme.font.family
+                                    font.pixelSize: 13
+
+                                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.l
-                                    color: Theme.color.textPrimary
+                                    color: modelData.active ? Theme.color.textPrimary
+                                         : tabMa.containsMouse ? Theme.color.textSecondary
+                                                               : Theme.color.textTertiary
                                     font.family: Theme.font.family
-                                    font.pixelSize: Theme.font.smallSize
-                                    font.weight: Theme.font.weightMedium
-                                }
-                                Rectangle {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: 16; height: 16
-                                    radius: 3
-                                    color: Theme.color.canvas
-                                    border.color: Theme.color.borderSubtle
-                                    border.width: 1
+                                    font.pixelSize: Theme.font.bodySize
+                                    font.weight: modelData.active ? Theme.font.weightSemiBold
+                                                                  : Theme.font.weightRegular
 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: modelData.t
-                                        color: Theme.color.textTertiary
-                                        font.family: Theme.font.monoFamily
-                                        font.pixelSize: 9
-                                    }
+                                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                                 }
                             }
+
+                            // Active indicator (bottom underline)
+                            Rectangle {
+                                visible: modelData.active
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: parent.width - Theme.space.lg
+                                height: 2
+                                radius: 1
+                                color: Theme.color.brand
+                            }
+
                             MouseArea {
-                                id: actionMa
+                                id: tabMa
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
@@ -738,21 +670,250 @@ ApplicationWindow {
                     }
                 }
 
-                Item { Layout.fillHeight: true }
+                // Trailing "+" tab
+                Item {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.space.md + 5 * 90  // approximate skip past 5 tabs; refined later when tabs are dynamic
+                    width: 36
+                    height: parent.height
+                    visible: false  // hidden until tab model is dynamic
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.color.borderSubtle
+                }
+            }
+
+            // Library nav (left, ~24%)
+            Rectangle {
+                id: libraryNav
+
+                anchors.top: tabBar.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                width: parent.width * 0.24
+                color: "transparent"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.topMargin: Theme.space.md
+                    spacing: Theme.space.sm
+
+                    // Search field
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 36
+                        Layout.leftMargin: Theme.space.lg
+                        Layout.rightMargin: Theme.space.lg
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Theme.radius.md
+                            color: Theme.color.canvas
+                            border.color: searchInput.activeFocus ? Theme.color.brand
+                                                                  : Theme.color.borderStrong
+                            border.width: 1
+
+                            Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: Theme.space.md
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "⌕"
+                                color: Theme.color.textTertiary
+                                font.pixelSize: 14
+                            }
+                            TextInput {
+                                id: searchInput
+                                anchors.left: parent.left
+                                anchors.leftMargin: 32
+                                anchors.right: shortcutHint.left
+                                anchors.rightMargin: Theme.space.sm
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Theme.color.textPrimary
+                                font.family: Theme.font.family
+                                font.pixelSize: Theme.font.bodySize
+                                selectByMouse: true
+                                clip: true
+
+                                Text {
+                                    visible: !searchInput.activeFocus && searchInput.text.length === 0
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("Search in lyrics…")
+                                    color: Theme.color.textTertiary
+                                    font.family: Theme.font.family
+                                    font.pixelSize: Theme.font.bodySize
+                                }
+                            }
+
+                            Rectangle {
+                                id: shortcutHint
+                                anchors.right: parent.right
+                                anchors.rightMargin: 5
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 28; height: 18
+                                radius: 3
+                                color: Theme.color.elevated
+                                border.color: Theme.color.borderStrong
+                                border.width: 1
+                                visible: !searchInput.activeFocus
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "⌘A"
+                                    color: Theme.color.textTertiary
+                                    font.family: Theme.font.monoFamily
+                                    font.pixelSize: 9
+                                }
+                            }
+                        }
+                    }
+
+                    // Folder rows
+                    Repeater {
+                        model: [
+                            { s: "▤", l: qsTr("All Songs"),     active: true  },
+                            { s: "♥", l: qsTr("My Favorites"),  active: false },
+                            { s: "▦", l: qsTr("My Collections"),active: false }
+                        ]
+
+                        delegate: Item {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 32
+
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.leftMargin: Theme.space.sm
+                                anchors.rightMargin: Theme.space.sm
+                                radius: Theme.radius.md
+                                color: modelData.active   ? Theme.color.brandSubtle
+                                     : navMa.containsMouse ? Theme.color.overlay
+                                                            : "transparent"
+
+                                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                            }
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.leftMargin: Theme.space.lg
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: Theme.space.md
+
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.s
+                                    color: modelData.active ? Theme.color.brand : Theme.color.textTertiary
+                                    font.family: Theme.font.family
+                                    font.pixelSize: 13
+                                }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.l
+                                    color: modelData.active ? Theme.color.textPrimary : Theme.color.textSecondary
+                                    font.family: Theme.font.family
+                                    font.pixelSize: Theme.font.bodySize
+                                    font.weight: modelData.active ? Theme.font.weightMedium
+                                                                  : Theme.font.weightRegular
+                                }
+                            }
+
+                            MouseArea {
+                                id: navMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+
+                // Right divider
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 1
+                    color: Theme.color.borderSubtle
+                }
+            }
+
+            // Library content (right)
+            Item {
+                id: libraryContent
+
+                anchors.top: tabBar.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: libraryNav.right
+                anchors.right: parent.right
+
+                EmptyState {
+                    anchors.fill: parent
+                    symbol: "♪"
+                    title: qsTr("No songs yet")
+                    body: qsTr("Import songs from a file or create them manually to get started")
+                }
+
+                // CTA button beneath empty state
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: 70
+                    height: 38
+                    width: ctaRow.implicitWidth + Theme.space.xl * 2
+                    radius: Theme.radius.md
+                    color: ctaMa.containsMouse ? Theme.color.brandHover : Theme.color.brand
+
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                    Row {
+                        id: ctaRow
+                        anchors.centerIn: parent
+                        spacing: Theme.space.sm
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "+"
+                            color: Theme.color.brandInk
+                            font.pixelSize: 16
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Add your first song")
+                            color: Theme.color.brandInk
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize
+                            font.weight: Theme.font.weightSemiBold
+                        }
+                    }
+
+                    MouseArea {
+                        id: ctaMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
             }
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Status bar
+    // Footer — tab-scoped actions + count
     // ─────────────────────────────────────────────────────────────────────
     Rectangle {
-        id: statusBar
+        id: footerBar
 
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        height: Theme.size.statusBarHeight
+        height: 36
         color: Theme.color.elevated
 
         Rectangle {
@@ -765,30 +926,50 @@ ApplicationWindow {
 
         Row {
             anchors.left: parent.left
-            anchors.leftMargin: Theme.space.xl
+            anchors.leftMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space.lg
+            spacing: Theme.space.xs
 
-            Repeater {
-                model: [
-                    { d: Theme.color.success,      l: qsTr("Output: connected") },
-                    { d: Theme.color.success,      l: qsTr("NDI: streaming  ·  2 receivers") },
-                    { d: Theme.color.textTertiary, l: qsTr("Remote: not active") }
-                ]
-                delegate: Row {
-                    spacing: 6
-                    Rectangle {
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                symbol: "+"
+                symbolSize: 14
+            }
+
+            // Settings cog with chevron
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: settingsRow.implicitWidth + Theme.space.md * 2
+                height: 28
+                radius: Theme.radius.md
+                color: settingsMa.containsMouse ? Theme.color.overlay : "transparent"
+
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                Row {
+                    id: settingsRow
+                    anchors.centerIn: parent
+                    spacing: Theme.space.xs
+
+                    Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 6; height: 6; radius: 3
-                        color: modelData.d
+                        text: "⚙"
+                        color: Theme.color.textSecondary
+                        font.pixelSize: 13
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.l
+                        text: "▾"
                         color: Theme.color.textTertiary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
+                        font.pixelSize: 9
                     }
+                }
+
+                MouseArea {
+                    id: settingsMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
                 }
             }
         }
@@ -797,7 +978,7 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.xl
             anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Crater  ·  v0.6.0")
+            text: qsTr("0 songs")
             color: Theme.color.textTertiary
             font.family: Theme.font.family
             font.pixelSize: Theme.font.smallSize
