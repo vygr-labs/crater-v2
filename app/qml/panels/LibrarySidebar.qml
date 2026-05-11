@@ -117,6 +117,10 @@ Rectangle {
                     label:    modelData.label
                     count:    modelData.count
                     active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
+                    // Translation rows render closer to chips than buttons —
+                    // tighter corners read better for a dense alphabetical
+                    // index of codes (KJV / AMPC / NIV / …).
+                    bgRadius: root.currentTabKey === "scripture" ? 2 : Theme.radius.md
                     onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
 
                     // Scripture-tab translation rows: a double-click "sends

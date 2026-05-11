@@ -180,6 +180,20 @@ Item {
         if (item) AppState.addItemToSchedule(item)
     }
 
+    // Sync the sidebar search input to the verse at idx. Used after every
+    // user-driven fluid-focus change (click, arrow nav, schedule sync) so
+    // the input always reflects "what verse you're currently looking at"
+    // — but explicitly NOT called from onParsedRefChanged, since that path
+    // is driven BY the input and overwriting it would erase the operator's
+    // typing mid-flight.
+    function _syncInputToVerse(idx) {
+        if (mode !== "reference") return
+        if (idx < 0 || idx >= currentVerses.length) return
+        const v = currentVerses[idx]
+        if (!v) return
+        AppState.setSearch(tabKey, v.book + " " + v.chapter + ":" + v.verse)
+    }
+
     // When the parser yields a match, scroll there and highlight.
     onParsedRefChanged: {
         if (!parsedRef) return
@@ -221,6 +235,7 @@ Item {
                 AppState.setLibraryFluid(tabKey, syncIdx)
                 Qt.callLater(function() { list.positionViewAtIndex(syncIdx, ListView.Center) })
                 if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(syncIdx)
+                _syncInputToVerse(syncIdx)
                 return
             }
         }
@@ -270,6 +285,7 @@ Item {
                     if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
                         root.pushPreviewFor(idx)
                     }
+                    root._syncInputToVerse(idx)
                 }
                 return
             }
@@ -390,6 +406,23 @@ Item {
                               AppState.setSearch(root.tabKey, "")
                           } },
                         { separator: true },
+                        // Reference-input sub-mode: only meaningful in
+                        // reference mode. Greyed out (skipped from menu)
+                        // when in FTS search to avoid noise.
+                        ...(root.mode === "reference" ? [
+                            { label: AppState.scriptureInputMode === "crater"
+                                    ? qsTr("Reference input: Crater (autocomplete)")
+                                    : qsTr("Reference input: Controlled (segmented)"),
+                              iconName: AppState.scriptureInputMode === "crater"
+                                    ? "edit" : "list-ordered",
+                              action: function() {
+                                  const next = AppState.scriptureInputMode === "crater"
+                                             ? "controlled" : "crater"
+                                  AppState.setScriptureInputMode(next)
+                                  AppState.setSearch(root.tabKey, "")
+                              } },
+                            { separator: true }
+                        ] : []),
                         { label: qsTr("Refresh"), iconName: "refresh-cw" }
                     ]
                     const p = gearBtn.mapToItem(null, gearBtn.width, gearBtn.height + 4)
@@ -572,6 +605,7 @@ Item {
                 onClicked: function(mouse) {
                     AppState.setLibraryFluid(root.tabKey, index)
                     root.pushPreviewFor(index)
+                    root._syncInputToVerse(index)
                     if (mouse.button === Qt.RightButton) {
                         const p = mapToItem(null, mouse.x, mouse.y)
                         AppState.openModal("contextMenu", {
@@ -595,6 +629,7 @@ Item {
                 }
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    root._syncInputToVerse(index)
                     root.pushLiveFor(index)
                 }
             }
@@ -611,6 +646,7 @@ Item {
                                   root.currentVerses.length - 1)
             AppState.setLibraryFluid(root.tabKey, next)
             root.pushPreviewFor(next)
+            root._syncInputToVerse(next)
         }
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
@@ -618,10 +654,15 @@ Item {
             const next = Math.max(root.fluidIndex - 1, 0)
             AppState.setLibraryFluid(root.tabKey, next)
             root.pushPreviewFor(next)
+            root._syncInputToVerse(next)
         }
         function onLibraryActivate() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
+        }
+        function onLibraryAddToSchedule() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
         }
     }
 

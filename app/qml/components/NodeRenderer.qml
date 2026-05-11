@@ -64,42 +64,26 @@ Item {
     }
 
     // ─── Text delegate ───────────────────────────────────────────────────
+    // We do our own binary-search fit instead of using Qt's `Text.Fit`.
+    // `Text.Fit`'s internal fit predicate does not consistently honor the
+    // `lineHeight` multiplier on multi-line wrapped text — the last line
+    // ends up spilling below the box at non-1.0 multipliers. We binary-
+    // search against a hidden probe whose `paintedHeight` reflects real
+    // metrics under our exact font + lineHeight + wrap settings, matching
+    // the behavior of the Electron build's TextFill.js (which measures via
+    // DOM offsetHeight) but without the JS-round-trip cost.
     Loader {
         anchors.fill: parent
         active: nodeRoot._isText
         sourceComponent: Component {
-            Text {
+            Item {
+                id: textHost
+                anchors.fill: parent
+
                 readonly property var _style: nodeRoot.node.style || ({})
                 readonly property var _data:  nodeRoot.node.data  || ({})
 
-                text: nodeRoot.resolvedText
-                color: _style.color || "#ffffff"
-                font.family:        _style.fontFamily || Theme.font.family
-                font.pixelSize:     _data.autoResize
-                                  ? Math.max(8, _data.maxFontSize || 220)
-                                  : (_style.fontPixelSize || 48)
-                font.weight:        _style.fontWeight || Theme.font.weightMedium
-                font.letterSpacing: _style.letterSpacing || 0
-                lineHeight:         _style.lineHeightMultiplier || 1.25
-                lineHeightMode:     Text.ProportionalHeight
-
-                horizontalAlignment: _style.textAlign === "left"  ? Text.AlignLeft
-                                   : _style.textAlign === "right" ? Text.AlignRight
-                                                                  : Text.AlignHCenter
-                verticalAlignment:   _style.verticalAlign === "start" ? Text.AlignTop
-                                   : _style.verticalAlign === "end"   ? Text.AlignBottom
-                                                                      : Text.AlignVCenter
-
-                wrapMode: Text.WordWrap
-                elide: Text.ElideNone
-
-                // Auto-resize: ask QML's built-in Text.Fit to shrink to fit.
-                // The maxFontSize cap is honored by setting font.pixelSize
-                // above; QML reduces from there until height fits.
-                fontSizeMode: _data.autoResize ? Text.Fit : Text.FixedSize
-                minimumPixelSize: 8
-
-                // textTransform via JS — QML Text doesn't have CSS text-transform.
+                // textTransform via JS — QML Text has no CSS text-transform.
                 function _applyCase(s) {
                     switch (_style.textTransform) {
                         case "uppercase":  return (s || "").toUpperCase()
@@ -108,10 +92,127 @@ Item {
                         default:           return s
                     }
                 }
-                Component.onCompleted: text = _applyCase(nodeRoot.resolvedText)
+                readonly property string _renderedText: _applyCase(nodeRoot.resolvedText)
+
+                // Fitted pixel size. Updated by _refit() — kept as a plain
+                // property (not a binding) so the binary search writing to
+                // it doesn't clobber a live binding.
+                property int _fittedSize: _style.fontPixelSize || 48
+
+                // Hidden probe — mirrors layout-affecting properties of
+                // visibleText so paintedHeight/Width report accurate metrics
+                // at each trial pixelSize during binary search.
+                Text {
+                    id: probe
+                    visible: false
+                    text:               visibleText.text
+                    font.family:        visibleText.font.family
+                    font.weight:        visibleText.font.weight
+                    font.italic:        visibleText.font.italic
+                    font.letterSpacing: visibleText.font.letterSpacing
+                    wrapMode:           visibleText.wrapMode
+                    width:              visibleText.width
+                    lineHeight:         visibleText.lineHeight
+                    lineHeightMode:     visibleText.lineHeightMode
+                }
+
+                // Font metrics for the visible text — used to compute the
+                // top-leading asymmetry compensation below.
+                FontMetrics {
+                    id: fm
+                    font: visibleText.font
+                }
+
+                // Optical centering shift. Qt's `verticalAlignment: AlignVCenter`
+                // centers the text *bounding box*, not the visible ink. The
+                // box top sits at the font's ascent line, which is taller
+                // than the cap top of capital letters by the font's internal
+                // leading (room for accents). There is no equivalent reserve
+                // below the descent line. Qt's lineHeight > 1.0 distribution
+                // is symmetric (half-leading above and below each line), so
+                // it does NOT contribute to net top/bottom asymmetry — the
+                // only source is the above-cap reserve. We shift up by half
+                // of it so the visible ink lands in the geometric center.
+                readonly property real _opticalShift: {
+                    const capHeight = fm.tightBoundingRect("M").height
+                    const aboveCap  = Math.max(0, fm.ascent - capHeight)
+                    return aboveCap / 2
+                }
+
+                function _refit() {
+                    if (!_data.autoResize) {
+                        // Track user-set pixel size when auto-resize is off.
+                        _fittedSize = _style.fontPixelSize || 48
+                        return
+                    }
+                    const w = textHost.width
+                    const h = textHost.height
+                    if (w <= 0 || h <= 0) return
+                    const maxSize = Math.max(8, _data.maxFontSize || 220)
+                    let lo = 8, hi = maxSize, best = 8
+                    while (lo <= hi) {
+                        const mid = (lo + hi) >> 1
+                        probe.font.pixelSize = mid
+                        if (probe.paintedHeight <= h && probe.paintedWidth <= w) {
+                            best = mid
+                            lo = mid + 1
+                        } else {
+                            hi = mid - 1
+                        }
+                    }
+                    _fittedSize = best
+                }
+
+                // Debounce: many of these triggers fire in bursts during
+                // a drag-resize. Coalesce to one fit per frame.
+                Timer {
+                    id: refitTimer
+                    interval: 16
+                    repeat: false
+                    onTriggered: textHost._refit()
+                }
+
+                onWidthChanged:  refitTimer.restart()
+                onHeightChanged: refitTimer.restart()
                 Connections {
                     target: nodeRoot
-                    function onResolvedTextChanged() { text = _applyCase(nodeRoot.resolvedText) }
+                    function onNodeChanged()         { refitTimer.restart() }
+                    function onResolvedTextChanged() { refitTimer.restart() }
+                }
+                Component.onCompleted: _refit()
+
+                Text {
+                    id: visibleText
+                    // Span the full box horizontally, but anchor vertically
+                    // via verticalCenter + offset so we can apply the
+                    // optical-shift compensation. height remains parent.height
+                    // so wrapMode and the binary-search probe agree on the
+                    // available box.
+                    anchors.left:   parent.left
+                    anchors.right:  parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: -textHost._opticalShift
+                    height: parent.height
+                    text:               textHost._renderedText
+                    color:              textHost._style.color || "#ffffff"
+                    font.family:        textHost._style.fontFamily || Theme.font.family
+                    font.pixelSize:     textHost._fittedSize
+                    font.weight:        textHost._style.fontWeight || Theme.font.weightMedium
+                    font.italic:        !!textHost._style.fontItalic
+                    font.letterSpacing: textHost._style.letterSpacing || 0
+                    lineHeight:         textHost._style.lineHeightMultiplier || 1.25
+                    lineHeightMode:     Text.ProportionalHeight
+
+                    horizontalAlignment: textHost._style.textAlign === "left"  ? Text.AlignLeft
+                                       : textHost._style.textAlign === "right" ? Text.AlignRight
+                                                                                : Text.AlignHCenter
+                    verticalAlignment:   textHost._style.verticalAlign === "start" ? Text.AlignTop
+                                       : textHost._style.verticalAlign === "end"   ? Text.AlignBottom
+                                                                                    : Text.AlignVCenter
+
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                    fontSizeMode: Text.FixedSize
                 }
             }
         }

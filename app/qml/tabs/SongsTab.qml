@@ -549,5 +549,9 @@ Item {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
         }
+        function onLibraryAddToSchedule() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
+        }
     }
 }

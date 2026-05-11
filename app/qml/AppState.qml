@@ -281,6 +281,26 @@ QtObject {
         librarySearchMode = copy
     }
 
+    // ─── Scripture reference-input sub-mode ─────────────────────────────
+    // Two ways to enter "Genesis 1:1" in scripture/reference mode:
+    //   "crater"     ─ free text + autocomplete on space + "Interpreted: …"
+    //                  hint below the input. Closer to a search box.
+    //   "controlled" ─ segmented stage editor: book → chapter → verse, each
+    //                  segment auto-selected so the next keystroke replaces
+    //                  it. Tab/Space advances; Backspace at stage start
+    //                  retreats; click a segment to select it.
+    //
+    // Default "crater" because the gentle learning curve fits a first-launch
+    // operator. Power users can flip via the scripture gear menu. When a
+    // SettingsService lands this should persist across sessions; it's
+    // transient per-session for now.
+    property string scriptureInputMode: "crater"   // "crater" | "controlled"
+
+    function setScriptureInputMode(mode) {
+        if (mode !== "crater" && mode !== "controlled") return
+        scriptureInputMode = mode
+    }
+
     // ─── Media tab view state (transient UI choices only) ───────────────
     // The media library itself lives in crater::MediaService (see
     // ARCHITECTURE.md §1/§4/§9: file-backed data belongs in crater-core,
@@ -319,6 +339,11 @@ QtObject {
     signal libraryNavigateLeft()
     signal libraryNavigateRight()
     signal libraryActivate()
+    // Ctrl+T → "stage this": add the active library tab's currently fluid-
+    // focused item to the schedule. Per-tab handlers (ScriptureTab, SongsTab,
+    // MediaTab) gate themselves with `tabKeys[activeTab] === tabKey`. Tabs
+    // without schedule semantics (Strongs, Themes) simply ignore the signal.
+    signal libraryAddToSchedule()
 
     // ─── Active focus panel ─────────────────────────────────────────────
     // Names which UI surface currently "owns" keyboard navigation. The

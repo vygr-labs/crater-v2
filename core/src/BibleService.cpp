@@ -228,22 +228,63 @@ Verse BibleService::parseReference(QString input, QString translationCode)
 
     // Three capture groups:
     //   1) book token — either "1 John" / "1John" / "Song of Solomon" / "jn"
-    //   2) chapter (required digit run after the book)
-    //   3) verse (optional digit run after ':' or whitespace)
+    //   2) chapter (optional — defaults to 1 when omitted, so "exo" → Exodus 1:1)
+    //   3) verse   (optional — defaults to 1 when omitted, so "John 3" → John 3:1)
     // The first alternative for the book greedily handles digit-prefixed books
     // so "1 John 3:16" doesn't split as ["John", "1", "3"] with stray digits.
+    // Chapter+verse are wrapped in an outer optional group so the operator
+    // gets a live "Interpreted" hint after just typing a book prefix — they
+    // see "Exodus 1:1" the moment "exo" resolves, before they type a chapter.
     static const QRegularExpression rx(QStringLiteral(
-        R"(^\s*([1-3]\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*|[a-zA-Z]+(?:\s+[a-zA-Z]+)*)\s*(\d+)(?:\s*[:\s]\s*(\d+))?\s*$)"));
+        R"(^\s*([1-3]\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*|[a-zA-Z]+(?:\s+[a-zA-Z]+)*)(?:\s*(\d+)(?:\s*[:\s]\s*(\d+))?)?\s*$)"));
 
     const auto m = rx.match(trimmed);
     if (!m.hasMatch()) return invalid;
 
-    const QString bookToken = m.captured(1);
-    const int chapterNum    = m.captured(2).toInt();
-    const QString verseCap  = m.captured(3);
-    const int verseNum      = verseCap.isEmpty() ? 1 : verseCap.toInt();  // "John 3" → John 3:1
+    const QString bookToken  = m.captured(1);
+    const QString chapterCap = m.captured(2);
+    const int chapterNum     = chapterCap.isEmpty() ? 1 : chapterCap.toInt();
+    const QString verseCap   = m.captured(3);
+    const int verseNum       = verseCap.isEmpty() ? 1 : verseCap.toInt();
 
-    const auto bookMeta = crater::import::lookupBook(bookToken);
+    // Try exact lookup first (canonical name / abbrev / known alias). If
+    // that fails — common when the operator types a short prefix like
+    // "exo" or "rev" — fall back to a case-insensitive prefix match across
+    // all canonical books. This makes the reference input forgiving of
+    // partial book names, mirroring how electron's parseScriptureInput
+    // does prefix matching against `allBooks` (which is alphabetically
+    // sorted). Alphabetical order matters for ambiguous prefixes: "e" →
+    // Ecclesiastes (alpha first), not Ezra (canonical first); "j" → James,
+    // not Joshua. Matches operator intuition for "what comes first when I
+    // type one letter."
+    auto bookMeta = crater::import::lookupBook(bookToken);
+    if (!bookMeta.has_value()) {
+        // Cache an alphabetical view over allCanonicalBooks() so the sort
+        // is paid once at startup, not per keystroke. Held by reference so
+        // the QString name fields aren't copied per scan.
+        static const QList<crater::import::BibleBookMeta> alphaBooks = []() {
+            QList<crater::import::BibleBookMeta> v = crater::import::allCanonicalBooks();
+            std::sort(v.begin(), v.end(),
+                      [](const crater::import::BibleBookMeta& a,
+                         const crater::import::BibleBookMeta& b) {
+                          return a.name.toLower() < b.name.toLower();
+                      });
+            return v;
+        }();
+
+        const QString lowerToken = bookToken.toLower().simplified();
+        // Drop any internal whitespace so "1samuel" / "1 samuel" both probe
+        // as "1 samuel" against canonical names (whose own normalization
+        // also collapses whitespace).
+        const QString probe = QString(lowerToken).replace(QRegularExpression(QStringLiteral("\\s+")),
+                                                          QStringLiteral(" "));
+        for (const auto& b : alphaBooks) {
+            if (b.name.toLower().startsWith(probe)) {
+                bookMeta = b;
+                break;
+            }
+        }
+    }
     if (!bookMeta.has_value()) return invalid;
 
     return verse(translationCode, bookMeta->name, chapterNum, verseNum);

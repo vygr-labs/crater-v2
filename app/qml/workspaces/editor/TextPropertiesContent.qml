@@ -13,6 +13,11 @@ Column {
     function _setStyle(f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v); workspace.saveToHistory() }
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
 
+    // System font enumeration cached at first construction. Qt.fontFamilies()
+    // is ~50 ms on Windows; binding the Combobox to a fresh call on every
+    // open would cost the user a noticeable beat. Read once, reuse forever.
+    readonly property var _fontFamilies: Qt.fontFamilies()
+
     // ── Color ─────────────────────────────────────────────────────────
     AccordionSection {
         anchors.left: parent.left
@@ -36,9 +41,16 @@ Column {
 
     // ── Typography ────────────────────────────────────────────────────
     AccordionSection {
+        id: typographySection
         anchors.left: parent.left
         anchors.right: parent.right
         title: qsTr("Typography")
+        // Lift the entire section above subsequent siblings whenever the
+        // font combobox is open. QML renders sibling items in declaration
+        // order with z as the tiebreaker — without this lift, Alignment /
+        // Spacing / Content sections (declared after Typography) would
+        // draw on top of the dropdown popover.
+        z: fontCombobox._open ? 100 : 0
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -46,51 +58,17 @@ Column {
             anchors.margins: Theme.space.md
             spacing: 6
 
-            // Font family — combo using cached families
-            Item {
+            // Font family — searchable dropdown. Qt.fontFamilies() is
+            // cached in a readonly property so the (slow) first call only
+            // happens once per editor session, not once per repaint.
+            Combobox {
+                id: fontCombobox
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 24
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Theme.radius.sm
-                    color: Theme.color.canvas
-                    border.color: Theme.color.borderStrong
-                    border.width: 1
-                    Text {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 22
-                        verticalAlignment: Text.AlignVCenter
-                        text: (node && node.style && node.style.fontFamily) || Theme.font.family
-                        color: Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        elide: Text.ElideRight
-                    }
-                    AppIcon {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 6
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "chevron-down"
-                        size: 12
-                        color: Theme.color.textTertiary
-                    }
-                }
-                // Click to cycle through 4 common families. Defers a true
-                // dropdown (with Qt.fontFamilies()) to a follow-up so this
-                // ships without a font enumeration cost on first paint.
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const fams = ["Segoe UI Variable Display", "Funnel Sans", "Inter", "Georgia"]
-                        const cur  = (root.node && root.node.style && root.node.style.fontFamily) || fams[0]
-                        const idx  = fams.indexOf(cur)
-                        const next = fams[(idx + 1) % fams.length]
-                        root._setStyle("fontFamily", next)
-                    }
-                }
+                placeholder: qsTr("Font family")
+                value: (node && node.style && node.style.fontFamily) || Theme.font.family
+                options: root._fontFamilies
+                onValueSelected: function(v) { root._setStyle("fontFamily", v) }
             }
 
             Row {

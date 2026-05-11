@@ -59,7 +59,11 @@ Item {
         }
     }
 
-    // Body
+    // Body — a plain Item won't size itself to its children, so we bind
+    // implicitHeight to childrenRect.height. That makes the section's own
+    // implicitHeight propagate correctly into the parent Column; without
+    // it, sections collapse to header-height and their bodies overlap the
+    // sibling below.
     Item {
         id: bodyHost
         anchors.top: header.bottom
@@ -67,5 +71,6 @@ Item {
         anchors.right: parent.right
         anchors.topMargin: 4
         visible: section.expanded
+        implicitHeight: childrenRect.height
     }
 }

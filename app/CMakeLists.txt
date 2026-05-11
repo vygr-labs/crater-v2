@@ -48,6 +48,7 @@ qt_add_qml_module(crater
         qml/controls/ContextMenu.qml
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
+        qml/controls/Combobox.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────

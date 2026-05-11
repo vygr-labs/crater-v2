@@ -16,32 +16,45 @@ Item {
     readonly property var _canvas: _wt.canvas || ({ width: 1920, height: 1080 })
     readonly property var _nodes:  _wt.nodes  || []
 
-    // Checkerboard tile painted via a tiny 16x16 Image. Color tokens match
-    // Photoshop / Figma's transparency grid — two near-blacks so it doesn't
-    // compete with theme contents.
-    Rectangle {
+    // Checkerboard backdrop indicating "outside the canvas". Painted once
+    // per resize into a single scene-graph quad. Two near-blacks so it
+    // doesn't compete visually with theme content. Tile size of 16 matches
+    // the Photoshop / Figma transparency-grid feel at editor zoom.
+    Canvas {
+        id: checker
         anchors.fill: parent
-        color: "#0a0a0a"
-    }
-    Repeater {
-        // ≈8×4 tile coverage at default zoom; ListModel-less grid that
-        // re-tiles on resize. Cheap; the ListView pattern is overkill.
-        model: 200
-        delegate: Rectangle {
-            readonly property int _row: index / 20
-            readonly property int _col: index % 20
-            x: _col * 32
-            y: _row * 32
-            width: 32; height: 32
-            color: (_row + _col) % 2 === 0 ? "#0a0a0a" : "#141414"
+        renderStrategy: Canvas.Cooperative
+        onPaint: {
+            const ctx = getContext("2d")
+            const t    = 16
+            const cols = Math.ceil(width  / t) + 1
+            const rows = Math.ceil(height / t) + 1
+            // Base fill — guarantees coverage even if the row loop doesn't
+            // overrun the visible area (sub-pixel rounding at high DPI).
+            ctx.fillStyle = "#0a0a0a"
+            ctx.fillRect(0, 0, width, height)
+            ctx.fillStyle = "#141414"
+            for (let r = 0; r < rows; ++r) {
+                for (let c = 0; c < cols; ++c) {
+                    if ((r + c) % 2 === 1)
+                        ctx.fillRect(c * t, r * t, t, t)
+                }
+            }
         }
+        onWidthChanged:  requestPaint()
+        onHeightChanged: requestPaint()
     }
 
     Flickable {
         id: flick
         anchors.fill: parent
-        contentWidth:  Math.max(width,  stage.width  * workspace.zoom + 200)
-        contentHeight: Math.max(height, stage.height * workspace.zoom + 200)
+        // stage.width / stage.height already include the zoom factor (via
+        // _scale = _baseScale * zoom). At zoom=1.0 the stage fits inside
+        // flick, so we want contentWidth == flick.width — that anchors the
+        // stage's center to the viewport's center. Only when zoomed in
+        // should contentWidth grow past flick.width to enable scrolling.
+        contentWidth:  Math.max(width,  stage.width  + 80)
+        contentHeight: Math.max(height, stage.height + 80)
         clip: true
         interactive: true
 

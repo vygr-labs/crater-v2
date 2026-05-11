@@ -11,6 +11,11 @@ Item {
     property string label: ""
     property int    count: 0
     property bool   active: false
+    // Background border-radius. Defaults to Theme.radius.md (6px) so song/
+    // theme/strongs sidebar rows keep their existing pill-ish look. Scripture
+    // translation rows override to a much smaller radius (closer to a chip)
+    // because the codes ("KJV", "AMPC") read better as flat tabs.
+    property int    bgRadius: Theme.radius.md
 
     signal clicked()
     signal doubleClicked()
@@ -22,7 +27,7 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: Theme.space.sm
         anchors.rightMargin: Theme.space.sm
-        radius: Theme.radius.md
+        radius: root.bgRadius
         color: root.active        ? Theme.color.brandSubtle
              : ma.containsMouse   ? Theme.color.overlay
                                   : "transparent"

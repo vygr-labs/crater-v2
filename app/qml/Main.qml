@@ -198,6 +198,10 @@ ApplicationWindow {
     // Ctrl+. is the "clear" shortcut from the Electron version — avoids
     // colliding with system Ctrl+C (copy).
     Shortcut { sequence: "Ctrl+."; onActivated: AppState.clearLive() }
+    // Ctrl+T = stage the currently focused library item. The active tab
+    // (ScriptureTab / SongsTab / MediaTab) handles via its
+    // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
+    Shortcut { sequence: "Ctrl+T"; onActivated: AppState.libraryAddToSchedule() }
 
     // Escape: close modal first; if no modal, deselect schedule item.
     Shortcut {
