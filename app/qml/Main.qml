@@ -15,8 +15,7 @@ ApplicationWindow {
     color: Theme.color.canvas
 
     // ─────────────────────────────────────────────────────────────────────
-    // Top bar — schedule selector + import on the left,
-    //           projection actions on the right.
+    // Top bar
     // ─────────────────────────────────────────────────────────────────────
     Rectangle {
         id: topBar
@@ -35,7 +34,7 @@ ApplicationWindow {
             color: Theme.color.borderSubtle
         }
 
-        // Left cluster
+        // Left cluster: Schedule dropdown + cog + Import
         Row {
             anchors.left: parent.left
             anchors.leftMargin: Theme.space.lg
@@ -57,11 +56,11 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "📄"
+                        name: "file-text"
                         color: Theme.color.textSecondary
-                        font.pixelSize: 14
+                        size: 15
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -71,11 +70,11 @@ ApplicationWindow {
                         font.pixelSize: Theme.font.bodySize
                         font.weight: Theme.font.weightMedium
                     }
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "▾"
+                        name: "chevron-down"
                         color: Theme.color.textTertiary
-                        font.pixelSize: 10
+                        size: 12
                     }
                 }
                 MouseArea {
@@ -88,8 +87,8 @@ ApplicationWindow {
 
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
-                symbol: "⚙"
-                symbolSize: 14
+                iconName: "settings"
+                iconSize: 14
             }
 
             Item { width: Theme.space.md; height: 1 }
@@ -109,11 +108,11 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "↗"
+                        name: "arrow-up-right"
                         color: Theme.color.textSecondary
-                        font.pixelSize: 13
+                        size: 14
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -133,7 +132,7 @@ ApplicationWindow {
             }
         }
 
-        // Right cluster
+        // Right cluster: Logo + Clear + Go Live
         Row {
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.lg
@@ -157,15 +156,11 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Rectangle {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 14; height: 14
-                        radius: 3
-                        gradient: Gradient {
-                            orientation: Gradient.Vertical
-                            GradientStop { position: 0; color: Theme.color.brand }
-                            GradientStop { position: 1; color: Qt.darker(Theme.color.brand, 1.4) }
-                        }
+                        name: "list-ordered"
+                        color: Theme.color.brand
+                        size: 14
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -201,11 +196,11 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "≡"
+                        name: "menu"
                         color: Theme.color.textSecondary
-                        font.pixelSize: 14
+                        size: 14
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -241,11 +236,11 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
 
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "▶"
+                        name: "play"
                         color: Theme.color.goLiveInk
-                        font.pixelSize: 11
+                        size: 13
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
@@ -268,7 +263,7 @@ ApplicationWindow {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Main work surface — top operating row + bottom library section
+    // Main work surface
     // ─────────────────────────────────────────────────────────────────────
     Item {
         id: mainArea
@@ -278,7 +273,6 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
 
-        // Tunable: ratio of vertical space the top operating row claims.
         property real topRowRatio: 0.58
 
         // ── TOP ROW: Schedule | Preview | Live
@@ -290,7 +284,7 @@ ApplicationWindow {
             anchors.right: parent.right
             height: parent.height * mainArea.topRowRatio
 
-            // Schedule pane (~30%)
+            // Schedule pane
             Rectangle {
                 id: schedulePane
 
@@ -300,7 +294,6 @@ ApplicationWindow {
                 width: parent.width * 0.30
                 color: "transparent"
 
-                // Header
                 Item {
                     id: scheduleHeader
                     anchors.top: parent.top
@@ -313,11 +306,11 @@ ApplicationWindow {
                         anchors.leftMargin: Theme.space.lg
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space.sm
-                        Text {
+                        AppIcon {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "≡"
+                            name: "menu"
                             color: Theme.color.textSecondary
-                            font.pixelSize: 14
+                            size: 14
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -333,8 +326,8 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: Theme.space.md
                         anchors.verticalCenter: parent.verticalCenter
-                        symbol: "▦"
-                        symbolSize: 13
+                        iconName: "grid"
+                        iconSize: 13
                     }
 
                     Rectangle {
@@ -346,17 +339,45 @@ ApplicationWindow {
                     }
                 }
 
-                EmptyState {
+                Item {
                     anchors.top: scheduleHeader.bottom
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    symbol: "♬"
-                    title: qsTr("No items in schedule")
-                    body: qsTr("Add songs, scriptures, or media from the tabs below")
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.sm
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.bottomMargin: Theme.space.xs
+                            name: "music"
+                            color: Theme.color.textTertiary
+                            size: 32
+                            opacity: 0.7
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("No items in schedule")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize + 2
+                            font.weight: Theme.font.weightMedium
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("Add songs, scriptures, or media from the tabs below")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            Layout.maximumWidth: 280
+                        }
+                    }
                 }
 
-                // Right divider
                 Rectangle {
                     anchors.right: parent.right
                     anchors.top: parent.top
@@ -366,7 +387,7 @@ ApplicationWindow {
                 }
             }
 
-            // Preview pane (flex)
+            // Preview pane
             Rectangle {
                 id: previewPane
 
@@ -389,10 +410,11 @@ ApplicationWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: Theme.space.sm
 
-                        Rectangle {
+                        AppIcon {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 7; height: 7; radius: 3.5
+                            name: "eye"
                             color: Theme.color.preview
+                            size: 14
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
@@ -408,8 +430,8 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: Theme.space.md
                         anchors.verticalCenter: parent.verticalCenter
-                        symbol: "⚙"
-                        symbolSize: 13
+                        iconName: "settings"
+                        iconSize: 13
                     }
 
                     Rectangle {
@@ -421,17 +443,42 @@ ApplicationWindow {
                     }
                 }
 
-                EmptyState {
+                Item {
                     anchors.top: previewHeader.bottom
                     anchors.bottom: previewMonitorWrap.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    symbol: "👁"
-                    title: qsTr("No item selected")
-                    body: qsTr("Select an item from the schedule to preview")
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.sm
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.bottomMargin: Theme.space.xs
+                            name: "eye"
+                            color: Theme.color.textTertiary
+                            size: 32
+                            opacity: 0.7
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("No item selected")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize + 2
+                            font.weight: Theme.font.weightMedium
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("Select an item from the schedule to preview")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize
+                        }
+                    }
                 }
 
-                // Bottom thumbnail
                 Item {
                     id: previewMonitorWrap
                     anchors.bottom: parent.bottom
@@ -476,7 +523,7 @@ ApplicationWindow {
                 }
             }
 
-            // Live pane (~36%)
+            // Live pane
             Rectangle {
                 id: livePane
 
@@ -493,26 +540,36 @@ ApplicationWindow {
                     anchors.right: parent.right
                     height: 40
 
-                    Row {
+                    // Proper LIVE pill — rounded badge with text inside
+                    Rectangle {
                         anchors.left: parent.left
                         anchors.leftMargin: Theme.space.lg
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: Theme.space.sm
+                        height: 22
+                        width: liveLabel.implicitWidth + Theme.space.md * 2 + liveDot.width + Theme.space.xs
+                        radius: 4
+                        color: Theme.color.live
 
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 8; height: 16
-                            radius: 3
-                            color: Theme.color.live
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("LIVE")
-                            color: Theme.color.live
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 1.0
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: Theme.space.xs
+
+                            Rectangle {
+                                id: liveDot
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 6; height: 6; radius: 3
+                                color: "#ffffff"
+                            }
+                            Text {
+                                id: liveLabel
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("LIVE")
+                                color: "#ffffff"
+                                font.family: Theme.font.family
+                                font.pixelSize: Theme.font.smallSize
+                                font.weight: Theme.font.weightSemiBold
+                                font.letterSpacing: 1.0
+                            }
                         }
                     }
 
@@ -520,8 +577,8 @@ ApplicationWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: Theme.space.md
                         anchors.verticalCenter: parent.verticalCenter
-                        symbol: "⚙"
-                        symbolSize: 13
+                        iconName: "settings"
+                        iconSize: 13
                     }
 
                     Rectangle {
@@ -533,14 +590,40 @@ ApplicationWindow {
                     }
                 }
 
-                EmptyState {
+                Item {
                     anchors.top: liveHeader.bottom
                     anchors.bottom: liveMonitorWrap.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    symbol: "◉"
-                    title: qsTr("Nothing live")
-                    body: qsTr("Double-click a preview item to go live")
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: Theme.space.sm
+
+                        AppIcon {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.bottomMargin: Theme.space.xs
+                            name: "radio"
+                            color: Theme.color.textTertiary
+                            size: 32
+                            opacity: 0.7
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("Nothing live")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize + 2
+                            font.weight: Theme.font.weightMedium
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: qsTr("Double-click a preview item to go live")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize
+                        }
+                    }
                 }
 
                 Item {
@@ -572,7 +655,6 @@ ApplicationWindow {
             }
         }
 
-        // Horizontal divider between operating row and library section
         Rectangle {
             id: midDivider
             anchors.top: topRow.bottom
@@ -582,7 +664,7 @@ ApplicationWindow {
             color: Theme.color.borderSubtle
         }
 
-        // ── BOTTOM SECTION: tabs + library nav + library content
+        // ── BOTTOM SECTION
         Item {
             id: bottomRow
 
@@ -607,11 +689,11 @@ ApplicationWindow {
 
                     Repeater {
                         model: [
-                            { l: qsTr("Songs"),     s: "♪", active: true  },
-                            { l: qsTr("Scripture"), s: "✠", active: false },
-                            { l: qsTr("Strong's"),  s: "𝓢", active: false },
-                            { l: qsTr("Media"),     s: "▤", active: false },
-                            { l: qsTr("Themes"),    s: "◐", active: false }
+                            { l: qsTr("Songs"),     icon: "music",     active: true  },
+                            { l: qsTr("Scripture"), icon: "book-open", active: false },
+                            { l: qsTr("Strong's"),  icon: "",          active: false, customGlyph: "S" },
+                            { l: qsTr("Media"),     icon: "film",      active: false },
+                            { l: qsTr("Themes"),    icon: "palette",   active: false }
                         ]
 
                         delegate: Item {
@@ -623,23 +705,35 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 spacing: Theme.space.sm
 
-                                Text {
+                                AppIcon {
+                                    visible: modelData.icon.length > 0
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: modelData.s
-                                    color: modelData.active ? Theme.color.brand
-                                         : tabMa.containsMouse ? Theme.color.textPrimary
-                                                               : Theme.color.textTertiary
-                                    font.family: Theme.font.family
-                                    font.pixelSize: 13
+                                    name: modelData.icon
+                                    color: modelData.active     ? Theme.color.brand
+                                         : tabMa.containsMouse  ? Theme.color.textPrimary
+                                                                : Theme.color.textTertiary
+                                    size: 13
 
                                     Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                                 }
                                 Text {
+                                    visible: !modelData.icon || modelData.icon.length === 0
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.customGlyph || ""
+                                    color: modelData.active     ? Theme.color.brand
+                                         : tabMa.containsMouse  ? Theme.color.textPrimary
+                                                                : Theme.color.textTertiary
+                                    font.family: Theme.font.family
+                                    font.pixelSize: 14
+                                    font.weight: Theme.font.weightSemiBold
+                                    font.italic: true
+                                }
+                                Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData.l
-                                    color: modelData.active ? Theme.color.textPrimary
-                                         : tabMa.containsMouse ? Theme.color.textSecondary
-                                                               : Theme.color.textTertiary
+                                    color: modelData.active     ? Theme.color.textPrimary
+                                         : tabMa.containsMouse  ? Theme.color.textSecondary
+                                                                : Theme.color.textTertiary
                                     font.family: Theme.font.family
                                     font.pixelSize: Theme.font.bodySize
                                     font.weight: modelData.active ? Theme.font.weightSemiBold
@@ -649,7 +743,6 @@ ApplicationWindow {
                                 }
                             }
 
-                            // Active indicator (bottom underline)
                             Rectangle {
                                 visible: modelData.active
                                 anchors.bottom: parent.bottom
@@ -670,15 +763,6 @@ ApplicationWindow {
                     }
                 }
 
-                // Trailing "+" tab
-                Item {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.space.md + 5 * 90  // approximate skip past 5 tabs; refined later when tabs are dynamic
-                    width: 36
-                    height: parent.height
-                    visible: false  // hidden until tab model is dynamic
-                }
-
                 Rectangle {
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
@@ -688,7 +772,7 @@ ApplicationWindow {
                 }
             }
 
-            // Library nav (left, ~24%)
+            // Library nav
             Rectangle {
                 id: libraryNav
 
@@ -701,14 +785,15 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.topMargin: Theme.space.md
-                    spacing: Theme.space.sm
+                    spacing: Theme.space.xs
 
-                    // Search field
+                    // Search
                     Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 36
                         Layout.leftMargin: Theme.space.lg
                         Layout.rightMargin: Theme.space.lg
+                        Layout.bottomMargin: Theme.space.sm
 
                         Rectangle {
                             anchors.fill: parent
@@ -720,18 +805,18 @@ ApplicationWindow {
 
                             Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
-                            Text {
+                            AppIcon {
                                 anchors.left: parent.left
                                 anchors.leftMargin: Theme.space.md
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "⌕"
+                                name: "search"
                                 color: Theme.color.textTertiary
-                                font.pixelSize: 14
+                                size: 14
                             }
                             TextInput {
                                 id: searchInput
                                 anchors.left: parent.left
-                                anchors.leftMargin: 32
+                                anchors.leftMargin: 36
                                 anchors.right: shortcutHint.left
                                 anchors.rightMargin: Theme.space.sm
                                 anchors.verticalCenter: parent.verticalCenter
@@ -774,12 +859,11 @@ ApplicationWindow {
                         }
                     }
 
-                    // Folder rows
                     Repeater {
                         model: [
-                            { s: "▤", l: qsTr("All Songs"),     active: true  },
-                            { s: "♥", l: qsTr("My Favorites"),  active: false },
-                            { s: "▦", l: qsTr("My Collections"),active: false }
+                            { icon: "folder",  l: qsTr("All Songs"),      active: true  },
+                            { icon: "heart",   l: qsTr("My Favorites"),   active: false },
+                            { icon: "folders", l: qsTr("My Collections"), active: false }
                         ]
 
                         delegate: Item {
@@ -804,12 +888,11 @@ ApplicationWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: Theme.space.md
 
-                                Text {
+                                AppIcon {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: modelData.s
+                                    name: modelData.icon
                                     color: modelData.active ? Theme.color.brand : Theme.color.textTertiary
-                                    font.family: Theme.font.family
-                                    font.pixelSize: 13
+                                    size: 13
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -834,7 +917,6 @@ ApplicationWindow {
                     Item { Layout.fillHeight: true }
                 }
 
-                // Right divider
                 Rectangle {
                     anchors.right: parent.right
                     anchors.top: parent.top
@@ -844,7 +926,7 @@ ApplicationWindow {
                 }
             }
 
-            // Library content (right)
+            // Library content
             Item {
                 id: libraryContent
 
@@ -853,51 +935,76 @@ ApplicationWindow {
                 anchors.left: libraryNav.right
                 anchors.right: parent.right
 
-                EmptyState {
-                    anchors.fill: parent
-                    symbol: "♪"
-                    title: qsTr("No songs yet")
-                    body: qsTr("Import songs from a file or create them manually to get started")
-                }
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
 
-                // CTA button beneath empty state
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.verticalCenterOffset: 70
-                    height: 38
-                    width: ctaRow.implicitWidth + Theme.space.xl * 2
-                    radius: Theme.radius.md
-                    color: ctaMa.containsMouse ? Theme.color.brandHover : Theme.color.brand
-
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
-                    Row {
-                        id: ctaRow
-                        anchors.centerIn: parent
-                        spacing: Theme.space.sm
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "+"
-                            color: Theme.color.brandInk
-                            font.pixelSize: 16
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Add your first song")
-                            color: Theme.color.brandInk
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.bodySize
-                            font.weight: Theme.font.weightSemiBold
-                        }
+                    AppIcon {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.bottomMargin: Theme.space.xs
+                        name: "music"
+                        color: Theme.color.textTertiary
+                        size: 32
+                        opacity: 0.7
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: qsTr("No songs yet")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize + 2
+                        font.weight: Theme.font.weightMedium
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: qsTr("Import songs from a file or create them manually to get started")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        Layout.maximumWidth: 320
                     }
 
-                    MouseArea {
-                        id: ctaMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                    Item { Layout.preferredHeight: Theme.space.md; Layout.fillWidth: true }
+
+                    // Add CTA
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        height: 38
+                        width: ctaRow.implicitWidth + Theme.space.xl * 2
+                        radius: Theme.radius.md
+                        color: ctaMa.containsMouse ? Theme.color.brandHover : Theme.color.brand
+
+                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                        Row {
+                            id: ctaRow
+                            anchors.centerIn: parent
+                            spacing: Theme.space.sm
+
+                            AppIcon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "plus"
+                                color: Theme.color.brandInk
+                                size: 14
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Add your first song")
+                                color: Theme.color.brandInk
+                                font.family: Theme.font.family
+                                font.pixelSize: Theme.font.bodySize
+                                font.weight: Theme.font.weightSemiBold
+                            }
+                        }
+
+                        MouseArea {
+                            id: ctaMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                        }
                     }
                 }
             }
@@ -905,7 +1012,7 @@ ApplicationWindow {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Footer — tab-scoped actions + count
+    // Footer
     // ─────────────────────────────────────────────────────────────────────
     Rectangle {
         id: footerBar
@@ -932,11 +1039,10 @@ ApplicationWindow {
 
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
-                symbol: "+"
-                symbolSize: 14
+                iconName: "plus"
+                iconSize: 14
             }
 
-            // Settings cog with chevron
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: settingsRow.implicitWidth + Theme.space.md * 2
@@ -951,17 +1057,17 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     spacing: Theme.space.xs
 
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "⚙"
+                        name: "settings"
                         color: Theme.color.textSecondary
-                        font.pixelSize: 13
+                        size: 13
                     }
-                    Text {
+                    AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "▾"
+                        name: "chevron-down"
                         color: Theme.color.textTertiary
-                        font.pixelSize: 9
+                        size: 11
                     }
                 }
 

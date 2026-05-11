@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlEngine>
@@ -104,6 +105,19 @@ void initDefaultFont()
     QGuiApplication::setFont(f);
 }
 
+// Bundle Lucide as our icon font. AppIcon.qml renders glyphs by codepoint
+// from this font; LucideIcons.qml maps human-readable names to codepoints.
+void registerIconFont()
+{
+    const int id = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/lucide.ttf"));
+    if (id < 0) {
+        qWarning() << "Failed to load Lucide icon font from qrc:/fonts/lucide.ttf";
+        return;
+    }
+    const QStringList families = QFontDatabase::applicationFontFamilies(id);
+    qInfo().noquote() << "Lucide font registered as:" << families.join(", ");
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -122,6 +136,7 @@ int main(int argc, char* argv[])
     qInfo().noquote() << "Log file:" << logPath;
 
     initDefaultFont();
+    registerIconFont();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QQmlApplicationEngine engine;

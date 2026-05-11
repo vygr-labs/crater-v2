@@ -1,17 +1,19 @@
 import QtQuick
 
+// Square hover-highlight button with a Lucide icon.
+// Usage: IconButton { iconName: "settings"; iconSize: 14 }
 Item {
     id: root
 
-    property string symbol: ""
-    property color tint: Theme.color.textSecondary
-    property color tintHover: Theme.color.textPrimary
-    property real symbolSize: 14
+    property string iconName: ""
+    property color  tint: Theme.color.textSecondary
+    property color  tintHover: Theme.color.textPrimary
+    property real   iconSize: 14
 
     signal clicked()
 
-    implicitWidth: 32
-    implicitHeight: 32
+    implicitWidth: 30
+    implicitHeight: 30
 
     Rectangle {
         anchors.fill: parent
@@ -21,12 +23,11 @@ Item {
         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
     }
 
-    Text {
+    AppIcon {
         anchors.centerIn: parent
-        text: root.symbol
+        name: root.iconName
         color: ma.containsMouse ? root.tintHover : root.tint
-        font.family: Theme.font.family
-        font.pixelSize: root.symbolSize
+        size: root.iconSize
 
         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
     }

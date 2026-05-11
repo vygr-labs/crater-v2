@@ -7,7 +7,7 @@ qt_add_executable(crater
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.
-set_source_files_properties(qml/Theme.qml PROPERTIES
+set_source_files_properties(qml/Theme.qml qml/LucideIcons.qml PROPERTIES
     QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -17,6 +17,8 @@ qt_add_qml_module(crater
     QML_FILES
         qml/Main.qml
         qml/Theme.qml
+        qml/LucideIcons.qml
+        qml/AppIcon.qml
         qml/PaneHeader.qml
         qml/Badge.qml
         qml/IconButton.qml
@@ -24,6 +26,14 @@ qt_add_qml_module(crater
         qml/LibraryRow.qml
         qml/ScheduleRow.qml
         qml/EmptyState.qml
+)
+
+# Bundle the Lucide icon font as a Qt resource (qrc:/fonts/lucide.ttf).
+qt_add_resources(crater "appfonts"
+    PREFIX "/fonts"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts"
+    FILES
+        resources/fonts/lucide.ttf
 )
 
 target_link_libraries(crater
