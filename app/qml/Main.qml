@@ -132,6 +132,25 @@ ApplicationWindow {
         anchors.fill: parent
     }
 
+    // ── Projection output window ─────────────────────────────────────────
+    // QML allows a Window to be nested inside another Window declaratively
+    // — each becomes its own QQuickWindow on the OS side. We bind `visible`
+    // to whether anything is live; opening/closing is implicit. See plan's
+    // "Deviations from Electron" — no IPC, no Redux, the projection just
+    // re-binds when ProjectionService Q_PROPERTYs change.
+    ProjectionWindow {
+        id: projectionWindow
+        screenIndex: OutputService.selectedScreenIndex
+        // Use `visibility` (not `visible`) so we can toggle FullScreen <-> Hidden
+        // without conflicting with ProjectionWindow.qml's own `visibility` setup.
+        visibility: (OutputService.projectionOpen
+                  || AppState.liveScheduleIndex >= 0
+                  || AppState.libraryLiveActive
+                  || AppState.showLogo)
+                  ? Window.FullScreen
+                  : Window.Hidden
+    }
+
     // ── Keyboard shortcuts ──────────────────────────────────────────────
     // Numeric shortcuts switch tabs. Ctrl+Tab and Ctrl+Shift+Tab cycle.
     Shortcut { sequence: "Ctrl+1"; onActivated: AppState.setActiveTab(0) }
@@ -167,12 +186,12 @@ ApplicationWindow {
         enabled: AppState.selectedScheduleIndex >= 0 && AppState.activeModal === ""
         onActivated: {
             const i = AppState.selectedScheduleIndex
-            const item = AppState.scheduleItems.get(i)
+            const item = ScheduleService.currentItems[i]
             AppState.openModal("confirm", {
                 title:       qsTr("Remove item?"),
                 body:        qsTr("Remove \"") + (item ? item.title : "") + qsTr("\" from the schedule?"),
                 confirmText: qsTr("Remove"),
-                onConfirm:   function() { AppState.removeScheduleItem(i) }
+                onConfirm:   function() { ScheduleService.removeAt(i) }
             })
         }
     }
@@ -182,7 +201,7 @@ ApplicationWindow {
         sequence: "Up"
         enabled: AppState.activeModal === ""
         onActivated: {
-            if (AppState.scheduleItems.count === 0) return
+            if (ScheduleService.currentItems.length === 0) return
             const next = Math.max(0, AppState.selectedScheduleIndex - 1)
             AppState.selectScheduleItem(next)
         }
@@ -191,8 +210,8 @@ ApplicationWindow {
         sequence: "Down"
         enabled: AppState.activeModal === ""
         onActivated: {
-            if (AppState.scheduleItems.count === 0) return
-            const max = AppState.scheduleItems.count - 1
+            if (ScheduleService.currentItems.length === 0) return
+            const max = ScheduleService.currentItems.length - 1
             const next = AppState.selectedScheduleIndex < 0
                        ? 0
                        : Math.min(max, AppState.selectedScheduleIndex + 1)

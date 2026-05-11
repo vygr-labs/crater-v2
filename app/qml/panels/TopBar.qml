@@ -86,7 +86,10 @@ Rectangle {
             variant: "live"
             iconName: "play"
             text: qsTr("Go Live")
+            // Enabled when something is queued in Preview — either a schedule
+            // selection or a library item the operator is staging.
             enabled: AppState.selectedScheduleIndex >= 0
+                  || AppState.libraryPreviewItem !== null
             onClicked: AppState.goLive()
         }
     }

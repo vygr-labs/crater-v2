@@ -4,7 +4,7 @@ project(Crater
     VERSION 0.6.0
     DESCRIPTION "Professional Scripture Projection Software"
     HOMEPAGE_URL "https://crater.voyagerlabs.tech"
-    LANGUAGES CXX
+    LANGUAGES C CXX  # C needed for sqlite3.c amalgamation in crater-core
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -23,6 +23,7 @@ endif()
 # weak hardware Crater targets (Intel HD 4000 / 4 GB RAM).
 find_package(Qt6 6.11 REQUIRED COMPONENTS
     Core
+    Concurrent      # QtConcurrent::run for worker-thread import + FTS rebuild
     Gui
     Qml
     Quick

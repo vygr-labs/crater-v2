@@ -6,14 +6,16 @@ import QtQuick
 //
 // Per ARCHITECTURE.md §9, anything that holds selected-row, hover, focus,
 // or modal-open state lives in QML, not C++. This file is the QML side
-// of that contract: no persistence, no DB, no IPC. When a real service
-// lands (SongService, ScheduleService, etc.), the *lists* below will be
-// replaced by service-exposed models — but the *flow state* (activeTab,
-// activeModal, selectedScheduleIndex) stays here forever.
+// of that contract: no persistence, no DB, no IPC.
 //
-// Performance note: ListModels emit granular insert/remove/move signals
-// that ListView consumes for animated updates. Using `property var` for
-// these would force a full re-bind on every mutation.
+// All library data and the working schedule moved out to services:
+//   - Songs           → SongService.allSongs
+//   - Bible           → BibleService.translations() / books() / chapter() / search()
+//   - Themes          → ThemeService.allThemes / defaultFor(kind)
+//   - Schedule items  → ScheduleService.currentItems (+ savedSchedules, addItem, etc.)
+//   - Projection      → ProjectionService (goLive, clear, page nav, theme)
+// This file keeps only flow-control state (active tab, modal open, selection
+// indices, search text) — things that vanish on quit and don't belong in a DB.
 QtObject {
     id: state
 
@@ -34,12 +36,14 @@ QtObject {
     }
 
     function cycleTab(dir) {
-        // dir: +1 forward, -1 back, wraps around
         const next = (activeTab + dir + tabCount) % tabCount
         setActiveTab(next)
     }
 
     // ─── Schedule selection & live state ────────────────────────────────
+    // Selection indices live here (UI state); the schedule items themselves
+    // live in ScheduleService.currentItems. Indices remain valid as long as
+    // they're bounds-checked against currentItems.length.
     property int  selectedScheduleIndex: -1   // what's in Preview pane (-1 = nothing)
     property int  liveScheduleIndex:     -1   // what's on Live pane (-1 = nothing)
     property int  previewSubIndex:        0   // page within selected item shown in Preview
@@ -47,8 +51,53 @@ QtObject {
     property bool showLogo:           false   // Logo button toggled on/off
     property bool isClear:            false   // display cleared (overrides live content)
 
+    // ─── Library-pane overrides (NEW) ───────────────────────────────────
+    // The Electron app lets the operator click a song in the library and see
+    // it immediately in Preview — without first adding it to the schedule.
+    // Double-click then promotes it to Live. We replicate that behavior with
+    // two override slots that PreviewPanel/LivePanel consult before falling
+    // back to schedule-driven state.
+    //
+    //   libraryPreviewItem ─── canonical schedule-item shape ({kind, title,
+    //                          subtitle, pages, songId/scriptureRef/mediaPath, …})
+    //                          shown in Preview pane when non-null. Cleared
+    //                          when the operator clicks a schedule row.
+    //   libraryLiveActive  ─── true when ProjectionService.currentItem was
+    //                          pushed straight from a library tab (not via
+    //                          the schedule). LivePanel reads from
+    //                          ProjectionService.currentItem in that case.
+    property var  libraryPreviewItem: null
+    property bool libraryLiveActive:  false
+
+    function pushLibraryPreview(item) {
+        libraryPreviewItem = item || null
+        previewSubIndex = 0
+    }
+
+    function clearLibraryPreview() {
+        libraryPreviewItem = null
+    }
+
+    function pushLibraryLive(item) {
+        if (!item) return
+        libraryPreviewItem = item     // mirror to preview so the panes agree
+        libraryLiveActive  = true
+        isClear            = false
+        liveScheduleIndex  = -1       // signal: live did not come from schedule
+        liveSubIndex       = 0
+        previewSubIndex    = 0
+        const theme = ThemeService.defaultFor(item.kind || "song")
+        ProjectionService.goLive(item, 0, theme)
+    }
+
     function selectScheduleItem(i) {
-        if (i < 0 || i >= scheduleItems.count) {
+        // Clicking a schedule row implies the operator is now driving from the
+        // schedule, not the library — drop any library-preview override so the
+        // two panes don't fight.
+        libraryPreviewItem = null
+
+        const n = ScheduleService.currentItems.length
+        if (i < 0 || i >= n) {
             selectedScheduleIndex = -1
             previewSubIndex = 0
             return
@@ -58,29 +107,48 @@ QtObject {
     }
 
     function goLive() {
-        // Promote the previewed item to live. Cheap no-op if nothing previewed.
+        // Promote the previewed item to live, and push it through to
+        // ProjectionService so ProjectionWindow.qml re-renders on the second
+        // monitor. Items in currentItems are already in canonical shape —
+        // no translation needed, just resolve the default theme for the kind.
+        //
+        // Source preference matches the Preview pane: library override first,
+        // then the schedule selection. This means the global "Go Live" button
+        // and Ctrl+L work whether the operator is staging from the library or
+        // the schedule.
+        if (libraryPreviewItem !== null) {
+            pushLibraryLive(libraryPreviewItem)
+            return
+        }
+
         if (selectedScheduleIndex < 0) return
-        liveScheduleIndex = selectedScheduleIndex
-        liveSubIndex = previewSubIndex
-        isClear = false
+        const item = ScheduleService.currentItems[selectedScheduleIndex]
+        if (!item) return
+
+        liveScheduleIndex  = selectedScheduleIndex
+        liveSubIndex       = previewSubIndex
+        isClear            = false
+        libraryLiveActive  = false   // schedule is driving live now
+
+        const theme = ThemeService.defaultFor(item.kind || "song")
+        ProjectionService.goLive(item, previewSubIndex, theme)
     }
 
     function clearLive() {
-        isClear = true
-        liveScheduleIndex = -1
-        liveSubIndex = 0
+        isClear            = true
+        liveScheduleIndex  = -1
+        liveSubIndex       = 0
+        libraryLiveActive  = false
+        ProjectionService.clear()
     }
 
     function toggleLogo() {
         showLogo = !showLogo
-        // Real wiring: when ProjectionService lands, this'll signal
-        // it to render the logo overlay regardless of live content.
+        ProjectionService.setLogoVisible(showLogo)
     }
 
     // ─── Modal stack ────────────────────────────────────────────────────
-    // Single active modal (presentation UIs rarely need stacked modals;
-    // we can grow to a stack array later if a flow demands it).
-    property string activeModal: ""        // "" | "settings" | "songEditor" | "themeEditor" | "naming" | "confirm" | "import" | "scheduleDropdown"
+    property string activeModal: ""        // "" | "settings" | "songEditor" | "themeEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
 
@@ -96,8 +164,7 @@ QtObject {
 
     // ─── Per-tab search & group selection ───────────────────────────────
     // Stored as JS objects keyed by tabKey. Switching tabs and back
-    // preserves where you were — important when building a service from
-    // multiple sources.
+    // preserves where you were.
     property var searchText: ({
         "songs": "", "scripture": "", "strongs": "", "media": "", "themes": ""
     })
@@ -108,6 +175,26 @@ QtObject {
         "strongs":   "greek",
         "media":     "all-media",
         "themes":    "all-themes"
+    })
+
+    // Per-tab fluid-focus index — the row the operator is currently navigating
+    // inside the library list (independent of selection). Arrow keys move it
+    // without leaving the search input. -1 means no row is focused.
+    property var libraryFluidIndex: ({
+        "songs":     -1,
+        "scripture": -1,
+        "strongs":   -1,
+        "media":     -1,
+        "themes":    -1
+    })
+
+    // Search-mode keyed per tab. Songs supports title/lyrics/author/recent/
+    // oldest/newest. Scripture supports reference/search. Media supports
+    // title/search (in-row filter today).
+    property var librarySearchMode: ({
+        "songs":     "lyrics",
+        "scripture": "reference",
+        "media":     "title"
     })
 
     function setSearch(tabKey, text) {
@@ -124,117 +211,65 @@ QtObject {
         activeLibraryGroup = copy
     }
 
-    // ─── Schedule items (the working "playlist") ────────────────────────
-    readonly property ListModel scheduleItems: ListModel { }
-
-    function addScheduleItem(item) {
-        scheduleItems.append(item)
+    function setLibraryFluid(tabKey, idx) {
+        let copy = Object.assign({}, libraryFluidIndex)
+        copy[tabKey] = idx
+        libraryFluidIndex = copy
     }
 
-    function removeScheduleItem(i) {
-        if (i < 0 || i >= scheduleItems.count) return
-        scheduleItems.remove(i)
-        if (selectedScheduleIndex === i) {
-            selectedScheduleIndex = -1
-        } else if (selectedScheduleIndex > i) {
-            selectedScheduleIndex -= 1
-        }
-        if (liveScheduleIndex === i) {
-            liveScheduleIndex = -1
-        } else if (liveScheduleIndex > i) {
-            liveScheduleIndex -= 1
-        }
+    function setLibrarySearchMode(tabKey, mode) {
+        let copy = Object.assign({}, librarySearchMode)
+        copy[tabKey] = mode
+        librarySearchMode = copy
     }
 
-    function moveScheduleItem(from, to) {
-        if (from === to) return
-        scheduleItems.move(from, to, 1)
-        // Selection indices need fixup
-        const fixup = (idx) => {
-            if (idx === from) return to
-            if (from < to && idx > from && idx <= to) return idx - 1
-            if (from > to && idx >= to && idx < from) return idx + 1
-            return idx
-        }
-        selectedScheduleIndex = fixup(selectedScheduleIndex)
-        liveScheduleIndex     = fixup(liveScheduleIndex)
-    }
+    // ─── Media tab view state (transient UI choices only) ───────────────
+    // The media library itself lives in crater::MediaService (see
+    // ARCHITECTURE.md §1/§4/§9: file-backed data belongs in crater-core,
+    // not QML). The projection's logo-background path lives in
+    // ProjectionService (it's persisted user data). What stays here is
+    // genuinely transient UI state — current view mode, grid density,
+    // sort preferences, batch selection — exactly the kind §9 calls out
+    // for QML/AppState ownership. These reset to defaults on app launch.
+    //
+    // When SettingsService lands these will move to it for persistence,
+    // but they don't belong in MediaService either — a service should not
+    // know whether the operator prefers grid view vs list view.
+    property string mediaViewMode:   "grid"     // "grid" | "list"
+    property int    mediaGridColumns: 6         // 4 / 6 / 8 / 10 / 12
+    property string mediaSortField:  "name"     // "name" | "date" | "size" | "type"
+    property string mediaSortOrder:  "asc"      // "asc" | "desc"
+    property string mediaTypeFilter: "all"      // "all" | "image" | "video"
 
-    // ─── Library data (mock — replaced by services later) ───────────────
-    readonly property ListModel songsList: ListModel { }
-    readonly property ListModel savedSchedules: ListModel { }
-    readonly property ListModel bibleVersions: ListModel { }
-    readonly property ListModel themesList: ListModel { }
-    readonly property ListModel mediaList: ListModel { }
-    readonly property ListModel collectionsList: ListModel { }
+    // Batch selection — list of fluid-list indices currently checked. Plain
+    // list rather than Set because QML's property var likes JSON-friendly
+    // structures. Cleared whenever the operator switches tabs.
+    property var mediaBatchSelection: []
 
-    // ─── Mock-data seeding ──────────────────────────────────────────────
-    // Done at construction. When services land, delete this whole block;
-    // the QML upstream binds to model.count etc. and naturally handles
-    // empty initial states.
-    Component.onCompleted: {
-        // Songs — 8 hymns/worship songs as plausible content.
-        const songs = [
-            { title: "Amazing Grace",                 author: "John Newton",        favorite: true,  ccli: "22025" },
-            { title: "How Great Thou Art",            author: "Stuart K. Hine",     favorite: true,  ccli: "14181" },
-            { title: "Be Thou My Vision",             author: "Traditional Irish",  favorite: false, ccli: "30639" },
-            { title: "10,000 Reasons (Bless the Lord)",author: "Matt Redman",       favorite: true,  ccli: "6016351" },
-            { title: "In Christ Alone",               author: "Keith Getty",        favorite: false, ccli: "3350395" },
-            { title: "Cornerstone",                   author: "Hillsong",           favorite: false, ccli: "6158927" },
-            { title: "What a Beautiful Name",         author: "Hillsong Worship",   favorite: true,  ccli: "7068424" },
-            { title: "Goodness of God",               author: "Bethel Music",       favorite: false, ccli: "7117726" }
-        ]
-        for (let i = 0; i < songs.length; i++) songsList.append(songs[i])
+    function clearMediaBatchSelection() { mediaBatchSelection = [] }
 
-        // Saved schedules — what the Schedule dropdown popover shows.
-        savedSchedules.append({ name: "Sunday AM — 2026-05-10",     items: 8, modified: "2 days ago" })
-        savedSchedules.append({ name: "Wednesday Bible Study",      items: 4, modified: "5 days ago" })
-        savedSchedules.append({ name: "Easter Service 2026",        items: 14, modified: "3 weeks ago" })
+    // ─── Library keyboard events ────────────────────────────────────────
+    // The per-tab search input (TabSearchBar) lives in the sidebar but
+    // keyboard navigation (arrow keys / Enter) should drive the active tab's
+    // library list. We bridge the two via signals on this singleton: the
+    // search input emits them; the active tab listens and reacts.
+    //
+    // Each tab guards its handler with `tabKeys[activeTab] === tabKey` so
+    // background-loaded tabs ignore navigation meant for the foreground one.
+    signal libraryNavigateUp()
+    signal libraryNavigateDown()
+    signal libraryNavigateLeft()
+    signal libraryNavigateRight()
+    signal libraryActivate()
 
-        // Bible translations.
-        bibleVersions.append({ abbrev: "KJV", name: "King James Version",     installed: true  })
-        bibleVersions.append({ abbrev: "NIV", name: "New International Vers.", installed: true  })
-        bibleVersions.append({ abbrev: "ESV", name: "English Standard Vers.",  installed: true  })
-        bibleVersions.append({ abbrev: "NLT", name: "New Living Translation",  installed: false })
-
-        // Themes.
-        themesList.append({ name: "Classic Dark",       background: "#0a0a0d", accent: "#d4a574" })
-        themesList.append({ name: "Stage Bold",         background: "#1a0b1f", accent: "#e85a4a" })
-        themesList.append({ name: "Minimalist Light",   background: "#f5f5f0", accent: "#3a3a45" })
-
-        // Media — 6 placeholder gradient tiles.
-        for (let m = 1; m <= 6; m++) {
-            mediaList.append({ name: "Background " + m, type: m % 2 === 0 ? "video" : "image" })
-        }
-
-        // Collections (for the Songs sidebar's "My Collections" sub-tree).
-        collectionsList.append({ name: "Hymns",         count: 24 })
-        collectionsList.append({ name: "Modern Worship", count: 18 })
-        collectionsList.append({ name: "Christmas",      count: 12 })
-
-        // Seed 2 schedule items so the flow is immediately demonstrable
-        // (preview/go-live/clear work on launch with zero clicks).
-        scheduleItems.append({
-            title:    "Amazing Grace",
-            subtitle: "5 verses · 3 min",
-            typeName: "SONG",
-            typeColor: "#d4a574",
-            data:     [
-                { content: "Amazing grace, how sweet the sound\nThat saved a wretch like me" },
-                { content: "I once was lost, but now am found\nWas blind, but now I see" },
-                { content: "'Twas grace that taught my heart to fear\nAnd grace my fears relieved" },
-                { content: "How precious did that grace appear\nThe hour I first believed" },
-                { content: "When we've been there ten thousand years\nBright shining as the sun" }
-            ]
-        })
-        scheduleItems.append({
-            title:    "John 3:16",
-            subtitle: "KJV · 1 verse",
-            typeName: "SCRIPTURE",
-            typeColor: "#5b9df0",
-            data:     [
-                { content: "For God so loved the world, that he gave his only begotten Son,\nthat whosoever believeth in him should not perish, but have everlasting life." }
-            ]
-        })
+    // Convenience for the "Add to Schedule" right-click action — adds the
+    // item AND selects it so the operator gets immediate visual feedback.
+    function addItemToSchedule(item) {
+        if (!item) return
+        ScheduleService.addItem(item)
+        // newly-added items append to the end
+        selectedScheduleIndex = ScheduleService.currentItems.length - 1
+        previewSubIndex = 0
+        libraryPreviewItem = null   // schedule now wins the Preview pane
     }
 }

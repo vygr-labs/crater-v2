@@ -101,4 +101,22 @@ QtObject {
         readonly property int controlHeight:     32
         readonly property int scheduleRowHeight: 64
     }
+
+    // Schedule-item display helpers — derive label + color from item `kind`
+    // so ScheduleService items don't need to carry presentation metadata.
+    // Reuses the existing `color.typeXxx` tokens for design-system consistency.
+    function scheduleLabel(kind) {
+        if (!kind) return ""
+        return String(kind).toUpperCase()
+    }
+    function scheduleColor(kind) {
+        switch (kind) {
+            case "song":         return color.typeSong
+            case "scripture":    return color.typeScripture
+            case "image":        return color.typeMedia
+            case "video":        return color.typeVideo
+            case "presentation": return color.typeSermon
+            default:             return color.textSecondary
+        }
+    }
 }

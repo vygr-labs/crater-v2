@@ -17,14 +17,26 @@ Rectangle {
         color: Theme.color.borderSubtle
     }
 
-    // Per-tab item count
+    // Per-tab item count — pulls from the service that owns each library.
     readonly property string countLabel: {
         switch (AppState.tabKeys[AppState.activeTab]) {
-            case "songs":     return AppState.songsList.count    + (AppState.songsList.count === 1    ? " song"    : " songs")
-            case "scripture": return AppState.bibleVersions.count + (AppState.bibleVersions.count === 1 ? " version" : " versions")
+            case "songs": {
+                const n = SongService.allSongs.length
+                return n + (n === 1 ? " song" : " songs")
+            }
+            case "scripture": {
+                const n = BibleService.translations().length
+                return n + (n === 1 ? " version" : " versions")
+            }
             case "strongs":   return qsTr("Strong's concordance")
-            case "media":     return AppState.mediaList.count   + (AppState.mediaList.count === 1   ? " file"  : " files")
-            case "themes":    return AppState.themesList.count  + (AppState.themesList.count === 1  ? " theme" : " themes")
+            case "media": {
+                const n = MediaService.allMedia.length
+                return n + (n === 1 ? " item" : " items")
+            }
+            case "themes": {
+                const n = ThemeService.allThemes.length
+                return n + (n === 1 ? " theme" : " themes")
+            }
         }
         return ""
     }

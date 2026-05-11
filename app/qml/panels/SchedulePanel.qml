@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 
 // Left top pane — the working schedule (the "playlist" being assembled).
-// Empty state ↔ ListView of ScheduleRow, driven by AppState.scheduleItems.
+// Empty state ↔ ListView of ScheduleRow, driven by ScheduleService.currentItems
+// (QVariantList of canonical-shape items; delegate uses `modelData` to access).
 Rectangle {
     id: root
 
@@ -38,8 +39,8 @@ Rectangle {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                visible: AppState.scheduleItems.count > 0
-                text: AppState.scheduleItems.count.toLocaleString(Qt.locale(), "f", 0)
+                visible: ScheduleService.currentItems.length > 0
+                text: ScheduleService.currentItems.length.toLocaleString(Qt.locale(), "f", 0)
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
                 font.pixelSize: Theme.font.smallSize
@@ -76,7 +77,7 @@ Rectangle {
 
         EmptyState {
             anchors.fill: parent
-            visible: AppState.scheduleItems.count === 0
+            visible: ScheduleService.currentItems.length === 0
             iconName: "music"
             title: qsTr("No items in schedule")
             body: qsTr("Add songs, scriptures, or media from the tabs below")
@@ -87,8 +88,8 @@ Rectangle {
             anchors.fill: parent
             anchors.topMargin: Theme.space.sm
             anchors.bottomMargin: Theme.space.sm
-            visible: AppState.scheduleItems.count > 0
-            model: AppState.scheduleItems
+            visible: ScheduleService.currentItems.length > 0
+            model: ScheduleService.currentItems
             clip: true
             cacheBuffer: 200    // keep off-screen rows alive for snappy scroll
             boundsBehavior: Flickable.StopAtBounds
@@ -106,13 +107,12 @@ Rectangle {
 
             delegate: ScheduleRow {
                 width: list.width
-                rowIndex:  index
-                title:     model.title
-                subtitle:  model.subtitle
-                typeName:  model.typeName
-                typeColor: model.typeColor
-                isLive:    AppState.liveScheduleIndex === index
-                isQueued:  AppState.selectedScheduleIndex === index
+                rowIndex: index
+                title:    modelData.title    || ""
+                subtitle: modelData.subtitle || ""
+                kind:     modelData.kind     || ""
+                isLive:   AppState.liveScheduleIndex === index
+                isQueued: AppState.selectedScheduleIndex === index
 
                 onClicked: AppState.selectScheduleItem(index)
                 onDoubleClicked: {
@@ -121,6 +121,8 @@ Rectangle {
                 }
                 onRightClicked: function(mouseX, mouseY) {
                     AppState.selectScheduleItem(index)
+                    const item = ScheduleService.currentItems[index]
+                    if (!item) return
                     const p = mapToItem(null, mouseX, mouseY)
                     AppState.openModal("contextMenu", {
                         anchorX: p.x,
@@ -131,25 +133,24 @@ Rectangle {
                             { label: qsTr("Edit"), iconName: "edit",
                               action: function() {
                                   AppState.openModal(
-                                      model.typeName === "SONG" ? "songEditor" : "themeEditor",
+                                      item.kind === "song" ? "songEditor" : "themeEditor",
                                       { itemIndex: index }) } },
                             { label: qsTr("Duplicate"), iconName: "copy",
                               action: function() {
-                                  AppState.addScheduleItem({
-                                      title:     model.title,
-                                      subtitle:  model.subtitle,
-                                      typeName:  model.typeName,
-                                      typeColor: model.typeColor,
-                                      data:      model.data
-                                  }) } },
+                                  // addItem assigns a fresh ID; strip the old one so
+                                  // we don't end up with two rows sharing identity.
+                                  const copy = Object.assign({}, item)
+                                  delete copy.id
+                                  ScheduleService.addItem(copy)
+                              } },
                             { separator: true },
                             { label: qsTr("Remove"), iconName: "trash", destructive: true,
                               action: function() {
                                   AppState.openModal("confirm", {
                                       title: qsTr("Remove item?"),
-                                      body:  qsTr("Remove \"") + model.title + qsTr("\" from the schedule?"),
+                                      body:  qsTr("Remove \"") + (item.title || "") + qsTr("\" from the schedule?"),
                                       confirmText: qsTr("Remove"),
-                                      onConfirm: function() { AppState.removeScheduleItem(index) }
+                                      onConfirm: function() { ScheduleService.removeAt(index) }
                                   }) } }
                         ]
                     })

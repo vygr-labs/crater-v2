@@ -1,0 +1,133 @@
+#include "crater/ProjectionService.h"
+
+#include "db/Connection.h"
+#include "db/DbPaths.h"
+#include "db/Error.h"
+#include "db/Statement.h"
+
+#include <QDebug>
+#include <QVariantList>
+
+namespace crater {
+
+namespace {
+constexpr auto kLogoBgPathKey = "projection.logoBgPath";
+}
+
+// kv-table-backed persistence for projection state that needs to survive a
+// restart. Today: just the logo background path. Held in a separate struct so
+// the header stays free of <Connection> includes.
+struct ProjectionService::KvImpl
+{
+    db::Connection conn;
+    db::Statement  selectStmt;
+    db::Statement  upsertStmt;
+
+    explicit KvImpl(const QString& path)
+        : conn(path)
+        , selectStmt(conn.prepare(QStringLiteral(
+            "SELECT value FROM kv WHERE key = ?")))
+        , upsertStmt(conn.prepare(QStringLiteral(
+            "INSERT INTO kv (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value")))
+    {}
+
+    QString get(const QString& key)
+    {
+        selectStmt.reset();
+        selectStmt.bind(1, key);
+        if (selectStmt.step()) return selectStmt.columnText(0);
+        return {};
+    }
+
+    void set(const QString& key, const QString& value)
+    {
+        upsertStmt.reset();
+        upsertStmt.bind(1, key);
+        upsertStmt.bind(2, value);
+        upsertStmt.step();
+    }
+};
+
+ProjectionService::ProjectionService(QObject* parent)
+    : QObject(parent)
+{
+    try {
+        m_kv = std::make_unique<KvImpl>(db::DbPaths::appDbPath());
+        m_logoBgPath = m_kv->get(QString::fromLatin1(kLogoBgPathKey));
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "ProjectionService: kv open failed —" << e.message();
+        // Continue without persistence; logo bg will just default to empty.
+    }
+}
+
+ProjectionService::~ProjectionService() = default;
+
+int ProjectionService::pageCount() const
+{
+    const auto pages = m_currentItem.value(QStringLiteral("pages")).toList();
+    return pages.size();
+}
+
+void ProjectionService::goLive(QVariantMap item, int page, crater::Theme theme)
+{
+    m_currentItem  = std::move(item);
+    m_contentKind  = m_currentItem.value(QStringLiteral("kind")).toString();
+    m_currentTheme = std::move(theme);
+
+    const int n = pageCount();
+    m_pageIndex = (n > 0) ? qBound(0, page, n - 1) : 0;
+    m_isClear   = false;
+
+    emit stateChanged();
+}
+
+void ProjectionService::clear()
+{
+    if (m_isClear) return;
+    m_isClear = true;
+    emit stateChanged();
+}
+
+void ProjectionService::setPage(int i)
+{
+    const int n = pageCount();
+    const int clamped = (n > 0) ? qBound(0, i, n - 1) : 0;
+    if (clamped == m_pageIndex && !m_isClear) return;
+    m_pageIndex = clamped;
+    m_isClear   = false;
+    emit stateChanged();
+}
+
+void ProjectionService::nextPage() { setPage(m_pageIndex + 1); }
+void ProjectionService::prevPage() { setPage(m_pageIndex - 1); }
+
+void ProjectionService::toggleLogo()
+{
+    m_showLogo = !m_showLogo;
+    emit stateChanged();
+}
+
+void ProjectionService::setLogoVisible(bool visible)
+{
+    if (m_showLogo == visible) return;
+    m_showLogo = visible;
+    emit stateChanged();
+}
+
+void ProjectionService::setLogoBgPath(QString path)
+{
+    if (path == m_logoBgPath) return;
+    m_logoBgPath = std::move(path);
+    if (m_kv) {
+        try {
+            m_kv->set(QString::fromLatin1(kLogoBgPathKey), m_logoBgPath);
+        } catch (const db::Error& e) {
+            qWarning().noquote() << "ProjectionService::setLogoBgPath() persist failed:"
+                                 << e.message();
+        }
+    }
+    emit logoBgPathChanged();
+}
+
+}  // namespace crater

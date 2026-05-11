@@ -24,33 +24,46 @@ Rectangle {
 
     readonly property var groups: {
         switch (currentTabKey) {
-            case "songs": return [
-                { id: "all-songs",   iconName: "folder",  label: qsTr("All Songs"),      count: AppState.songsList.count },
-                { id: "favorites",   iconName: "heart",   label: qsTr("My Favorites"),   count: 0 },
-                { id: "collections", iconName: "folders", label: qsTr("My Collections"), count: AppState.collectionsList.count }
-            ]
+            case "songs": {
+                const songs = SongService.allSongs
+                const favCount = songs.filter(function(s) { return s.isFavorite }).length
+                // "My Collections" deferred until a CollectionService lands.
+                return [
+                    { id: "all-songs", iconName: "folder", label: qsTr("All Songs"),    count: songs.length },
+                    { id: "favorites", iconName: "heart",  label: qsTr("My Favorites"), count: favCount }
+                ]
+            }
             case "scripture": {
+                // One sidebar row per installed translation. Code is uppercased
+                // ("KJV"), id is lowercased to match AppState.activeLibraryGroup convention.
                 let r = []
-                for (let i = 0; i < AppState.bibleVersions.count; i++) {
-                    const v = AppState.bibleVersions.get(i)
-                    r.push({ id: v.abbrev.toLowerCase(), iconName: "book-open", label: v.abbrev, count: 0 })
+                const tl = BibleService.translations()
+                for (let i = 0; i < tl.length; i++) {
+                    const t = tl[i]
+                    r.push({ id: (t.code || "").toLowerCase(),
+                             iconName: "book-open",
+                             label: t.code,
+                             count: 0 })
                 }
                 return r
             }
             case "strongs": return [
-                { id: "greek",  iconName: "book", label: qsTr("Greek"),  count: 5523 },
-                { id: "hebrew", iconName: "book", label: qsTr("Hebrew"), count: 8674 }
+                { id: "greek",  iconName: "book", label: qsTr("Greek"),  count: 0 },
+                { id: "hebrew", iconName: "book", label: qsTr("Hebrew"), count: 0 }
             ]
             case "media": return [
-                { id: "all-media", iconName: "folder", label: qsTr("All Media"), count: AppState.mediaList.count },
-                { id: "images",    iconName: "film",   label: qsTr("Images"),    count: 3 },
-                { id: "videos",    iconName: "film",   label: qsTr("Videos"),    count: 3 }
+                { id: "all-media", iconName: "folder", label: qsTr("All Media"), count: 0 }
             ]
-            case "themes": return [
-                { id: "all-themes", iconName: "palette", label: qsTr("All Themes"), count: AppState.themesList.count },
-                { id: "custom",     iconName: "palette", label: qsTr("Custom"),     count: 0 },
-                { id: "presets",    iconName: "palette", label: qsTr("Presets"),    count: AppState.themesList.count }
-            ]
+            case "themes": {
+                const themes = ThemeService.allThemes
+                const presetCount = themes.filter(function(t) { return t.isBuiltin }).length
+                const customCount = themes.length - presetCount
+                return [
+                    { id: "all-themes", iconName: "palette", label: qsTr("All Themes"), count: themes.length },
+                    { id: "custom",     iconName: "palette", label: qsTr("Custom"),     count: customCount },
+                    { id: "presets",    iconName: "palette", label: qsTr("Presets"),    count: presetCount }
+                ]
+            }
         }
         return []
     }
@@ -60,18 +73,15 @@ Rectangle {
         anchors.topMargin: Theme.space.md
         spacing: Theme.space.xs
 
-        // Search bar
-        SearchBar {
+        // Per-tab search bar — renders a different input variant per active tab
+        // (mode dropdown for Songs, reference/search toggle for Scripture,
+        // simple search elsewhere). Owns its own state via AppState.searchText
+        // and AppState.librarySearchMode.
+        TabSearchBar {
             Layout.fillWidth: true
-            Layout.preferredHeight: 36
             Layout.leftMargin: Theme.space.lg
             Layout.rightMargin: Theme.space.lg
             Layout.bottomMargin: Theme.space.sm
-
-            placeholder: root.searchPlaceholder
-            shortcutHint: "⌘A"
-            text: AppState.searchText[root.currentTabKey] || ""
-            onTextChanged: AppState.setSearch(root.currentTabKey, text)
         }
 
         // Group list — uses LibraryRow component

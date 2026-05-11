@@ -28,6 +28,7 @@ qt_add_qml_module(crater
         qml/LucideIcons.qml
         qml/Workspaces.qml
         qml/ModalLayer.qml
+        qml/ProjectionWindow.qml
 
         # ── Reusable control atoms ────────────────────────────────────
         qml/controls/AppIcon.qml
@@ -40,6 +41,7 @@ qt_add_qml_module(crater
         qml/controls/PrimaryButton.qml
         qml/controls/PillButton.qml
         qml/controls/SearchBar.qml
+        qml/controls/TabSearchBar.qml
         qml/controls/PopoverMenu.qml
         qml/controls/ContextMenu.qml
         qml/controls/ToggleSwitch.qml

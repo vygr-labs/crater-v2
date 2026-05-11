@@ -8,13 +8,24 @@ Rectangle {
 
     color: "transparent"
 
+    // Live item — two sources. When the library pushed straight to live
+    // (operator double-clicked a song / verse / media item without first
+    // routing through the schedule), ProjectionService.currentItem holds the
+    // canonical item. Otherwise read from ScheduleService.currentItems via
+    // the live index.
     readonly property var liveItem:
-        AppState.liveScheduleIndex >= 0 && AppState.liveScheduleIndex < AppState.scheduleItems.count
-            ? AppState.scheduleItems.get(AppState.liveScheduleIndex)
-            : null
+        AppState.libraryLiveActive
+            ? ProjectionService.currentItem
+            : (AppState.liveScheduleIndex >= 0
+               && AppState.liveScheduleIndex < ScheduleService.currentItems.length
+                   ? ScheduleService.currentItems[AppState.liveScheduleIndex]
+                   : null)
 
-    readonly property var pages: liveItem && liveItem.data ? liveItem.data : []
-    readonly property bool isLive: liveItem !== null && !AppState.isClear
+    readonly property var pages: liveItem && liveItem.pages ? liveItem.pages : []
+    readonly property bool isLive:
+        !AppState.isClear
+        && ((AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
+            || (AppState.liveScheduleIndex >= 0 && liveItem !== null))
 
     // ── Header ──────────────────────────────────────────────────────────
     Item {

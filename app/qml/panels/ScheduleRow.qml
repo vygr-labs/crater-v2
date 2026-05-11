@@ -9,10 +9,15 @@ Item {
     property int    rowIndex: 0
     property string title: ""
     property string subtitle: ""
-    property string typeName: ""
-    property color  typeColor: Theme.color.textTertiary
+    // The canonical kind ("song", "scripture", "image", "video", "presentation").
+    // Label + color are derived from this via Theme helpers — no presentation
+    // metadata stored on schedule items.
+    property string kind: ""
     property bool   isLive: false
     property bool   isQueued: false
+
+    readonly property string _label: Theme.scheduleLabel(kind)
+    readonly property color  _color: Theme.scheduleColor(kind)
 
     signal clicked()
     signal doubleClicked()
@@ -53,15 +58,15 @@ Item {
             font.pixelSize: Theme.font.smallSize
         }
 
-        // Type badge
+        // Type badge — label and color derived from `kind` via Theme helpers.
         Badge {
             id: typeBadge
             anchors.left: indexLabel.right
             anchors.leftMargin: Theme.space.lg
             anchors.verticalCenter: parent.verticalCenter
-            text: root.typeName
-            background: Qt.darker(root.typeColor, 4.0)
-            foreground: root.typeColor
+            text: root._label
+            background: Qt.darker(root._color, 4.0)
+            foreground: root._color
         }
 
         // Title + subtitle

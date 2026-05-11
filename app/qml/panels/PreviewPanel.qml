@@ -9,13 +9,24 @@ Rectangle {
 
     color: "transparent"
 
-    // Currently-selected schedule item (or null when nothing is selected).
+    // What's currently in the Preview pane. Two sources:
+    //   1. AppState.libraryPreviewItem ─ set when the operator clicks a row in
+    //      Songs/Scripture/Media tab. Takes priority because library navigation
+    //      is the most-recent intent.
+    //   2. ScheduleService.currentItems[selectedScheduleIndex] ─ the existing
+    //      schedule-driven selection.
+    // Clicking a schedule row clears libraryPreviewItem (see AppState.selectScheduleItem),
+    // so the two never disagree silently.
     readonly property var selectedItem:
-        AppState.selectedScheduleIndex >= 0 && AppState.selectedScheduleIndex < AppState.scheduleItems.count
-            ? AppState.scheduleItems.get(AppState.selectedScheduleIndex)
-            : null
+        AppState.libraryPreviewItem !== null
+            ? AppState.libraryPreviewItem
+            : (AppState.selectedScheduleIndex >= 0
+               && AppState.selectedScheduleIndex < ScheduleService.currentItems.length
+                   ? ScheduleService.currentItems[AppState.selectedScheduleIndex]
+                   : null)
 
-    readonly property var pages: selectedItem && selectedItem.data ? selectedItem.data : []
+    // Canonical-shape items carry `pages` (array of {label, content}).
+    readonly property var pages: selectedItem && selectedItem.pages ? selectedItem.pages : []
 
     // ── Header ──────────────────────────────────────────────────────────
     Item {

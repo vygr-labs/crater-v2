@@ -1,7 +1,8 @@
 import QtQuick
 
 // Schedule dropdown — opens under the TopBar's "Schedule" pill button.
-// Lists saved schedules + a "Save current as…" entry that opens NamingDialog.
+// Lists ScheduleService.savedSchedules + actions to save the current
+// working schedule, load a saved one, delete one, or start fresh.
 //
 // Extends PopoverMenu so the visual chrome (backdrop, click-outside,
 // item rows) is shared with right-click context menus.
@@ -13,52 +14,60 @@ PopoverMenu {
     anchorY: AppState.modalProps.anchorY || 0
     menuWidth: 340
 
-    // Build the menu items reactively: any change to savedSchedules
-    // (e.g., user adds one via Save As) refreshes the list.
+    // Human-readable relative time. Bigger increments collapse into a date so
+    // the dropdown doesn't end up with "47 days ago"-style entries.
+    function relTime(ms) {
+        if (!ms) return ""
+        const diff = Date.now() - ms
+        if (diff < 60000)         return qsTr("Just now")
+        if (diff < 3600000)       { const m = Math.floor(diff / 60000);   return m === 1 ? qsTr("1 minute ago") : qsTr("%1 minutes ago").arg(m) }
+        if (diff < 86400000)      { const h = Math.floor(diff / 3600000); return h === 1 ? qsTr("1 hour ago")   : qsTr("%1 hours ago").arg(h) }
+        if (diff < 604800000)     { const d = Math.floor(diff / 86400000); return d === 1 ? qsTr("Yesterday")    : qsTr("%1 days ago").arg(d) }
+        return Qt.formatDate(new Date(ms), "yyyy-MM-dd")
+    }
+
+    // Build the menu items reactively: any change to ScheduleService.savedSchedules
+    // (e.g., after a Save As / Delete) re-evaluates this binding via NOTIFY.
     model: {
-        const count = AppState.savedSchedules.count
+        const saved = ScheduleService.savedSchedules
         let items = []
-        for (let i = 0; i < count; i++) {
-            const s = AppState.savedSchedules.get(i)
+        for (let i = 0; i < saved.length; i++) {
+            const s = saved[i]
+            const sid = s.id   // capture for the action closure
             items.push({
-                label: s.name,
+                label:    s.name,
                 iconName: "file-text",
-                detail: s.modified,
-                action: function() { console.log("[schedule] load: " + s.name) }
+                detail:   s.itemCount + (s.itemCount === 1 ? " item · " : " items · ") + relTime(s.modifiedAt),
+                action:   function() { ScheduleService.load(sid) }
             })
         }
-        if (count === 0) {
+        if (saved.length === 0) {
             items.push({ label: qsTr("No saved schedules"), iconName: "" })
         }
         items.push({ separator: true })
         items.push({
-            label: qsTr("Save current as…"),
+            label:    qsTr("Save current as…"),
             iconName: "save",
-            action: function() {
+            action:   function() {
                 AppState.openModal("naming", {
                     title:       qsTr("Save schedule"),
                     placeholder: qsTr("e.g., Sunday AM — June 5"),
                     confirmText: qsTr("Save"),
                     onConfirm: function(name) {
-                        AppState.savedSchedules.insert(0, {
-                            name:     name,
-                            items:    AppState.scheduleItems.count,
-                            modified: qsTr("Just now")
-                        })
+                        if (name && name.length > 0) ScheduleService.saveAs(name)
                     }
                 })
             }
         })
         items.push({
-            label: qsTr("New empty schedule"),
+            label:    qsTr("New empty schedule"),
             iconName: "plus",
-            action: function() {
-                // Clear schedule items but keep mock songs / library
-                while (AppState.scheduleItems.count > 0) {
-                    AppState.scheduleItems.remove(0)
-                }
+            action:   function() {
+                ScheduleService.clearAll()
                 AppState.selectScheduleItem(-1)
                 AppState.liveScheduleIndex = -1
+                AppState.libraryLiveActive = false
+                AppState.clearLibraryPreview()
             }
         })
         return items
