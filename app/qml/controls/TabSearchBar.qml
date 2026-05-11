@@ -144,8 +144,8 @@ Item {
                 AppIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: root.leadingIconName
-                    color: Theme.color.textTertiary
-                    size: 14
+                    color: Theme.color.textSecondary
+                    size: 15
                 }
                 AppIcon {
                     visible: root.tabKey === "songs"
@@ -262,13 +262,16 @@ Item {
             }
         }
 
-        // Shortcut hint chip — visible only when input is empty (matches Electron).
+        // Shortcut hint chip — visible whenever the input is empty, including
+        // while focused. Matches electron, where the ⌘F badge is always shown
+        // until the operator starts typing. (Previous behavior hid it on
+        // focus, so it disappeared the moment the tab opened.)
         Rectangle {
             id: hintChip
             anchors.right: parent.right
             anchors.rightMargin: 5
             anchors.verticalCenter: parent.verticalCenter
-            visible: inputField.text.length === 0 && !inputField.activeFocus
+            visible: inputField.text.length === 0
             width: 32; height: 18
             radius: 3
             color: Theme.color.elevated

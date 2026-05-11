@@ -1,24 +1,44 @@
 import QtQuick
+import Crater
 
 // Themes tab — visual presets for projection text rendering.
 // Backed by ThemeService.allThemes (QList<Theme> value-types); each tile
-// previews the theme's background color + text-color sample.
+// previews the theme's node graph via ThemePreview.
 //
-// Tokens shape (see app/V001__init.sql):
-//   { background: {color, image?}, text: {color, fontFamily, fontPixelSize,
-//     fontWeight, lineHeightMultiplier, letterSpacing},
-//     layout: {padding, horizontalAlignment, verticalAlignment},
-//     transition: {kind, durationMs, easing} }
+// Tokens shape (v2): see qt/core/src/db/migrations/app/V003__theme_nodes.sql.
 Item {
     id: root
 
-    function bgColor(tokens) {
-        if (tokens && tokens.background && tokens.background.color) return tokens.background.color
-        return "#222"
-    }
-    function fgColor(tokens) {
-        if (tokens && tokens.text && tokens.text.color) return tokens.text.color
-        return "#f1f1f5"
+    // ── Header row: New / Import buttons ────────────────────────────────
+    Row {
+        id: header
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: Theme.space.lg
+        spacing: Theme.space.sm
+        z: 1
+
+        GhostButton {
+            text: qsTr("Import theme")
+            iconName: "upload"
+            onClicked: {
+                const path = FileDialogService.chooseOpenFile(
+                    qsTr("Import Theme"),
+                    [qsTr("Crater Theme (*.craterheme)"), qsTr("All Files (*.*)")])
+                if (path && path.length > 0) {
+                    const id = ThemeService.importThemeFile(path)
+                    if (id === 0) {
+                        // Surface the error inline via the toast layer once that lands.
+                        console.warn("Import failed:", ThemeService.lastImportError())
+                    }
+                }
+            }
+        }
+        GhostButton {
+            text: qsTr("New theme")
+            iconName: "plus"
+            onClicked: AppState.openThemeEditor(-1, "song")
+        }
     }
 
     EmptyState {
@@ -26,13 +46,19 @@ Item {
         visible: ThemeService.allThemes.length === 0
         iconName: "palette"
         title: qsTr("No themes yet")
-        body: qsTr("Create a custom theme or pick from the presets")
+        body: qsTr("Create a custom theme or import one from a file")
     }
 
     GridView {
         id: grid
-        anchors.fill: parent
-        anchors.margins: Theme.space.lg
+        anchors.top: header.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: Theme.space.lg
+        anchors.rightMargin: Theme.space.lg
+        anchors.bottomMargin: Theme.space.lg
+        anchors.topMargin: Theme.space.sm
         visible: ThemeService.allThemes.length > 0
         model: ThemeService.allThemes
         cellWidth: 220
@@ -41,38 +67,64 @@ Item {
         cacheBuffer: 400
 
         delegate: Item {
+            id: tileRoot
             width: grid.cellWidth - 10
             height: grid.cellHeight - 10
 
-            // Resolve tokens once per delegate so we don't repeatedly walk the QVariantMap.
-            readonly property color _bg: root.bgColor(modelData.tokens)
-            readonly property color _fg: root.fgColor(modelData.tokens)
+            // One context menu per tile — captured in the closures so each
+            // menu action knows which theme it's acting on.
+            ContextMenu {
+                id: tileMenu
+                model: [
+                    { label: qsTr("Edit"),       iconName: "edit",
+                      action: () => AppState.openThemeEditor(modelData.id, modelData.kind) },
+                    { label: qsTr("Duplicate"),  iconName: "copy",
+                      action: () => ThemeService.duplicateTheme(modelData.id,
+                                       qsTr("%1 Copy").arg(modelData.name)) },
+                    { label: qsTr("Export…"),    iconName: "download",
+                      action: () => {
+                          const path = FileDialogService.chooseSaveFile(
+                              qsTr("Export Theme"),
+                              modelData.name + ".craterheme",
+                              [qsTr("Crater Theme (*.craterheme)")])
+                          if (path && path.length > 0)
+                              ThemeService.exportTheme(modelData.id, path)
+                      } },
+                    { label: qsTr("Set as default for %1").arg(modelData.kind),
+                      iconName: "star",
+                      action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
+                    { separator: true },
+                    { label: qsTr("Delete"),     iconName: "trash",
+                      destructive: true,
+                      enabled: !modelData.isBuiltin,
+                      action: () => ThemeService.destroy(modelData.id) }
+                ]
+            }
 
             Rectangle {
                 id: tile
                 anchors.fill: parent
                 radius: Theme.radius.lg
-                color: parent._bg
+                color: Theme.color.canvas
                 border.color: themeMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 2
+                clip: true
 
                 Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
-                // Faux verse preview overlaid on the theme's background.
-                Text {
-                    anchors.centerIn: parent
-                    width: parent.width * 0.8
-                    text: qsTr("For God so loved\nthe world…")
-                    color: parent.parent._fg
-                    font.family: Theme.font.family
-                    font.pixelSize: 14
-                    font.weight: Theme.font.weightMedium
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.WordWrap
+                // Live theme preview rendered via the same NodeRenderer the
+                // projection window uses — what you see is what you'll get.
+                // autoPlayVideos off because dozens of preview tiles each
+                // running a video would melt the GPU.
+                ThemePreview {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    theme: modelData
+                    autoPlayVideos: false
                 }
 
-                // Theme name + kind in the corner — uses a translucent black backdrop
-                // so it stays readable on both light and dark theme backgrounds.
+                // Theme name + kind in the corner — translucent black
+                // backdrop so it stays readable over any theme background.
                 Rectangle {
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
@@ -86,7 +138,7 @@ Item {
                         id: nameLabel
                         anchors.centerIn: parent
                         text: modelData.name + " · " + (modelData.kind || "")
-                        color: parent.parent.parent._fg
+                        color: "#ffffff"
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
                         font.weight: Theme.font.weightSemiBold
@@ -121,7 +173,14 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onDoubleClicked: AppState.openModal("themeEditor", { themeId: modelData.id })
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onDoubleClicked: AppState.openThemeEditor(modelData.id, modelData.kind)
+                    onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            const p = mapToItem(tileMenu.parent, mouse.x, mouse.y)
+                            tileMenu.openAt(p.x, p.y)
+                        }
+                    }
                 }
             }
         }

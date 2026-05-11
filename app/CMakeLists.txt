@@ -4,6 +4,8 @@
 
 qt_add_executable(crater
     src/main.cpp
+    src/FileDialogService.cpp
+    src/FileDialogService.h
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.
@@ -47,6 +49,34 @@ qt_add_qml_module(crater
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
 
+        # ── Theme-rendering components (shared by ProjectionWindow,
+        #    ThemesTab tiles, and the theme editor canvas) ─────────────
+        qml/components/NodeRenderer.qml
+        qml/components/MediaBackgroundLoader.qml
+        qml/components/ThemePreview.qml
+        qml/components/ColorPicker.qml
+        qml/components/ColorPickerPopover.qml
+        qml/components/ColorSwatchInput.qml
+        qml/components/ConfirmationOverlay.qml
+
+        # ── Theme editor workspace + editor child components ─────────
+        qml/workspaces/ThemeEditorWorkspace.qml
+        qml/workspaces/editor/EditorHeader.qml
+        qml/workspaces/editor/EditorToolbar.qml
+        qml/workspaces/editor/EditorFooter.qml
+        qml/workspaces/editor/EditorCanvas.qml
+        qml/workspaces/editor/NodeDelegate.qml
+        qml/workspaces/editor/ResizeHandle.qml
+        qml/workspaces/editor/LayersPanel.qml
+        qml/workspaces/editor/PropertiesPanel.qml
+        qml/workspaces/editor/AccordionSection.qml
+        qml/workspaces/editor/TransformProperties.qml
+        qml/workspaces/editor/TextPropertiesContent.qml
+        qml/workspaces/editor/ContainerPropertiesContent.qml
+        qml/workspaces/editor/inputs/NumericInput.qml
+        qml/workspaces/editor/inputs/SimpleSlider.qml
+        qml/workspaces/editor/inputs/SegmentedControl.qml
+
         # ── Major UI panels ───────────────────────────────────────────
         qml/panels/TopBar.qml
         qml/panels/SchedulePanel.qml
@@ -70,7 +100,6 @@ qt_add_qml_module(crater
         qml/dialogs/ModalShell.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/SongEditorDialog.qml
-        qml/dialogs/ThemeEditorDialog.qml
         qml/dialogs/NamingDialog.qml
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
@@ -85,18 +114,24 @@ qt_add_qml_module(crater
         qml/dialogs/settings/NdiSection.qml
 )
 
-# Bundle the Lucide icon font as a Qt resource (qrc:/fonts/lucide.ttf).
+# Bundle the Lucide icon font and Funnel Sans body font as Qt resources
+# (qrc:/fonts/*). main.cpp registers them at startup via QFontDatabase.
 qt_add_resources(crater "appfonts"
     PREFIX "/fonts"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts"
     FILES
         resources/fonts/lucide.ttf
+        resources/fonts/FunnelSans-VariableFont_wght.ttf
 )
 
 target_link_libraries(crater
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
+        # Qt6::Widgets is required for QFileDialog (the native file picker
+        # used by FileDialogService). It does not pull QtQuick.Dialogs into
+        # the QML runtime — that's a separate, forbidden module.
+        Qt6::Widgets
         Crater::Core
 )
 

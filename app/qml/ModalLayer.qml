@@ -26,12 +26,9 @@ Item {
         sourceComponent: SongEditorDialog { }
     }
 
-    // ── Theme editor (placeholder) ──────────────────────────────────────
-    Loader {
-        anchors.fill: parent
-        active: AppState.activeModal === "themeEditor"
-        sourceComponent: ThemeEditorDialog { }
-    }
+    // The theme editor is now a full-screen workspace, not a modal —
+    // see ThemeEditorWorkspace.qml mounted in Main.qml under the
+    // AppState.workspaceMode === "themeEditor" gate.
 
     // ── Naming (e.g., "name your new collection") ───────────────────────
     Loader {

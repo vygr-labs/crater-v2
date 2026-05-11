@@ -20,18 +20,26 @@ ApplicationWindow {
     title: qsTr("Crater")
     color: Theme.color.canvas
 
+    // The operator console (top bar / main area / footer) is hidden when a
+    // full-screen workspace is open. The workspace Loader below this region
+    // takes over the window — closing it (AppState.closeThemeEditor()) sets
+    // workspaceMode back to "" and the console becomes visible again.
+    readonly property bool _consoleVisible: AppState.workspaceMode === ""
+
     // ── Top bar ─────────────────────────────────────────────────────────
     TopBar {
         id: topBar
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        visible: root._consoleVisible
     }
 
     // ── Main work surface ───────────────────────────────────────────────
     Item {
         id: mainArea
 
+        visible: root._consoleVisible
         anchors.top: topBar.bottom
         anchors.bottom: footerBar.top
         anchors.left: parent.left
@@ -125,6 +133,28 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
+        visible: root._consoleVisible
+    }
+
+    // ── Full-screen workspaces (theme editor, future composers) ─────────
+    // Lives between the operator console and the modal layer so editor
+    // popovers (color picker, confirm overlay) still render above it via
+    // ModalLayer. Only mounted when AppState.workspaceMode is non-empty —
+    // closing returns to the operator console with no rebuild cost.
+    Loader {
+        id: workspaceLoader
+        anchors.fill: parent
+        z: 100
+        active: AppState.workspaceMode === "themeEditor"
+        sourceComponent: active ? themeEditorWorkspaceComp : null
+
+        Component {
+            id: themeEditorWorkspaceComp
+            ThemeEditorWorkspace {
+                themeId:   AppState.editorThemeId
+                themeKind: AppState.editorThemeKind
+            }
+        }
     }
 
     // ── Modal overlay (renders above everything, anchors.fill: parent) ──
@@ -143,12 +173,13 @@ ApplicationWindow {
         screenIndex: OutputService.selectedScreenIndex
         // Use `visibility` (not `visible`) so we can toggle FullScreen <-> Hidden
         // without conflicting with ProjectionWindow.qml's own `visibility` setup.
-        visibility: (OutputService.projectionOpen
-                  || AppState.liveScheduleIndex >= 0
-                  || AppState.libraryLiveActive
-                  || AppState.showLogo)
-                  ? Window.FullScreen
-                  : Window.Hidden
+        //
+        // Single source of truth: AppState.projectorVisible — set true only by
+        // AppState.goLive() (the explicit "Go Live" button / Ctrl+L) and reset
+        // by clearLive(). Item clicks, library double-clicks, logo toggle, and
+        // schedule selection do NOT raise the projector. The operator must
+        // press Go Live for the audience to see anything on the second screen.
+        visibility: AppState.projectorVisible ? Window.FullScreen : Window.Hidden
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────

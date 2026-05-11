@@ -1,10 +1,10 @@
+#include <QApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFuture>
-#include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlEngine>
 #include <QQmlError>
@@ -12,6 +12,8 @@
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QtQml>
+
+#include "FileDialogService.h"
 
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
@@ -23,6 +25,7 @@
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
 #include "crater/Version.h"
+#include "crater/WorkingTheme.h"
 
 namespace {
 
@@ -103,10 +106,15 @@ QString initLogging()
 // QML's `font` value type only exposes `family` (not `families`), so we
 // install fallbacks here at the QFont level. Anything that doesn't override
 // `font.family` in QML inherits this and gets the same fallback behavior.
+//
+// Funnel Sans is registered first so it wins on every platform — the rest
+// remain as graceful degradation for environments where the bundled font
+// failed to load (e.g. resource stripped, registration error).
 void initDefaultFont()
 {
     QFont f;
     f.setFamilies({
+        QStringLiteral("Funnel Sans"),
         QStringLiteral("Segoe UI Variable Display"),
         QStringLiteral("Segoe UI"),
         QStringLiteral(".AppleSystemUIFont"),
@@ -116,7 +124,7 @@ void initDefaultFont()
         QStringLiteral("Helvetica Neue"),
     });
     f.setPixelSize(13);
-    QGuiApplication::setFont(f);
+    QApplication::setFont(f);
 }
 
 // Bundle Lucide as our icon font. AppIcon.qml renders glyphs by codepoint
@@ -132,23 +140,42 @@ void registerIconFont()
     qInfo().noquote() << "Lucide font registered as:" << families.join(", ");
 }
 
+// Bundle Funnel Sans as the body font — matches the electron renderer.
+// Registered before initDefaultFont() runs so the variable font is on the
+// QFontDatabase by the time the default QFont is constructed.
+void registerBodyFont()
+{
+    const int id = QFontDatabase::addApplicationFont(
+        QStringLiteral(":/fonts/FunnelSans-VariableFont_wght.ttf"));
+    if (id < 0) {
+        qWarning() << "Failed to load Funnel Sans from qrc:/fonts/FunnelSans-VariableFont_wght.ttf"
+                   << "— body text will fall back to the system UI font.";
+        return;
+    }
+    const QStringList families = QFontDatabase::applicationFontFamilies(id);
+    qInfo().noquote() << "Funnel Sans registered as:" << families.join(", ");
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
 {
-    QGuiApplication::setOrganizationName(QStringLiteral("Voyager Labs"));
-    QGuiApplication::setOrganizationDomain(QStringLiteral("voyagerlabs.tech"));
-    QGuiApplication::setApplicationName(QStringLiteral("Crater"));
-    QGuiApplication::setApplicationVersion(crater::versionString());
+    QApplication::setOrganizationName(QStringLiteral("Voyager Labs"));
+    QApplication::setOrganizationDomain(QStringLiteral("voyagerlabs.tech"));
+    QApplication::setApplicationName(QStringLiteral("Crater"));
+    QApplication::setApplicationVersion(crater::versionString());
 
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
 
     const QString logPath = initLogging();
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";
     qInfo().noquote() << "Log file:" << logPath;
 
+    // Order: register the font face on QFontDatabase first so the default
+    // QFont we build next can pick it up immediately.
+    registerBodyFont();
     initDefaultFont();
     registerIconFont();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
@@ -196,17 +223,23 @@ int main(int argc, char* argv[])
     crater::MediaService      mediaService;
     crater::OutputService     outputService;
     crater::ProjectionService projectionService;
+    crater::FileDialogService fileDialogService;
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
     // owns the lifecycle, QML sees them as singletons under the "Crater" URI.
-    qmlRegisterSingletonInstance("Crater", 1, 0, "BibleService",      &bibleService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "SongService",       &songService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",   &scheduleService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",      &themeService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",      &mediaService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",     &outputService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService", &projectionService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "BibleService",       &bibleService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "SongService",        &songService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",    &scheduleService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",       &themeService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",  &fileDialogService);
+
+    // WorkingTheme is per-instance (one per open editor), not a singleton —
+    // each invocation of the theme editor creates a fresh one in QML.
+    qmlRegisterType<crater::WorkingTheme>("Crater", 1, 0, "WorkingTheme");
 
     // ─── Stage 5: launch QML ────────────────────────────────────────────
     QQmlApplicationEngine engine;

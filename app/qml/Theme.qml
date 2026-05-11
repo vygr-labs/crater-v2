@@ -4,26 +4,40 @@ import QtQuick
 
 QtObject {
     readonly property QtObject color: QtObject {
-        // Surfaces — warm-tinted near-blacks. Avoid #000 (harsh, OLED-burn-y).
-        readonly property color canvas:        "#0a0a0d"
-        readonly property color elevated:      "#13131a"
-        readonly property color raised:        "#1c1c25"
-        readonly property color overlay:       "#262631"
-        readonly property color borderSubtle:  "#1f1f29"
-        readonly property color borderStrong:  "#2e2e3a"
+        // Surfaces — neutral near-blacks aligned with the Electron palette
+        // (Tailwind/Radix gray scale). Avoid #000 (harsh, OLED-burn-y).
+        readonly property color canvas:        "#111111"   // gray.950
+        readonly property color elevated:      "#18181b"   // gray.900
+        readonly property color raised:        "#27272a"   // gray.800
+        readonly property color overlay:       "#2a2a28"   // neutralDark.300 — used for hover wash
+        readonly property color borderSubtle:  "#1c1c1c"   // between gray.900 and gray.950 — the panel/divider hairline
+        readonly property color borderStrong:  "#3f3f46"   // gray.700 — focused input border
 
-        // Text — calibrated for AA contrast on `canvas`/`elevated`.
-        readonly property color textPrimary:   "#f1f1f5"
-        readonly property color textSecondary: "#a3a3b0"
-        readonly property color textTertiary:  "#6b6b78"
-        readonly property color textDisabled:  "#4a4a55"
+        // Per-panel backgrounds. The library sidebar and the right pane each
+        // get a very subtle differentiation from `canvas` so the operator's
+        // eye can find pane boundaries even when borders are quiet. Both
+        // sit a hair darker than canvas — mirrors electron's
+        // `bg="gray.950/50"` (sidebar) and `bg="gray.950/30"` (content) which
+        // composite to ~same color on a dark page.
+        readonly property color bgSidebar:     "#0e0e0e"
+        readonly property color bgContent:     "#0c0c0c"
 
-        // Brand — warm gold. Used for primary actions, focus, brand mark.
-        readonly property color brand:         "#d4a574"
-        readonly property color brandHover:    "#dfb585"
-        readonly property color brandPressed:  "#c89967"
-        readonly property color brandSubtle:   "#2a2218"
-        readonly property color brandInk:      "#1a1208"
+        // Text — calibrated for AA contrast on `canvas`/`elevated`. Values
+        // mirror electron's gray.200 / gray.400 / gray.500 / gray.600.
+        readonly property color textPrimary:   "#e4e4e7"
+        readonly property color textSecondary: "#a1a1aa"
+        readonly property color textTertiary:  "#71717a"
+        readonly property color textDisabled:  "#52525b"
+
+        // Brand — Radix Green (electron `brand.800 #227617`). Used for the
+        // brand mark, primary action affordances, scripture-tab selection
+        // tint, and focus outlines. Was warm gold; switched to match the
+        // electron experience.
+        readonly property color brand:         "#227617"   // brand.800 — primary
+        readonly property color brandHover:    "#2c7e21"   // brandDark.700
+        readonly property color brandPressed:  "#216518"   // brandDark.900
+        readonly property color brandSubtle:   "#173c13"   // brandDark.300 — selected-row wash
+        readonly property color brandInk:      "#ffffff"   // text on a solid brand button
 
         // Broadcast semantics — these never get used decoratively.
         readonly property color live:          "#e85a4a"
@@ -65,12 +79,13 @@ QtObject {
     }
 
     readonly property QtObject font: QtObject {
-        // Use the OS UI font so we look native on each platform.
-        // QFont treats comma-separated family strings as a fallback chain,
-        // so the first available family wins. We can bundle Inter via qrc
-        // later for cross-platform pixel consistency.
-        readonly property string family:
-            "Segoe UI Variable Display, Segoe UI, .AppleSystemUIFont, SF Pro Display, Inter, Cantarell, Helvetica Neue, sans-serif"
+        // Body font is Funnel Sans (bundled at qrc:/fonts/FunnelSans-VariableFont_wght.ttf
+        // and registered in main.cpp::registerBodyFont). Single family on
+        // purpose: QML's `font.family` is a single QString, not a CSS-style
+        // fallback chain. The application-wide fallbacks (Segoe UI, etc.)
+        // live in main.cpp::initDefaultFont via QFont::setFamilies — anything
+        // that doesn't override `font.family` inherits that chain.
+        readonly property string family:    "Funnel Sans"
         readonly property string monoFamily:
             "JetBrains Mono, Cascadia Code, SF Mono, Consolas, DejaVu Sans Mono, monospace"
 

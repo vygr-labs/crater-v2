@@ -52,6 +52,11 @@ public:
     Q_INVOKABLE void remove(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // Look up a single media item by id. Returns an empty MediaItem (id == 0)
+    // on miss. Used by container theme nodes that reference a background
+    // image/video by id rather than carrying the path inline.
+    Q_INVOKABLE crater::MediaItem byId(qint64 id);
+
     // Maximum size of a single import in bytes. Configurable so tests / power
     // users can adjust; defaults to 4 GiB per §5.1.
     Q_PROPERTY(qint64 sizeCapBytes READ sizeCapBytes WRITE setSizeCapBytes NOTIFY sizeCapBytesChanged)

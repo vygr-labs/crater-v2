@@ -51,6 +51,12 @@ QtObject {
     property bool showLogo:           false   // Logo button toggled on/off
     property bool isClear:            false   // display cleared (overrides live content)
 
+    // Projection window visibility. Toggled true only by goLive() (the
+    // explicit "Go Live" button / Ctrl+L); reset by clearLive(). No other
+    // click path — library double-click, schedule selection, logo toggle —
+    // raises the projector. The operator decides when the audience sees it.
+    property bool projectorVisible:   false
+
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
     // The Electron app lets the operator click a song in the library and see
     // it immediately in Preview — without first adding it to the schedule.
@@ -116,8 +122,14 @@ QtObject {
         // then the schedule selection. This means the global "Go Live" button
         // and Ctrl+L work whether the operator is staging from the library or
         // the schedule.
+        //
+        // This function is the SINGLE entry point that raises the projector
+        // (via projectorVisible = true at the bottom). Other live-state
+        // mutators — pushLibraryLive on its own, toggleLogo, schedule clicks —
+        // do not touch projectorVisible.
         if (libraryPreviewItem !== null) {
             pushLibraryLive(libraryPreviewItem)
+            projectorVisible = true
             return
         }
 
@@ -132,9 +144,20 @@ QtObject {
 
         const theme = ThemeService.defaultFor(item.kind || "song")
         ProjectionService.goLive(item, previewSubIndex, theme)
+        projectorVisible = true
     }
 
     function clearLive() {
+        // "Clear live" means: blank the projector content (hide all text /
+        // images), but DO NOT close the projection window. If the projector
+        // is currently raised it stays raised showing nothing; if it's
+        // hidden it stays hidden. Only goLive() raises and only an explicit
+        // "close projection" action would lower — Clear is purely about
+        // content, not window visibility.
+        //
+        // ProjectionService.clear() is the C++ hook that hides the live
+        // text/image. Stub for now — wire up actual rendering blanking when
+        // ProjectionWindow.qml gets its render pipeline.
         isClear            = true
         liveScheduleIndex  = -1
         liveSubIndex       = 0
@@ -148,7 +171,7 @@ QtObject {
     }
 
     // ─── Modal stack ────────────────────────────────────────────────────
-    property string activeModal: ""        // "" | "settings" | "songEditor" | "themeEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
+    property string activeModal: ""        // "" | "settings" | "songEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
 
@@ -160,6 +183,41 @@ QtObject {
     function closeModal() {
         activeModal = ""
         modalProps = {}
+    }
+
+    // ─── Workspaces ─────────────────────────────────────────────────────
+    // Workspaces are full-window UI surfaces that hide the normal operator
+    // console behind them — bigger than a modal, suitable for canvas-based
+    // editors (theme editor today; future song editor / video composer).
+    // workspaceMode = "" means the operator console is shown.
+    property string workspaceMode: ""           // "" | "themeEditor"
+    property int    editorThemeId: -1           // -1 = new theme
+    property string editorThemeKind: "song"     // used when creating a new theme
+
+    function openThemeEditor(themeId, themeKind) {
+        editorThemeId   = themeId !== undefined ? themeId : -1
+        editorThemeKind = themeKind || "song"
+        workspaceMode   = "themeEditor"
+    }
+
+    function closeThemeEditor() {
+        workspaceMode   = ""
+        editorThemeId   = -1
+        editorThemeKind = "song"
+    }
+
+    // ─── Color picker history ───────────────────────────────────────────
+    // Recent swatches shown in the custom ColorPicker. Transient; clears
+    // on quit. Cap at 8 to keep the swatches row tidy.
+    property var recentColors: []
+
+    function pushRecentColor(c) {
+        if (!c) return
+        const next = [c]
+        for (let i = 0; i < recentColors.length && next.length < 8; ++i) {
+            if (recentColors[i] !== c) next.push(recentColors[i])
+        }
+        recentColors = next
     }
 
     // ─── Per-tab search & group selection ───────────────────────────────

@@ -31,6 +31,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Sql
     Multimedia
     WebSockets
+    Widgets         # QApplication + QFileDialog (used by FileDialogService for native pickers)
 )
 
 qt_standard_project_setup(REQUIRES 6.11)

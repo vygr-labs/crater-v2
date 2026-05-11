@@ -1,88 +1,57 @@
 import QtQuick
 import QtQuick.Window
+import Crater
 
 // Second-monitor output window. A separate QQuickWindow (NOT inside an
 // ApplicationWindow), bound directly to ProjectionService Q_PROPERTYs — when
 // projection state changes, Qt's binding engine re-evaluates and this window
 // re-renders, no IPC, no Redux, no event bus. See plan's "Deviations from
 // Electron" table for the rationale.
+//
+// As of tokens v2 the theme is a node graph (containers + texts positioned
+// by percent on a canvas). This window letterboxes the canvas into the
+// screen and Repeats node delegates inside that stage. Per-node fade is
+// not animated — the entire content layer fades on go-live/page-change.
 Window {
     id: projectionWindow
 
     // The screen index to target. Main.qml binds this to OutputService.
     property int screenIndex: 0
 
-    // Hot-bind to the selected QScreen so dragging settings across monitors
-    // moves the window to the new display.
     screen: Qt.application.screens[screenIndex] || Qt.application.screens[0]
 
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-    // NOTE: `visibility` is set from Main.qml so the parent can switch between
-    // Window.FullScreen (live) and Window.Hidden (idle). Don't also bind
-    // `visible` — they conflict.
     title: qsTr("Crater Projection")
 
-    // Background color from theme tokens, with a sensible fallback while the
-    // theme is still resolving on first render.
-    color: {
-        const t = ProjectionService.currentTheme
-        if (t && t.tokens && t.tokens.background && t.tokens.background.color)
-            return t.tokens.background.color
-        return "#000000"
-    }
+    // Background color = first container's color, falling back to black.
+    // Painted BEFORE the canvas stage so anything outside the letterbox
+    // looks intentional (matte black, not theme color stretched).
+    color: "#000000"
 
     onVisibleChanged: {
         if (visible) OutputService.notifyProjectionOpened()
         else         OutputService.notifyProjectionClosed()
     }
 
-    // Convenience handles. Bound — re-evaluate on every stateChanged signal.
-    readonly property var  _item    : ProjectionService.currentItem
-    readonly property int  _page    : ProjectionService.pageIndex
-    readonly property var  _theme   : ProjectionService.currentTheme
-    readonly property bool _isClear : ProjectionService.isClear
-    readonly property bool _showLogo: ProjectionService.showLogo
+    // Reactive bindings to ProjectionService — stateChanged() fans into all
+    // of these. Defensive `??` / `&&` chaining handles the moment before the
+    // first theme is resolved (e.g. cold start, before any goLive call).
+    readonly property var    _item      : ProjectionService.currentItem
+    readonly property string _kind      : ProjectionService.contentKind
+    readonly property int    _page      : ProjectionService.pageIndex
+    readonly property var    _theme     : ProjectionService.currentTheme
+    readonly property bool   _isClear   : ProjectionService.isClear
+    readonly property bool   _showLogo  : ProjectionService.showLogo
 
-    // Token accessors. The `??` and `?.` operators are supported in QML's JS
-    // engine (Qt 6.4+); we use them to gracefully handle missing tokens.
-    readonly property color _bg: {
-        const c = _theme && _theme.tokens && _theme.tokens.background
-                ? _theme.tokens.background.color
-                : "#000000"
-        return c
-    }
-    readonly property color _fg: {
-        return _theme && _theme.tokens && _theme.tokens.text
-            ? _theme.tokens.text.color
-            : "#ffffff"
-    }
-    readonly property string _fontFamily: {
-        return _theme && _theme.tokens && _theme.tokens.text && _theme.tokens.text.fontFamily
-            ? _theme.tokens.text.fontFamily
-            : "Segoe UI Variable Display"
-    }
-    readonly property int _fontPixelSize: {
-        return _theme && _theme.tokens && _theme.tokens.text && _theme.tokens.text.fontPixelSize
-            ? _theme.tokens.text.fontPixelSize
-            : 64
-    }
-    readonly property int _fontWeight: {
-        return _theme && _theme.tokens && _theme.tokens.text && _theme.tokens.text.fontWeight
-            ? _theme.tokens.text.fontWeight
-            : 500
-    }
-    readonly property int _padding: {
-        return _theme && _theme.tokens && _theme.tokens.layout && _theme.tokens.layout.padding
-            ? _theme.tokens.layout.padding
-            : 80
-    }
-    readonly property int _transitionMs: {
-        return _theme && _theme.tokens && _theme.tokens.transition && _theme.tokens.transition.durationMs
-            ? _theme.tokens.transition.durationMs
-            : 320
-    }
+    readonly property var    _tokens    : _theme && _theme.tokens ? _theme.tokens : ({})
+    readonly property var    _canvas    : _tokens.canvas || ({ width: 1920, height: 1080 })
+    readonly property var    _nodes     : _tokens.nodes  || []
+    readonly property int    _transMs   : 280
 
-    // Content text — current page of the live item.
+    // ── Content resolution ──────────────────────────────────────────────
+    // Live current page text — the actual lyric/verse content the
+    // operator sent live. Text nodes with linkage=scriptureText or
+    // linkage=lyric show this.
     readonly property string _pageText: {
         if (!_item) return ""
         const pages = _item.pages
@@ -91,50 +60,90 @@ Window {
         const p = pages[idx]
         return (p && p.content) || ""
     }
+    // Reference label (e.g. "John 3:16") for scripture items.
+    readonly property string _refText: {
+        if (!_item) return ""
+        return _item.title || _item.reference || ""
+    }
 
+    function resolveText(node) {
+        if (!node || node.kind !== "text") return ""
+        const data = node.data || {}
+        switch (data.linkage) {
+            case "scriptureRef":  return _refText
+            case "scriptureText": return _pageText
+            case "lyric":         return _pageText
+            case "custom":        return data.text || ""
+        }
+        return data.text || ""
+    }
+
+    // Pre-sort nodes by z so render order matches layer order. Recomputes
+    // when _nodes changes — cheap for ≤50 nodes.
+    readonly property var _sortedNodes: {
+        const arr = _nodes.slice()
+        arr.sort((a, b) => ((a.style && a.style.z) || 0) - ((b.style && b.style.z) || 0))
+        return arr
+    }
+
+    // ── Stage: letterbox the canvas into the screen ─────────────────────
     Item {
-        anchors.fill: parent
-        anchors.margins: projectionWindow._padding
+        id: stage
+        anchors.centerIn: parent
+        readonly property real _scale: Math.min(parent.width  / projectionWindow._canvas.width,
+                                                parent.height / projectionWindow._canvas.height)
+        width:  projectionWindow._canvas.width  * _scale
+        height: projectionWindow._canvas.height * _scale
+        clip: true
 
-        // Content text — the main projection body.
-        Text {
-            id: bodyText
+        // Content layer — fades in/out on go-live, page-change, clear.
+        Item {
+            id: contentLayer
             anchors.fill: parent
-            visible: !projectionWindow._isClear && !projectionWindow._showLogo
-            opacity: visible ? 1.0 : 0.0
-            text: projectionWindow._pageText
-            color: projectionWindow._fg
-            font.family: projectionWindow._fontFamily
-            font.pixelSize: projectionWindow._fontPixelSize
-            font.weight: projectionWindow._fontWeight
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.WordWrap
-
+            opacity: (projectionWindow._isClear || projectionWindow._showLogo) ? 0 : 1
             Behavior on opacity {
                 NumberAnimation {
-                    duration: projectionWindow._transitionMs
+                    duration: projectionWindow._transMs
                     easing.type: Easing.InOutCubic
+                }
+            }
+
+            Repeater {
+                model: projectionWindow._sortedNodes
+                delegate: Item {
+                    readonly property var _style: modelData.style || ({})
+                    x:        stage.width  * ((_style.x      || 0) / 100)
+                    y:        stage.height * ((_style.y      || 0) / 100)
+                    width:    stage.width  * ((_style.width  || 0) / 100)
+                    height:   stage.height * ((_style.height || 0) / 100)
+                    opacity:  _style.opacity !== undefined ? _style.opacity : 1
+                    rotation: _style.rotation || 0
+
+                    NodeRenderer {
+                        anchors.fill: parent
+                        node: modelData
+                        resolvedText: projectionWindow.resolveText(modelData)
+                    }
                 }
             }
         }
 
-        // Logo placeholder. Real logo asset comes later when MediaService lands.
+        // Logo overlay — sits above the content layer when toggled on.
         Text {
             id: logoText
             anchors.centerIn: parent
             visible: projectionWindow._showLogo && !projectionWindow._isClear
             opacity: visible ? 1.0 : 0.0
             text: "CRATER"
-            color: projectionWindow._fg
-            font.family: projectionWindow._fontFamily
+            color: "#ffffff"
+            font.family: Theme.font.family
             font.pixelSize: 128
             font.weight: 900
             font.letterSpacing: 8
 
             Behavior on opacity {
                 NumberAnimation {
-                    duration: projectionWindow._transitionMs
+                    duration: projectionWindow._transMs
                     easing.type: Easing.InOutCubic
                 }
             }

@@ -339,4 +339,19 @@ void MediaService::toggleFavorite(qint64 id)
     }
 }
 
+MediaItem MediaService::byId(qint64 id)
+{
+    MediaItem m;
+    if (!m_impl || id <= 0) return m;
+    try {
+        auto& s = m_impl->selectById;
+        s.reset();
+        s.bind(1, id);
+        if (s.step()) m = Impl::readRow(s);
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::byId():" << e.message();
+    }
+    return m;
+}
+
 }  // namespace crater

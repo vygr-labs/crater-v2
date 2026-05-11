@@ -32,6 +32,7 @@ add_library(crater-core STATIC
     src/MediaService.cpp
     src/OutputService.cpp
     src/ProjectionService.cpp
+    src/WorkingTheme.cpp
 
     # Headers (Q_OBJECT + Q_GADGET). Listed explicitly so AUTOMOC scans them —
     # without this, AUTOMOC walks .cpp #includes but doesn't always discover
@@ -44,6 +45,7 @@ add_library(crater-core STATIC
     include/crater/OutputService.h
     include/crater/ProjectionService.h
     include/crater/ElectronDataImporter.h
+    include/crater/WorkingTheme.h
     include/crater/value/Translation.h
     include/crater/value/Book.h
     include/crater/value/Verse.h
@@ -123,6 +125,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/songs/V001__init.sql
         src/db/migrations/app/V001__init.sql
         src/db/migrations/app/V002__media.sql
+        src/db/migrations/app/V003__theme_nodes.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)

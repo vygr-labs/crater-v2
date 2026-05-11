@@ -21,6 +21,15 @@ Item {
     id: root
 
     readonly property string tabKey: "scripture"
+
+    // Right-pane background — sits a touch darker than `canvas`, matching
+    // electron's `bg="gray.950/30"` on the content side. Border line on the
+    // left of the pane comes from LibraryContent's parent.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.bgContent
+        z: -1
+    }
     readonly property string mode:    AppState.librarySearchMode.scripture || "reference"
     readonly property string queryText: AppState.searchText.scripture || ""
 
@@ -36,11 +45,14 @@ Item {
         activeTranslation.length > 0 ? BibleService.allVerses(activeTranslation) : []
 
     // Live result set the ListView renders.
+    //
+    // Search mode + empty query falls through to the full verse list so the
+    // operator always has something to scroll while deciding what to type —
+    // matches the electron behavior of returning `allScriptures()` when the
+    // search box is empty regardless of mode.
     readonly property var currentVerses: {
-        if (mode === "search") {
-            return queryText.length > 0
-                 ? BibleService.search(queryText, activeTranslation)
-                 : []
+        if (mode === "search" && queryText.length > 0) {
+            return BibleService.search(queryText, activeTranslation)
         }
         return versesForActiveTranslation
     }
@@ -249,15 +261,22 @@ Item {
     }
 
     // ── Empty states ────────────────────────────────────────────────────
+    // Two cases, mirroring electron's Switch:
+    //   1. No verses available (no translation selected, or selected
+    //      translation has no rows imported yet)
+    //   2. Search mode with a query that returned zero hits
+    // The "no query in search mode" case from before was removed because
+    // currentVerses now falls back to the full list — matches electron.
     EmptyState {
         anchors.top: actionBar.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        visible: root.activeTranslation.length === 0
-        iconName: "book-open"
-        title: qsTr("No Bible translation selected")
-        body: qsTr("Pick a translation from the sidebar to start browsing")
+        visible: root.currentVerses.length === 0
+              && !(root.mode === "search" && root.queryText.length > 0)
+        iconName: "book-x"
+        title: qsTr("No Scriptures Available")
+        body: qsTr("Select a Bible version from the sidebar to load scriptures")
     }
 
     EmptyState {
@@ -265,26 +284,12 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        visible: root.activeTranslation.length > 0
-              && root.mode === "search"
-              && root.queryText.length === 0
-        iconName: "search"
-        title: qsTr("Search verses")
-        body: qsTr("Type any phrase — results rank by relevance")
-    }
-
-    EmptyState {
-        anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: root.activeTranslation.length > 0
-              && root.mode === "search"
+        visible: root.mode === "search"
               && root.queryText.length > 0
               && root.currentVerses.length === 0
-        iconName: "book-x"
-        title: qsTr("No matches")
-        body: qsTr("Try a different phrase or switch to reference mode (Ctrl+F)")
+        iconName: "search"
+        title: qsTr("No scriptures found")
+        body: qsTr("No verses match your search query")
     }
 
     // ── Verse list ──────────────────────────────────────────────────────
@@ -301,9 +306,7 @@ Item {
         cacheBuffer: 400
         boundsBehavior: Flickable.StopAtBounds
 
-        visible: root.activeTranslation.length > 0
-              && !(root.mode === "search" && root.queryText.length === 0)
-              && !(root.mode === "search" && root.currentVerses.length === 0)
+        visible: root.currentVerses.length > 0
 
         model: root.currentVerses
         currentIndex: root.fluidIndex
@@ -319,33 +322,31 @@ Item {
         delegate: Item {
             id: verseRow
             width: list.width
-            height: 36
+            height: 40
 
             readonly property bool _selected: list.currentIndex === index
 
+            // Edge-to-edge background — matches electron's verse row, which
+            // has no border-radius and fills the row width. Hover / selected
+            // washes use brand-tinted greens (the page's accent palette).
             Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.space.md
-                anchors.rightMargin: Theme.space.md
-                radius: Theme.radius.sm
-                color: verseRow._selected ? Theme.color.previewSubtle
-                     : verseMa.containsMouse ? Theme.color.elevated
+                radius: 0
+                color: verseRow._selected ? Theme.color.brandSubtle
+                     : verseMa.containsMouse ? Theme.color.overlay
                                              : "transparent"
-                border.color: verseRow._selected ? Theme.color.preview : "transparent"
-                border.width: 1
-                Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
-                Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                Behavior on color { ColorAnimation { duration: 150 } }
             }
 
             AppIcon {
                 id: bookIcon
                 anchors.left: parent.left
-                anchors.leftMargin: Theme.space.lg + 4
+                anchors.leftMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 name: "book-2"
-                color: verseRow._selected ? Theme.color.preview : Theme.color.textTertiary
-                size: 13
-                opacity: verseRow._selected ? 1.0 : 0.55
+                color: verseRow._selected ? Theme.color.brand : Theme.color.textTertiary
+                size: 16
+                opacity: verseRow._selected ? 1.0 : 0.7
             }
 
             Text {
@@ -356,9 +357,11 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.text || ""
-                color: verseRow._selected ? Theme.color.textPrimary : Theme.color.textSecondary
+                color: verseRow._selected ? Theme.color.textPrimary : "#d4d4d8"   // gray.300
                 font.family: Theme.font.family
-                font.pixelSize: Theme.font.bodySize
+                font.pixelSize: 15
+                font.weight: verseRow._selected ? Theme.font.weightMedium
+                                                : Theme.font.weightRegular
                 elide: Text.ElideRight
             }
 
@@ -368,29 +371,37 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.book + " " + modelData.chapter + ":" + modelData.verse
-                color: Theme.color.textTertiary
+                color: verseRow._selected ? "#d4d4d8" /* gray.300 */
+                                          : Theme.color.textTertiary
                 font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
+                font.pixelSize: 14
+                font.weight: Theme.font.weightMedium
+                font.capitalization: Font.Capitalize
             }
 
             Rectangle {
                 id: versionBadge
                 anchors.right: parent.right
-                anchors.rightMargin: Theme.space.lg + 4
+                anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 width: versionLabel.implicitWidth + Theme.space.sm * 2
                 height: 16
                 radius: 2
-                color: verseRow._selected ? Qt.darker(Theme.color.preview, 4.0) : Theme.color.overlay
+                // Selected: deeper brand wash; otherwise a flat gray.800 chip.
+                color: verseRow._selected ? Qt.darker(Theme.color.brand, 1.6)
+                                          : Theme.color.raised
 
                 Text {
                     id: versionLabel
                     anchors.centerIn: parent
                     text: modelData.translationCode || root.activeTranslation
-                    color: verseRow._selected ? Theme.color.preview : Theme.color.textTertiary
+                    color: verseRow._selected ? "#daf1d7" /* brand.300 */
+                                              : Theme.color.textSecondary
                     font.family: Theme.font.monoFamily
                     font.pixelSize: 9
-                    font.weight: Theme.font.weightSemiBold
+                    font.weight: Theme.font.weightBold
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 0.5
                 }
             }
 

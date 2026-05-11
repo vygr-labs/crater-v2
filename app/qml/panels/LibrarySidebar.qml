@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
 // Left side of the bottom row — search input plus the group navigation.
@@ -7,7 +8,10 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    color: "transparent"
+    // Slight tonal differentiation from canvas — mirrors electron's
+    // sidebar `bg="gray.950/50"` (a translucent dark composited onto the
+    // page bg). On Qt we just pick the resulting near-equal color.
+    color: Theme.color.bgSidebar
 
     readonly property string currentTabKey: AppState.tabKeys[AppState.activeTab]
 
@@ -36,12 +40,16 @@ Rectangle {
             case "scripture": {
                 // One sidebar row per installed translation. Code is uppercased
                 // ("KJV"), id is lowercased to match AppState.activeLibraryGroup convention.
+                //
+                // Rows render as plain text labels (no icon, no count) so the
+                // sidebar reads as a flat translation index, matching the
+                // electron experience ("AMPC", "ASV", "CEV"…).
                 let r = []
                 const tl = BibleService.translations()
                 for (let i = 0; i < tl.length; i++) {
                     const t = tl[i]
                     r.push({ id: (t.code || "").toLowerCase(),
-                             iconName: "book-open",
+                             iconName: "",
                              label: t.code,
                              count: 0 })
                 }
@@ -68,36 +76,51 @@ Rectangle {
         return []
     }
 
-    ColumnLayout {
-        anchors.fill: parent
+    // Per-tab search bar — pinned at the top of the sidebar so it stays
+    // visible while the group list below scrolls.
+    TabSearchBar {
+        id: searchBar
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.topMargin: Theme.space.md
-        spacing: Theme.space.xs
+        anchors.leftMargin: Theme.space.lg
+        anchors.rightMargin: Theme.space.lg
+    }
 
-        // Per-tab search bar — renders a different input variant per active tab
-        // (mode dropdown for Songs, reference/search toggle for Scripture,
-        // simple search elsewhere). Owns its own state via AppState.searchText
-        // and AppState.librarySearchMode.
-        TabSearchBar {
-            Layout.fillWidth: true
-            Layout.leftMargin: Theme.space.lg
-            Layout.rightMargin: Theme.space.lg
-            Layout.bottomMargin: Theme.space.sm
-        }
+    // Scroll container for the group rows. With ~14 Bible translations the
+    // list overflows the sidebar height on any reasonable window size, so the
+    // rows must scroll. Songs/Themes are short today but the same container
+    // future-proofs them at zero cost. The ScrollBar is interactive so a
+    // trackpad gesture works too.
+    ScrollView {
+        id: groupScroll
+        anchors.top: searchBar.bottom
+        anchors.topMargin: Theme.space.sm
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: 1   // leave room for the right-edge divider
+        clip: true
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-        // Group list — uses LibraryRow component
-        Repeater {
-            model: root.groups
-            delegate: LibraryRow {
-                Layout.fillWidth: true
-                iconName: modelData.iconName
-                label:    modelData.label
-                count:    modelData.count
-                active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
-                onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+        ColumnLayout {
+            width: groupScroll.availableWidth
+            spacing: Theme.space.xs
+
+            Repeater {
+                model: root.groups
+                delegate: LibraryRow {
+                    Layout.fillWidth: true
+                    iconName: modelData.iconName
+                    label:    modelData.label
+                    count:    modelData.count
+                    active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
+                    onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                }
             }
         }
-
-        Item { Layout.fillHeight: true }
     }
 
     // Right divider
