@@ -24,6 +24,7 @@ struct MediaItem
     Q_PROPERTY(QString type       MEMBER type)
     Q_PROPERTY(bool    isFavorite MEMBER isFavorite)
     Q_PROPERTY(qint64  addedAt    MEMBER addedAt)
+    Q_PROPERTY(qint64  durationMs MEMBER durationMs)
 
 public:
     qint64  id         = 0;
@@ -32,6 +33,7 @@ public:
     QString type;        // "image" | "video"
     bool    isFavorite = false;
     qint64  addedAt    = 0;   // unix epoch ms
+    qint64  durationMs = 0;   // video clip length in ms; 0 for images / not yet probed
 };
 
 }  // namespace crater

@@ -126,6 +126,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V001__init.sql
         src/db/migrations/app/V002__media.sql
         src/db/migrations/app/V003__theme_nodes.sql
+        src/db/migrations/app/V004__media_duration.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)

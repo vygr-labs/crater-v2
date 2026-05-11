@@ -28,6 +28,10 @@ Item {
     implicitWidth: parent ? parent.width : 120
     implicitHeight: 28
 
+    // Label width is content-driven with a 30px floor — short labels (X/Y/Z)
+    // keep the tight grid alignment we want across paired inputs, while longer
+    // labels like "Weight" or "Max" expand to their natural width instead of
+    // being clipped by the input box drawn on top.
     Text {
         id: lbl
         anchors.left: parent.left
@@ -36,7 +40,7 @@ Item {
         color: Theme.color.textTertiary
         font.family: Theme.font.family
         font.pixelSize: Theme.font.smallSize
-        width: 30
+        width: Math.max(30, implicitWidth + 4)
         visible: root.label.length > 0
     }
 

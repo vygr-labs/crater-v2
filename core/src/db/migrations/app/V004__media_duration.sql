@@ -1,0 +1,14 @@
+-- App schema v4 — duration for video media items.
+--
+-- The media table holds both images and videos. For videos the operator
+-- benefits from seeing the clip length right on the tile (matches the
+-- electron media pane's "m:ss" badge). We store it on the row so the
+-- value is computed once per import and survives across sessions; the
+-- alternative — re-decoding on every list render — would cost a player
+-- handle per visible delegate.
+--
+-- 0 means "not yet probed" for videos and "n/a" for images. The
+-- VideoThumbnailer in qt/app/src/ populates it during first-frame
+-- extraction; until then videos render with the icon placeholder and
+-- no duration badge.
+ALTER TABLE media ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;

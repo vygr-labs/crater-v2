@@ -214,6 +214,25 @@ Rectangle {
     }
 
     // ── Mini monitor ────────────────────────────────────────────────────
+    // Rendering priority (top → bottom of z-stack):
+    //   1. Logo overlay (when AppState.showLogo) — always wins.
+    //   2. Page text (when item is non-media and showLogo is off).
+    //   3. MediaMonitor (image / looping video with audio) when the live
+    //      item is a media kind. The MediaPlayer is destroyed via Loader
+    //      whenever the live slot stops carrying a media item, so we
+    //      don't pay decoder cost during songs/scripture playback.
+    //   4. Gradient backdrop (always behind everything).
+    //
+    // Audio: live monitor is unmuted because Projection (the audience-
+    // facing window) doesn't render yet. When Projection lands, audio
+    // moves there and this monitor goes muted to avoid double-routing.
+    readonly property bool _isMediaLive:
+        root.isLive
+        && !AppState.isClear
+        && root.liveItem !== null
+        && (root.liveItem.kind === "image" || root.liveItem.kind === "video")
+        && (root.liveItem.mediaPath || "").length > 0
+
     Item {
         id: monitorWrap
         anchors.bottom: parent.bottom
@@ -228,6 +247,7 @@ Rectangle {
             color: "#000000"
             border.color: root.isLive ? Theme.color.live : Theme.color.borderStrong
             border.width: 1.5
+            clip: true
 
             Behavior on border.color { ColorAnimation { duration: Theme.motion.normal } }
 
@@ -241,12 +261,27 @@ Rectangle {
                 }
             }
 
+            MediaMonitor {
+                anchors.fill: parent
+                anchors.margins: 1.5
+                mediaKind: root._isMediaLive ? root.liveItem.kind : ""
+                mediaPath: root._isMediaLive ? root.liveItem.mediaPath : ""
+                // Audio on by default — see panel-level comment about
+                // Projection takeover when that surface ships.
+                muted: false
+                crop:  false
+            }
+
             // Show the live page content, or "logo" overlay if showLogo is on.
             Text {
                 anchors.centerIn: parent
                 anchors.margins: Theme.space.md
                 width: parent.width * 0.85
-                visible: !AppState.showLogo
+                // Hide when media is rendering — the page content for a
+                // media item is empty anyway, but explicitly hiding keeps
+                // the text element off the render graph instead of
+                // painting an invisible string.
+                visible: !AppState.showLogo && !root._isMediaLive
                 text: {
                     if (AppState.isClear) return ""
                     if (!root.liveItem) return ""
@@ -264,7 +299,8 @@ Rectangle {
                 elide: Text.ElideRight
             }
 
-            // Logo placeholder when toggled on
+            // Logo placeholder when toggled on — declared last so it
+            // renders on top of MediaMonitor when both are active.
             Column {
                 anchors.centerIn: parent
                 visible: AppState.showLogo

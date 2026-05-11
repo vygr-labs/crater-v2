@@ -16,6 +16,7 @@
 #include <QtQml>
 
 #include "FileDialogService.h"
+#include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
@@ -245,6 +246,10 @@ int main(int argc, char* argv[])
     crater::OutputService     outputService;
     crater::ProjectionService projectionService;
     crater::FileDialogService fileDialogService;
+    // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
+    // probed durations back via setVideoMeta(), and uses thumbsDir() for
+    // the on-disk layout. Must come after mediaService is constructed.
+    crater::VideoThumbnailer  videoThumbnailer(&mediaService);
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -257,6 +262,18 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",  &fileDialogService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",   &videoThumbnailer);
+
+    // After every successful import, backfill thumbs for the new videos.
+    // The ensureForAllVideos() walk is cheap when nothing is missing, so we
+    // also call it once at startup to cover rows imported in prior sessions
+    // (e.g. before this feature shipped, or after a thumbs/ dir wipe).
+    QObject::connect(&mediaService, &crater::MediaService::importFinished,
+                     &videoThumbnailer,
+                     [&](int /*imported*/, int /*skipped*/) {
+                         videoThumbnailer.ensureForAllVideos();
+                     });
+    videoThumbnailer.ensureForAllVideos();
 
     // WorkingTheme is per-instance (one per open editor), not a singleton —
     // each invocation of the theme editor creates a fresh one in QML.

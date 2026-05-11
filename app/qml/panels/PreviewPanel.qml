@@ -182,6 +182,18 @@ Rectangle {
     }
 
     // ── Mini monitor ────────────────────────────────────────────────────
+    // Renders one of three things, in priority order:
+    //   1. Image / looping video (muted) when the selected item is a
+    //      media kind. MediaMonitor's internal Loader gates the decoder,
+    //      so when the operator picks a non-media item the player is
+    //      destroyed entirely — no pinned GPU memory.
+    //   2. Page text for everything else (songs, scripture, etc.).
+    //   3. Empty-state copy when nothing is selected.
+    readonly property bool _isMediaPreview:
+        root.selectedItem !== null
+        && (root.selectedItem.kind === "image" || root.selectedItem.kind === "video")
+        && (root.selectedItem.mediaPath || "").length > 0
+
     Item {
         id: monitorWrap
         anchors.bottom: parent.bottom
@@ -196,6 +208,10 @@ Rectangle {
             color: "#000000"
             border.color: Theme.color.borderStrong
             border.width: 1
+            // clip so the video / image respects the rounded corners.
+            // Border itself is drawn at the geometry edge so clip doesn't
+            // affect it.
+            clip: true
 
             Rectangle {
                 anchors.fill: parent
@@ -207,10 +223,20 @@ Rectangle {
                 }
             }
 
+            MediaMonitor {
+                anchors.fill: parent
+                anchors.margins: 1
+                mediaKind: root._isMediaPreview ? root.selectedItem.kind : ""
+                mediaPath: root._isMediaPreview ? root.selectedItem.mediaPath : ""
+                muted: true        // operator monitors silently; live carries audio
+                crop:  false       // letterbox in the mini-monitor — full frame visible
+            }
+
             Text {
                 anchors.centerIn: parent
                 anchors.margins: Theme.space.md
                 width: parent.width * 0.85
+                visible: !root._isMediaPreview
                 text: {
                     if (!root.selectedItem) return qsTr("No preview")
                     if (root.pages.length === 0) return qsTr("No pages")

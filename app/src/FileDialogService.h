@@ -36,6 +36,15 @@ public:
     // ("Crater Theme (*.craterheme)").
     Q_INVOKABLE QString chooseOpenFile(QString title, QStringList nameFilters);
 
+    // Multi-select variant. Returns the selected paths, or an empty list
+    // if the user cancelled. Used by the Media tab "+" button to import
+    // multiple images / videos in one go.
+    //
+    // Initial directory is PicturesLocation (more useful for media than
+    // DocumentsLocation) — that's the only behavior difference from
+    // chooseOpenFile.
+    Q_INVOKABLE QStringList chooseOpenFiles(QString title, QStringList nameFilters);
+
     // suggestedName is the default filename shown in the dialog; the
     // initial directory is the user's Documents folder unless the
     // caller passes a path-bearing suggested name.

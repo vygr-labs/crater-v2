@@ -6,6 +6,8 @@ qt_add_executable(crater
     src/main.cpp
     src/FileDialogService.cpp
     src/FileDialogService.h
+    src/VideoThumbnailer.cpp
+    src/VideoThumbnailer.h
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.
@@ -54,10 +56,12 @@ qt_add_qml_module(crater
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/NodeRenderer.qml
         qml/components/MediaBackgroundLoader.qml
+        qml/components/MediaMonitor.qml
         qml/components/ThemePreview.qml
         qml/components/ColorPicker.qml
         qml/components/ColorPickerPopover.qml
         qml/components/ColorSwatchInput.qml
+        qml/components/MediaPickerPopover.qml
         qml/components/ConfirmationOverlay.qml
 
         # ── Theme editor workspace + editor child components ─────────

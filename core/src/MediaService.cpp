@@ -110,6 +110,8 @@ struct MediaService::Impl
     db::Statement selectById;
     db::Statement deleteItem;
     db::Statement toggleFav;
+    db::Statement renameItem;
+    db::Statement setMeta;
 
     // Cached allMedia() — invalidated on every mutation.
     std::optional<QList<MediaItem>> cachedAll;
@@ -117,18 +119,22 @@ struct MediaService::Impl
     explicit Impl(const QString& path)
         : conn(path)
         , selectAll(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at "
+            "SELECT id, path, title, type, is_favorite, added_at, duration_ms "
             "FROM media ORDER BY added_at DESC")))
         , insertItem(conn.prepare(QStringLiteral(
-            "INSERT INTO media (path, title, type, is_favorite, added_at) "
-            "VALUES (?, ?, ?, 0, ?)")))
+            "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms) "
+            "VALUES (?, ?, ?, 0, ?, 0)")))
         , selectById(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at "
+            "SELECT id, path, title, type, is_favorite, added_at, duration_ms "
             "FROM media WHERE id = ?")))
         , deleteItem(conn.prepare(QStringLiteral(
             "DELETE FROM media WHERE id = ?")))
         , toggleFav(conn.prepare(QStringLiteral(
             "UPDATE media SET is_favorite = NOT is_favorite WHERE id = ?")))
+        , renameItem(conn.prepare(QStringLiteral(
+            "UPDATE media SET title = ? WHERE id = ?")))
+        , setMeta(conn.prepare(QStringLiteral(
+            "UPDATE media SET duration_ms = ? WHERE id = ?")))
     {}
 
     static MediaItem readRow(db::Statement& s)
@@ -140,6 +146,7 @@ struct MediaService::Impl
         m.type       = s.columnText (3);
         m.isFavorite = s.columnInt  (4) != 0;
         m.addedAt    = s.columnInt64(5);
+        m.durationMs = s.columnInt64(6);
         return m;
     }
 };
@@ -212,8 +219,8 @@ int MediaService::importPaths(QStringList paths)
         try {
             workerConn = std::make_unique<db::Connection>(dbPath);
             workerInsert.emplace(workerConn->prepare(QStringLiteral(
-                "INSERT INTO media (path, title, type, is_favorite, added_at) "
-                "VALUES (?, ?, ?, 0, ?)")));
+                "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms) "
+                "VALUES (?, ?, ?, 0, ?, 0)")));
         } catch (const db::Error& e) {
             qWarning().noquote() << "MediaService::importPaths(): worker DB open failed:"
                                  << e.message();
@@ -319,9 +326,49 @@ void MediaService::remove(qint64 id)
             QFile::remove(path);
         }
 
+        // Best-effort orphan-thumb sweep. VideoThumbnailer writes thumbs to
+        // <mediaDir>/thumbs/<id>.jpg; the file may not exist (image media
+        // skips thumbnail generation, and the videothumbnailer is async so
+        // a freshly-imported video could be deleted before its thumb landed).
+        const QString thumb = QDir(db::DbPaths::mediaDir())
+                                  .filePath(QStringLiteral("thumbs/%1.jpg").arg(id));
+        if (QFile::exists(thumb)) QFile::remove(thumb);
+
         invalidateCache();
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::remove():" << e.message();
+    }
+}
+
+void MediaService::rename(qint64 id, QString newTitle)
+{
+    if (!m_impl || id <= 0) return;
+    const QString trimmed = newTitle.trimmed();
+    if (trimmed.isEmpty()) return;   // refuse empty titles
+    try {
+        auto& s = m_impl->renameItem;
+        s.reset();
+        s.bind(1, trimmed);
+        s.bind(2, id);
+        s.step();
+        invalidateCache();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::rename():" << e.message();
+    }
+}
+
+void MediaService::setVideoMeta(qint64 id, qint64 durationMs)
+{
+    if (!m_impl || id <= 0) return;
+    try {
+        auto& s = m_impl->setMeta;
+        s.reset();
+        s.bind(1, durationMs);
+        s.bind(2, id);
+        s.step();
+        invalidateCache();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::setVideoMeta():" << e.message();
     }
 }
 
@@ -337,6 +384,14 @@ void MediaService::toggleFavorite(qint64 id)
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::toggleFavorite():" << e.message();
     }
+}
+
+QString MediaService::thumbsDir() const
+{
+    // <mediaDir>/thumbs/ — created lazily by VideoThumbnailer the first time
+    // it writes a frame. Returning the path even when the directory doesn't
+    // exist yet keeps callers from having to special-case startup.
+    return QDir(db::DbPaths::mediaDir()).filePath(QStringLiteral("thumbs"));
 }
 
 MediaItem MediaService::byId(qint64 id)

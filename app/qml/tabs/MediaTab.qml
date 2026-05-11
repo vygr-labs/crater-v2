@@ -11,25 +11,30 @@ import QtQuick
 //     grid density, sort field/order, batch selection).
 //
 // Behavior:
-//   • Drag image / video files anywhere in the panel to import them — this is
-//     the only import path. We deliberately do NOT use QtQuick.Dialogs: the
-//     architecture keeps the executable lean and reserves file I/O for
-//     crater-core services. A future MediaService method can expose a native
-//     file picker; until then the "+" button pulses the drop overlay.
+//   • Two import paths: (a) drag image / video files anywhere in the panel,
+//     (b) click "+" to open the native OS file picker (via FileDialogService,
+//     which uses QFileDialog — we still avoid the forbidden QtQuick.Dialogs
+//     runtime module). Both paths funnel through MediaService.importPaths,
+//     which validates by magic bytes regardless of extension.
 //   • Action bar carries the count, view toggle (grid / list), grid-columns
 //     selector (4–12), and sort menu (name / date / size / type, asc / desc).
-//   • Grid view shows 16:9 thumbnails with hover overlay, type badge,
-//     batch-select checkbox, and a Logo indicator when set as background.
+//   • Grid view shows 16:9 thumbnails (real first-frame thumbs for videos,
+//     populated asynchronously by VideoThumbnailer) with hover overlay,
+//     type badge, batch-select checkbox, duration badge, and a Logo indicator
+//     when set as background.
 //   • List view shows a thumbnail + title row.
 //   • Click a thumbnail to push it to Preview. Double-click / Enter goes Live.
 //   • Ctrl/Cmd + click toggles batch selection; Shift + click selects a range.
-//   • Right-click opens the context menu (Push Live, Edit, Set as Logo,
+//   • Right-click opens the context menu (Push Live, Rename, Set as Logo,
 //     Add to Favorites, Add to Collection, Delete).
 //
-// Type filter (images / videos) is driven by the sidebar group ("all-media",
-// "images", "videos" — synthesized below). The sidebar currently only shows
-// "All Media" so all types render together; switching the group binding is a
-// one-line follow-up when the sidebar gains the sub-rows.
+// Sidebar groups drive both type filter and an orthogonal favorites filter:
+//   • "All Media" / "Images" / "Videos" set AppState.mediaTypeFilter via
+//     AppState.setMediaGroup (the sidebar's onClicked routes through that
+//     helper so the two slots stay in sync).
+//   • "Favorites" leaves mediaTypeFilter untouched and applies a separate
+//     filter inside filteredMedia — favorites can be a mix of images and
+//     videos.
 Item {
     id: root
 
@@ -44,12 +49,17 @@ Item {
         const all   = MediaService.allMedia
         const q     = root.query
         const tf    = root.typeFilter
+        // Sidebar "Favorites" group is orthogonal to the type filter — it's
+        // applied here rather than via mediaTypeFilter so a mixed-type
+        // favorites set renders correctly.
+        const onlyFavs = AppState.activeLibraryGroup.media === "favorites"
         let base    = []
         for (let i = 0; i < all.length; i++) {
             const m = all[i]
             if (!m) continue
             if (tf === "image" && m.type !== "image") continue
             if (tf === "video" && m.type !== "video") continue
+            if (onlyFavs && !m.isFavorite) continue
             if (q.length > 0 && (m.title || "").toLowerCase().indexOf(q) === -1) continue
             base.push(m)
         }
@@ -109,6 +119,17 @@ Item {
             && ProjectionService.logoBgPath === path
     }
 
+    // Format an integer millisecond count as "m:ss" — used by the video
+    // duration badge. Returns "" for non-positive values so the badge can
+    // bind directly to durationMs and hide itself for un-probed items.
+    function formatDuration(ms) {
+        if (!ms || ms <= 0) return ""
+        const totalSec = Math.floor(ms / 1000)
+        const m = Math.floor(totalSec / 60)
+        const s = totalSec % 60
+        return m + ":" + (s < 10 ? "0" + s : "" + s)
+    }
+
     // Drop handler — hand the raw URL list off to MediaService, which does
     // magic-byte validation, size capping, path normalization, and the
     // managed-directory file copy on a worker thread.
@@ -166,19 +187,20 @@ Item {
     }
 
     // ── Import affordance ───────────────────────────────────────────────
-    // No QtQuick.Dialogs FileDialog — see header comment. The "+" button and
-    // the empty-state CTA both call flashDropZone() to make the drop overlay
-    // pulse on, hinting at the drag-and-drop import path. When MediaService
-    // grows a native file-picker Q_INVOKABLE we can call it from here.
-    Timer {
-        id: flashTimer
-        interval: 1400
-        repeat: false
-        onTriggered: dropZone.isOver = false
-    }
-    function flashDropZone() {
-        dropZone.isOver = true
-        flashTimer.restart()
+    // Two paths feed importPaths(): drag-drop on the DropArea below, and the
+    // "+" / empty-state CTA which open the native OS file picker through
+    // FileDialogService (QFileDialog under the hood — not the forbidden
+    // QtQuick.Dialogs runtime module).
+    function openImportDialog() {
+        // The filter is purely a UX hint — MediaService still magic-byte
+        // sniffs each file and rejects anything that doesn't match a known
+        // image / video signature, so a user typing into the "all files"
+        // dropdown can't break us.
+        const filter = qsTr("Media (*.png *.jpg *.jpeg *.gif *.bmp *.webp "
+                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi)")
+        const paths = FileDialogService.chooseOpenFiles(
+            qsTr("Import media"), [filter])
+        if (paths && paths.length > 0) root.importPaths(paths)
     }
 
     // ── Top action bar ──────────────────────────────────────────────────
@@ -262,7 +284,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.flashDropZone()
+                onClicked: root.openImportDialog()
             }
         }
 
@@ -585,8 +607,8 @@ Item {
                 anchors.topMargin: 72
                 variant: "brand"
                 iconName: "upload"
-                text: qsTr("Drop files to import")
-                onClicked: root.flashDropZone()
+                text: qsTr("Import media")
+                onClicked: root.openImportDialog()
             }
         }
 
@@ -652,16 +674,40 @@ Item {
                         sourceSize.width: 320
                         sourceSize.height: 180
                     }
-                    // Video placeholder — a real thumbnail requires QMediaPlayer.
+                    // Video thumbnail. VideoThumbnailer renders the first
+                    // frame async after import; the icon fallback below
+                    // shows while the thumb file doesn't exist yet (or
+                    // never will, for codec-broken videos).
                     Rectangle {
                         anchors.fill: parent
                         anchors.margins: 2
                         visible: modelData.type === "video"
                         color: "#13131a"
+
                         AppIcon {
                             anchors.centerIn: parent
+                            visible: videoThumb.status !== Image.Ready
                             name: "video"; size: 28
                             color: Theme.color.textTertiary
+                        }
+
+                        Image {
+                            id: videoThumb
+                            anchors.fill: parent
+                            // `readyCounter` makes this binding re-run after
+                            // each thumb extraction so the placeholder flips
+                            // to the real frame without a tab refresh.
+                            source: {
+                                const _ = VideoThumbnailer.readyCounter
+                                const p = VideoThumbnailer.thumbnailPathFor(modelData.id)
+                                return p.length > 0 ? "file:///" + p : ""
+                            }
+                            visible: status === Image.Ready
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 320
+                            sourceSize.height: 180
                         }
                     }
 
@@ -746,6 +792,30 @@ Item {
                         }
                     }
 
+                    // Video duration badge (bottom-right). Only shown once
+                    // VideoThumbnailer has probed the clip — until then
+                    // durationMs is 0 and the badge stays hidden.
+                    Rectangle {
+                        visible: modelData.type === "video" && modelData.durationMs > 0
+                        anchors.bottom: parent.bottom
+                        anchors.right: parent.right
+                        anchors.margins: 4
+                        width: durLabel.implicitWidth + 8
+                        height: 16
+                        radius: 3
+                        color: "#000000b8"
+
+                        Text {
+                            id: durLabel
+                            anchors.centerIn: parent
+                            text: root.formatDuration(modelData.durationMs)
+                            color: "#ffffff"
+                            font.family: Theme.font.family
+                            font.pixelSize: 10
+                            font.weight: Theme.font.weightMedium
+                        }
+                    }
+
                     // Hover title gradient
                     Rectangle {
                         visible: cellMa.containsMouse
@@ -797,7 +867,19 @@ Item {
                                     { label: qsTr("Set as Logo Background"), iconName: "sparkles",
                                       detail: cell._logo ? "✓" : "",
                                       action: function() { ProjectionService.setLogoBgPath(modelData.path) } },
-                                    { label: qsTr("Edit"),  iconName: "edit" },
+                                    { label: qsTr("Rename"),  iconName: "edit",
+                                      action: function() {
+                                          AppState.openModal("naming", {
+                                              title:        qsTr("Rename media"),
+                                              placeholder:  qsTr("Title"),
+                                              confirmText:  qsTr("Save"),
+                                              initialValue: modelData.title,
+                                              onConfirm:    function(name) {
+                                                  if (name && name.length > 0)
+                                                      MediaService.rename(modelData.id, name)
+                                              }
+                                          })
+                                      } },
                                     { label: qsTr("Duplicate"), iconName: "copy" },
                                     { separator: true },
                                     { label: modelData.isFavorite
@@ -926,9 +1008,26 @@ Item {
                         sourceSize.width: 120
                         sourceSize.height: 70
                     }
+                    // Video: thumbnail when one exists, icon fallback otherwise.
+                    Image {
+                        id: rowVideoThumb
+                        anchors.fill: parent
+                        visible: modelData.type === "video" && status === Image.Ready
+                        source: {
+                            if (modelData.type !== "video") return ""
+                            const _ = VideoThumbnailer.readyCounter
+                            const p = VideoThumbnailer.thumbnailPathFor(modelData.id)
+                            return p.length > 0 ? "file:///" + p : ""
+                        }
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        sourceSize.width: 120
+                        sourceSize.height: 70
+                    }
                     AppIcon {
                         anchors.centerIn: parent
                         visible: modelData.type === "video"
+                              && rowVideoThumb.status !== Image.Ready
                         name: "video"; size: 16
                         color: Theme.color.textTertiary
                     }
@@ -1049,7 +1148,19 @@ Item {
                                     { label: qsTr("Set as Logo Background"), iconName: "sparkles",
                                       detail: listRow._logo ? "✓" : "",
                                       action: function() { ProjectionService.setLogoBgPath(modelData.path) } },
-                                    { label: qsTr("Edit"), iconName: "edit" },
+                                    { label: qsTr("Rename"), iconName: "edit",
+                                      action: function() {
+                                          AppState.openModal("naming", {
+                                              title:        qsTr("Rename media"),
+                                              placeholder:  qsTr("Title"),
+                                              confirmText:  qsTr("Save"),
+                                              initialValue: modelData.title,
+                                              onConfirm:    function(name) {
+                                                  if (name && name.length > 0)
+                                                      MediaService.rename(modelData.id, name)
+                                              }
+                                          })
+                                      } },
                                     { label: qsTr("Duplicate"), iconName: "copy" },
                                     { separator: true },
                                     { label: modelData.isFavorite

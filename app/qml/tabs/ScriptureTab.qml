@@ -186,12 +186,16 @@ Item {
     // — but explicitly NOT called from onParsedRefChanged, since that path
     // is driven BY the input and overwriting it would erase the operator's
     // typing mid-flight.
+    //
+    // Format uses a space between chapter and verse ("Exodus 12 1") rather
+    // than a colon ("Exodus 12:1"). Matches the controlled-mode display
+    // and reads cleaner — BibleService.parseReference accepts either form.
     function _syncInputToVerse(idx) {
         if (mode !== "reference") return
         if (idx < 0 || idx >= currentVerses.length) return
         const v = currentVerses[idx]
         if (!v) return
-        AppState.setSearch(tabKey, v.book + " " + v.chapter + ":" + v.verse)
+        AppState.setSearch(tabKey, v.book + " " + v.chapter + " " + v.verse)
     }
 
     // When the parser yields a match, scroll there and highlight.
@@ -200,7 +204,7 @@ Item {
         const idx = indexOf(parsedRef.book, parsedRef.chapter, parsedRef.verse)
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
-            list.positionViewAtIndex(idx, ListView.Center)
+            list.positionViewAtIndex(idx, ListView.Contain)
             pushPreviewFor(idx)
         }
     }
@@ -233,7 +237,7 @@ Item {
             _pendingSyncCoord = null
             if (syncIdx >= 0) {
                 AppState.setLibraryFluid(tabKey, syncIdx)
-                Qt.callLater(function() { list.positionViewAtIndex(syncIdx, ListView.Center) })
+                Qt.callLater(function() { list.positionViewAtIndex(syncIdx, ListView.Contain) })
                 if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(syncIdx)
                 _syncInputToVerse(syncIdx)
                 return
@@ -281,7 +285,7 @@ Item {
                 const idx = root.findBestVerseMatch(root.currentVerses, book, chapter, verse)
                 if (idx >= 0) {
                     AppState.setLibraryFluid(root.tabKey, idx)
-                    Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Center) })
+                    Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Contain) })
                     if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
                         root.pushPreviewFor(idx)
                     }
@@ -332,7 +336,7 @@ Item {
         const idx = indexOf(_focusedCoord.book, _focusedCoord.chapter, _focusedCoord.verse)
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
-            Qt.callLater(() => list.positionViewAtIndex(idx, ListView.Center))
+            Qt.callLater(() => list.positionViewAtIndex(idx, ListView.Contain))
         } else {
             AppState.setLibraryFluid(tabKey, 0)
         }

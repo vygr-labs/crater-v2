@@ -59,9 +59,27 @@ Rectangle {
                 { id: "greek",  iconName: "book", label: qsTr("Greek"),  count: 0 },
                 { id: "hebrew", iconName: "book", label: qsTr("Hebrew"), count: 0 }
             ]
-            case "media": return [
-                { id: "all-media", iconName: "folder", label: qsTr("All Media"), count: 0 }
-            ]
+            case "media": {
+                // Count from MediaService.allMedia (Q_PROPERTY re-emits on
+                // import / delete / favorite toggle, so the counts stay live).
+                const all  = MediaService.allMedia
+                let imgN   = 0
+                let vidN   = 0
+                let favN   = 0
+                for (let i = 0; i < all.length; i++) {
+                    const m = all[i]
+                    if (!m) continue
+                    if (m.type === "image") imgN++
+                    if (m.type === "video") vidN++
+                    if (m.isFavorite)       favN++
+                }
+                return [
+                    { id: "all-media", iconName: "folder", label: qsTr("All Media"), count: all.length },
+                    { id: "images",    iconName: "image",  label: qsTr("Images"),    count: imgN },
+                    { id: "videos",    iconName: "video",  label: qsTr("Videos"),    count: vidN },
+                    { id: "favorites", iconName: "heart",  label: qsTr("Favorites"), count: favN }
+                ]
+            }
             case "themes": {
                 const themes = ThemeService.allThemes
                 const presetCount = themes.filter(function(t) { return t.isBuiltin }).length
@@ -121,7 +139,16 @@ Rectangle {
                     // tighter corners read better for a dense alphabetical
                     // index of codes (KJV / AMPC / NIV / …).
                     bgRadius: root.currentTabKey === "scripture" ? 2 : Theme.radius.md
-                    onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                    // Media routes through a helper because clicking "Images"
+                    // must update *two* AppState slots (group + type filter).
+                    // Other tabs are single-slot so they call the base setter.
+                    onClicked: {
+                        if (root.currentTabKey === "media") {
+                            AppState.setMediaGroup(modelData.id)
+                        } else {
+                            AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                        }
+                    }
 
                     // Scripture-tab translation rows: a double-click "sends
                     // the currently focused verse Live in this translation"

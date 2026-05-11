@@ -1,7 +1,19 @@
 import QtQuick
 import Crater
 
-// Container-specific properties: background color/opacity, media bg, border radii.
+// Container-specific properties: background fill, media (with picker popover
+// and per-media opacity), and corner radius.
+//
+// Design notes:
+//   • Media-opacity lives in the Media section (not Background) because it
+//     only affects the media layer rendered by MediaBackgroundLoader. Putting
+//     it under "Fill" was confusing — operators dragged it expecting the
+//     solid color to fade and saw nothing happen on a media-less container.
+//   • Corner radius is a single uniform value. NodeRenderer averages the four
+//     stored fields anyway (Qt 6 Rectangle only supports a uniform radius), so
+//     exposing four inputs that all collapse to their average lied about the
+//     output. We still write to all four schema fields — keeps the door open
+//     for a future per-corner painter without a token migration.
 Column {
     id: root
     property var workspace
@@ -11,6 +23,13 @@ Column {
 
     function _setStyle(f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v); workspace.saveToHistory() }
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
+
+    // Resolve the current media so visibility / preview bindings can read off
+    // a single source. `_media` is null when no media is picked OR when the
+    // referenced id was removed from the library; both cases collapse the
+    // media-only inputs to keep the panel quiet.
+    readonly property var _media: (node && node.data && node.data.mediaId)
+        ? MediaService.byId(node.data.mediaId) : null
 
     // ── Background ────────────────────────────────────────────────────
     AccordionSection {
@@ -32,23 +51,130 @@ Column {
                 value: (node && node.style && node.style.backgroundColor) || "#000000"
                 onColorPicked: function(c) { root._setStyle("backgroundColor", c) }
             }
+        }
+    }
 
+    // ── Media ─────────────────────────────────────────────────────────
+    AccordionSection {
+        id: mediaSection
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: qsTr("Media")
+        // Lift this section above subsequent siblings while the picker is
+        // open — same trick the Typography accordion uses around its font
+        // combobox so the popover's chrome paints above sections declared
+        // after it. The popover already reparents to the window root for
+        // truly-out-of-bounds clipping, but z lift keeps the picker's anchor
+        // rectangle's hover/click handling on top of any overlap.
+        z: mediaPicker.visible ? 100 : 0
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Theme.space.md
+            anchors.topMargin: Theme.space.sm
+            spacing: 6
+
+            Rectangle {
+                id: mediaSlot
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 44
+                radius: Theme.radius.sm
+                color: Theme.color.canvas
+                border.color: slotMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
+                border.width: 1
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    spacing: 8
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 32; height: 32; radius: Theme.radius.sm
+                        color: Theme.color.elevated
+                        Image {
+                            visible: root._media && root._media.type === "image"
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            asynchronous: true
+                            cache: true
+                            source: root._media ? "file:///" + root._media.path : ""
+                            fillMode: Image.PreserveAspectCrop
+                        }
+                        AppIcon {
+                            visible: !root._media || root._media.type !== "image"
+                            anchors.centerIn: parent
+                            name: root._media ? "film" : "image"
+                            color: Theme.color.textTertiary
+                            size: 14
+                        }
+                    }
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        Text {
+                            text: root._media ? root._media.title : qsTr("No media")
+                            color: root._media ? Theme.color.textPrimary : Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize
+                            font.italic: !root._media
+                            elide: Text.ElideRight
+                            width: mediaSlot.width - 64
+                        }
+                        Text {
+                            visible: !!root._media
+                            text: root._media && root._media.type === "video" ? qsTr("Video") : qsTr("Image")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.microSize
+                        }
+                    }
+                }
+
+                AppIcon {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "chevron-down"
+                    size: 12
+                    color: Theme.color.textTertiary
+                }
+
+                MouseArea {
+                    id: slotMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: mediaPicker.openAt(mediaSlot)
+                }
+            }
+
+            // Per-media opacity. Only meaningful when there's media to fade;
+            // hidden otherwise so the panel doesn't suggest a slider that
+            // visibly does nothing.
             SimpleSlider {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                label: qsTr("Media α")
-                value: (node && node.data && node.data.bgOpacity !== undefined) ? node.data.bgOpacity : 1.0
+                visible: !!root._media
+                label: qsTr("Opacity")
+                value: (node && node.data && node.data.bgOpacity !== undefined)
+                    ? node.data.bgOpacity : 1.0
                 min: 0; max: 1; step: 0.05
                 onCommit: function(v) { root._setData("bgOpacity", v) }
             }
         }
     }
 
-    // ── Media ─────────────────────────────────────────────────────────
+    // ── Corner radius ─────────────────────────────────────────────────
+    // Single uniform value — sets all four corner fields to the same number.
+    // Read value = average of the four fields (handles legacy asymmetric
+    // tokens by surfacing what NodeRenderer would actually paint).
     AccordionSection {
         anchors.left: parent.left
         anchors.right: parent.right
-        title: qsTr("Media")
+        title: qsTr("Corner Radius")
         Column {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -56,141 +182,47 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
-            readonly property var _media: (node && node.data && node.data.mediaId)
-                ? MediaService.byId(node.data.mediaId) : null
-
-            Rectangle {
+            NumericInput {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 40
-                radius: Theme.radius.sm
-                color: Theme.color.canvas
-                border.color: Theme.color.borderStrong
-                border.width: 1
-
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    spacing: 6
-                    Rectangle {
-                        width: 32; height: 32; radius: Theme.radius.sm
-                        color: Theme.color.elevated
-                        Image {
-                            visible: parent.parent.parent.parent._media
-                                  && parent.parent.parent.parent._media.type === "image"
-                            anchors.fill: parent
-                            anchors.margins: 1
-                            asynchronous: true
-                            source: parent.parent.parent.parent._media
-                                ? "file:///" + parent.parent.parent.parent._media.path
-                                : ""
-                            fillMode: Image.PreserveAspectCrop
-                        }
-                        AppIcon {
-                            visible: !parent.parent.parent.parent._media
-                                  || parent.parent.parent.parent._media.type !== "image"
-                            anchors.centerIn: parent
-                            name: parent.parent.parent.parent._media ? "film" : "image"
-                            color: Theme.color.textTertiary
-                            size: 14
-                        }
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: parent.parent.parent._media
-                            ? parent.parent.parent._media.title
-                            : qsTr("No media")
-                        color: Theme.color.textSecondary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        elide: Text.ElideRight
-                        width: parent.width - 80
-                    }
+                workspace: root.workspace
+                label: qsTr("Radius"); suffix: "px"; min: 0; max: 200; step: 1
+                value: {
+                    if (!node || !node.style) return 0
+                    const s = node.style
+                    return ((s.borderTopLeftRadius     || 0)
+                          + (s.borderTopRightRadius    || 0)
+                          + (s.borderBottomLeftRadius  || 0)
+                          + (s.borderBottomRightRadius || 0)) / 4
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        // Cycle through available media as a v1 stand-in for a
-                        // proper picker popover. Pressing repeatedly walks the
-                        // library; first press clears (returns to mediaId=0).
-                        const all = MediaService.allMedia
-                        if (!all || all.length === 0) return
-                        const cur = (root.node.data && root.node.data.mediaId) || 0
-                        let nextId = 0
-                        for (let i = 0; i < all.length; ++i) {
-                            if (all[i].id === cur) {
-                                nextId = (i + 1 < all.length) ? all[i + 1].id : 0
-                                break
-                            }
-                        }
-                        if (cur === 0 && all.length > 0) nextId = all[0].id
-                        root._setData("mediaId", nextId === 0 ? null : nextId)
-                    }
+                onCommit: function(v) {
+                    const r = Math.round(v)
+                    const wt = workspace.workingTheme
+                    // Write all four corner fields so legacy per-corner values
+                    // converge to a clean uniform set, then snapshot once —
+                    // a single radius edit should produce a single undo step,
+                    // not four (one per corner). Each setNodeStyle is a no-op
+                    // when the value didn't change, so this is cheap.
+                    wt.setNodeStyle(node.id, "borderTopLeftRadius",     r)
+                    wt.setNodeStyle(node.id, "borderTopRightRadius",    r)
+                    wt.setNodeStyle(node.id, "borderBottomLeftRadius",  r)
+                    wt.setNodeStyle(node.id, "borderBottomRightRadius", r)
+                    workspace.saveToHistory()
                 }
             }
         }
     }
 
-    // ── Border radius (per-corner) ────────────────────────────────────
-    AccordionSection {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        title: qsTr("Border Radius")
-        Column {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: Theme.space.md
-            anchors.topMargin: Theme.space.sm
-            spacing: 6
-
-            Row {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                spacing: 6
-                NumericInput {
-                    width: (parent.width - 6) / 2
-                    workspace: root.workspace
-                    label: "TL"; suffix: "px"; min: 0; max: 200; step: 1
-                    value: (node && node.style && node.style.borderTopLeftRadius) || 0
-                    onCommit: function(v) { root._setStyle("borderTopLeftRadius", Math.round(v)) }
-                }
-                NumericInput {
-                    width: (parent.width - 6) / 2
-                    workspace: root.workspace
-                    label: "TR"; suffix: "px"; min: 0; max: 200; step: 1
-                    value: (node && node.style && node.style.borderTopRightRadius) || 0
-                    onCommit: function(v) { root._setStyle("borderTopRightRadius", Math.round(v)) }
-                }
-            }
-            Row {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                spacing: 6
-                NumericInput {
-                    width: (parent.width - 6) / 2
-                    workspace: root.workspace
-                    label: "BL"; suffix: "px"; min: 0; max: 200; step: 1
-                    value: (node && node.style && node.style.borderBottomLeftRadius) || 0
-                    onCommit: function(v) { root._setStyle("borderBottomLeftRadius", Math.round(v)) }
-                }
-                NumericInput {
-                    width: (parent.width - 6) / 2
-                    workspace: root.workspace
-                    label: "BR"; suffix: "px"; min: 0; max: 200; step: 1
-                    value: (node && node.style && node.style.borderBottomRightRadius) || 0
-                    onCommit: function(v) { root._setStyle("borderBottomRightRadius", Math.round(v)) }
-                }
-            }
-            Text {
-                anchors.left: parent.left
-                width: parent.width
-                text: qsTr("Note: Qt renders uniform radius (avg of corners) for now.")
-                color: Theme.color.textTertiary
-                font.family: Theme.font.family
-                font.pixelSize: Theme.font.microSize
-                wrapMode: Text.WordWrap
-            }
+    // Floating picker — reparents to the window root on openAt() so the
+    // list isn't clipped by the properties panel's Flickable or by the
+    // section's bounds.
+    MediaPickerPopover {
+        id: mediaPicker
+        targetId: (node && node.data && node.data.mediaId) || 0
+        onMediaChosen: function(id) {
+            // Store null (not 0) for "no media" so the saved token reads
+            // cleanly; NodeRenderer reads mediaId || 0 either way.
+            root._setData("mediaId", id === 0 ? null : id)
         }
     }
 }

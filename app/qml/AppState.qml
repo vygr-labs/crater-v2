@@ -326,6 +326,22 @@ QtObject {
 
     function clearMediaBatchSelection() { mediaBatchSelection = [] }
 
+    // Sidebar group + media type filter move together: clicking "Images" in
+    // the sidebar should both highlight the row (activeLibraryGroup) AND
+    // narrow the grid to images (mediaTypeFilter). Wrapping both writes in
+    // one function keeps the two slots from drifting out of sync.
+    //
+    // The "favorites" group does NOT touch mediaTypeFilter — favorites can
+    // be a mix of images and videos, and the favorites filter is applied
+    // separately inside MediaTab.filteredMedia.
+    function setMediaGroup(groupId) {
+        setLibraryGroup("media", groupId)
+        mediaTypeFilter =
+            groupId === "images" ? "image" :
+            groupId === "videos" ? "video" :
+                                   "all"
+    }
+
     // ─── Library keyboard events ────────────────────────────────────────
     // The per-tab search input (TabSearchBar) lives in the sidebar but
     // keyboard navigation (arrow keys / Enter) should drive the active tab's

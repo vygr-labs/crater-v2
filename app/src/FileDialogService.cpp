@@ -22,6 +22,23 @@ QString FileDialogService::chooseOpenFile(QString title, QStringList nameFilters
         filter);
 }
 
+QStringList FileDialogService::chooseOpenFiles(QString title, QStringList nameFilters)
+{
+    // PicturesLocation is empty on minimal Linux desktops; fall back to
+    // DocumentsLocation so the dialog opens *somewhere* rather than at the
+    // filesystem root.
+    QString initialDir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (initialDir.isEmpty()) {
+        initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    }
+    const QString filter = nameFilters.join(QStringLiteral(";;"));
+    return QFileDialog::getOpenFileNames(
+        /*parent=*/nullptr,
+        title,
+        initialDir,
+        filter);
+}
+
 QString FileDialogService::chooseSaveFile(QString title,
                                           QString suggestedName,
                                           QStringList nameFilters)

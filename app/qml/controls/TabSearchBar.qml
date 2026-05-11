@@ -135,8 +135,13 @@ Item {
     // Computed: the controlled-mode displayed text and the selection range
     // for the current stage. The selection range is what the TextInput
     // highlights so the operator can see which stage they're editing.
+    //
+    // Separator is a space (not colon). Reads cleaner as a "Book Ch V"
+    // index and matches the format _syncInputToVerse pushes from the
+    // verse-list click handlers. BibleService.parseReference accepts
+    // both forms, so swapping is invisible to downstream consumers.
     readonly property string ctrlDisplay:
-        ctrlBook + " " + ctrlChapter + ":" + ctrlVerse
+        ctrlBook + " " + ctrlChapter + " " + ctrlVerse
 
     function _ctrlSelStart(stage) {
         if (stage === 0) return 0
@@ -292,7 +297,7 @@ Item {
     }
     readonly property string placeholderText: {
         if (tabKey === "songs")     return songMode(mode).placeholder
-        if (tabKey === "scripture") return mode === "reference" ? qsTr("Genesis 1:1") : qsTr("Search verses…")
+        if (tabKey === "scripture") return mode === "reference" ? qsTr("Genesis 1 1") : qsTr("Search verses…")
         if (tabKey === "media")     return qsTr("Search media…")
         if (tabKey === "strongs")   return qsTr("Search Strong's…")
         if (tabKey === "themes")    return qsTr("Search themes…")
@@ -385,7 +390,10 @@ Item {
         if (!isControlledMode) return
         if (queryText === ctrlDisplay) return
 
-        const m = queryText.match(/^\s*(.+?)\s+(\d+)\s*:\s*(\d+)\s*$/)
+        // Accept both separator styles ("Book 1:1" and "Book 1 1") so a
+        // verse-click sync (which uses the space form) and any operator
+        // who manually types a colon both round-trip correctly.
+        const m = queryText.match(/^\s*(.+?)\s+(\d+)\s*[:\s]\s*(\d+)\s*$/)
         if (!m) return
 
         const found = _findBookByPrefix(activeTranslation, m[1].trim())
@@ -721,7 +729,7 @@ Item {
               && root.queryText.length > 0
         text: root.parsedRef
               ? qsTr("Interpreted: ") + root.parsedRef.book + " "
-                + root.parsedRef.chapter + ":" + root.parsedRef.verse
+                + root.parsedRef.chapter + " " + root.parsedRef.verse
               : qsTr("Interpreted: —")
         color: root.parsedRef ? Theme.color.textSecondary : Theme.color.textTertiary
         font.family: Theme.font.family

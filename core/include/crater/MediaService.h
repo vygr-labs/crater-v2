@@ -52,10 +52,27 @@ public:
     Q_INVOKABLE void remove(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // Rename a row's display title. The managed file on disk is NOT renamed —
+    // its filename is collision-engineered at import time and we use the id
+    // (not the title) as the stable reference for thumbnails and theme nodes.
+    Q_INVOKABLE void rename(qint64 id, QString newTitle);
+
+    // Record probed video metadata. Called by the app-side VideoThumbnailer
+    // after it extracts a first frame from the imported video. Images call
+    // this with durationMs == 0 (no-op for them).
+    Q_INVOKABLE void setVideoMeta(qint64 id, qint64 durationMs);
+
     // Look up a single media item by id. Returns an empty MediaItem (id == 0)
     // on miss. Used by container theme nodes that reference a background
     // image/video by id rather than carrying the path inline.
     Q_INVOKABLE crater::MediaItem byId(qint64 id);
+
+    // Absolute path to the thumbnail directory used by the app-side
+    // VideoThumbnailer. Owned here because MediaService owns the on-disk
+    // layout under AppDataLocation/media/ — keeping the convention in one
+    // place means a future move (e.g. cache-aware location) only touches
+    // this file.
+    Q_INVOKABLE QString thumbsDir() const;
 
     // Maximum size of a single import in bytes. Configurable so tests / power
     // users can adjust; defaults to 4 GiB per §5.1.

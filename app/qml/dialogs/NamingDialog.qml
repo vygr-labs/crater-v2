@@ -1,10 +1,12 @@
 import QtQuick
 
 // Compact "name your X" dialog. Bound to modalProps:
-//   title:       string shown in the title bar
-//   placeholder: placeholder text inside the input
-//   confirmText: label on the confirm button (default "Create")
-//   onConfirm:   JS function called with the entered name on confirm
+//   title:        string shown in the title bar
+//   placeholder:  placeholder text inside the input
+//   confirmText:  label on the confirm button (default "Create")
+//   initialValue: optional pre-filled text; selected on open so a single
+//                 keystroke replaces it (rename-style UX)
+//   onConfirm:    JS function called with the entered name on confirm
 ModalShell {
     id: root
 
@@ -42,6 +44,17 @@ ModalShell {
                 selectByMouse: true
                 focus: true
                 onAccepted: confirm()
+
+                // Pre-populate for rename-style invocations. selectAll() puts
+                // the cursor over the existing text so the next keystroke
+                // replaces it — matches the OS-native rename UX.
+                Component.onCompleted: {
+                    const seed = AppState.modalProps.initialValue
+                    if (typeof seed === "string" && seed.length > 0) {
+                        text = seed
+                        selectAll()
+                    }
+                }
 
                 Text {
                     visible: input.text.length === 0

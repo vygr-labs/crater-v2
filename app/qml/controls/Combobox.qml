@@ -77,9 +77,11 @@ Item {
     }
 
     // ── Popover ───────────────────────────────────────────────────────
-    // Rendered in the local scope. Its z (high) keeps it above sibling
-    // accordion sections within the same Flickable. If it overflows the
-    // Flickable's clip rect, the user can scroll to reveal the rest.
+    // Direct anchors instead of a Column-based layout so the search row
+    // and the list have deterministic sizes — the previous Column-based
+    // approach had height computations whose first evaluation could see
+    // an empty options array (before the parent's font-list binding
+    // resolved), capping the popover at ~3 rows and breaking scroll.
     Rectangle {
         id: popover
         visible: root._open
@@ -88,38 +90,19 @@ Item {
         anchors.topMargin: 4
         anchors.left: button.left
         anchors.right: button.right
-        height: {
-            const items = popover._filteredCount * root.rowHeight + 8
-            const search = root.searchable ? searchField.parent.height + 6 : 0
-            return Math.min(items + search + 8, root.maxPopupHeight)
-        }
+        height: root.maxPopupHeight
         color: Theme.color.raised
         border.color: Theme.color.borderStrong
         border.width: 1
         radius: Theme.radius.md
         clip: true
 
-        // Event-blocking backdrop. A bare Rectangle does not stop mouse or
-        // hover events from reaching items behind it — only a MouseArea
-        // (or HoverHandler) claims the cursor. This sits at the bottom of
-        // the popover's child stack so delegate MouseAreas above still
-        // receive their own events, while events that fall in the gaps
-        // (search row border, list margin, between delegates) are absorbed
-        // here instead of bleeding through to the property inputs
-        // underneath.
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
-            hoverEnabled: true
-            onPressed: function(m) { m.accepted = true }
-            onWheel: function(w) { w.accepted = true }
-        }
-
         property string _filter: ""
         property var _filteredOptions: {
-            if (!root.searchable || !_filter) return root.options
+            const opts = root.options || []
+            if (!root.searchable || !_filter) return opts
             const f = _filter.toLowerCase()
-            return root.options.filter(function(opt) {
+            return opts.filter(function(opt) {
                 const t = (typeof opt === "string") ? opt
                         : (opt.label || opt.value || "")
                 return t.toLowerCase().indexOf(f) >= 0
@@ -127,101 +110,117 @@ Item {
         }
         readonly property int _filteredCount: _filteredOptions ? _filteredOptions.length : 0
 
-        Column {
+        // Event-blocking backdrop. A bare Rectangle does not stop mouse or
+        // hover events from reaching items behind it. The backdrop catches
+        // anything that lands in popover chrome (border, margins, between
+        // rows) so the inputs underneath stay quiet. Delegate MouseAreas
+        // declared later still receive events for their rows.
+        MouseArea {
             anchors.fill: parent
-            anchors.margins: 6
-            spacing: 4
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            onPressed: function(m) { m.accepted = true }
+            onWheel:   function(w) { w.accepted = true }
+        }
 
-            // ── Search ─────────────────────────────────────────────────
-            Rectangle {
-                visible: root.searchable
+        // ── Search row ────────────────────────────────────────────────
+        Rectangle {
+            id: searchRow
+            visible: root.searchable
+            anchors.top: parent.top
+            anchors.topMargin: 6
+            anchors.left: parent.left
+            anchors.leftMargin: 6
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            height: 24
+            radius: Theme.radius.sm
+            color: Theme.color.canvas
+            border.color: Theme.color.borderSubtle
+            border.width: 1
+
+            AppIcon {
                 anchors.left: parent.left
-                anchors.right: parent.right
-                height: 24
-                radius: Theme.radius.sm
-                color: Theme.color.canvas
-                border.color: Theme.color.borderSubtle
-                border.width: 1
-
-                AppIcon {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: "search"
-                    size: 12
-                    color: Theme.color.textTertiary
-                }
-                TextInput {
-                    id: searchField
-                    anchors.fill: parent
-                    anchors.leftMargin: 24
-                    anchors.rightMargin: 6
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
-                    selectByMouse: true
-                    clip: true
-                    onTextChanged: popover._filter = text
-                    Keys.onEscapePressed: root._open = false
-                    Keys.onReturnPressed: {
-                        if (popover._filteredCount > 0) {
-                            const first = popover._filteredOptions[0]
-                            const v = (typeof first === "string") ? first
-                                    : (first.value || first.label || "")
-                            root.valueSelected(v)
-                            root._open = false
-                        }
+                anchors.leftMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                name: "search"
+                size: 12
+                color: Theme.color.textTertiary
+            }
+            TextInput {
+                id: searchField
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 6
+                verticalAlignment: TextInput.AlignVCenter
+                color: Theme.color.textPrimary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                selectByMouse: true
+                clip: true
+                onTextChanged: popover._filter = text
+                Keys.onEscapePressed: root._open = false
+                Keys.onReturnPressed: {
+                    if (popover._filteredCount > 0) {
+                        const first = popover._filteredOptions[0]
+                        const v = (typeof first === "string") ? first
+                                : (first.value || first.label || "")
+                        root.valueSelected(v)
+                        root._open = false
                     }
                 }
             }
+        }
 
-            // ── List ──────────────────────────────────────────────────
-            ListView {
-                id: listView
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: parent.height
-                    - (root.searchable ? searchField.parent.height + parent.spacing : 0)
-                clip: true
-                model: popover._filteredOptions
-                boundsBehavior: Flickable.StopAtBounds
+        // ── Scrolling list ────────────────────────────────────────────
+        ListView {
+            id: listView
+            anchors.top: root.searchable ? searchRow.bottom : parent.top
+            anchors.topMargin: root.searchable ? 4 : 6
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 6
+            anchors.left: parent.left
+            anchors.leftMargin: 6
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            clip: true
+            model: popover._filteredOptions
+            boundsBehavior: Flickable.StopAtBounds
 
-                delegate: Rectangle {
-                    width: listView.width
-                    height: root.rowHeight
-                    radius: Theme.radius.sm
-                    readonly property string _label: (typeof modelData === "string")
-                        ? modelData
-                        : (modelData.label || modelData.value || "")
-                    readonly property string _value: (typeof modelData === "string")
-                        ? modelData
-                        : (modelData.value || modelData.label || "")
-                    readonly property bool _selected: _value === root.value
+            delegate: Rectangle {
+                width: listView.width
+                height: root.rowHeight
+                radius: Theme.radius.sm
+                readonly property string _label: (typeof modelData === "string")
+                    ? modelData
+                    : (modelData.label || modelData.value || "")
+                readonly property string _value: (typeof modelData === "string")
+                    ? modelData
+                    : (modelData.value || modelData.label || "")
+                readonly property bool _selected: _value === root.value
 
-                    color: rowMa.containsMouse ? Theme.color.overlay
-                         : _selected           ? Theme.color.brandSubtle
-                                               : "transparent"
-                    Text {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        verticalAlignment: Text.AlignVCenter
-                        text: parent._label
-                        color: parent._selected ? Theme.color.brand : Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        elide: Text.ElideRight
-                    }
-                    MouseArea {
-                        id: rowMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.valueSelected(parent._value)
-                            root._open = false
-                        }
+                color: rowMa.containsMouse ? Theme.color.overlay
+                     : _selected           ? Theme.color.brandSubtle
+                                           : "transparent"
+                Text {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: Text.AlignVCenter
+                    text: parent._label
+                    color: parent._selected ? Theme.color.brand : Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    elide: Text.ElideRight
+                }
+                MouseArea {
+                    id: rowMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.valueSelected(parent._value)
+                        root._open = false
                     }
                 }
             }

@@ -148,15 +148,21 @@ Column {
                 current: (node && node.style && node.style.verticalAlign) || "center"
                 onChanged: function(v) { root._setStyle("verticalAlign", v) }
             }
+            // Text-transform row. Each label shows what its transform produces
+            // when applied to the pair "Ag" — so "none" stays "Ag", uppercase
+            // becomes "AG", lowercase "ag", and capitalize "Tt" (title case).
+            // The descender on `g` plus distinct title-case glyphs make every
+            // option visually unique at a glance, avoiding the "Aa / Aa"
+            // ambiguity between none and capitalize in the previous labeling.
             SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
                 options: [
-                    { value: "none",       label: "Aa" },
-                    { value: "uppercase",  label: "AA" },
-                    { value: "lowercase",  label: "aa" },
-                    { value: "capitalize", label: "Aa" }
+                    { value: "none",       label: "Ag" },
+                    { value: "uppercase",  label: "AG" },
+                    { value: "lowercase",  label: "ag" },
+                    { value: "capitalize", label: "Tt" }
                 ]
                 current: (node && node.style && node.style.textTransform) || "none"
                 onChanged: function(v) { root._setStyle("textTransform", v) }
@@ -216,22 +222,41 @@ Column {
                 }
             }
 
+            // Auto-fit + Max-size row. The checkbox-style affordance is far
+            // clearer than the previous "× / check" icon-as-toggle, which read
+            // as a dismiss button in the OFF state. The Max input dims when
+            // auto-fit is off — both visually (opacity) and functionally
+            // (enabled = false) — so it's obvious which control governs which.
             Row {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                spacing: 6
-                Rectangle {
-                    width: parent.width * 0.4
+                spacing: 8
+                Item {
+                    id: autoFitRow
+                    width: 92
                     height: 24
-                    radius: Theme.radius.sm
-                    color: (node && node.data && node.data.autoResize) ? Theme.color.brandSubtle : Theme.color.canvas
-                    border.color: Theme.color.borderStrong
-                    border.width: 1
+                    readonly property bool _on: !!(node && node.data && node.data.autoResize)
                     Row {
-                        anchors.centerIn: parent; spacing: 4
-                        AppIcon { name: (node && node.data && node.data.autoResize) ? "check" : "x"; size: 10
-                            color: Theme.color.textPrimary }
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 14; height: 14
+                            radius: 3
+                            color: autoFitRow._on ? Theme.color.brand : Theme.color.canvas
+                            border.color: autoFitRow._on ? Theme.color.brand : Theme.color.borderStrong
+                            border.width: 1
+                            Behavior on color       { ColorAnimation { duration: Theme.motion.instant } }
+                            Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                            AppIcon {
+                                anchors.centerIn: parent
+                                visible: autoFitRow._on
+                                name: "check"; size: 9
+                                color: Theme.color.brandInk
+                            }
+                        }
                         Text {
+                            anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("Auto-fit")
                             color: Theme.color.textSecondary
                             font.family: Theme.font.family
@@ -241,14 +266,16 @@ Column {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root._setData("autoResize", !(root.node.data && root.node.data.autoResize))
+                        onClicked: root._setData("autoResize",
+                            !(root.node.data && root.node.data.autoResize))
                     }
                 }
                 NumericInput {
-                    width: parent.width * 0.6 - 6
+                    width: parent.width - 92 - 8
                     workspace: root.workspace
                     label: qsTr("Max"); suffix: "px"
                     enabled: !!(node && node.data && node.data.autoResize)
+                    opacity: enabled ? 1 : 0.45
                     min: 8; max: 400; step: 1
                     value: (node && node.data && node.data.maxFontSize) || 220
                     onCommit: function(v) { root._setData("maxFontSize", Math.round(v)) }
