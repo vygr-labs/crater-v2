@@ -2,6 +2,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+
+#include <cstdio>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFuture>
@@ -160,6 +162,17 @@ void registerBodyFont()
 
 int main(int argc, char* argv[])
 {
+    // Early bootstrap trace — writes to a fixed file beside the exe BEFORE
+    // any Qt code runs. If the main log is empty but this file exists, the
+    // exe loaded fine and the crash is inside Qt initialization. If even
+    // this file doesn't appear, the binary failed to load (most often a
+    // missing DLL on Windows — check QtWidgets.dll deployment).
+    if (FILE* boot = std::fopen("crater-bootstrap.log", "w")) {
+        std::fprintf(boot, "main() entered (argc=%d)\n", argc);
+        std::fflush(boot);
+        std::fclose(boot);
+    }
+
     QApplication::setOrganizationName(QStringLiteral("Voyager Labs"));
     QApplication::setOrganizationDomain(QStringLiteral("voyagerlabs.tech"));
     QApplication::setApplicationName(QStringLiteral("Crater"));
@@ -168,6 +181,14 @@ int main(int argc, char* argv[])
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
 
     QApplication app(argc, argv);
+
+    // Second bootstrap marker — confirms QApplication constructed without
+    // dying. Anything past this point logs to the normal log file via
+    // qInstallMessageHandler in initLogging().
+    if (FILE* boot = std::fopen("crater-bootstrap.log", "a")) {
+        std::fprintf(boot, "QApplication constructed\n");
+        std::fclose(boot);
+    }
 
     const QString logPath = initLogging();
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";

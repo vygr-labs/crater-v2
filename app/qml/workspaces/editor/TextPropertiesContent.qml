@@ -1,9 +1,6 @@
 import QtQuick
 import Crater
 
-import "./inputs" as Inputs
-import "../../components" as Components
-
 // All non-Transform properties for a Text node: color, typography,
 // alignment, spacing, content linkage, auto-resize.
 Column {
@@ -28,7 +25,7 @@ Column {
             anchors.top: parent.top
             anchors.topMargin: Theme.space.sm
             height: 32
-            Components.ColorSwatchInput {
+            ColorSwatchInput {
                 anchors.fill: parent
                 label: qsTr("Text")
                 value: (node && node.style && node.style.color) || "#ffffff"
@@ -100,7 +97,7 @@ Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 spacing: 6
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: qsTr("Size"); suffix: "px"
@@ -108,7 +105,7 @@ Column {
                     value: (node && node.style && node.style.fontPixelSize) || 48
                     onCommit: function(v) { root._setStyle("fontPixelSize", Math.round(v)) }
                 }
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: qsTr("Weight"); step: 100
@@ -118,7 +115,7 @@ Column {
                 }
             }
 
-            Inputs.SimpleSlider {
+            SimpleSlider {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 label: qsTr("Line")
@@ -126,7 +123,7 @@ Column {
                 min: 0.5; max: 3.0; step: 0.05
                 onCommit: function(v) { root._setStyle("lineHeightMultiplier", v) }
             }
-            Inputs.SimpleSlider {
+            SimpleSlider {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 label: qsTr("Letter")
@@ -149,7 +146,7 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
-            Inputs.SegmentedControl {
+            SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
@@ -161,7 +158,7 @@ Column {
                 current: (node && node.style && node.style.textAlign) || "center"
                 onChanged: function(v) { root._setStyle("textAlign", v) }
             }
-            Inputs.SegmentedControl {
+            SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
@@ -173,7 +170,7 @@ Column {
                 current: (node && node.style && node.style.verticalAlign) || "center"
                 onChanged: function(v) { root._setStyle("verticalAlign", v) }
             }
-            Inputs.SegmentedControl {
+            SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
@@ -201,7 +198,7 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
-            Inputs.SegmentedControl {
+            SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
@@ -269,7 +266,7 @@ Column {
                         onClicked: root._setData("autoResize", !(root.node.data && root.node.data.autoResize))
                     }
                 }
-                Inputs.NumericInput {
+                NumericInput {
                     width: parent.width * 0.6 - 6
                     workspace: root.workspace
                     label: qsTr("Max"); suffix: "px"

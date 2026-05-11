@@ -14,6 +14,20 @@ import QtQuick
 // State for query + mode lives on AppState (searchText[tabKey] +
 // librarySearchMode[tabKey]) so the tab content panel can re-read them. The
 // bar itself stays presentational — no debouncing here.
+//
+// TODO (deferred): scripture reference mode in electron has TWO sub-modes
+// keyed off settings.scriptureInputMode:
+//   "controlled" — segmented stage editor: book → chapter → verse, each
+//                  segment auto-selected; Tab/Space advances; Backspace at
+//                  segment start retreats; click on a segment selects it
+//   "crater"     — free-text + autocomplete: typing "gen " expands to
+//                  "Genesis "; an "Interpreted: Genesis 1:1" preview line
+//                  shows under the input; Tab/Enter accepts the parsed ref
+// Today this Qt bar offers neither — operators type the full ref freehand and
+// rely on BibleService.parseReference to find a match. See
+// electron/src/components/app/scripture/ScriptureSelection.tsx
+// (handleSpecialSearch / parseScriptureInput / handleInputKeyDown) for the
+// full reference. Track as a follow-up; not blocking the basic UX.
 Item {
     id: root
 
@@ -209,15 +223,57 @@ Item {
                 if (text !== root.queryText) AppState.setSearch(root.tabKey, text)
             }
 
-            // Keyboard nav routed to the active library tab. We consume the
-            // key here (instead of using a window-level Shortcut) because the
-            // operator typing in the search field expects arrows + Enter to
-            // navigate the library list — and consuming here also prevents
-            // the schedule-pane Up/Down shortcuts in Main.qml from firing.
-            Keys.onUpPressed:     AppState.libraryNavigateUp()
-            Keys.onDownPressed:   AppState.libraryNavigateDown()
-            Keys.onReturnPressed: AppState.libraryActivate()
-            Keys.onEnterPressed:  AppState.libraryActivate()
+            // Claim keyboard-focus ownership for the library panel whenever
+            // the input gains focus. Main.qml's window-level shortcuts read
+            // AppState.activeFocusPanel to decide whether Up/Down navigates
+            // the library list or the schedule list — without this claim,
+            // the schedule would steal the arrows even while the operator
+            // is clearly typing in the library search.
+            onActiveFocusChanged: {
+                if (activeFocus) AppState.setActiveFocus("library")
+            }
+
+            // Keyboard nav routed to the active library tab — but ONLY when
+            // the library actually owns focus. If the operator clicked a
+            // schedule row (flipping activeFocusPanel to "schedule") the
+            // input may still hold OS-level focus visually; in that case we
+            // bow out and let Main.qml's window shortcut route the key to
+            // the schedule pane instead.
+            Keys.onUpPressed: function(event) {
+                if (AppState.activeFocusPanel !== "library") return
+                AppState.libraryNavigateUp()
+                event.accepted = true
+            }
+            Keys.onDownPressed: function(event) {
+                if (AppState.activeFocusPanel !== "library") return
+                AppState.libraryNavigateDown()
+                event.accepted = true
+            }
+            Keys.onReturnPressed: function(event) {
+                if (AppState.activeFocusPanel !== "library") return
+                AppState.libraryActivate()
+                event.accepted = true
+            }
+            Keys.onEnterPressed: function(event) {
+                if (AppState.activeFocusPanel !== "library") return
+                AppState.libraryActivate()
+                event.accepted = true
+            }
+
+            // ShortcutOverride mirrors the same gate: when we own focus,
+            // accept the override so the window-level Shortcut in Main.qml
+            // is suppressed (preventing double-fire on Up/Down/Enter). When
+            // we don't own focus, leave the override unaccepted so the
+            // window Shortcut activates and routes to the right panel.
+            Keys.onShortcutOverride: function(event) {
+                if (AppState.activeFocusPanel !== "library") return
+                if (event.key === Qt.Key_Up
+                 || event.key === Qt.Key_Down
+                 || event.key === Qt.Key_Return
+                 || event.key === Qt.Key_Enter) {
+                    event.accepted = true
+                }
+            }
 
             // Placeholder
             Text {

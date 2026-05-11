@@ -118,6 +118,21 @@ Rectangle {
                     count:    modelData.count
                     active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
                     onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+
+                    // Scripture-tab translation rows: a double-click "sends
+                    // the currently focused verse Live in this translation"
+                    // — mirrors electron's handleTranslationDblClick. The
+                    // label is the uppercase translation code ("KJV"); the
+                    // scripture tab handles the actual lookup + push since
+                    // only it knows which verse is focused.
+                    onDoubleClicked: {
+                        if (root.currentTabKey === "scripture") {
+                            // Single click also sets the active group, so the
+                            // sidebar selection always tracks the live verse.
+                            AppState.setLibraryGroup("scripture", modelData.id)
+                            AppState.requestPushLiveInTranslation(modelData.label)
+                        }
+                    }
                 }
             }
         }

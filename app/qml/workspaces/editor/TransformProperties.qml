@@ -1,8 +1,6 @@
 import QtQuick
 import Crater
 
-import "./inputs" as Inputs
-
 // Position + size + z-index, shared by Text and Container nodes.
 Item {
     id: root
@@ -30,7 +28,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             spacing: 6
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "X"; suffix: "%"
@@ -38,7 +36,7 @@ Item {
                 value: (node && node.style && node.style.x) || 0
                 onCommit: function(v) { root._set("x", v); root._commit() }
             }
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "Y"; suffix: "%"
@@ -51,7 +49,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             spacing: 6
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "W"; suffix: "%"
@@ -59,7 +57,7 @@ Item {
                 value: (node && node.style && node.style.width) || 0
                 onCommit: function(v) { root._set("width", v); root._commit() }
             }
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "H"; suffix: "%"
@@ -72,14 +70,14 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             spacing: 6
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "Z"; step: 1
                 value: (node && node.style && node.style.z) || 0
                 onCommit: function(v) { root._set("z", Math.round(v)); root._commit() }
             }
-            Inputs.NumericInput {
+            NumericInput {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "Rot"; suffix: "°"
@@ -88,7 +86,7 @@ Item {
                 onCommit: function(v) { root._set("rotation", v); root._commit() }
             }
         }
-        Inputs.SimpleSlider {
+        SimpleSlider {
             anchors.left: parent.left
             anchors.right: parent.right
             label: qsTr("Opacity")

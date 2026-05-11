@@ -1,8 +1,6 @@
 import QtQuick
 import Crater
 
-import "../../components" as Components
-
 // One node on the canvas. Renders the node via NodeRenderer (the same
 // component the projection window uses) and overlays selection chrome
 // (1px outline + 8 resize handles) when selected. Handles its own
@@ -48,7 +46,7 @@ Item {
     }
 
     // Render
-    Components.NodeRenderer {
+    NodeRenderer {
         anchors.fill: parent
         node: root.node
         resolvedText: workspace.resolveText(root.node)

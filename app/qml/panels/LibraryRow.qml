@@ -13,6 +13,7 @@ Item {
     property bool   active: false
 
     signal clicked()
+    signal doubleClicked()
 
     implicitHeight: 32
     implicitWidth: 220
@@ -84,5 +85,6 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
+        onDoubleClicked: root.doubleClicked()
     }
 }

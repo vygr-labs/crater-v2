@@ -99,6 +99,7 @@ QtObject {
         readonly property int weightRegular:  400
         readonly property int weightMedium:   500
         readonly property int weightSemiBold: 600
+        readonly property int weightBold:     700
     }
 
     readonly property QtObject motion: QtObject {

@@ -132,13 +132,73 @@ target_link_libraries(crater
         # used by FileDialogService). It does not pull QtQuick.Dialogs into
         # the QML runtime — that's a separate, forbidden module.
         Qt6::Widgets
+        # Qt6::Multimedia provides MediaPlayer + VideoOutput, used by
+        # MediaBackgroundLoader.qml for video backgrounds inside container
+        # theme nodes. Linking it also triggers Qt's QML-import deployer
+        # to copy the QtMultimedia QML module + its native DLLs.
+        Qt6::Multimedia
         Crater::Core
 )
 
 set_target_properties(crater PROPERTIES
     WIN32_EXECUTABLE ON
     MACOSX_BUNDLE  ON
+    # Pin the runtime output to <build>/ so the exe is at a predictable path
+    # regardless of generator (Ninja single-config drops it under the source
+    # subdir by default; MSBuild adds a per-config subdir). Keeps `cmake
+    # --build && .\build\crater.exe` working across both.
+    RUNTIME_OUTPUT_DIRECTORY              "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE      "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG        "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
 )
+
+# Qt's auto-deploy for the build tree copies most Qt-Quick modules but
+# does NOT follow recent additions to target_link_libraries (Qt6::Widgets)
+# or QML-only imports outside its scanned set (QtMultimedia). Without
+# these explicit copies the build-tree exe fails to load silently — the
+# Win32 GUI subsystem suppresses the loader error. We keep these narrow
+# rather than running full windeployqt because the existing auto-deploy
+# already handles everything else.
+if(WIN32)
+    # Qt6Widgets.dll — pulled in via QFileDialog in FileDialogService.
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Qt6::Widgets>"
+            "$<TARGET_FILE_DIR:crater>"
+        COMMENT "Copying Qt6Widgets.dll next to crater.exe"
+        VERBATIM)
+
+    # Qt6Multimedia.dll — used by MediaBackgroundLoader.qml (video bgs).
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Qt6::Multimedia>"
+            "$<TARGET_FILE_DIR:crater>"
+        COMMENT "Copying Qt6Multimedia.dll next to crater.exe"
+        VERBATIM)
+
+    # Qt6Network.dll — Qt6::Multimedia has a runtime dep on Network on
+    # Windows (HTTP streaming surfaces). Already deployed by other modules
+    # in our case, but the copy_if_different makes the intent explicit
+    # and is a no-op when up to date.
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Qt6::Network>"
+            "$<TARGET_FILE_DIR:crater>"
+        COMMENT "Copying Qt6Network.dll next to crater.exe"
+        VERBATIM)
+
+    # QtMultimedia QML module — Qt's qmlimportscanner doesn't see the
+    # `import QtMultimedia` from our QML, so we copy the QML module to the
+    # standard <exe>/qml/QtMultimedia/ location (matches windeployqt's
+    # layout + Qt's default QML import-path lookup).
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_FILE_DIR:Qt6::Core>/../qml/QtMultimedia"
+            "$<TARGET_FILE_DIR:crater>/qml/QtMultimedia"
+        COMMENT "Copying QtMultimedia QML module to <exe>/qml/QtMultimedia"
+        VERBATIM)
+endif()
 
 install(TARGETS crater
     BUNDLE  DESTINATION .

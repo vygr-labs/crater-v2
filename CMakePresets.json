@@ -1,0 +1,62 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "_base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{CMAKE_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "description": "Optimized build for performance testing + smoke runs.",
+      "inherits": "_base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (Ninja)",
+      "description": "Unoptimized + symbols. Faster compiles for iteration.",
+      "inherits": "_base",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo (Ninja)",
+      "description": "Optimized with debug symbols. Good middle ground when chasing perf bugs.",
+      "inherits": "_base",
+      "binaryDir": "${sourceDir}/build-relwithdebinfo",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "description": "Full build: crater-core + crater app."
+    },
+    {
+      "name": "release-app",
+      "configurePreset": "release",
+      "targets": ["crater"],
+      "description": "Only the crater executable (skips crater-core relink when crater-core is unchanged)."
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "debug-app",
+      "configurePreset": "debug",
+      "targets": ["crater"]
+    }
+  ]
+}

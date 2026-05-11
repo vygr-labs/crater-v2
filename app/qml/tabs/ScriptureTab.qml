@@ -70,13 +70,72 @@ Item {
     // Track focused coordinates so a translation switch can re-position.
     property var _focusedCoord: null
 
-    function indexOf(book, chapter, verseNum) {
-        const verses = currentVerses
+    // Pending operations queued during a translation switch. The translation
+    // change is async (currentVerses re-resolves once activeLibraryGroup
+    // updates), so we capture intent and replay it inside
+    // onCurrentVersesChanged once the new translation's verses are loaded.
+    //
+    // _pendingSyncCoord: schedule click → scroll & focus the matching verse.
+    // _pendingPushLiveCoord: translation dblclick → push verse Live in the
+    //                        new translation.
+    // Each is a `{book, chapter, verse}` shape (or null when nothing pending).
+    property var _pendingSyncCoord:     null
+    property var _pendingPushLiveCoord: null
+
+    // Verse strings come from the Bible DB in several shapes:
+    //   "2"       — plain number
+    //   "1-2"     — verse range (covers both 1 and 2)
+    //   "2a"      — subdivision (matches base verse 2)
+    //   "1-2a"    — combined range + subdivision
+    // Used by findBestVerseMatch to handle reference parsing and schedule
+    // sync against verse rows that aren't a plain integer. Mirrors the
+    // electron verseMatches() function in ScriptureSelection.tsx.
+    function verseMatches(verseStr, targetVerse) {
+        const verse  = String(verseStr)
+        const target = (typeof targetVerse === "string")
+                        ? parseInt(targetVerse) : targetVerse
+        if (isNaN(target)) return false
+
+        const simpleNum = parseInt(verse)
+        if (!isNaN(simpleNum) && simpleNum === target && verse === String(target)) {
+            return true
+        }
+        const rangeMatch = verse.match(/^(\d+)-(\d+)/)
+        if (rangeMatch) {
+            const start = parseInt(rangeMatch[1])
+            const end   = parseInt(rangeMatch[2])
+            if (target >= start && target <= end) return true
+        }
+        const subMatch = verse.match(/^(\d+)[a-z]/i)
+        if (subMatch && parseInt(subMatch[1]) === target) return true
+        if (simpleNum === target) return true
+        return false
+    }
+
+    // Find the best-matching verse index. Prefers exact matches over
+    // range/subdivision matches so a search for verse "2" lands on the
+    // standalone "2" row before falling back to a "1-2" range row.
+    function findBestVerseMatch(verses, book, chapter, targetVerse) {
+        if (!verses || !verses.length) return -1
+        const normBook = String(book || "").toLowerCase()
+        const target   = (typeof targetVerse === "string")
+                          ? parseInt(targetVerse) : targetVerse
+
+        let exactIdx = -1
+        let rangeIdx = -1
         for (let i = 0; i < verses.length; i++) {
             const v = verses[i]
-            if (v.book === book && v.chapter === chapter && v.verse === verseNum) return i
+            if (String(v.book || "").toLowerCase() !== normBook) continue
+            if (v.chapter !== chapter) continue
+            const verseStr = String(v.verse)
+            if (verseStr === String(target)) { exactIdx = i; break }
+            if (rangeIdx === -1 && verseMatches(verseStr, target)) rangeIdx = i
         }
-        return -1
+        return exactIdx !== -1 ? exactIdx : rangeIdx
+    }
+
+    function indexOf(book, chapter, verseNum) {
+        return findBestVerseMatch(currentVerses, book, chapter, verseNum)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -135,12 +194,51 @@ Item {
     // Re-bound fluid index when verses change (mode/translation/query swap).
     // Don't touch libraryPreviewItem unless this tab is active — it might
     // belong to another tab.
+    //
+    // Also drain pending sync / push-live ops queued during a translation
+    // switch — see _pendingSyncCoord / _pendingPushLiveCoord above. These
+    // run *after* the new translation's verses arrive so findBestVerseMatch
+    // searches the correct corpus.
     onCurrentVersesChanged: {
         const n = currentVerses.length
         if (n === 0) {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
             return
         }
+
+        // Drain pending sync (schedule → scripture jump). Consume the
+        // pending coord either way; only return early if we found a match.
+        // On miss (verse doesn't exist in this translation), fall through
+        // to the default fluid-index recovery so we don't leave a stale
+        // out-of-bounds index.
+        if (_pendingSyncCoord) {
+            const syncIdx = findBestVerseMatch(currentVerses,
+                _pendingSyncCoord.book,
+                _pendingSyncCoord.chapter,
+                _pendingSyncCoord.verse)
+            _pendingSyncCoord = null
+            if (syncIdx >= 0) {
+                AppState.setLibraryFluid(tabKey, syncIdx)
+                Qt.callLater(function() { list.positionViewAtIndex(syncIdx, ListView.Center) })
+                if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(syncIdx)
+                return
+            }
+        }
+
+        // Drain pending push-live (translation dblclick).
+        if (_pendingPushLiveCoord) {
+            const liveIdx = findBestVerseMatch(currentVerses,
+                _pendingPushLiveCoord.book,
+                _pendingPushLiveCoord.chapter,
+                _pendingPushLiveCoord.verse)
+            _pendingPushLiveCoord = null
+            if (liveIdx >= 0) {
+                AppState.setLibraryFluid(tabKey, liveIdx)
+                pushLiveFor(liveIdx)
+                return
+            }
+        }
+
         const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
@@ -152,6 +250,60 @@ Item {
         function onActiveTabChanged() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.pushPreviewFor(root.fluidIndex)
+        }
+
+        // Schedule → scripture sync: clicking a scripture row in the schedule
+        // jumps the picker to that verse, switching translation if needed.
+        // Same-translation case: act immediately. Different-translation case:
+        // queue the coords + flip activeLibraryGroup; the verses-changed
+        // handler above will replay once the new corpus loads.
+        function onSyncScriptureFromSchedule(book, chapter, verse, translation) {
+            if (!book || !chapter) return
+            const wantCode = (translation || "").toUpperCase()
+            const sameTranslation = (wantCode === "" || wantCode === root.activeTranslation)
+
+            if (sameTranslation) {
+                const idx = root.findBestVerseMatch(root.currentVerses, book, chapter, verse)
+                if (idx >= 0) {
+                    AppState.setLibraryFluid(root.tabKey, idx)
+                    Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Center) })
+                    if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
+                        root.pushPreviewFor(idx)
+                    }
+                }
+                return
+            }
+
+            root._pendingSyncCoord = { book: book, chapter: chapter, verse: verse }
+            AppState.setLibraryGroup("scripture", wantCode.toLowerCase())
+        }
+
+        // Translation dblclick → push current verse Live in the new
+        // translation. Captures _focusedCoord at the moment of the request
+        // (it's still pointing at the OLD-translation verse coords) and
+        // replays after the switch.
+        function onRequestPushLiveInTranslation(translationCode) {
+            const wantCode = (translationCode || "").toUpperCase()
+            if (!wantCode) return
+            // No focus → nothing to push live. The dblclick still switches
+            // translation via LibrarySidebar's setLibraryGroup call.
+            if (!root._focusedCoord) return
+
+            if (wantCode === root.activeTranslation) {
+                const idx = root.findBestVerseMatch(root.currentVerses,
+                    root._focusedCoord.book,
+                    root._focusedCoord.chapter,
+                    root._focusedCoord.verse)
+                if (idx >= 0) root.pushLiveFor(idx)
+                return
+            }
+
+            root._pendingPushLiveCoord = {
+                book:    root._focusedCoord.book,
+                chapter: root._focusedCoord.chapter,
+                verse:   root._focusedCoord.verse
+            }
+            AppState.setLibraryGroup("scripture", wantCode.toLowerCase())
         }
     }
 
@@ -327,13 +479,15 @@ Item {
             readonly property bool _selected: list.currentIndex === index
 
             // Edge-to-edge background — matches electron's verse row, which
-            // has no border-radius and fills the row width. Hover / selected
-            // washes use brand-tinted greens (the page's accent palette).
+            // has no border-radius and fills the row width. Hover wash is
+            // brand-tinted (electron's `bg=${defaultPalette}.900/30`); selected
+            // wash is the deeper brandSubtle so the row reads as "currently
+            // active". Both transition at 150ms to match electron's CSS easing.
             Rectangle {
                 anchors.fill: parent
                 radius: 0
                 color: verseRow._selected ? Theme.color.brandSubtle
-                     : verseMa.containsMouse ? Theme.color.overlay
+                     : verseMa.containsMouse ? Qt.rgba(34/255, 118/255, 23/255, 0.18)
                                              : "transparent"
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
@@ -344,7 +498,10 @@ Item {
                 anchors.leftMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 name: "book-2"
-                color: verseRow._selected ? Theme.color.brand : Theme.color.textTertiary
+                // Selected: light brand (brand.300, electron's defaultPalette.300)
+                // so the icon stays visible on the dark brandSubtle wash. The
+                // dark brand.800 used to disappear into the bg.
+                color: verseRow._selected ? "#daf1d7" : Theme.color.textTertiary
                 size: 16
                 opacity: verseRow._selected ? 1.0 : 0.7
             }
@@ -429,7 +586,9 @@ Item {
                                 { separator: true },
                                 { label: qsTr("Mark Up"),          iconName: "edit-3" },
                                 { label: qsTr("Add to Favorites"), iconName: "heart" },
-                                { label: qsTr("Add to Collection…"), iconName: "folder" }
+                                { label: qsTr("Add to Collection…"), iconName: "folder" },
+                                { separator: true },
+                                { label: qsTr("Refresh"), iconName: "refresh-cw" }
                             ]
                         })
                     }

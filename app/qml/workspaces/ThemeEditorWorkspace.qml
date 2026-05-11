@@ -1,9 +1,6 @@
 import QtQuick
 import Crater
 
-import "../workspaces/editor" as Editor
-import "../components" as Components
-
 // Full-screen theme editor — mounted by Main.qml when AppState.workspaceMode
 // is "themeEditor". Owns the WorkingTheme instance, the undo/redo stack, the
 // canvas selection state, and the property-panel inputs. On Save, ships the
@@ -26,8 +23,16 @@ Rectangle {
     property string themeKind: "song"
 
     // ── Working state ─────────────────────────────────────────────────
+    // Expose the WorkingTheme instance as a property on the workspace so
+    // child components in other .qml files (LayersPanel, EditorCanvas,
+    // PropertiesPanel, etc.) can reach it via `workspace.workingTheme`.
+    // Without this alias, those external files would only see undeclared
+    // properties — ids defined inside this file are not visible across
+    // file boundaries.
+    property alias workingTheme: _workingThemeInst
+
     WorkingTheme {
-        id: workingTheme
+        id: _workingThemeInst
     }
     property string themeName: ""
     property string selectedNodeId: ""
@@ -162,7 +167,7 @@ Rectangle {
     }
 
     // ── Layout ────────────────────────────────────────────────────────
-    Editor.EditorHeader {
+    EditorHeader {
         id: header
         anchors.top: parent.top
         anchors.left: parent.left
@@ -171,7 +176,7 @@ Rectangle {
         workspace: workspace
     }
 
-    Editor.EditorToolbar {
+    EditorToolbar {
         id: toolbar
         anchors.top: header.bottom
         anchors.left: parent.left
@@ -180,7 +185,7 @@ Rectangle {
         workspace: workspace
     }
 
-    Editor.EditorFooter {
+    EditorFooter {
         id: footer
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -196,7 +201,7 @@ Rectangle {
         anchors.right: parent.right
         color: "transparent"
 
-        Editor.LayersPanel {
+        LayersPanel {
             id: layersPanel
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -212,13 +217,13 @@ Rectangle {
             anchors.right: propsPanel.left
             color: Theme.color.bgContent
 
-            Editor.EditorCanvas {
+            EditorCanvas {
                 anchors.fill: parent
                 workspace: workspace
             }
         }
 
-        Editor.PropertiesPanel {
+        PropertiesPanel {
             id: propsPanel
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -229,7 +234,7 @@ Rectangle {
     }
 
     // ── Confirmation overlay (above panels, below modal layer) ────────
-    Components.ConfirmationOverlay {
+    ConfirmationOverlay {
         id: confirmOverlay
         anchors.fill: parent
         title: qsTr("Discard changes?")

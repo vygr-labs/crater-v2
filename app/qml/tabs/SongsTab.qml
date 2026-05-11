@@ -18,6 +18,16 @@ Item {
     id: root
 
     readonly property string tabKey: "songs"
+
+    // Right-pane background — sits a touch darker than `canvas`, matching
+    // electron's `bg="gray.950/30"` on the content side. Mirrors the
+    // ScriptureTab so the two tabs share the same right-pane backdrop.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.bgContent
+        z: -1
+    }
+
     readonly property string query:  (AppState.searchText.songs || "").toLowerCase()
     readonly property string mode:   AppState.librarySearchMode.songs || "lyrics"
     readonly property string group:  AppState.activeLibraryGroup.songs
@@ -165,14 +175,6 @@ Item {
     function addToScheduleFor(idx) {
         const item = songItemAt(idx)
         if (item) AppState.addItemToSchedule(item)
-    }
-
-    function isLiveSong(id) {
-        // A song is "live" if it's currently on projection and the live item
-        // came from the library and shares this song id.
-        if (!AppState.libraryLiveActive) return false
-        const live = AppState.libraryPreviewItem
-        return live && live.songId === id
     }
 
     // ── Top action bar ──────────────────────────────────────────────────
@@ -387,7 +389,7 @@ Item {
         model: root.filteredSongs
         clip: true
         cacheBuffer: 400
-        spacing: 1
+        spacing: 0
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: root.fluidIndex
 
@@ -399,128 +401,67 @@ Item {
         delegate: Item {
             id: songRow
             width: list.width
-            height: 52
+            // 44px keeps the title (14px) + author (12px) two-line layout from
+            // clipping under Qt text metrics. Electron's virtualizer estimates
+            // 36px per row but the rendered HStack overflows visibly; matching
+            // its overall density without the overflow lands here.
+            height: 44
 
             readonly property bool _selected: list.currentIndex === index
-            readonly property bool _live:     root.isLiveSong(modelData.id)
 
+            // Edge-to-edge background — no border, no radius. Mirrors the
+            // electron song row: full-width band, gray.800 selected wash, and
+            // a brand-tinted hover (electron's `bg=${defaultPalette}.900/30`,
+            // i.e. brand.900 at 30% opacity layered over canvas).
             Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.space.sm
-                anchors.rightMargin: Theme.space.sm
-                radius: Theme.radius.md
-                color: songRow._selected ? Theme.color.previewSubtle
-                     : rowMa.containsMouse ? Theme.color.elevated
+                radius: 0
+                color: songRow._selected ? Theme.color.raised
+                     : rowMa.containsMouse ? Qt.rgba(34/255, 118/255, 23/255, 0.18)
                                            : "transparent"
-                border.color: songRow._selected ? Theme.color.preview : "transparent"
-                border.width: 1
-                Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
-                Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                Behavior on color { ColorAnimation { duration: 150 } }
             }
 
-            // Leading music / favorite icon
             AppIcon {
                 id: leadIcon
                 anchors.left: parent.left
-                anchors.leftMargin: Theme.space.lg + Theme.space.sm
+                anchors.leftMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 name: modelData.isFavorite ? "heart" : "music"
                 color: modelData.isFavorite ? Theme.color.brand
-                     : songRow._selected   ? Theme.color.preview
+                     : songRow._selected   ? "#d4d4d8"   // gray.300
                                            : Theme.color.textTertiary
-                opacity: modelData.isFavorite ? 1.0 : 0.55
-                size: 14
+                size: 16
             }
 
             Column {
                 anchors.left: leadIcon.right
                 anchors.leftMargin: Theme.space.md
-                anchors.right: rightStack.left
+                anchors.right: parent.right
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
+                spacing: 0
 
                 Text {
                     text: modelData.title
-                    color: songRow._selected ? Theme.color.textPrimary : Theme.color.textSecondary
+                    color: songRow._selected ? Theme.color.textPrimary
+                                             : "#d4d4d8"   // gray.300
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    font.weight: songRow._selected ? Theme.font.weightMedium : Theme.font.weightRegular
+                    font.pixelSize: 14
+                    font.weight: songRow._selected ? Theme.font.weightMedium
+                                                   : Theme.font.weightRegular
                     elide: Text.ElideRight
                     width: parent.width
                 }
                 Text {
                     visible: modelData.author && modelData.author.length > 0
                     text: modelData.author
-                    color: Theme.color.textTertiary
+                    color: songRow._selected ? Theme.color.textSecondary
+                                             : Theme.color.textTertiary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
+                    font.pixelSize: 12
                     elide: Text.ElideRight
                     width: parent.width
-                }
-            }
-
-            // Right stack: LIVE pill + CCLI badge
-            Row {
-                id: rightStack
-                anchors.right: parent.right
-                anchors.rightMargin: Theme.space.lg + Theme.space.sm
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Theme.space.xs
-
-                Rectangle {
-                    visible: songRow._live
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: liveLabel.implicitWidth + Theme.space.sm * 2 + livePulse.width + 4
-                    height: 16
-                    radius: 3
-                    color: Theme.color.live
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 4
-
-                        Rectangle {
-                            id: livePulse
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 5; height: 5; radius: 3
-                            color: "#ffffff"
-                            SequentialAnimation on opacity {
-                                running: songRow._live
-                                loops: Animation.Infinite
-                                NumberAnimation { from: 1.0; to: 0.4; duration: 800 }
-                                NumberAnimation { from: 0.4; to: 1.0; duration: 800 }
-                            }
-                        }
-                        Text {
-                            id: liveLabel
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("LIVE")
-                            color: "#ffffff"
-                            font.family: Theme.font.family
-                            font.pixelSize: 9
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 0.5
-                        }
-                    }
-                }
-
-                Rectangle {
-                    visible: rowMa.containsMouse && modelData.ccli && modelData.ccli.length > 0
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: ccliLabel.implicitWidth + Theme.space.sm * 2
-                    height: 16
-                    radius: 2
-                    color: Theme.color.overlay
-
-                    Text {
-                        id: ccliLabel
-                        anchors.centerIn: parent
-                        text: "CCLI " + modelData.ccli
-                        color: Theme.color.textTertiary
-                        font.family: Theme.font.monoFamily
-                        font.pixelSize: 9
-                    }
                 }
             }
 

@@ -320,6 +320,40 @@ QtObject {
     signal libraryNavigateRight()
     signal libraryActivate()
 
+    // ─── Active focus panel ─────────────────────────────────────────────
+    // Names which UI surface currently "owns" keyboard navigation. The
+    // window-level Up/Down/Delete shortcuts in Main.qml read this to decide
+    // whether to route to the schedule list or the library list — so an
+    // operator browsing scripture verses isn't moving the schedule selection
+    // every time they press an arrow.
+    //
+    // Default "library" because TabSearchBar auto-focuses its input on tab
+    // change (Component.onCompleted + onActiveTabChanged). Panel-level focus
+    // handlers update it: search-input focus → "library", schedule row click
+    // → "schedule". Future panels (preview, live) will claim it the same way.
+    //
+    // Analogous to electron's FocusContext.currentPanel().
+    property string activeFocusPanel: "library"   // "library" | "schedule" | future: "preview" | "live"
+
+    function setActiveFocus(panel) {
+        if (!panel || panel === activeFocusPanel) return
+        activeFocusPanel = panel
+    }
+
+    // ─── Cross-panel sync signals ───────────────────────────────────────
+    // Schedule → Scripture: clicking a scripture row in the working schedule
+    // should auto-scroll the scripture picker to that verse, switching
+    // translation if needed. Emitted by SchedulePanel; consumed by ScriptureTab.
+    // verse is `var` because the underlying field can be a number ("3") or a
+    // string ("1-2", "2a") — see ScriptureTab.verseMatches().
+    signal syncScriptureFromSchedule(string book, int chapter, var verse, string translation)
+
+    // Translation dblclick → push live: double-clicking a translation row in
+    // the sidebar should push the currently focused verse Live in the new
+    // translation. LibrarySidebar emits, ScriptureTab handles (only it knows
+    // which verse the operator is focused on).
+    signal requestPushLiveInTranslation(string translationCode)
+
     // Convenience for the "Add to Schedule" right-click action — adds the
     // item AND selects it so the operator gets immediate visual feedback.
     function addItemToSchedule(item) {

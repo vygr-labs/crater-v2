@@ -19,24 +19,30 @@ Rectangle {
 
     // Local node copy — refreshes on workspace's selectedNodeId change AND
     // on every granular mutation, so all input bindings see fresh values.
-    property var localNode: workspace.selectedNodeId
-        ? workspace.workingTheme.node(workspace.selectedNodeId)
-        : null
+    //
+    // IMPORTANT: localNode is a *binding*. Never assign to it imperatively
+    // from a signal handler (that would clobber the binding and freeze the
+    // panel on a stale node). Instead, _refreshTick is read inside the
+    // binding expression and bumped from Connections — that re-fires the
+    // whole expression without touching localNode itself.
+    property int _refreshTick: 0
+    readonly property var localNode: {
+        _refreshTick   // dependency — force re-eval on mutation signals
+        return workspace.selectedNodeId
+            ? workspace.workingTheme.node(workspace.selectedNodeId)
+            : null
+    }
 
     Connections {
         target: workspace.workingTheme
         function onNodeStyleChanged(id, field) {
-            if (id === workspace.selectedNodeId)
-                root.localNode = workspace.workingTheme.node(id)
+            if (id === workspace.selectedNodeId) root._refreshTick++
         }
         function onNodeDataChanged(id, field) {
-            if (id === workspace.selectedNodeId)
-                root.localNode = workspace.workingTheme.node(id)
+            if (id === workspace.selectedNodeId) root._refreshTick++
         }
         function onNodesChanged() {
-            root.localNode = workspace.selectedNodeId
-                ? workspace.workingTheme.node(workspace.selectedNodeId)
-                : null
+            root._refreshTick++
         }
     }
 

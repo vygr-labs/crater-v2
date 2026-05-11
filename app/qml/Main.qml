@@ -211,10 +211,14 @@ ApplicationWindow {
         }
     }
 
-    // Delete: prompt to remove the selected schedule item.
+    // Delete: prompt to remove the selected schedule item — only when the
+    // schedule has keyboard focus. With library focus, Delete falls through
+    // (a future "delete song" / "delete theme" path will own it then).
     Shortcut {
         sequence: "Delete"
-        enabled: AppState.selectedScheduleIndex >= 0 && AppState.activeModal === ""
+        enabled: AppState.selectedScheduleIndex >= 0
+              && AppState.activeModal === ""
+              && AppState.activeFocusPanel === "schedule"
         onActivated: {
             const i = AppState.selectedScheduleIndex
             const item = ScheduleService.currentItems[i]
@@ -227,26 +231,41 @@ ApplicationWindow {
         }
     }
 
-    // Up/Down: move selection within the schedule.
+    // Up / Down: focus-aware navigation. Routed by AppState.activeFocusPanel
+    // so an operator browsing the library list isn't moving the schedule
+    // selection on every arrow press, and vice-versa.
+    //
+    // Note: when the TabSearchBar input has focus, its own Keys.onUpPressed
+    // handles the key AND its Keys.onShortcutOverride blocks this Shortcut
+    // from firing — see TabSearchBar.qml. This Shortcut only kicks in when
+    // focus is OUTSIDE the input (e.g. operator clicked a verse row).
     Shortcut {
         sequence: "Up"
         enabled: AppState.activeModal === ""
         onActivated: {
-            if (ScheduleService.currentItems.length === 0) return
-            const next = Math.max(0, AppState.selectedScheduleIndex - 1)
-            AppState.selectScheduleItem(next)
+            if (AppState.activeFocusPanel === "schedule") {
+                if (ScheduleService.currentItems.length === 0) return
+                const next = Math.max(0, AppState.selectedScheduleIndex - 1)
+                AppState.selectScheduleItem(next)
+            } else {
+                AppState.libraryNavigateUp()
+            }
         }
     }
     Shortcut {
         sequence: "Down"
         enabled: AppState.activeModal === ""
         onActivated: {
-            if (ScheduleService.currentItems.length === 0) return
-            const max = ScheduleService.currentItems.length - 1
-            const next = AppState.selectedScheduleIndex < 0
-                       ? 0
-                       : Math.min(max, AppState.selectedScheduleIndex + 1)
-            AppState.selectScheduleItem(next)
+            if (AppState.activeFocusPanel === "schedule") {
+                if (ScheduleService.currentItems.length === 0) return
+                const max = ScheduleService.currentItems.length - 1
+                const next = AppState.selectedScheduleIndex < 0
+                           ? 0
+                           : Math.min(max, AppState.selectedScheduleIndex + 1)
+                AppState.selectScheduleItem(next)
+            } else {
+                AppState.libraryNavigateDown()
+            }
         }
     }
 }

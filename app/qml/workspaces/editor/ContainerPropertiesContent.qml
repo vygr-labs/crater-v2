@@ -1,9 +1,6 @@
 import QtQuick
 import Crater
 
-import "./inputs" as Inputs
-import "../../components" as Components
-
 // Container-specific properties: background color/opacity, media bg, border radii.
 Column {
     id: root
@@ -27,7 +24,7 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
-            Components.ColorSwatchInput {
+            ColorSwatchInput {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 32
@@ -36,7 +33,7 @@ Column {
                 onColorPicked: function(c) { root._setStyle("backgroundColor", c) }
             }
 
-            Inputs.SimpleSlider {
+            SimpleSlider {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 label: qsTr("Media α")
@@ -151,14 +148,14 @@ Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 spacing: 6
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: "TL"; suffix: "px"; min: 0; max: 200; step: 1
                     value: (node && node.style && node.style.borderTopLeftRadius) || 0
                     onCommit: function(v) { root._setStyle("borderTopLeftRadius", Math.round(v)) }
                 }
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: "TR"; suffix: "px"; min: 0; max: 200; step: 1
@@ -170,14 +167,14 @@ Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 spacing: 6
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: "BL"; suffix: "px"; min: 0; max: 200; step: 1
                     value: (node && node.style && node.style.borderBottomLeftRadius) || 0
                     onCommit: function(v) { root._setStyle("borderBottomLeftRadius", Math.round(v)) }
                 }
-                Inputs.NumericInput {
+                NumericInput {
                     width: (parent.width - 6) / 2
                     workspace: root.workspace
                     label: "BR"; suffix: "px"; min: 0; max: 200; step: 1

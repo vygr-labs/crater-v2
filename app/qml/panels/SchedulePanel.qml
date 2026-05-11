@@ -114,8 +114,26 @@ Rectangle {
                 isLive:   AppState.liveScheduleIndex === index
                 isQueued: AppState.selectedScheduleIndex === index
 
-                onClicked: AppState.selectScheduleItem(index)
+                onClicked: {
+                    // Claim keyboard focus for the schedule so Up/Down step
+                    // through schedule rows (instead of the library list).
+                    AppState.setActiveFocus("schedule")
+                    AppState.selectScheduleItem(index)
+
+                    // Scripture rows: notify the scripture picker so it can
+                    // scroll-and-highlight the same verse, switching
+                    // translation if needed. Mirrors electron's
+                    // syncFromSchedule mechanism.
+                    const it = ScheduleService.currentItems[index]
+                    if (it && it.kind === "scripture" && it.scriptureRef) {
+                        const r = it.scriptureRef
+                        AppState.syncScriptureFromSchedule(
+                            r.book, r.chapter, r.verseStart,
+                            r.translationCode || "")
+                    }
+                }
                 onDoubleClicked: {
+                    AppState.setActiveFocus("schedule")
                     AppState.selectScheduleItem(index)
                     AppState.goLive()
                 }
