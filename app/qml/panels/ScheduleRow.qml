@@ -1,5 +1,8 @@
 import QtQuick
 
+// One row in the schedule list. Visual state varies with isLive/isQueued/hover.
+// Emits clicked, doubleClicked, and rightClicked (mouse x/y in row coords)
+// so the parent can position a context menu.
 Item {
     id: root
 
@@ -13,6 +16,7 @@ Item {
 
     signal clicked()
     signal doubleClicked()
+    signal rightClicked(real mouseX, real mouseY)
 
     implicitHeight: Theme.size.scheduleRowHeight
     implicitWidth: 400
@@ -43,7 +47,7 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: Theme.space.lg
             anchors.verticalCenter: parent.verticalCenter
-            text: ("0" + root.rowIndex).slice(-2)
+            text: ("0" + (root.rowIndex + 1)).slice(-2)
             color: Theme.color.textTertiary
             font.family: Theme.font.monoFamily
             font.pixelSize: Theme.font.smallSize
@@ -117,7 +121,14 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.clicked()
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton) {
+                    root.rightClicked(mouse.x, mouse.y)
+                } else {
+                    root.clicked()
+                }
+            }
             onDoubleClicked: root.doubleClicked()
         }
     }

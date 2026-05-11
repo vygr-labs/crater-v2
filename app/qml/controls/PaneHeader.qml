@@ -1,5 +1,7 @@
 import QtQuick
 
+// Section header row — eyebrow label on the left + optional action on the right.
+// Used inside settings sections and similar grouped UIs.
 Item {
     id: root
 
