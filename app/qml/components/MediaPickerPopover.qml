@@ -169,10 +169,13 @@ Item {
 
     // Click-out catcher. Sits below chrome on z, full window above the
     // chrome's anchor — anchors set in openAt() once we know the window.
+    // hoverEnabled prevents hover wash leaking through to the property
+    // inputs and panel chrome that sit visually behind us while open.
     MouseArea {
         id: dismissArea
         z: 999
         visible: false
+        hoverEnabled: true
         onClicked: root._close()
     }
 

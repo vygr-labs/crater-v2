@@ -16,6 +16,7 @@
 #include <QtQml>
 
 #include "FileDialogService.h"
+#include "MediaPlaybackService.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
@@ -181,6 +182,14 @@ int main(int argc, char* argv[])
 
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
 
+    // Force the FFmpeg multimedia backend. Qt 6.7+ picks it by default on
+    // Windows, but earlier 6.x versions ship the WMF (Windows Media
+    // Foundation) backend which has weaker HW-decode coverage for HEVC
+    // profiles and VP9. Setting this explicitly removes the version
+    // sensitivity. If FFmpeg isn't present in the runtime, Qt silently
+    // falls back to the native backend — so this is safe to set.
+    qputenv("QT_MEDIA_BACKEND", "ffmpeg");
+
     QApplication app(argc, argv);
 
     // Second bootstrap marker — confirms QApplication constructed without
@@ -250,6 +259,10 @@ int main(int argc, char* argv[])
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
     // the on-disk layout. Must come after mediaService is constructed.
     crater::VideoThumbnailer  videoThumbnailer(&mediaService);
+    // MediaPlaybackService owns one QMediaPlayer per active source URL,
+    // refcounted across Preview / Live / Projection subscribers. No
+    // dependencies on other services — it's a pure caching player pool.
+    crater::MediaPlaybackService mediaPlaybackService;
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -261,8 +274,9 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",  &fileDialogService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",   &videoThumbnailer);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
 
     // After every successful import, backfill thumbs for the new videos.
     // The ensureForAllVideos() walk is cheap when nothing is missing, so we

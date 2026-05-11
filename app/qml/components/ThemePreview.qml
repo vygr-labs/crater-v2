@@ -73,6 +73,7 @@ Item {
                     node: modelData
                     resolvedText: root.resolveText(modelData)
                     suppressAnimations: true
+                    autoPlayVideos: root.autoPlayVideos
                 }
             }
         }

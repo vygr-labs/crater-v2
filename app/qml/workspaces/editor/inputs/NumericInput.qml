@@ -136,4 +136,22 @@ Item {
         root.commit(newV)
     }
     onValueChanged: if (!input.activeFocus) input.text = _format(value)
+
+    // Force a text refresh when the user switches layers, bypassing the
+    // focus guard above. That guard protects in-progress typing from being
+    // clobbered by *same-node* external mutations (e.g. drag-resize while
+    // typing in Width) — but when the bound node itself changes, the user
+    // is no longer editing the same thing. Without this, the input would
+    // keep displaying the previous node's number AND defocus-commit would
+    // parse that stale text and write it back to the *new* node — silent
+    // data corruption. Qt.callLater defers the read until the binding
+    // cascade (selectedNodeId → localNode → node → value) has settled.
+    Connections {
+        target: root.workspace
+        function onSelectedNodeIdChanged() {
+            Qt.callLater(function() {
+                input.text = _format(root.value)
+            })
+        }
+    }
 }

@@ -33,11 +33,13 @@ Item {
         }
     }
 
-    // Click-out catcher
+    // Click-out catcher. hoverEnabled prevents hover wash leaking through
+    // to the property inputs and panel chrome visually behind us while open.
     MouseArea {
         id: dismissArea
         z: 999
         visible: false
+        hoverEnabled: true
         // anchors set when shown
         onClicked: root._close()
     }

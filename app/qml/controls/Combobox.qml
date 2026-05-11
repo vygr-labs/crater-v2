@@ -2,15 +2,25 @@ import QtQuick
 import Crater
 
 // A select-style dropdown with optional filter. Displays the current value
-// in a button; on click, opens an inline popover below the button with a
-// search field and scrolling list of options. Closes on selection, Escape,
-// or clicking the button again.
+// in a button; on click, opens a popover (reparented to the window root) with
+// a search field and scrolling list of options. Closes on selection, Escape,
+// or clicking outside the popover.
 //
 // `options` accepts either:
 //   - an array of strings:        ["Inter", "Georgia", ...]
 //   - an array of { label, value }: [{ label: "Inter (sans)", value: "Inter" }]
 //
 // Emits `valueSelected(string)` when the user picks an option.
+//
+// Hit-testing note:
+//   The popover is reparented to the top-most ancestor (the Window content
+//   item) on open. Qt Quick's default hit testing only delivers mouse events
+//   to descendants whose hit point falls inside their parent's bounding rect.
+//   Since the button is 24 px tall but the popover is 280 px, the popover's
+//   rows would otherwise be unreachable past the first sliver — events would
+//   pass through to whatever sibling control sits at that screen y. Re-
+//   parenting to a window-tall ancestor sidesteps that constraint, the same
+//   way ColorPickerPopover and MediaPickerPopover do.
 Item {
     id: root
 
@@ -25,13 +35,12 @@ Item {
 
     implicitHeight: 24
 
+    // Externally readable open state — callers (e.g. the Typography section
+    // wrapping a font combobox) read this to lift their own z while we're
+    // open. Mutated only via _showPopover() / _close() so reparent logic
+    // stays paired with the visible state.
     property bool _open: false
 
-    // While open, raise the whole Combobox above sibling items in its
-    // parent's draw order. The popover lives in our subtree, so without
-    // this, sibling rows declared *after* us in the parent's Column would
-    // paint over the open dropdown. Callers may additionally lift the
-    // containing accordion's z to push past accordion-level siblings.
     z: _open ? 1000 : 0
 
     // ── Button ────────────────────────────────────────────────────────
@@ -66,31 +75,25 @@ Item {
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                root._open = !root._open
-                if (root._open) {
-                    searchField.text = ""
-                    searchField.forceActiveFocus()
-                }
-            }
+            onClicked: root._open ? root._close() : root._showPopover()
         }
     }
 
     // ── Popover ───────────────────────────────────────────────────────
-    // Direct anchors instead of a Column-based layout so the search row
-    // and the list have deterministic sizes — the previous Column-based
-    // approach had height computations whose first evaluation could see
-    // an empty options array (before the parent's font-list binding
-    // resolved), capping the popover at ~3 rows and breaking scroll.
+    // Declared as a child of root so its bindings against `root.searchable`
+    // / `root.options` / etc. stay live, but reparented to the window root
+    // on _showPopover(). When the parent is the window we can render and
+    // hit-test the full 280 px height regardless of the button's geometry.
     Rectangle {
         id: popover
-        visible: root._open
+        visible: false
         z: 1000
-        anchors.top: button.bottom
-        anchors.topMargin: 4
-        anchors.left: button.left
-        anchors.right: button.right
         height: root.maxPopupHeight
+        // Track the button's width even after reparenting to the window
+        // root — anchors would tie us to a layout we're no longer in. The
+        // binding stays live since `root` (and its width) outlive the
+        // reparent for as long as the Combobox itself does.
+        width: root.width
         color: Theme.color.raised
         border.color: Theme.color.borderStrong
         border.width: 1
@@ -159,14 +162,14 @@ Item {
                 selectByMouse: true
                 clip: true
                 onTextChanged: popover._filter = text
-                Keys.onEscapePressed: root._open = false
+                Keys.onEscapePressed: root._close()
                 Keys.onReturnPressed: {
                     if (popover._filteredCount > 0) {
                         const first = popover._filteredOptions[0]
                         const v = (typeof first === "string") ? first
                                 : (first.value || first.label || "")
                         root.valueSelected(v)
-                        root._open = false
+                        root._close()
                     }
                 }
             }
@@ -220,10 +223,79 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         root.valueSelected(parent._value)
-                        root._open = false
+                        root._close()
                     }
                 }
             }
         }
+    }
+
+    // Full-window click-out catcher. Sits on z just below the popover so
+    // clicks inside the popover hit the popover first; everything else
+    // dismisses. Reparented to the window root alongside the popover.
+    // hoverEnabled is on so hover events don't leak through to controls
+    // visually obscured by (but logically below) the open popover —
+    // otherwise the SimpleSlider thumbs and NumericInput borders behind us
+    // would glow as the cursor crossed them while picking a font.
+    MouseArea {
+        id: dismissArea
+        z: 999
+        visible: false
+        hoverEnabled: true
+        onClicked: root._close()
+        onWheel: function(w) { w.accepted = true }
+    }
+
+    function _showPopover() {
+        // Walk to the top-most ancestor (the Window's content item) so the
+        // popover paints — and hit-tests — above any clipping panel.
+        let win = root
+        while (win.parent) win = win.parent
+
+        popover.parent      = win
+        dismissArea.parent  = win
+        dismissArea.x       = 0
+        dismissArea.y       = 0
+        dismissArea.width   = win.width
+        dismissArea.height  = win.height
+
+        const p = root.mapToItem(win, 0, root.height + 4)
+        let x = p.x
+        let y = p.y
+        // Flip up if there isn't enough room below the button.
+        if (y + popover.height > win.height) {
+            y = p.y - root.height - 4 - popover.height
+        }
+        if (x + popover.width > win.width) x = win.width - popover.width - 8
+        popover.x = Math.max(8, x)
+        popover.y = Math.max(8, y)
+
+        // Reset filter + focus the search field so typing starts narrowing
+        // immediately. Doing this every open keeps the popover stateless
+        // between sessions — the previous open's filter doesn't linger.
+        searchField.text = ""
+        popover._filter = ""
+
+        popover.visible = true
+        dismissArea.visible = true
+        root._open = true
+
+        searchField.forceActiveFocus()
+    }
+
+    function _close() {
+        popover.visible = false
+        dismissArea.visible = false
+        root._open = false
+    }
+
+    // Re-parent the popover and dismiss area back into our subtree before
+    // we are destroyed. If we left them parented to the window root, they
+    // would survive as orphans (the window outlives the Combobox) and pile
+    // up across selection changes — every text-node selection that opens
+    // the font combobox would leak another popover instance on the window.
+    Component.onDestruction: {
+        if (popover.parent !== root)     popover.parent = root
+        if (dismissArea.parent !== root) dismissArea.parent = root
     }
 }

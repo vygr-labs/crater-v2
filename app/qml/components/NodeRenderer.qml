@@ -20,6 +20,11 @@ Item {
     // Some callers (the editor) want to see content rendered without animations
     // mid-edit; live (ProjectionWindow) wants the smooth fade. Off by default.
     property bool   suppressAnimations: false
+    // Whether container video backgrounds should auto-play. Defaults true so
+    // ProjectionWindow and the editor canvas keep their existing behavior; a
+    // small-tile caller (ThemePreview inside ThemesTab) flips this off so a
+    // grid of dozens of theme thumbnails doesn't each spin up a video decoder.
+    property bool   autoPlayVideos: true
 
     readonly property bool _isText:      node && node.kind === "text"
     readonly property bool _isContainer: node && node.kind === "container"
@@ -50,6 +55,7 @@ Item {
                     anchors.fill: parent
                     mediaId: _data.mediaId || 0
                     bgOpacity: _data.bgOpacity !== undefined ? _data.bgOpacity : 1.0
+                    autoPlay: nodeRoot.autoPlayVideos
                 }
 
                 // Overlay tint — sits above the media background to darken /

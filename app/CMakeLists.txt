@@ -8,6 +8,8 @@ qt_add_executable(crater
     src/FileDialogService.h
     src/VideoThumbnailer.cpp
     src/VideoThumbnailer.h
+    src/MediaPlaybackService.cpp
+    src/MediaPlaybackService.h
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.

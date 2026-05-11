@@ -3,6 +3,7 @@
 #include "crater/MediaService.h"
 #include "crater/value/MediaItem.h"
 
+#include <QAudioOutput>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -39,9 +40,15 @@ VideoThumbnailer::VideoThumbnailer(MediaService* media, QObject* parent)
     m_timeout = new QTimer(this);
 
     m_player->setVideoSink(m_sink);
-    // No QAudioOutput — we only want frames, not audio. Skipping this saves
-    // an audio bus open per item and avoids a brief blip on the operator's
-    // default output device during extraction.
+    // FFmpeg backend quirk on Windows: the audio bus init runs on the same
+    // codepath as the video pipeline init, so a null audio output stalls
+    // the decoder and no frames ever reach the sink. We attach a muted
+    // QAudioOutput so the video path comes up — no audible blip because
+    // it's muted from creation.
+    auto* audio = new QAudioOutput(this);
+    audio->setMuted(true);
+    audio->setVolume(0.0);
+    m_player->setAudioOutput(audio);
 
     m_timeout->setSingleShot(true);
     m_timeout->setInterval(kPerItemTimeoutMs);
@@ -156,6 +163,8 @@ void VideoThumbnailer::onVideoFrame(const QVideoFrame& frame)
         finishCurrent();
         return;
     }
+    qInfo().noquote() << "VideoThumbnailer: saved" << out
+                      << "(dur" << m_player->duration() << "ms)";
 
     m_captured = true;
 
