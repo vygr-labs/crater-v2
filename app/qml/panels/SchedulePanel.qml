@@ -2,8 +2,16 @@ import QtQuick
 import QtQuick.Layouts
 
 // Left top pane — the working schedule (the "playlist" being assembled).
-// Empty state ↔ ListView of ScheduleRow, driven by ScheduleService.currentItems
-// (QVariantList of canonical-shape items; delegate uses `modelData` to access).
+//
+// Three things differentiate this from a bare ListView:
+//   1) Header shows the loaded schedule's name + a dirty dot when there are
+//      unsaved changes, plus a kebab menu for clear / close-loaded actions.
+//   2) Multi-select via Ctrl/Shift+click; the selected set drives multi-delete
+//      and is rendered with checks + a softer border on non-primary members.
+//   3) Drag-to-reorder via the per-row handle; the panel tracks the dragged
+//      row's offset and projects a brand-colored insertion line at the drop
+//      target. moveItem is called on release; ListView's `displaced`
+//      transition then animates the rows to their final positions.
 Rectangle {
     id: root
 
@@ -15,49 +23,134 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 40
+        height: 48
 
-        Row {
+        // Left cluster: schedule label + counts. The label shows the loaded
+        // schedule name when one is loaded, "Schedule" otherwise. A small
+        // warning-colored dot appears when there are unsaved edits.
+        Item {
             anchors.left: parent.left
             anchors.leftMargin: Theme.space.lg
+            anchors.right: kebab.left
+            anchors.rightMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space.sm
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
 
-            AppIcon {
+            Column {
                 anchors.verticalCenter: parent.verticalCenter
-                name: "menu"
-                color: Theme.color.textSecondary
-                size: 14
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Schedule")
-                color: Theme.color.textPrimary
-                font.family: Theme.font.family
-                font.pixelSize: Theme.font.bodySize
-                font.weight: Theme.font.weightMedium
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: ScheduleService.currentItems.length > 0
-                text: ScheduleService.currentItems.length.toLocaleString(Qt.locale(), "f", 0)
-                color: Theme.color.textTertiary
-                font.family: Theme.font.monoFamily
-                font.pixelSize: Theme.font.smallSize
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 2
+
+                Row {
+                    spacing: Theme.space.sm
+                    AppIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "menu"
+                        color: Theme.color.textSecondary
+                        size: 14
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ScheduleService.loadedScheduleName.length > 0
+                            ? ScheduleService.loadedScheduleName
+                            : qsTr("Schedule")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        visible: ScheduleService.isDirty
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 6; height: 6
+                        radius: 3
+                        color: Theme.color.warning
+                    }
+                }
+
+                Text {
+                    visible: ScheduleService.currentItems.length > 0
+                          || AppState.selectedScheduleIndices.length > 0
+                    text: {
+                        const n = ScheduleService.currentItems.length
+                        const sel = AppState.selectedScheduleIndices.length
+                        const itemsStr = (n === 1)
+                                       ? qsTr("1 item")
+                                       : qsTr("%1 items").arg(n.toLocaleString(Qt.locale(), "f", 0))
+                        return sel > 1
+                             ? itemsStr + qsTr(" · %1 selected").arg(sel)
+                             : itemsStr
+                    }
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
             }
         }
 
         IconButton {
+            id: kebab
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
-            iconName: "grid"
-            iconSize: 13
-            // Placeholder for future grid-view toggle. Logs only for now.
-            onClicked: console.log("[schedule] grid toggle (not yet wired)")
+            iconName: "more-vertical"
+            iconSize: 14
+            onClicked: {
+                const p = mapToItem(null, 0, height + 4)
+                const items = []
+                if (AppState.selectedScheduleIndices.length > 0) {
+                    items.push({
+                        label: qsTr("Clear selection"),
+                        iconName: "x",
+                        action: function() { AppState.clearScheduleSelection() }
+                    })
+                }
+                if (ScheduleService.loadedScheduleId > 0) {
+                    items.push({
+                        label: qsTr("Close loaded schedule"),
+                        iconName: "x",
+                        action: function() { ScheduleService.closeLoaded() }
+                    })
+                }
+                if (items.length > 0) items.push({ separator: true })
+                items.push({
+                    label: qsTr("Clear all items"),
+                    iconName: "trash",
+                    destructive: true,
+                    action: function() {
+                        // Defer so the kebab popover finishes closing before the
+                        // confirm modal opens — otherwise the contextMenu
+                        // activeModal swap blocks the new openModal call.
+                        Qt.callLater(function() {
+                            AppState.openModal("confirm", {
+                                title: qsTr("Clear schedule?"),
+                                body:  qsTr("Remove all items from the working schedule? Saved schedules are not affected."),
+                                confirmText: qsTr("Clear all"),
+                                onConfirm: function() {
+                                    ScheduleService.clearAll()
+                                    AppState.clearScheduleSelection()
+                                    AppState.liveScheduleIndex = -1
+                                    AppState.libraryLiveActive = false
+                                    AppState.clearLibraryPreview()
+                                }
+                            })
+                        })
+                    }
+                })
+                // Right-align the menu under the kebab — the popover clamps
+                // to the window, so over-shooting on x is safe.
+                AppState.openModal("contextMenu", {
+                    anchorX: p.x - 200,
+                    anchorY: p.y,
+                    menuWidth: 220,
+                    items: items
+                })
+            }
         }
 
-        // Bottom hairline
         Rectangle {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
@@ -91,10 +184,26 @@ Rectangle {
             visible: ScheduleService.currentItems.length > 0
             model: ScheduleService.currentItems
             clip: true
-            cacheBuffer: 200    // keep off-screen rows alive for snappy scroll
+            cacheBuffer: 200
             boundsBehavior: Flickable.StopAtBounds
+            // Disable flick-scroll while a row is being dragged so a small
+            // mouse jitter doesn't yank the whole list along with the row.
+            interactive: list.draggedRow < 0
 
-            // Smooth row enter/exit so deletions don't snap.
+            // ── Drag state ──────────────────────────────────────────────
+            // Updated by ScheduleRow drag signals. The panel is the single
+            // owner of "which row is dragging and where" so the insertion
+            // indicator below has a single source of truth.
+            property int  draggedRow:     -1
+            property real draggedOffsetY: 0
+
+            function dropTargetIndex() {
+                if (draggedRow < 0) return -1
+                const rowH = Theme.size.scheduleRowHeight
+                const delta = Math.round(draggedOffsetY / rowH)
+                return Math.max(0, Math.min(count - 1, draggedRow + delta))
+            }
+
             add: Transition {
                 NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.motion.normal }
             }
@@ -112,24 +221,38 @@ Rectangle {
                 subtitle: modelData.subtitle || ""
                 kind:     modelData.kind     || ""
                 isLive:   AppState.liveScheduleIndex === index
-                isQueued: AppState.selectedScheduleIndex === index
+                isSelected: AppState.selectedScheduleIndices.indexOf(index) >= 0
+                isPrimarySelected: AppState.selectedScheduleIndex === index
+                hasThemeOverride: {
+                    const t = modelData.themeId
+                    return (typeof t === "number" && t > 0)
+                        || (typeof t === "string" && parseInt(t) > 0)
+                }
 
-                onClicked: {
-                    // Claim keyboard focus for the schedule so Up/Down step
-                    // through schedule rows (instead of the library list).
+                onClicked: function(button, modifiers) {
                     AppState.setActiveFocus("schedule")
-                    AppState.selectScheduleItem(index)
-
-                    // Scripture rows: notify the scripture picker so it can
-                    // scroll-and-highlight the same verse, switching
-                    // translation if needed. Mirrors electron's
-                    // syncFromSchedule mechanism.
-                    const it = ScheduleService.currentItems[index]
-                    if (it && it.kind === "scripture" && it.scriptureRef) {
-                        const r = it.scriptureRef
-                        AppState.syncScriptureFromSchedule(
-                            r.book, r.chapter, r.verseStart,
-                            r.translationCode || "")
+                    if (modifiers & Qt.ControlModifier) {
+                        AppState.toggleScheduleSelection(index)
+                    } else if (modifiers & Qt.ShiftModifier) {
+                        AppState.extendScheduleSelectionTo(index)
+                    } else {
+                        AppState.selectScheduleItem(index)
+                        // Scripture rows: notify the picker so it can scroll-and-
+                        // highlight the same verse, switching translation as
+                        // needed. Mirrors electron's syncFromSchedule mechanism.
+                        const it = ScheduleService.currentItems[index]
+                        if (it && it.kind === "scripture" && it.scriptureRef) {
+                            const r = it.scriptureRef
+                            AppState.syncScriptureFromSchedule(
+                                r.book, r.chapter, r.verseStart,
+                                r.translationCode || "")
+                        } else if (it && it.kind === "song" && it.songId) {
+                            // Song rows: same idea — scroll the library so the
+                            // operator sees what they just selected in the
+                            // schedule. SongsTab skips the sync when in
+                            // lyrics-FTS mode (filtered list may exclude the row).
+                            AppState.syncSongFromSchedule(it.songId)
+                        }
                     }
                 }
                 onDoubleClicked: {
@@ -138,10 +261,39 @@ Rectangle {
                     AppState.goLive()
                 }
                 onRightClicked: function(mouseX, mouseY) {
-                    AppState.selectScheduleItem(index)
+                    // If the right-clicked row isn't part of the current
+                    // selection, switch to single-select on it first so the
+                    // context menu actions operate on the visible target.
+                    if (AppState.selectedScheduleIndices.indexOf(index) < 0) {
+                        AppState.selectScheduleItem(index)
+                    }
                     const item = ScheduleService.currentItems[index]
                     if (!item) return
                     const p = mapToItem(null, mouseX, mouseY)
+
+                    // Build the "Theme..." submenu — filtered to themes matching
+                    // this item's kind, with a checkmark on the active choice
+                    // and a "Use default" entry at the bottom.
+                    const themeItems = []
+                    const allThemes = ThemeService.allThemes
+                    const itemKind = item.kind || "song"
+                    const currentThemeId = (typeof item.themeId === "number") ? item.themeId : 0
+                    for (let i = 0; i < allThemes.length; i++) {
+                        const t = allThemes[i]
+                        if (t.kind !== itemKind) continue
+                        themeItems.push({
+                            label: t.name,
+                            iconName: (currentThemeId === t.id) ? "check" : "circle",
+                            action: function() { ScheduleService.setItemTheme(index, t.id) }
+                        })
+                    }
+                    if (themeItems.length > 0) themeItems.push({ separator: true })
+                    themeItems.push({
+                        label: qsTr("Use default theme"),
+                        iconName: (currentThemeId === 0) ? "check" : "refresh-cw",
+                        action: function() { ScheduleService.setItemTheme(index, 0) }
+                    })
+
                     AppState.openModal("contextMenu", {
                         anchorX: p.x,
                         anchorY: p.y,
@@ -152,14 +304,29 @@ Rectangle {
                               action: function() {
                                   AppState.openModal(
                                       item.kind === "song" ? "songEditor" : "themeEditor",
-                                      { itemIndex: index }) } },
+                                      { itemIndex: index })
+                              } },
                             { label: qsTr("Duplicate"), iconName: "copy",
                               action: function() {
-                                  // addItem assigns a fresh ID; strip the old one so
-                                  // we don't end up with two rows sharing identity.
+                                  // addItem assigns a fresh id; strip the old one
+                                  // so we don't end up with two rows sharing identity.
                                   const copy = Object.assign({}, item)
                                   delete copy.id
                                   ScheduleService.addItem(copy)
+                              } },
+                            { label: qsTr("Theme…"), iconName: "palette",
+                              action: function() {
+                                  // Defer the second open until the first context
+                                  // menu has finished closing — opening contextMenu
+                                  // while another contextMenu is unmounting can
+                                  // lose modalProps.
+                                  Qt.callLater(function() {
+                                      AppState.openModal("contextMenu", {
+                                          anchorX: p.x + 180,
+                                          anchorY: p.y,
+                                          items: themeItems
+                                      })
+                                  })
                               } },
                             { separator: true },
                             { label: qsTr("Remove"), iconName: "trash", destructive: true,
@@ -169,10 +336,67 @@ Rectangle {
                                       body:  qsTr("Remove \"") + (item.title || "") + qsTr("\" from the schedule?"),
                                       confirmText: qsTr("Remove"),
                                       onConfirm: function() { ScheduleService.removeAt(index) }
-                                  }) } }
+                                  })
+                              } }
                         ]
                     })
                 }
+
+                onDragStarted: function(i) {
+                    list.draggedRow = i
+                    list.draggedOffsetY = 0
+                }
+                onDragMoved: function(i, off) {
+                    list.draggedOffsetY = off
+                }
+                onDragReleased: function(i, off) {
+                    const target = list.dropTargetIndex()
+                    list.draggedRow = -1
+                    list.draggedOffsetY = 0
+                    if (target >= 0 && target !== i) {
+                        ScheduleService.moveItem(i, target)
+                        // Carry selection across the move so the primary
+                        // selection still points at the dragged item visually.
+                        if (AppState.selectedScheduleIndex === i) {
+                            AppState.selectScheduleItem(target)
+                        }
+                        // Live pointer too — if we re-order the row that's
+                        // currently Live, the badge needs to follow.
+                        if (AppState.liveScheduleIndex === i) {
+                            AppState.liveScheduleIndex = target
+                        }
+                    }
+                }
+            }
+
+            // ── Drop-target indicator ──────────────────────────────────
+            // Parented to the ListView's contentItem so its y is in content
+            // coordinates (no list.contentY math). Visible only when there's
+            // an actual move pending (delta != 0). The y formula: top of the
+            // target row for moves up, bottom of the target row for moves down
+            // — which matches where the row will actually slot in after the
+            // moveItem call resolves.
+            Rectangle {
+                id: dropIndicator
+                parent: list.contentItem
+                visible: list.draggedRow >= 0
+                      && list.dropTargetIndex() !== list.draggedRow
+                x: Theme.space.lg
+                width: list.width - Theme.space.lg * 2
+                height: 3
+                radius: 1.5
+                z: 1000
+                color: Theme.color.brand
+
+                y: {
+                    if (!visible) return 0
+                    const rowH = Theme.size.scheduleRowHeight
+                    const target = list.dropTargetIndex()
+                    const delta = target - list.draggedRow
+                    return target * rowH + (delta > 0 ? rowH : 0) - height / 2
+                }
+
+                Behavior on y { NumberAnimation { duration: Theme.motion.instant } }
             }
         }
     }

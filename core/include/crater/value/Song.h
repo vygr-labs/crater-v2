@@ -23,6 +23,10 @@ struct Song
     Q_PROPERTY(QString                ccli        MEMBER ccli)
     Q_PROPERTY(qint64                 themeId     MEMBER themeId)
     Q_PROPERTY(bool                   isFavorite  MEMBER isFavorite)
+    // Unix epoch milliseconds. Used by SongsTab sort modes (recent / oldest /
+    // newest) — empty Song defaults to 0, which sorts as the oldest possible.
+    Q_PROPERTY(qint64                 createdAt   MEMBER createdAt)
+    Q_PROPERTY(qint64                 updatedAt   MEMBER updatedAt)
     Q_PROPERTY(QList<crater::SongSection> sections MEMBER sections)
 
 public:
@@ -33,6 +37,8 @@ public:
     QString                ccli;
     qint64                 themeId    = 0;
     bool                   isFavorite = false;
+    qint64                 createdAt  = 0;
+    qint64                 updatedAt  = 0;
     QList<SongSection>     sections;
 };
 

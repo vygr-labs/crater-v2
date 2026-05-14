@@ -16,6 +16,11 @@ Item {
     // translation rows override to a much smaller radius (closer to a chip)
     // because the codes ("KJV", "AMPC") read better as flat tabs.
     property int    bgRadius: Theme.radius.md
+    // Additional left-padding for indented (accordion sub-group) rows. The
+    // base content already sits at Theme.space.lg; non-zero indent stacks on
+    // top, so 12 reads as a clear hierarchy without pushing the label past
+    // the count badge on the right.
+    property int    indent: 0
 
     signal clicked()
     signal doubleClicked()
@@ -37,7 +42,7 @@ Item {
 
     Row {
         anchors.left: parent.left
-        anchors.leftMargin: Theme.space.lg
+        anchors.leftMargin: Theme.space.lg + root.indent
         anchors.right: countLabel.visible ? countLabel.left : parent.right
         anchors.rightMargin: Theme.space.sm
         anchors.verticalCenter: parent.verticalCenter

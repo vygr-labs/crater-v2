@@ -131,7 +131,7 @@ Item {
                         }
 
                         Text {
-                            visible: !!modelData.detail
+                            visible: !!modelData.detail && !modelData.kbd
                             anchors.right: parent.right
                             anchors.rightMargin: Theme.space.md
                             anchors.verticalCenter: parent.verticalCenter
@@ -139,6 +139,34 @@ Item {
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
+                        }
+
+                        // Kbd chip — render `kbd: "E"` / `kbd: "Del"` as a
+                        // boxed mono token. Visual only; Electron's parity
+                        // (electron/src/components/app/song/MainPanelMenus.tsx)
+                        // doesn't wire these chips as shortcuts either.
+                        // Mutually exclusive with `detail` — the same right
+                        // rail slot is used so an item shouldn't set both.
+                        Rectangle {
+                            visible: !!modelData.kbd
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.space.md
+                            anchors.verticalCenter: parent.verticalCenter
+                            implicitWidth: kbdText.implicitWidth + 12
+                            implicitHeight: 16
+                            radius: 3
+                            color: Theme.color.elevated
+                            border.color: Theme.color.borderStrong
+                            border.width: 1
+
+                            Text {
+                                id: kbdText
+                                anchors.centerIn: parent
+                                text: modelData.kbd || ""
+                                color: Theme.color.textTertiary
+                                font.family: Theme.font.monoFamily
+                                font.pixelSize: 10
+                            }
                         }
 
                         MouseArea {

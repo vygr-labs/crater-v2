@@ -28,6 +28,10 @@ QtObject {
         readonly property color textSecondary: "#a1a1aa"
         readonly property color textTertiary:  "#71717a"
         readonly property color textDisabled:  "#52525b"
+        // gray.300 — the body-row title color (slightly dimmer than textPrimary,
+        // but bright enough to read at scale). Used by SongsTab and any other
+        // dense list whose unselected rows shouldn't compete with focused ones.
+        readonly property color textTitle:     "#d4d4d8"
 
         // Brand — Radix Green (electron `brand.800 #227617`). Used for the
         // brand mark, primary action affordances, scripture-tab selection
@@ -38,6 +42,10 @@ QtObject {
         readonly property color brandPressed:  "#216518"   // brandDark.900
         readonly property color brandSubtle:   "#173c13"   // brandDark.300 — selected-row wash
         readonly property color brandInk:      "#ffffff"   // text on a solid brand button
+        // brand.900 at 30% alpha — the row-hover wash for library lists. The
+        // RGB matches `brand` (#227617 = 34/118/23). Mirrors electron's
+        // `bg=${defaultPalette}.900/30` used on Songs/Scripture row hovers.
+        readonly property color rowHoverBrand: Qt.rgba(34/255, 118/255, 23/255, 0.30)
 
         // Broadcast semantics — these never get used decoratively.
         readonly property color live:          "#e85a4a"

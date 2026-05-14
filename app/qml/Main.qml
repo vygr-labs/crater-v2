@@ -171,15 +171,25 @@ ApplicationWindow {
     ProjectionWindow {
         id: projectionWindow
         screenIndex: OutputService.selectedScreenIndex
-        // Use `visibility` (not `visible`) so we can toggle FullScreen <-> Hidden
-        // without conflicting with ProjectionWindow.qml's own `visibility` setup.
+        // Use `visibility` (not `visible`) so we can toggle FullScreen / Windowed
+        // / Hidden without conflicting with ProjectionWindow.qml's own setup.
         //
         // Single source of truth: AppState.projectorVisible — set true only by
-        // AppState.goLive() (the explicit "Go Live" button / Ctrl+L) and reset
-        // by clearLive(). Item clicks, library double-clicks, logo toggle, and
-        // schedule selection do NOT raise the projector. The operator must
-        // press Go Live for the audience to see anything on the second screen.
-        visibility: AppState.projectorVisible ? Window.FullScreen : Window.Hidden
+        // AppState.goLive() (the explicit "Go Live" button / Ctrl+L), and false
+        // only by AppState.endLive() (the windowed projector's close button).
+        // clearLive() blanks content but does not lower the projector. Item
+        // clicks, library double-clicks, logo toggle, and schedule selection
+        // do NOT raise or lower the projector.
+        //
+        // The OutputService.projectionMode arm distinguishes Fullscreen (the
+        // production target — frameless, fills the selected screen) from
+        // Windowed (an OS-framed preview window for single-monitor / dev).
+        // Default mode is computed from available displays (see OutputService).
+        visibility: !AppState.projectorVisible
+                  ? Window.Hidden
+                  : OutputService.projectionMode === OutputService.Windowed
+                      ? Window.Windowed
+                      : Window.FullScreen
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────
@@ -203,6 +213,41 @@ ApplicationWindow {
     // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
     Shortcut { sequence: "Ctrl+T"; onActivated: AppState.libraryAddToSchedule() }
 
+    // Save the working schedule. Updates the currently loaded saved row if
+    // there is one; otherwise prompts the operator for a name (Save As).
+    Shortcut {
+        sequence: "Ctrl+S"
+        onActivated: {
+            if (ScheduleService.loadedScheduleId > 0) {
+                ScheduleService.saveCurrent()
+            } else {
+                AppState.openModal("naming", {
+                    title:       qsTr("Save schedule as"),
+                    placeholder: qsTr("e.g., Sunday AM - June 5"),
+                    confirmText: qsTr("Save"),
+                    onConfirm: function(name) {
+                        if (name && name.length > 0) ScheduleService.saveAs(name)
+                    }
+                })
+            }
+        }
+    }
+
+    // Always prompt for a new name — equivalent to "Save a copy of this
+    // schedule under a new name". Useful when forking a loaded schedule
+    // into a variant without overwriting the original.
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        onActivated: AppState.openModal("naming", {
+            title:       qsTr("Save schedule as"),
+            placeholder: qsTr("e.g., Sunday AM - June 5"),
+            confirmText: qsTr("Save"),
+            onConfirm: function(name) {
+                if (name && name.length > 0) ScheduleService.saveAs(name)
+            }
+        })
+    }
+
     // Escape: close modal first; if no modal, deselect schedule item.
     Shortcut {
         sequence: "Escape"
@@ -215,23 +260,43 @@ ApplicationWindow {
         }
     }
 
-    // Delete: prompt to remove the selected schedule item — only when the
+    // Delete: prompt to remove the selected schedule item(s) — only when the
     // schedule has keyboard focus. With library focus, Delete falls through
     // (a future "delete song" / "delete theme" path will own it then).
+    //
+    // Multi-select aware: removal is done in descending index order so each
+    // removeAt() call doesn't shift the indices of items still pending
+    // deletion.
     Shortcut {
         sequence: "Delete"
-        enabled: AppState.selectedScheduleIndex >= 0
+        enabled: AppState.selectedScheduleIndices.length > 0
               && AppState.activeModal === ""
               && AppState.activeFocusPanel === "schedule"
         onActivated: {
-            const i = AppState.selectedScheduleIndex
-            const item = ScheduleService.currentItems[i]
-            AppState.openModal("confirm", {
-                title:       qsTr("Remove item?"),
-                body:        qsTr("Remove \"") + (item ? item.title : "") + qsTr("\" from the schedule?"),
-                confirmText: qsTr("Remove"),
-                onConfirm:   function() { ScheduleService.removeAt(i) }
-            })
+            const indices = AppState.selectedScheduleIndices.slice()
+                .sort(function(a, b) { return b - a })
+            if (indices.length === 1) {
+                const i = indices[0]
+                const item = ScheduleService.currentItems[i]
+                AppState.openModal("confirm", {
+                    title:       qsTr("Remove item?"),
+                    body:        qsTr("Remove \"") + (item ? item.title : "") + qsTr("\" from the schedule?"),
+                    confirmText: qsTr("Remove"),
+                    onConfirm:   function() { ScheduleService.removeAt(i) }
+                })
+            } else {
+                AppState.openModal("confirm", {
+                    title:       qsTr("Remove %1 items?").arg(indices.length),
+                    body:        qsTr("This will remove %1 selected items from the schedule.").arg(indices.length),
+                    confirmText: qsTr("Remove"),
+                    onConfirm:   function() {
+                        for (let k = 0; k < indices.length; k++) {
+                            ScheduleService.removeAt(indices[k])
+                        }
+                        AppState.clearScheduleSelection()
+                    }
+                })
+            }
         }
     }
 

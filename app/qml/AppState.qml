@@ -44,7 +44,14 @@ QtObject {
     // Selection indices live here (UI state); the schedule items themselves
     // live in ScheduleService.currentItems. Indices remain valid as long as
     // they're bounds-checked against currentItems.length.
-    property int  selectedScheduleIndex: -1   // what's in Preview pane (-1 = nothing)
+    //
+    // Two-level model: `selectedScheduleIndex` is the primary / anchor (drives
+    // Preview pane + Shift+click range pivot). `selectedScheduleIndices` is
+    // the full multi-set (drives Delete batch + per-row "selected" badging).
+    // Helpers below keep the two in sync: a single-select click resets the
+    // array to one element; Ctrl+click toggles; Shift+click extends the range.
+    property int  selectedScheduleIndex: -1   // anchor (drives Preview pane)
+    property var  selectedScheduleIndices: [] // multi-selection set; always includes the anchor
     property int  liveScheduleIndex:     -1   // what's on Live pane (-1 = nothing)
     property int  previewSubIndex:        0   // page within selected item shown in Preview
     property int  liveSubIndex:           0   // page within live item shown in Live
@@ -52,9 +59,11 @@ QtObject {
     property bool isClear:            false   // display cleared (overrides live content)
 
     // Projection window visibility. Toggled true only by goLive() (the
-    // explicit "Go Live" button / Ctrl+L); reset by clearLive(). No other
-    // click path — library double-click, schedule selection, logo toggle —
-    // raises the projector. The operator decides when the audience sees it.
+    // explicit "Go Live" button / Ctrl+L); reset to false only by endLive()
+    // (windowed projector's close button). clearLive() blanks content but
+    // does NOT lower the projector. No other click path — library
+    // double-click, schedule selection, logo toggle — raises or lowers
+    // the projector. The operator decides when the audience sees it.
     property bool projectorVisible:   false
 
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
@@ -92,7 +101,7 @@ QtObject {
         liveScheduleIndex  = -1       // signal: live did not come from schedule
         liveSubIndex       = 0
         previewSubIndex    = 0
-        const theme = ThemeService.defaultFor(item.kind || "song")
+        const theme = resolveItemTheme(item)
         ProjectionService.goLive(item, 0, theme)
     }
 
@@ -105,11 +114,70 @@ QtObject {
         const n = ScheduleService.currentItems.length
         if (i < 0 || i >= n) {
             selectedScheduleIndex = -1
+            selectedScheduleIndices = []
             previewSubIndex = 0
             return
         }
         selectedScheduleIndex = i
+        selectedScheduleIndices = [i]
         previewSubIndex = 0
+    }
+
+    // Ctrl+click — toggle membership in the multi-set. Anchor follows the
+    // last toggled-on row so subsequent Shift+click pivots feel natural; if
+    // we toggled the anchor itself off, fall back to the last remaining
+    // element or -1.
+    function toggleScheduleSelection(i) {
+        if (i < 0) return
+        libraryPreviewItem = null
+        const n = ScheduleService.currentItems.length
+        if (i >= n) return
+        let s = selectedScheduleIndices.slice()
+        const at = s.indexOf(i)
+        if (at >= 0) {
+            s.splice(at, 1)
+            selectedScheduleIndex = (s.length > 0) ? s[s.length - 1] : -1
+        } else {
+            s.push(i)
+            selectedScheduleIndex = i
+        }
+        selectedScheduleIndices = s
+        previewSubIndex = 0
+    }
+
+    // Shift+click — replace the multi-set with the contiguous range from
+    // the current anchor to i. If there's no anchor, pivot from row 0.
+    function extendScheduleSelectionTo(i) {
+        if (i < 0) return
+        libraryPreviewItem = null
+        const n = ScheduleService.currentItems.length
+        if (i >= n) return
+        const anchor = selectedScheduleIndex >= 0 ? selectedScheduleIndex : 0
+        const lo = Math.min(anchor, i)
+        const hi = Math.max(anchor, i)
+        let s = []
+        for (let k = lo; k <= hi; k++) s.push(k)
+        selectedScheduleIndices = s
+        selectedScheduleIndex = i
+        previewSubIndex = 0
+    }
+
+    function clearScheduleSelection() {
+        selectedScheduleIndex = -1
+        selectedScheduleIndices = []
+    }
+
+    // Resolve the effective theme for a schedule item — prefer the per-item
+    // override stored on the item itself, fall back to the user's default for
+    // the kind. The sentinel-check on `t.id` handles the case where the
+    // override theme was deleted while the item still references it.
+    function resolveItemTheme(item) {
+        const overrideId = (item && typeof item.themeId === "number") ? item.themeId : 0
+        if (overrideId > 0) {
+            const t = ThemeService.theme(overrideId)
+            if (t.id > 0) return t
+        }
+        return ThemeService.defaultFor((item && item.kind) || "song")
     }
 
     function goLive() {
@@ -142,7 +210,7 @@ QtObject {
         isClear            = false
         libraryLiveActive  = false   // schedule is driving live now
 
-        const theme = ThemeService.defaultFor(item.kind || "song")
+        const theme = resolveItemTheme(item)
         ProjectionService.goLive(item, previewSubIndex, theme)
         projectorVisible = true
     }
@@ -151,18 +219,24 @@ QtObject {
         // "Clear live" means: blank the projector content (hide all text /
         // images), but DO NOT close the projection window. If the projector
         // is currently raised it stays raised showing nothing; if it's
-        // hidden it stays hidden. Only goLive() raises and only an explicit
-        // "close projection" action would lower — Clear is purely about
-        // content, not window visibility.
-        //
-        // ProjectionService.clear() is the C++ hook that hides the live
-        // text/image. Stub for now — wire up actual rendering blanking when
-        // ProjectionWindow.qml gets its render pipeline.
+        // hidden it stays hidden. Only goLive() raises, only endLive()
+        // lowers — Clear is purely about content, not window visibility.
         isClear            = true
         liveScheduleIndex  = -1
         liveSubIndex       = 0
         libraryLiveActive  = false
         ProjectionService.clear()
+    }
+
+    function endLive() {
+        // Inverse of goLive(): lower the projection window. ProjectionService
+        // content state is preserved — a subsequent goLive() picks back up
+        // where it left off without re-rendering. Distinct from clearLive(),
+        // which blanks content but keeps the window raised. The windowed
+        // projector's close (X) button calls this; in fullscreen mode the
+        // window is frameless and end-live currently has no UI entry point
+        // (a TopBar "End Live" button is a deferred follow-up).
+        projectorVisible = false
     }
 
     function toggleLogo() {
@@ -246,13 +320,27 @@ QtObject {
         "themes":    -1
     })
 
-    // Search-mode keyed per tab. Songs supports title/lyrics/author/recent/
-    // oldest/newest. Scripture supports reference/search. Media supports
-    // title/search (in-row filter today).
+    // Search-mode keyed per tab. Songs supports title/lyrics/author (filter
+    // mode — drives the input placeholder + filter logic). Scripture supports
+    // reference/search. Media supports title/search (in-row filter today).
+    //
+    // Songs' sort mode is intentionally split into librarySortMode (below).
+    // Previously the gear-menu sort items hijacked librarySearchMode which
+    // also changed the input placeholder — picking "Sort by Newest" from the
+    // gear made the placeholder read "Filter newest songs…", which surprised
+    // operators who just wanted to sort. Two slots → two intents, no collision.
     property var librarySearchMode: ({
         "songs":     "lyrics",
         "scripture": "reference",
         "media":     "title"
+    })
+
+    // Sort-mode keyed per tab. "none" preserves natural ordering (title for
+    // songs); other modes drive ORDER BY on the filtered list inside the tab.
+    // Songs supports: "none" | "recent" (updated_at DESC) | "oldest"
+    // (created_at ASC) | "newest" (created_at DESC).
+    property var librarySortMode: ({
+        "songs": "none"
     })
 
     function setSearch(tabKey, text) {
@@ -279,6 +367,12 @@ QtObject {
         let copy = Object.assign({}, librarySearchMode)
         copy[tabKey] = mode
         librarySearchMode = copy
+    }
+
+    function setLibrarySortMode(tabKey, mode) {
+        let copy = Object.assign({}, librarySortMode)
+        copy[tabKey] = mode
+        librarySortMode = copy
     }
 
     // ─── Scripture reference-input sub-mode ─────────────────────────────
@@ -389,6 +483,13 @@ QtObject {
     // string ("1-2", "2a") — see ScriptureTab.verseMatches().
     signal syncScriptureFromSchedule(string book, int chapter, var verse, string translation)
 
+    // Schedule → Songs: clicking a song row in the schedule should scroll the
+    // songs library to that song so the operator sees what they're editing.
+    // Emitted by SchedulePanel when the clicked item.kind === "song"; consumed
+    // by SongsTab. var (not qint64) so the signal handler gets the raw value
+    // regardless of whether the schedule item carries it as int or string.
+    signal syncSongFromSchedule(var songId)
+
     // Translation dblclick → push live: double-clicking a translation row in
     // the sidebar should push the currently focused verse Live in the new
     // translation. LibrarySidebar emits, ScriptureTab handles (only it knows
@@ -400,9 +501,8 @@ QtObject {
     function addItemToSchedule(item) {
         if (!item) return
         ScheduleService.addItem(item)
-        // newly-added items append to the end
-        selectedScheduleIndex = ScheduleService.currentItems.length - 1
-        previewSubIndex = 0
-        libraryPreviewItem = null   // schedule now wins the Preview pane
+        // selectScheduleItem keeps the multi-set in sync with the primary
+        // index and clears any active library-preview override.
+        selectScheduleItem(ScheduleService.currentItems.length - 1)
     }
 }

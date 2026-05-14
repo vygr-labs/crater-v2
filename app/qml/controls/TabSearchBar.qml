@@ -37,14 +37,14 @@ Item {
     readonly property string queryText: AppState.searchText[tabKey] || ""
 
     // Songs search-mode metadata (icon + placeholder + label). Mirrors the
-    // SONG_SEARCH_MODE_* constants in electron/.../SongSelection.tsx.
+    // SONG_SEARCH_MODE_* constants in electron/.../SongSelection.tsx, except
+    // the sort variants (recent / oldest / newest) live in the gear menu's
+    // AppState.librarySortMode now — keeping them out of this dropdown stops
+    // "Sort by Newest" from hijacking the input placeholder.
     readonly property var songModes: [
-        { id: "title",   label: qsTr("Title"),              icon: "search",        placeholder: qsTr("Search by title…") },
-        { id: "lyrics",  label: qsTr("Lyrics"),             icon: "file-text",     placeholder: qsTr("Search in lyrics…") },
-        { id: "author",  label: qsTr("Author"),             icon: "user",          placeholder: qsTr("Search by author…") },
-        { id: "recent",  label: qsTr("Recently Modified"),  icon: "clock",         placeholder: qsTr("Filter recently modified…") },
-        { id: "oldest",  label: qsTr("Oldest First"),       icon: "sort-asc",      placeholder: qsTr("Filter oldest songs…") },
-        { id: "newest",  label: qsTr("Newest First"),       icon: "sort-desc",     placeholder: qsTr("Filter newest songs…") }
+        { id: "title",   label: qsTr("Title"),  icon: "search",    placeholder: qsTr("Search by title…") },
+        { id: "lyrics",  label: qsTr("Lyrics"), icon: "file-text", placeholder: qsTr("Search in lyrics…") },
+        { id: "author",  label: qsTr("Author"), icon: "user",      placeholder: qsTr("Search by author…") }
     ]
 
     function songMode(id) {
@@ -303,8 +303,13 @@ Item {
         if (tabKey === "themes")    return qsTr("Search themes…")
         return qsTr("Search…")
     }
-    readonly property string shortcutLabel:
-        tabKey === "scripture" ? "Ctrl+F" : "Ctrl+A"
+    // macOS renders the modifier as ⌘ instead of Ctrl. Qt.platform.os returns
+    // "osx" on macOS regardless of the actual marketing name (Sonoma, Sequoia,
+    // etc.), so a single check is enough.
+    readonly property string shortcutLabel: {
+        const mod = Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
+        return tabKey === "scripture" ? (mod + "F") : (mod + "A")
+    }
 
     // Interpreted reference (scripture tab, reference mode only). The
     // BibleService.parseReference already returns the full Verse, so we just
@@ -417,7 +422,10 @@ Item {
         border.color: inputField.activeFocus ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
 
-        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+        // 150ms matches Electron's `transition: all 0.15s ease` on the search
+        // input's `_focusWithin` border. The instant token would snap; this
+        // smooth tween reads as the input "lighting up" when focused.
+        Behavior on border.color { ColorAnimation { duration: 150 } }
 
         // ── Leading: mode trigger (clickable when mode-switching is allowed)
         Rectangle {

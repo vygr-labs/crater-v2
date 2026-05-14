@@ -26,15 +26,29 @@ Rectangle {
         return qsTr("Search…")
     }
 
+    // Local state: which parent groups are expanded in the accordion. Keyed
+    // by group id. Persists across tab switches (cheap; ids are unique per
+    // tab today). If that ever changes, reset on activeTab change via a
+    // Connections { target: AppState; function onActiveTabChanged() { ... } }.
+    property var expandedGroups: ({})
+
+    function toggleExpanded(id) {
+        let copy = Object.assign({}, expandedGroups)
+        copy[id] = !copy[id]
+        expandedGroups = copy
+    }
+
     readonly property var groups: {
         switch (currentTabKey) {
             case "songs": {
                 const songs = SongService.allSongs
                 const favCount = songs.filter(function(s) { return s.isFavorite }).length
-                // "My Collections" deferred until a CollectionService lands.
+                // subgroups: collections placeholder. Empty until a
+                // CollectionService lands; the accordion structure is in place
+                // so adding collections is purely a data change downstream.
                 return [
-                    { id: "all-songs", iconName: "folder", label: qsTr("All Songs"),    count: songs.length },
-                    { id: "favorites", iconName: "heart",  label: qsTr("My Favorites"), count: favCount }
+                    { id: "all-songs", iconName: "folder", label: qsTr("All Songs"),    count: songs.length, subgroups: [] },
+                    { id: "favorites", iconName: "heart",  label: qsTr("My Favorites"), count: favCount,     subgroups: [] }
                 ]
             }
             case "scripture": {
@@ -115,7 +129,9 @@ Rectangle {
         id: groupScroll
         anchors.top: searchBar.bottom
         anchors.topMargin: Theme.space.sm
-        anchors.bottom: parent.bottom
+        // Sidebar action bar sits at the bottom for Songs (currently); other
+        // tabs leave it invisible so the scroll runs to the sidebar's edge.
+        anchors.bottom: actionBar.visible ? actionBar.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.rightMargin: 1   // leave room for the right-edge divider
@@ -129,41 +145,142 @@ Rectangle {
 
             Repeater {
                 model: root.groups
-                delegate: LibraryRow {
+                delegate: ColumnLayout {
+                    // Parent row + optional indented sub-rows. Today subgroups
+                    // are always [] in production data (CollectionService is
+                    // deferred), so this collapses visually to a plain row —
+                    // the accordion structure ships ready for collections.
+                    id: groupBlock
                     Layout.fillWidth: true
-                    iconName: modelData.iconName
-                    label:    modelData.label
-                    count:    modelData.count
-                    active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
-                    // Translation rows render closer to chips than buttons —
-                    // tighter corners read better for a dense alphabetical
-                    // index of codes (KJV / AMPC / NIV / …).
-                    bgRadius: root.currentTabKey === "scripture" ? 2 : Theme.radius.md
-                    // Media routes through a helper because clicking "Images"
-                    // must update *two* AppState slots (group + type filter).
-                    // Other tabs are single-slot so they call the base setter.
-                    onClicked: {
-                        if (root.currentTabKey === "media") {
-                            AppState.setMediaGroup(modelData.id)
-                        } else {
-                            AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                    spacing: 0
+
+                    readonly property bool hasSubs: modelData.subgroups && modelData.subgroups.length > 0
+                    readonly property bool isExpanded: !!root.expandedGroups[modelData.id]
+
+                    LibraryRow {
+                        Layout.fillWidth: true
+                        iconName: modelData.iconName
+                        label:    modelData.label
+                        count:    modelData.count
+                        active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
+                        bgRadius: root.currentTabKey === "scripture" ? 2 : Theme.radius.md
+                        onClicked: {
+                            // Parents with subgroups also toggle their expansion
+                            // on click so the operator can drill into collections
+                            // without a separate chevron target.
+                            if (groupBlock.hasSubs) root.toggleExpanded(modelData.id)
+                            if (root.currentTabKey === "media") {
+                                AppState.setMediaGroup(modelData.id)
+                            } else {
+                                AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                            }
+                        }
+                        onDoubleClicked: {
+                            if (root.currentTabKey === "scripture") {
+                                AppState.setLibraryGroup("scripture", modelData.id)
+                                AppState.requestPushLiveInTranslation(modelData.label)
+                            }
                         }
                     }
 
-                    // Scripture-tab translation rows: a double-click "sends
-                    // the currently focused verse Live in this translation"
-                    // — mirrors electron's handleTranslationDblClick. The
-                    // label is the uppercase translation code ("KJV"); the
-                    // scripture tab handles the actual lookup + push since
-                    // only it knows which verse is focused.
-                    onDoubleClicked: {
-                        if (root.currentTabKey === "scripture") {
-                            // Single click also sets the active group, so the
-                            // sidebar selection always tracks the live verse.
-                            AppState.setLibraryGroup("scripture", modelData.id)
-                            AppState.requestPushLiveInTranslation(modelData.label)
+                    // Indented sub-rows for collections (when present + parent
+                    // expanded). Each sub-row is a child LibraryRow with indent.
+                    Repeater {
+                        model: groupBlock.hasSubs && groupBlock.isExpanded
+                             ? modelData.subgroups : []
+                        delegate: LibraryRow {
+                            Layout.fillWidth: true
+                            indent: Theme.space.md
+                            iconName: modelData.iconName || ""
+                            label:    modelData.label || ""
+                            count:    modelData.count || 0
+                            // Sub-row "active" key follows the modelData.id —
+                            // CollectionService will provide unique ids.
+                            active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
+                            onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Bottom strip — per-tab quick actions (electron parity:
+    // SelectionGroups.tsx ships a `<HStack h={6} bg="gray.800">` at the bottom
+    // hosting each tab's `actionMenus`). Songs gets "+ ⚙" for collection
+    // management; other tabs leave the strip invisible until they have actions
+    // worth shipping. The scroll container above adjusts its bottom anchor.
+    Rectangle {
+        id: actionBar
+        visible: root.currentTabKey === "songs"
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: 1   // leave room for the right-edge divider
+        height: 24
+        color: Theme.color.elevated
+
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Theme.color.borderSubtle
+        }
+
+        Row {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+
+            // + (new collection) — opens a naming modal once CollectionService
+            // is in place. Today's onClicked is a no-op so the affordance is
+            // present and discoverable but doesn't half-launch a feature.
+            Rectangle {
+                width: 36; height: 22
+                radius: 0
+                color: addCollectionMa.containsMouse ? Theme.color.raised : "transparent"
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: "plus"
+                    color: Theme.color.textSecondary
+                    size: 13
+                }
+                MouseArea {
+                    id: addCollectionMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    // TODO: wire to AppState.openModal("naming", { ... }) once
+                    // CollectionService.create lands.
+                    onClicked: {}
+                }
+            }
+
+            // ⚙ Rename / Duplicate / Edit / Delete — same TODO until
+            // CollectionService.{rename,duplicate,update,destroy} land.
+            Rectangle {
+                width: 36; height: 22
+                radius: 0
+                color: gearCollectionMa.containsMouse ? Theme.color.raised : "transparent"
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: "settings"
+                    color: Theme.color.textSecondary
+                    size: 13
+                }
+                MouseArea {
+                    id: gearCollectionMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    // TODO: open a PopoverMenu with Rename/Duplicate/Edit/Delete
+                    // items once CollectionService is available.
+                    onClicked: {}
                 }
             }
         }

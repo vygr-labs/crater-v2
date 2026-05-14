@@ -7,7 +7,6 @@ Item {
 
     property bool showLogoByDefault: AppState.showLogo
     property bool clearOnIdle: false
-    property string outputDisplay: "Primary"
     property string resolution: "1920×1080"
 
     Flickable {
@@ -30,7 +29,52 @@ Item {
                     Text { text: qsTr("Output display"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Which screen receives projection output"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                SelectChip { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; label: root.outputDisplay }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: OutputService.screens.map(function(s) {
+                        return s.name + (s.isPrimary ? qsTr(" (primary)") : "")
+                    })
+                    value: {
+                        const s = OutputService.screens[OutputService.selectedScreenIndex]
+                        return s ? (s.name + (s.isPrimary ? qsTr(" (primary)") : "")) : ""
+                    }
+                    onValueSelected: function(v) {
+                        for (let i = 0; i < OutputService.screens.length; i++) {
+                            const s = OutputService.screens[i]
+                            const label = s.name + (s.isPrimary ? qsTr(" (primary)") : "")
+                            if (label === v) {
+                                OutputService.selectedScreenIndex = i
+                                return
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Projection mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Windowed shows output in a movable preview window"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 160
+                    searchable: false
+                    options: [qsTr("Fullscreen"), qsTr("Windowed")]
+                    value: OutputService.projectionMode === OutputService.Windowed
+                        ? qsTr("Windowed")
+                        : qsTr("Fullscreen")
+                    onValueSelected: function(v) {
+                        OutputService.projectionMode = (v === qsTr("Windowed"))
+                            ? OutputService.Windowed
+                            : OutputService.Fullscreen
+                    }
+                }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 

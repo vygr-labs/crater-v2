@@ -49,6 +49,11 @@ public:
     Q_INVOKABLE void destroy(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // Deep-copies an existing song (title becomes "<title> (copy)", favorite
+    // resets to false, timestamps reset to now). Sections are copied verbatim
+    // preserving sort_order. Returns the new song id, or 0 on failure.
+    Q_INVOKABLE qint64 duplicate(qint64 id);
+
     // Drops and rebuilds songs_fts from songs + song_sections.
     Q_INVOKABLE QFuture<void> rebuildFtsIndex();
 

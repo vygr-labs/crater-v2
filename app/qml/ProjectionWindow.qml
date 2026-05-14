@@ -18,10 +18,45 @@ Window {
     // The screen index to target. Main.qml binds this to OutputService.
     property int screenIndex: 0
 
-    screen: Qt.application.screens[screenIndex] || Qt.application.screens[0]
+    readonly property var _targetScreen:
+        Qt.application.screens[screenIndex] || Qt.application.screens[0]
 
-    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+    readonly property bool _windowed:
+        OutputService.projectionMode === OutputService.Windowed
+
+    screen: _targetScreen
+
+    // Detach from the operator console's window family. Without this, Qt
+    // makes nested Windows transient children of their declaring ancestor —
+    // they share a taskbar slot and inherit z-order quirks. Setting to null
+    // gives this window its own taskbar entry on Windows, its own Alt+Tab
+    // slot, and lets the operator click back to the console even when the
+    // projection is fullscreen on a single-monitor laptop.
+    transientParent: null
+
+    // Production mode (fullscreen) keeps frameless + on-top for the projector
+    // aesthetic; windowed mode drops both so the OS gives the user a real
+    // title bar, drag/resize edges, and a close button. Main.qml controls
+    // which visibility (FullScreen / Windowed / Hidden) is in effect; flags
+    // just tune chrome behavior within that mode.
+    flags: _windowed
+        ? Qt.Window
+        : (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
     title: qsTr("Crater Projection")
+
+    // Windowed-mode geometry. 480x270 is a 16:9 canvas-aspect thumbnail
+    // anchored to the bottom-right of the target screen with a 24 px inset
+    // so it doesn't crowd taskbars or the operator console. Fullscreen
+    // visibility overrides these, so leaving them set unconditionally is
+    // safe — they only take effect when Main.qml flips to Window.Windowed.
+    width:  480
+    height: 270
+    x: _targetScreen
+        ? _targetScreen.virtualX + _targetScreen.width  - width  - 24
+        : 100
+    y: _targetScreen
+        ? _targetScreen.virtualY + _targetScreen.height - height - 24
+        : 100
 
     // Background color = first container's color, falling back to black.
     // Painted BEFORE the canvas stage so anything outside the letterbox
@@ -31,6 +66,26 @@ Window {
     onVisibleChanged: {
         if (visible) OutputService.notifyProjectionOpened()
         else         OutputService.notifyProjectionClosed()
+    }
+
+    // User clicked the close (X) button on the windowed projector. Reject
+    // the OS-level close so the nested QQuickWindow object is reused on
+    // the next goLive() — calling endLive() routes through projectorVisible,
+    // which drives Main.qml's visibility binding to Window.Hidden cleanly.
+    onClosing: function(closeEvent) {
+        closeEvent.accepted = false
+        AppState.endLive()
+    }
+
+    // Esc is the universal escape hatch — useful primarily in Fullscreen
+    // mode on a single-monitor system, where there's no title bar to click
+    // and the operator can otherwise get stuck behind the projection. The
+    // Shortcut's default Qt.WindowShortcut context scopes it to this
+    // window, so it doesn't fight Main.qml's Esc handler (modals / schedule
+    // deselect), which runs in the operator console's scope.
+    Shortcut {
+        sequence: "Escape"
+        onActivated: AppState.endLive()
     }
 
     // Reactive bindings to ProjectionService — stateChanged() fans into all

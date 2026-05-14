@@ -30,24 +30,34 @@ struct SongService::Impl
     db::Statement toggleFavorite;
     db::Statement upsertFtsForSong;
     db::Statement deleteFtsForSong;
+    // Two-step deep copy. INSERT...SELECT keeps the data inside SQLite so no
+    // QString round-trip is needed for the sections (lines_json can be large).
+    db::Statement duplicateSongRow;
+    db::Statement duplicateSongSections;
 
     // Cached allSongs() result. Invalidated on any mutation.
     std::optional<QList<Song>> cachedAll;
 
     explicit Impl(const QString& path)
         : conn(path)
+        // All three SELECT-from-songs paths share the same column layout so
+        // readSongRow can be reused. created_at + updated_at sit at columns
+        // 7-8; any additional columns (e.g. searchFts's bm25 score) come after.
         , selectAllMetadata(conn.prepare(QStringLiteral(
-            "SELECT id, title, author, copyright, ccli, theme_id, is_favorite "
+            "SELECT id, title, author, copyright, ccli, theme_id, is_favorite, "
+            "       created_at, updated_at "
             "FROM songs ORDER BY title COLLATE NOCASE")))
         , selectSongById(conn.prepare(QStringLiteral(
-            "SELECT id, title, author, copyright, ccli, theme_id, is_favorite "
+            "SELECT id, title, author, copyright, ccli, theme_id, is_favorite, "
+            "       created_at, updated_at "
             "FROM songs WHERE id = ?")))
         , selectSectionsForSong(conn.prepare(QStringLiteral(
             "SELECT label, kind, lines_json, sort_order "
             "FROM song_sections WHERE song_id = ? ORDER BY sort_order")))
         , searchFts(conn.prepare(QStringLiteral(
             "SELECT DISTINCT s.id, s.title, s.author, s.copyright, s.ccli, "
-            "       s.theme_id, s.is_favorite, bm25(songs_fts) AS score "
+            "       s.theme_id, s.is_favorite, s.created_at, s.updated_at, "
+            "       bm25(songs_fts) AS score "
             "FROM songs_fts "
             "JOIN songs s ON s.id = songs_fts.rowid "
             "WHERE songs_fts MATCH ? "
@@ -66,6 +76,18 @@ struct SongService::Impl
             "FROM songs s WHERE s.id = ?")))
         , deleteFtsForSong(conn.prepare(QStringLiteral(
             "DELETE FROM songs_fts WHERE rowid = ?")))
+        , duplicateSongRow(conn.prepare(QStringLiteral(
+            // Binds (1=nowMs, 2=nowMs, 3=src id). is_favorite resets to 0 so
+            // copies don't inherit the favorite flag.
+            "INSERT INTO songs "
+            "  (title, author, copyright, ccli, theme_id, is_favorite, created_at, updated_at) "
+            "SELECT title || ' (copy)', author, copyright, ccli, theme_id, 0, ?, ? "
+            "  FROM songs WHERE id = ?")))
+        , duplicateSongSections(conn.prepare(QStringLiteral(
+            // Binds (1=new id, 2=src id). sort_order preserved verbatim.
+            "INSERT INTO song_sections (song_id, label, kind, lines_json, sort_order) "
+            "SELECT ?, label, kind, lines_json, sort_order "
+            "  FROM song_sections WHERE song_id = ?")))
     {}
 
     Song readSongRow(db::Statement& s, int idCol = 0)
@@ -78,6 +100,8 @@ struct SongService::Impl
         song.ccli       = s.columnText (idCol + 4);
         song.themeId    = s.columnInt64(idCol + 5);
         song.isFavorite = s.columnInt  (idCol + 6) != 0;
+        song.createdAt  = s.columnInt64(idCol + 7);
+        song.updatedAt  = s.columnInt64(idCol + 8);
         return song;
     }
 };
@@ -237,6 +261,47 @@ void SongService::toggleFavorite(qint64 id)
         invalidateCache();
     } catch (const db::Error& e) {
         qWarning().noquote() << "SongService::toggleFavorite():" << e.message();
+    }
+}
+
+qint64 SongService::duplicate(qint64 id)
+{
+    if (!m_impl || id <= 0) return 0;
+    try {
+        db::Transaction tx(m_impl->conn);
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+        auto& rowStmt = m_impl->duplicateSongRow;
+        rowStmt.reset();
+        rowStmt.bind(1, nowMs);
+        rowStmt.bind(2, nowMs);
+        rowStmt.bind(3, id);
+        rowStmt.step();
+
+        // INSERT...SELECT with WHERE id=? against a missing source inserts zero
+        // rows but doesn't throw — and lastInsertRowId() retains its previous
+        // value, so we MUST gate on changes() to know whether anything happened.
+        // Without commit, the Transaction destructor rolls back.
+        if (m_impl->conn.changes() == 0) return 0;
+        const qint64 newId = m_impl->conn.lastInsertRowId();
+
+        auto& secStmt = m_impl->duplicateSongSections;
+        secStmt.reset();
+        secStmt.bind(1, newId);
+        secStmt.bind(2, id);
+        secStmt.step();
+
+        auto& fts = m_impl->upsertFtsForSong;
+        fts.reset();
+        fts.bind(1, newId);
+        fts.step();
+
+        tx.commit();
+        invalidateCache();
+        return newId;
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "SongService::duplicate():" << e.message();
+        return 0;
     }
 }
 
