@@ -337,13 +337,9 @@ Item {
                         items.push({ separator: true })
                         items.push({ label: qsTr("Refresh"), iconName: "refresh-cw" })
 
-                        const p = gearBtn.mapToItem(null, gearBtn.width, gearBtn.height + 4)
-                        AppState.openModal("contextMenu", {
-                            anchorX:   p.x - 200,
-                            anchorY:   p.y,
-                            menuWidth: 200,
-                            items:     items
-                        })
+                        AppState.openContextMenuAt(gearBtn,
+                            gearBtn.width, gearBtn.height + 4,
+                            items, { menuWidth: 200, dx: -200 })
                     }
                 }
             }
@@ -588,62 +584,49 @@ Item {
                 }
             }
 
-            MouseArea {
+            RightClickArea {
                 id: rowMa
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                menuItems: [
+                    { label: qsTr("Add to Schedule"), iconName: "plus",
+                      action: function() { root.addToScheduleFor(index) } },
+                    { label: qsTr("Push to Live"),    iconName: "play",
+                      action: function() { root.pushLiveFor(index) } },
+                    { separator: true },
+                    { label: qsTr("Edit Song"), iconName: "edit", kbd: "E",
+                      action: function() {
+                          AppState.openModal("songEditor", { songId: modelData.id })
+                      } },
+                    { label: qsTr("Duplicate Song"), iconName: "copy",
+                      action: function() { SongService.duplicate(modelData.id) } },
+                    { separator: true },
+                    { label: modelData.isFavorite
+                            ? qsTr("Remove from Favorites")
+                            : qsTr("Add to Favorites"),
+                      iconName: modelData.isFavorite ? "heart-off" : "heart",
+                      action: function() { SongService.toggleFavorite(modelData.id) } },
+                    // No action — collections are deferred until CollectionService
+                    // lands. Leaving the row in place preserves discoverability
+                    // + electron parity.
+                    { label: qsTr("Add to Collection…"), iconName: "folder" },
+                    { separator: true },
+                    { label: qsTr("Delete Song"), iconName: "trash", kbd: "Del", destructive: true,
+                      action: function() {
+                          AppState.openModal("confirm", {
+                              title:       qsTr("Delete song?"),
+                              body:        qsTr("This permanently removes \"") + modelData.title + "\".",
+                              confirmText: qsTr("Delete"),
+                              onConfirm:   function() { SongService.destroy(modelData.id) }
+                          })
+                      } }
+                ]
 
-                onClicked: function(mouse) {
-                    if (mouse.button === Qt.RightButton) {
-                        const p = mapToItem(null, mouse.x, mouse.y)
-                        AppState.setLibraryFluid(root.tabKey, index)
-                        root.pushPreviewFor(index)
-                        AppState.openModal("contextMenu", {
-                            anchorX: p.x,
-                            anchorY: p.y,
-                            menuWidth: 220,
-                            items: [
-                                { label: qsTr("Add to Schedule"), iconName: "plus",
-                                  action: function() { root.addToScheduleFor(index) } },
-                                { label: qsTr("Push to Live"),    iconName: "play",
-                                  action: function() { root.pushLiveFor(index) } },
-                                { separator: true },
-                                { label: qsTr("Edit Song"), iconName: "edit", kbd: "E",
-                                  action: function() {
-                                      AppState.openModal("songEditor", { songId: modelData.id })
-                                  } },
-                                { label: qsTr("Duplicate Song"), iconName: "copy",
-                                  action: function() { SongService.duplicate(modelData.id) } },
-                                { separator: true },
-                                { label: modelData.isFavorite
-                                        ? qsTr("Remove from Favorites")
-                                        : qsTr("Add to Favorites"),
-                                  iconName: modelData.isFavorite ? "heart-off" : "heart",
-                                  action: function() { SongService.toggleFavorite(modelData.id) } },
-                                // No action — collections are deferred until
-                                // CollectionService lands. Leaving the row in
-                                // place preserves discoverability + electron parity.
-                                { label: qsTr("Add to Collection…"), iconName: "folder" },
-                                { separator: true },
-                                { label: qsTr("Delete Song"), iconName: "trash", kbd: "Del", destructive: true,
-                                  action: function() {
-                                      AppState.openModal("confirm", {
-                                          title:       qsTr("Delete song?"),
-                                          body:        qsTr("This permanently removes \"") + modelData.title + "\".",
-                                          confirmText: qsTr("Delete"),
-                                          onConfirm:   function() { SongService.destroy(modelData.id) }
-                                      })
-                                  } }
-                            ]
-                        })
-                    } else {
-                        AppState.setLibraryFluid(root.tabKey, index)
-                        root.pushPreviewFor(index)
-                    }
+                function _focus() {
+                    AppState.setLibraryFluid(root.tabKey, index)
+                    root.pushPreviewFor(index)
                 }
-
+                onLeftClicked:  _focus()
+                onRightClicked: _focus()
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
                     root.pushLiveFor(index)

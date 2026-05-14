@@ -165,6 +165,54 @@ Item {
         AppState.clearMediaBatchSelection()
     }
 
+    // Shared right-click menu builder — grid and list view both invoke it so
+    // the two views stay in lockstep when items are added or reordered.
+    // `isLogo` comes from the calling delegate (each view computes it slightly
+    // differently — grid via cell._logo, list via listRow._logo).
+    function _mediaMenuItems(media, isLogo, idx) {
+        return [
+            { label: qsTr("Push to Live"), iconName: "play",
+              action: function() { root.pushLiveFor(idx) } },
+            { label: qsTr("Add to Schedule"), iconName: "plus",
+              action: function() { root.addToScheduleFor(idx) } },
+            { separator: true },
+            { label: qsTr("Set as Logo Background"), iconName: "sparkles",
+              detail: isLogo ? "✓" : "",
+              action: function() { ProjectionService.setLogoBgPath(media.path) } },
+            { label: qsTr("Rename"), iconName: "edit",
+              action: function() {
+                  AppState.openModal("naming", {
+                      title:        qsTr("Rename media"),
+                      placeholder:  qsTr("Title"),
+                      confirmText:  qsTr("Save"),
+                      initialValue: media.title,
+                      onConfirm:    function(name) {
+                          if (name && name.length > 0)
+                              MediaService.rename(media.id, name)
+                      }
+                  })
+              } },
+            { label: qsTr("Duplicate"), iconName: "copy" },
+            { separator: true },
+            { label: media.isFavorite
+                    ? qsTr("Remove from Favorites")
+                    : qsTr("Add to Favorites"),
+              iconName: media.isFavorite ? "heart-off" : "heart",
+              action: function() { MediaService.toggleFavorite(media.id) } },
+            { label: qsTr("Add to Collection…"), iconName: "folder" },
+            { separator: true },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() {
+                  AppState.openModal("confirm", {
+                      title:       qsTr("Delete media?"),
+                      body:        qsTr("Remove \"") + media.title + qsTr("\" from your library?"),
+                      confirmText: qsTr("Delete"),
+                      onConfirm:   function() { MediaService.remove(media.id) }
+                  })
+              } }
+        ]
+    }
+
     // Bounds-clamp fluid index when the list shrinks.
     onFilteredMediaChanged: {
         const n = filteredMedia.length
@@ -183,6 +231,33 @@ Item {
         function onActiveTabChanged() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.pushPreviewFor(root.fluidIndex)
+        }
+    }
+
+    // Newly imported items land at filteredMedia[0] (ORDER BY added_at DESC),
+    // but the GridView/ListView don't auto-scroll to acknowledge a model
+    // append. Without this snap, an operator who'd scrolled down at all would
+    // see existing items but not the import they just triggered — making the
+    // import look broken even though the row landed in the DB. We position
+    // both views at the top and select index 0 so the new file is visually
+    // confirmed and the preview pane reflects it immediately.
+    //
+    // Qt.callLater defers until the current synchronous chain (the
+    // allMediaChanged → filteredMedia rebind cascade) has flushed, so the
+    // GridView's model has already grown by the time we call
+    // positionViewAtBeginning.
+    Connections {
+        target: MediaService
+        function onImportFinished(imported, skipped) {
+            if (imported <= 0) return
+            Qt.callLater(function() {
+                grid.positionViewAtBeginning()
+                listView.positionViewAtBeginning()
+                if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
+                    AppState.setLibraryFluid(root.tabKey, 0)
+                    root.pushPreviewFor(0)
+                }
+            })
         }
     }
 
@@ -430,13 +505,9 @@ Item {
                                 action:   function() { AppState.mediaGridColumns = n }
                             })
                         }
-                        const p = colsBtn.mapToItem(null, colsBtn.width, colsBtn.height + 4)
-                        AppState.openModal("contextMenu", {
-                            anchorX:   p.x - 160,
-                            anchorY:   p.y,
-                            menuWidth: 160,
-                            items:     items
-                        })
+                        AppState.openContextMenuAt(colsBtn,
+                            colsBtn.width, colsBtn.height + 4,
+                            items, { menuWidth: 160, dx: -160 })
                     }
                 }
             }
@@ -505,13 +576,9 @@ Item {
                                 }
                             })
                         }
-                        const p = sortBtn.mapToItem(null, sortBtn.width, sortBtn.height + 4)
-                        AppState.openModal("contextMenu", {
-                            anchorX:   p.x - 160,
-                            anchorY:   p.y,
-                            menuWidth: 160,
-                            items:     items
-                        })
+                        AppState.openContextMenuAt(sortBtn,
+                            sortBtn.width, sortBtn.height + 4,
+                            items, { menuWidth: 160, dx: -160 })
                     }
                 }
             }
@@ -853,53 +920,8 @@ Item {
                         AppState.setLibraryFluid(root.tabKey, index)
                         if (mouse.button === Qt.RightButton) {
                             root.pushPreviewFor(index)
-                            const p = mapToItem(null, mouse.x, mouse.y)
-                            AppState.openModal("contextMenu", {
-                                anchorX:   p.x,
-                                anchorY:   p.y,
-                                menuWidth: 220,
-                                items: [
-                                    { label: qsTr("Push to Live"), iconName: "play",
-                                      action: function() { root.pushLiveFor(index) } },
-                                    { label: qsTr("Add to Schedule"), iconName: "plus",
-                                      action: function() { root.addToScheduleFor(index) } },
-                                    { separator: true },
-                                    { label: qsTr("Set as Logo Background"), iconName: "sparkles",
-                                      detail: cell._logo ? "✓" : "",
-                                      action: function() { ProjectionService.setLogoBgPath(modelData.path) } },
-                                    { label: qsTr("Rename"),  iconName: "edit",
-                                      action: function() {
-                                          AppState.openModal("naming", {
-                                              title:        qsTr("Rename media"),
-                                              placeholder:  qsTr("Title"),
-                                              confirmText:  qsTr("Save"),
-                                              initialValue: modelData.title,
-                                              onConfirm:    function(name) {
-                                                  if (name && name.length > 0)
-                                                      MediaService.rename(modelData.id, name)
-                                              }
-                                          })
-                                      } },
-                                    { label: qsTr("Duplicate"), iconName: "copy" },
-                                    { separator: true },
-                                    { label: modelData.isFavorite
-                                            ? qsTr("Remove from Favorites")
-                                            : qsTr("Add to Favorites"),
-                                      iconName: modelData.isFavorite ? "heart-off" : "heart",
-                                      action: function() { MediaService.toggleFavorite(modelData.id) } },
-                                    { label: qsTr("Add to Collection…"), iconName: "folder" },
-                                    { separator: true },
-                                    { label: qsTr("Delete"), iconName: "trash", destructive: true,
-                                      action: function() {
-                                          AppState.openModal("confirm", {
-                                              title:       qsTr("Delete media?"),
-                                              body:        qsTr("Remove \"") + modelData.title + qsTr("\" from your library?"),
-                                              confirmText: qsTr("Delete"),
-                                              onConfirm:   function() { MediaService.remove(modelData.id) }
-                                          })
-                                      } }
-                                ]
-                            })
+                            AppState.openContextMenuAt(this, mouse.x, mouse.y,
+                                root._mediaMenuItems(modelData, cell._logo, index))
                         } else if (mouse.modifiers & Qt.ShiftModifier
                                   && AppState.mediaBatchSelection.length > 0) {
                             const last = AppState.mediaBatchSelection[AppState.mediaBatchSelection.length - 1]
@@ -1134,52 +1156,8 @@ Item {
                         AppState.setLibraryFluid(root.tabKey, index)
                         if (mouse.button === Qt.RightButton) {
                             root.pushPreviewFor(index)
-                            const p = mapToItem(null, mouse.x, mouse.y)
-                            AppState.openModal("contextMenu", {
-                                anchorX:   p.x,
-                                anchorY:   p.y,
-                                menuWidth: 220,
-                                items: [
-                                    { label: qsTr("Push to Live"), iconName: "play",
-                                      action: function() { root.pushLiveFor(index) } },
-                                    { label: qsTr("Add to Schedule"), iconName: "plus",
-                                      action: function() { root.addToScheduleFor(index) } },
-                                    { separator: true },
-                                    { label: qsTr("Set as Logo Background"), iconName: "sparkles",
-                                      detail: listRow._logo ? "✓" : "",
-                                      action: function() { ProjectionService.setLogoBgPath(modelData.path) } },
-                                    { label: qsTr("Rename"), iconName: "edit",
-                                      action: function() {
-                                          AppState.openModal("naming", {
-                                              title:        qsTr("Rename media"),
-                                              placeholder:  qsTr("Title"),
-                                              confirmText:  qsTr("Save"),
-                                              initialValue: modelData.title,
-                                              onConfirm:    function(name) {
-                                                  if (name && name.length > 0)
-                                                      MediaService.rename(modelData.id, name)
-                                              }
-                                          })
-                                      } },
-                                    { label: qsTr("Duplicate"), iconName: "copy" },
-                                    { separator: true },
-                                    { label: modelData.isFavorite
-                                            ? qsTr("Remove from Favorites")
-                                            : qsTr("Add to Favorites"),
-                                      iconName: modelData.isFavorite ? "heart-off" : "heart",
-                                      action: function() { MediaService.toggleFavorite(modelData.id) } },
-                                    { separator: true },
-                                    { label: qsTr("Delete"), iconName: "trash", destructive: true,
-                                      action: function() {
-                                          AppState.openModal("confirm", {
-                                              title:       qsTr("Delete media?"),
-                                              body:        qsTr("Remove \"") + modelData.title + qsTr("\" from your library?"),
-                                              confirmText: qsTr("Delete"),
-                                              onConfirm:   function() { MediaService.remove(modelData.id) }
-                                          })
-                                      } }
-                                ]
-                            })
+                            AppState.openContextMenuAt(this, mouse.x, mouse.y,
+                                root._mediaMenuItems(modelData, listRow._logo, index))
                         } else if (mouse.modifiers & Qt.ShiftModifier
                                   && AppState.mediaBatchSelection.length > 0) {
                             const last = AppState.mediaBatchSelection[AppState.mediaBatchSelection.length - 1]

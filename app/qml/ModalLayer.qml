@@ -71,10 +71,17 @@ Item {
             anchorY: AppState.modalProps.anchorY || 0
             menuWidth: AppState.modalProps.menuWidth || 220
             model: AppState.modalProps.items || []
-            onItemActivated: function(i, item) { AppState.closeModal() }
-            // If user clicks backdrop (close() called internally), reflect
-            // that in AppState so the Loader deactivates.
-            onActiveChanged: if (!active) AppState.closeModal()
+            // We deliberately do NOT close the modal on itemActivated — the
+            // PopoverMenu's own onClicked still calls close() at the end of
+            // its handler, which flips `active` and gets us here via
+            // onActiveChanged. The guard below stops us clobbering some
+            // other modal (e.g. "confirm") that the action handler opened
+            // synchronously — previously every site that did that needed
+            // a Qt.callLater workaround.
+            onActiveChanged: {
+                if (!active && AppState.activeModal === "contextMenu")
+                    AppState.closeModal()
+            }
         }
     }
 }

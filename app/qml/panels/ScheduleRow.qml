@@ -1,12 +1,16 @@
 import QtQuick
 
-// One row in the schedule list. Visual state varies with isLive, isSelected
-// (member of the multi-set), isPrimarySelected (anchor / Preview pane source),
-// hasThemeOverride, and isDragging.
+// One row in the schedule list. Visual language mirrors electron's
+// ScheduleItem: a flat hstack — no card, no rounded corners, no kind pill,
+// no index number, no Preview/Live badges. Selection is signaled by a 3px
+// left border + faint bg wash; the primary (focused) selected row gets a
+// deeper brand-tinted bg; drag-over surfaces as a top border. Live state is
+// owned by LivePanel — putting it back on the row would duplicate the
+// authoritative indicator and add visual noise in a dense schedule.
 //
 // Emits clicked(button, modifiers), doubleClicked, rightClicked(x, y), and
-// drag lifecycle signals (dragStarted/dragMoved/dragReleased). The host panel
-// keeps the drag state and triggers ScheduleService.moveItem on release.
+// drag lifecycle signals (dragStarted / dragMoved / dragReleased). The host
+// panel keeps the drag state and triggers ScheduleService.moveItem on release.
 Item {
     id: root
 
@@ -14,26 +18,26 @@ Item {
     property string title: ""
     property string subtitle: ""
     // The canonical kind ("song", "scripture", "image", "video", "presentation").
-    // Label + color are derived from this via Theme helpers — no presentation
-    // metadata stored on schedule items.
+    // Label + color + icon are derived from this via Theme helpers — no
+    // presentation metadata stored on schedule items.
     property string kind: ""
 
-    property bool isLive: false
+    property bool isLive: false               // unused visually here; LivePanel owns the indicator
     property bool isSelected: false           // a member of the multi-selection set
     property bool isPrimarySelected: false    // the anchor (drives Preview pane)
     property bool hasThemeOverride: false
 
-    // Drag state. The card visually translates by dragOffsetY while a drag is
-    // in progress; ListView delegate positioning isn't touched, so the
-    // operator sees the row "float" without ListView relayout fighting it.
+    // Drag state. The row translates by dragOffsetY while a drag is in
+    // progress; ListView delegate positioning isn't touched so the operator
+    // sees the row "float" without ListView relayout fighting it.
     property bool isDragging: false
     property real dragOffsetY: 0
 
-    readonly property string _label: Theme.scheduleLabel(kind)
-    readonly property color  _color: Theme.scheduleColor(kind)
+    readonly property color _kindColor: Theme.scheduleColor(kind)
+    readonly property string _kindIcon: Theme.scheduleKindIcon(kind)
 
     // Clicks pass through modifiers so the host can route Ctrl+/Shift+ to
-    // multi-select helpers without each row knowing about selection model.
+    // multi-select helpers without each row knowing about the selection model.
     signal clicked(int mouseButton, int keyboardModifiers)
     signal doubleClicked()
     signal rightClicked(real mouseX, real mouseY)
@@ -47,57 +51,79 @@ Item {
     implicitHeight: Theme.size.scheduleRowHeight
     implicitWidth: 400
 
-    // Elevate the whole delegate above its siblings while being dragged so the
-    // floating card paints over neighbouring rows. Setting z on the inner card
-    // alone wouldn't work — ListView stacks delegates within contentItem, and
-    // a child's z only reorders within its own delegate's subtree.
+    // Elevate the whole delegate above siblings while dragging so the
+    // floating row paints over neighbours. Setting z on the inner item
+    // alone wouldn't work — ListView stacks delegates inside contentItem,
+    // and a child's z only reorders within its own delegate subtree.
     z: isDragging ? 100 : 0
 
-    Rectangle {
-        id: card
-
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.leftMargin: Theme.space.lg
-        anchors.rightMargin: Theme.space.lg
-        height: parent.height - 6
-        y: 3 + root.dragOffsetY
-        radius: Theme.radius.lg
-        color: root.isLive             ? Theme.color.liveSubtle
-             : root.isSelected         ? Theme.color.previewSubtle
-             : ma.containsMouse        ? Theme.color.raised
-                                       : Theme.color.elevated
-        border.width: (root.isLive || root.isSelected) ? 1 : 0
-        border.color: root.isLive            ? Theme.color.live
-                    : root.isPrimarySelected ? Theme.color.preview
-                    : root.isSelected        ? Qt.darker(Theme.color.preview, 1.6)
-                                             : "transparent"
+    // ── Row body ────────────────────────────────────────────────────────
+    // Flat container — translates by dragOffsetY during a drag.
+    Item {
+        id: body
+        anchors.fill: parent
+        y: root.dragOffsetY
         opacity: root.isDragging ? 0.92 : 1.0
-
-        Behavior on color   { ColorAnimation  { duration: Theme.motion.instant } }
         Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
 
-        // ── Drag handle (far left) ──────────────────────────────────────
-        // Captures press-drag-release to drive the reorder. Sits on top of
-        // the card's main MouseArea (which excludes this region via
-        // anchors.leftMargin: handle.width) so clicks here never start a
-        // selection action.
+        // Background wash. Three distinct states:
+        //   primary-selected (focused)  → opaque brandSubtle (deep wash)
+        //   selected (non-primary)      → brandSubtle at 0.55 (medium wash)
+        //   hover                       → rowHoverBrand at 0.30 (light wash)
+        //   default                     → transparent
+        // Using shade contrast (subtle vs brand) keeps selected and hover
+        // visually distinct even though both involve brand colors.
+        Rectangle {
+            anchors.fill: parent
+            color: root.isPrimarySelected ? Theme.color.brandSubtle
+                 : root.isSelected        ? Qt.rgba(23/255, 60/255, 19/255, 0.55)
+                 : ma.containsMouse       ? Theme.color.rowHoverBrand
+                                          : "transparent"
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+        }
+
+        // 3px brand-colored left edge for any member of the selection set.
+        // Electron uses defaultPalette.400 (a lighter brand) — Qt.lighter on
+        // the brand gives us the equivalent without adding a new token.
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 3
+            visible: root.isSelected
+            color: Qt.lighter(Theme.color.brand, 1.6)
+        }
+
+        // ── Drag handle / selection-check column ─────────────────────────
+        // Houses two glyphs that swap based on selection: grip when not
+        // selected (handle for drag), check when selected. Width matches
+        // electron's px={2} + icon — ~28px total.
         Item {
             id: handle
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 20
+            width: 28
 
             AppIcon {
                 anchors.centerIn: parent
+                visible: !root.isSelected
                 name: "grip-vertical"
-                size: 12
+                size: 14
                 color: handleMa.containsMouse || root.isDragging
-                       ? Theme.color.textPrimary : Theme.color.textTertiary
+                       ? Theme.color.textSecondary : Theme.color.textTertiary
                 opacity: handleMa.containsMouse || root.isDragging || ma.containsMouse
                          ? 1.0 : 0.6
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
+            }
+            AppIcon {
+                anchors.centerIn: parent
+                visible: root.isSelected
+                name: "check"
+                size: 14
+                color: root.isPrimarySelected
+                       ? Qt.lighter(Theme.color.brand, 1.8)
+                       : Qt.lighter(Theme.color.brand, 1.4)
             }
 
             MouseArea {
@@ -133,114 +159,66 @@ Item {
             }
         }
 
-        // ── Index column / multi-select indicator ───────────────────────
-        // Shows row number when not selected, a check glyph when selected.
-        Item {
-            id: indexCol
+        // ── Kind icon ────────────────────────────────────────────────────
+        // Small kind-tinted glyph (music / book / image / video / …). Brighter
+        // when the row is focused/selected so it reads as "active item".
+        AppIcon {
+            id: kindIcon
             anchors.left: handle.right
             anchors.verticalCenter: parent.verticalCenter
-            width: 24
-            height: 18
-
-            Text {
-                anchors.centerIn: parent
-                visible: !root.isSelected
-                text: ("0" + (root.rowIndex + 1)).slice(-2)
-                color: Theme.color.textTertiary
-                font.family: Theme.font.monoFamily
-                font.pixelSize: Theme.font.smallSize
-            }
-            AppIcon {
-                anchors.centerIn: parent
-                visible: root.isSelected
-                name: "check"
-                size: 13
-                color: root.isPrimarySelected ? Theme.color.preview
-                                              : Qt.darker(Theme.color.preview, 1.3)
-            }
+            name: root._kindIcon
+            size: 14
+            color: root.isPrimarySelected ? Qt.lighter(root._kindColor, 1.25)
+                 : root.isSelected        ? root._kindColor
+                                          : Qt.darker(root._kindColor, 1.15)
+            opacity: root.isPrimarySelected || root.isSelected ? 1.0 : 0.85
         }
 
-        // ── Kind badge ──────────────────────────────────────────────────
-        Badge {
-            id: typeBadge
-            anchors.left: indexCol.right
-            anchors.leftMargin: Theme.space.md
+        // ── Title ────────────────────────────────────────────────────────
+        // Single-line, truncated. No subtitle (electron's schedule rows are
+        // a single line; the title field already carries enough info for
+        // scriptures ("Genesis 1:4 (KJV)") and songs ("Amazing Grace")).
+        Text {
+            id: titleText
+            anchors.left: kindIcon.right
+            anchors.leftMargin: Theme.space.sm
+            anchors.right: themeMark.visible ? themeMark.left : parent.right
+            anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
-            text: root._label
-            background: Qt.darker(root._color, 4.0)
-            foreground: root._color
+            text: root.title
+            color: root.isPrimarySelected ? Theme.color.textPrimary
+                 : root.isSelected        ? Theme.color.textPrimary
+                                          : Theme.color.textTitle
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.bodySize
+            font.weight: (root.isPrimarySelected || root.isSelected)
+                         ? Theme.font.weightMedium
+                         : Theme.font.weightRegular
+            elide: Text.ElideRight
         }
 
-        // ── Per-item theme override indicator ───────────────────────────
-        // Palette glyph between the kind badge and the title — visible only
-        // when the operator has set a non-default theme on this item. The
-        // glyph's color matches the kind tint so it reads as an additional
-        // decoration on the same item, not a separate semantic class.
+        // ── Theme-override glyph ─────────────────────────────────────────
+        // Tiny palette mark on the right edge when this item carries a
+        // non-default theme. Tinted in the row's kind color so it reads as
+        // an annotation on the same item, not a separate semantic class.
         AppIcon {
             id: themeMark
             visible: root.hasThemeOverride
-            anchors.left: typeBadge.right
-            anchors.leftMargin: Theme.space.sm
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             name: "palette"
             size: 12
-            color: root._color
-            opacity: 0.8
+            color: Qt.lighter(root._kindColor, 1.1)
+            opacity: 0.85
         }
 
-        // ── Title + subtitle ────────────────────────────────────────────
-        Column {
-            anchors.left: themeMark.visible ? themeMark.right : typeBadge.right
-            anchors.leftMargin: Theme.space.md
-            anchors.right: statusRow.left
-            anchors.rightMargin: Theme.space.md
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 3
+        // ── Drag-over top accent ─────────────────────────────────────────
+        // The host SchedulePanel renders the global insertion line in the
+        // ListView contentItem; this row-local indicator (currently unused)
+        // would slot in here if we ever want per-row drop affordance.
 
-            Text {
-                text: root.title
-                color: Theme.color.textPrimary
-                font.family: Theme.font.family
-                font.pixelSize: Theme.font.bodySize + 1
-                font.weight: Theme.font.weightMedium
-                elide: Text.ElideRight
-                width: parent.width
-            }
-            Text {
-                visible: root.subtitle.length > 0
-                text: root.subtitle
-                color: Theme.color.textSecondary
-                font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
-                elide: Text.ElideRight
-                width: parent.width
-            }
-        }
-
-        // ── Status badges (Live / Preview) ──────────────────────────────
-        Row {
-            id: statusRow
-            anchors.right: parent.right
-            anchors.rightMargin: Theme.space.lg
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Theme.space.sm
-
-            Badge {
-                visible: root.isLive
-                text: qsTr("Live")
-                background: Theme.color.live
-                foreground: "#ffffff"
-                pulse: true
-            }
-            Badge {
-                visible: root.isPrimarySelected && !root.isLive
-                text: qsTr("Preview")
-                background: Theme.color.preview
-                foreground: "#ffffff"
-            }
-        }
-
-        // ── Click area (everything to the right of the drag handle) ─────
+        // ── Click area (everything to the right of the drag handle) ──────
         MouseArea {
             id: ma
             anchors.fill: parent

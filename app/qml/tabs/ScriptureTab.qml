@@ -406,8 +406,7 @@ Item {
                           detail:   "Ctrl+F",
                           action: function() {
                               const next = root.mode === "reference" ? "search" : "reference"
-                              AppState.setLibrarySearchMode(root.tabKey, next)
-                              AppState.setSearch(root.tabKey, "")
+                              AppState.setLibrarySearchModeWithMemory(root.tabKey, next)
                           } },
                         { separator: true },
                         // Reference-input sub-mode: only meaningful in
@@ -429,13 +428,9 @@ Item {
                         ] : []),
                         { label: qsTr("Refresh"), iconName: "refresh-cw" }
                     ]
-                    const p = gearBtn.mapToItem(null, gearBtn.width, gearBtn.height + 4)
-                    AppState.openModal("contextMenu", {
-                        anchorX:   p.x - 200,
-                        anchorY:   p.y,
-                        menuWidth: 220,
-                        items:     items
-                    })
+                    AppState.openContextMenuAt(gearBtn,
+                        gearBtn.width, gearBtn.height + 4,
+                        items, { menuWidth: 220, dx: -200 })
                 }
             }
         }
@@ -599,38 +594,29 @@ Item {
                 }
             }
 
-            MouseArea {
+            RightClickArea {
                 id: verseMa
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                menuItems: [
+                    { label: qsTr("Push to Live"), iconName: "play",
+                      action: function() { root.pushLiveFor(index) } },
+                    { label: qsTr("Add to Schedule"), iconName: "plus",
+                      action: function() { root.addToScheduleFor(index) } },
+                    { separator: true },
+                    { label: qsTr("Mark Up"),            iconName: "edit-3" },
+                    { label: qsTr("Add to Favorites"),   iconName: "heart" },
+                    { label: qsTr("Add to Collection…"), iconName: "folder" },
+                    { separator: true },
+                    { label: qsTr("Refresh"), iconName: "refresh-cw" }
+                ]
 
-                onClicked: function(mouse) {
+                function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
                     root.pushPreviewFor(index)
                     root._syncInputToVerse(index)
-                    if (mouse.button === Qt.RightButton) {
-                        const p = mapToItem(null, mouse.x, mouse.y)
-                        AppState.openModal("contextMenu", {
-                            anchorX:   p.x,
-                            anchorY:   p.y,
-                            menuWidth: 220,
-                            items: [
-                                { label: qsTr("Push to Live"), iconName: "play",
-                                  action: function() { root.pushLiveFor(index) } },
-                                { label: qsTr("Add to Schedule"), iconName: "plus",
-                                  action: function() { root.addToScheduleFor(index) } },
-                                { separator: true },
-                                { label: qsTr("Mark Up"),          iconName: "edit-3" },
-                                { label: qsTr("Add to Favorites"), iconName: "heart" },
-                                { label: qsTr("Add to Collection…"), iconName: "folder" },
-                                { separator: true },
-                                { label: qsTr("Refresh"), iconName: "refresh-cw" }
-                            ]
-                        })
-                    }
                 }
+                onLeftClicked:  _focus()
+                onRightClicked: _focus()
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
                     root._syncInputToVerse(index)
@@ -679,8 +665,7 @@ Item {
               && AppState.activeModal === ""
         onActivated: {
             const next = root.mode === "reference" ? "search" : "reference"
-            AppState.setLibrarySearchMode(root.tabKey, next)
-            AppState.setSearch(root.tabKey, "")
+            AppState.setLibrarySearchModeWithMemory(root.tabKey, next)
         }
     }
 }

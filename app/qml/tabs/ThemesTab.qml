@@ -71,36 +71,6 @@ Item {
             width: grid.cellWidth - 10
             height: grid.cellHeight - 10
 
-            // One context menu per tile — captured in the closures so each
-            // menu action knows which theme it's acting on.
-            ContextMenu {
-                id: tileMenu
-                model: [
-                    { label: qsTr("Edit"),       iconName: "edit",
-                      action: () => AppState.openThemeEditor(modelData.id, modelData.kind) },
-                    { label: qsTr("Duplicate"),  iconName: "copy",
-                      action: () => ThemeService.duplicateTheme(modelData.id,
-                                       qsTr("%1 Copy").arg(modelData.name)) },
-                    { label: qsTr("Export…"),    iconName: "download",
-                      action: () => {
-                          const path = FileDialogService.chooseSaveFile(
-                              qsTr("Export Theme"),
-                              modelData.name + ".craterheme",
-                              [qsTr("Crater Theme (*.craterheme)")])
-                          if (path && path.length > 0)
-                              ThemeService.exportTheme(modelData.id, path)
-                      } },
-                    { label: qsTr("Set as default for %1").arg(modelData.kind),
-                      iconName: "star",
-                      action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
-                    { separator: true },
-                    { label: qsTr("Delete"),     iconName: "trash",
-                      destructive: true,
-                      enabled: !modelData.isBuiltin,
-                      action: () => ThemeService.destroy(modelData.id) }
-                ]
-            }
-
             Rectangle {
                 id: tile
                 anchors.fill: parent
@@ -168,19 +138,34 @@ Item {
                     }
                 }
 
-                MouseArea {
+                RightClickArea {
                     id: themeMa
                     anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onDoubleClicked: AppState.openThemeEditor(modelData.id, modelData.kind)
-                    onClicked: function(mouse) {
-                        if (mouse.button === Qt.RightButton) {
-                            const p = mapToItem(tileMenu.parent, mouse.x, mouse.y)
-                            tileMenu.openAt(p.x, p.y)
-                        }
-                    }
+                    menuItems: [
+                        { label: qsTr("Edit"),       iconName: "edit",
+                          action: () => AppState.openThemeEditor(modelData.id, modelData.kind) },
+                        { label: qsTr("Duplicate"),  iconName: "copy",
+                          action: () => ThemeService.duplicateTheme(modelData.id,
+                                           qsTr("%1 Copy").arg(modelData.name)) },
+                        { label: qsTr("Export…"),    iconName: "download",
+                          action: () => {
+                              const path = FileDialogService.chooseSaveFile(
+                                  qsTr("Export Theme"),
+                                  modelData.name + ".craterheme",
+                                  [qsTr("Crater Theme (*.craterheme)")])
+                              if (path && path.length > 0)
+                                  ThemeService.exportTheme(modelData.id, path)
+                          } },
+                        { label: qsTr("Set as default for %1").arg(modelData.kind),
+                          iconName: "star",
+                          action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
+                        { separator: true },
+                        { label: qsTr("Delete"),     iconName: "trash",
+                          destructive: true,
+                          enabled: !modelData.isBuiltin,
+                          action: () => ThemeService.destroy(modelData.id) }
+                    ]
                 }
             }
         }

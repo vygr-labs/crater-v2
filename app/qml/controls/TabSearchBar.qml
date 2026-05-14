@@ -164,6 +164,25 @@ Item {
         ctrlTyped   = ""
     }
 
+    // Adopt the current searchText as controlled-mode segments. Returns true
+    // when the text parses as "<book> <chap> <verse>" (or with a colon) and
+    // the book resolves under the active translation — used on entry to
+    // controlled mode so a memory-restored reference (e.g. search→reference
+    // toggle) populates the segments instead of being wiped by _ctrlReset.
+    function _ctrlHydrateFromQuery() {
+        const q = AppState.searchText[tabKey] || ""
+        const m = q.match(/^\s*(.+?)\s+(\d+)\s*[:\s]\s*(\d+)\s*$/)
+        if (!m) return false
+        const found = _findBookByPrefix(activeTranslation, m[1].trim())
+        if (!found) return false
+        ctrlStage   = 0
+        ctrlBook    = found.name
+        ctrlChapter = parseInt(m[2])
+        ctrlVerse   = parseInt(m[3])
+        ctrlTyped   = ""
+        return true
+    }
+
     // Determine which stage corresponds to a cursor position — used when the
     // operator clicks somewhere in the input to put the segment under the
     // click into edit mode.
@@ -332,8 +351,7 @@ Item {
     // Toggle the scripture search mode (also bound to Ctrl+F at app level).
     function toggleScriptureMode() {
         const next = mode === "reference" ? "search" : "reference"
-        AppState.setLibrarySearchMode("scripture", next)
-        AppState.setSearch("scripture", "")
+        AppState.setLibrarySearchModeWithMemory("scripture", next)
         inputField.forceActiveFocus()
     }
 
@@ -373,10 +391,16 @@ Item {
     }
     onIsControlledModeChanged: {
         if (isControlledMode) {
-            _ctrlReset()
-            // Push the seeded "Book 1:1" through the search pipeline so the
-            // scripture list jumps to it immediately on mode entry.
-            AppState.setSearch(tabKey, ctrlDisplay)
+            // Prefer hydrating from the current query text so a memory-
+            // restored reference (search→reference toggle) keeps its book/
+            // chapter/verse instead of being reset. Falls back to the
+            // default seed when the text isn't a parseable reference.
+            if (!_ctrlHydrateFromQuery()) {
+                _ctrlReset()
+                // Push the seeded "Book 1 1" through the search pipeline so
+                // the scripture list jumps to it immediately on mode entry.
+                AppState.setSearch(tabKey, ctrlDisplay)
+            }
             Qt.callLater(function() {
                 inputField.forceActiveFocus()
                 _ctrlApplySelection()
@@ -481,13 +505,9 @@ Item {
                                 action:   function() { root.setSongsMode(m.id) }
                             })
                         }
-                        const p = modeButton.mapToItem(null, 0, modeButton.height + 6)
-                        AppState.openModal("contextMenu", {
-                            anchorX:   p.x,
-                            anchorY:   p.y,
-                            menuWidth: 200,
-                            items:     items
-                        })
+                        AppState.openContextMenuAt(modeButton,
+                            0, modeButton.height + 6,
+                            items, { menuWidth: 200 })
                     } else if (root.tabKey === "scripture") {
                         root.toggleScriptureMode()
                     }

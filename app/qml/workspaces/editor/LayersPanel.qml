@@ -132,14 +132,70 @@ Rectangle {
                     } }
             }
 
-            MouseArea {
+            RightClickArea {
                 id: rowMa
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: workspace.selectedNodeId = modelData.id
                 // Don't intercept clicks on the action buttons (which sit above us in z).
                 preventStealing: false
+
+                function _select() { workspace.selectedNodeId = modelData.id }
+                onLeftClicked:  _select()
+                onRightClicked: _select()
+
+                menuItems: [
+                    { label: qsTr("Rename layer"), iconName: "edit-3",
+                      action: function() {
+                          AppState.openModal("naming", {
+                              title:       qsTr("Rename layer"),
+                              placeholder: qsTr("Layer name"),
+                              confirmText: qsTr("Save"),
+                              initialValue: (modelData.data && modelData.data.layerName) || "",
+                              onConfirm:   function(name) {
+                                  if (name && name.length > 0) {
+                                      workspace.workingTheme.renameNode(modelData.id, name)
+                                      workspace.saveToHistory()
+                                  }
+                              }
+                          })
+                      } },
+                    { separator: true },
+                    { label: row._hidden ? qsTr("Show") : qsTr("Hide"),
+                      iconName: row._hidden ? "eye" : "eye-off",
+                      action: function() {
+                          workspace.workingTheme.setNodeData(modelData.id, "hidden", !row._hidden)
+                          workspace.saveToHistory()
+                      } },
+                    { label: row._locked ? qsTr("Unlock") : qsTr("Lock"),
+                      iconName: row._locked ? "unlock" : "lock",
+                      action: function() {
+                          workspace.workingTheme.setNodeData(modelData.id, "locked", !row._locked)
+                          workspace.saveToHistory()
+                      } },
+                    { separator: true },
+                    { label: qsTr("Bring to front"), iconName: "chevrons-up",
+                      action: function() {
+                          workspace.workingTheme.reorderZ(modelData.id, 999)
+                          workspace.saveToHistory()
+                      } },
+                    { label: qsTr("Send to back"),   iconName: "chevrons-down",
+                      action: function() {
+                          workspace.workingTheme.reorderZ(modelData.id, -999)
+                          workspace.saveToHistory()
+                      } },
+                    { separator: true },
+                    { label: qsTr("Duplicate"), iconName: "copy",
+                      action: function() {
+                          const id = workspace.workingTheme.duplicateNode(modelData.id)
+                          if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
+                      } },
+                    { label: qsTr("Delete"), iconName: "trash", destructive: true,
+                      action: function() {
+                          workspace.workingTheme.removeNode(modelData.id)
+                          if (workspace.selectedNodeId === modelData.id)
+                              workspace.selectedNodeId = ""
+                          workspace.saveToHistory()
+                      } }
+                ]
             }
         }
     }

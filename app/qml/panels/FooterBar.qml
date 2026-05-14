@@ -76,18 +76,13 @@ Rectangle {
             hasChevron: true
             text: ""    // no text — just icon + chevron
             onClicked: {
-                const p = footerSettingsBtn.mapToItem(null, 0, -180)
-                AppState.openModal("contextMenu", {
-                    anchorX: p.x,
-                    anchorY: p.y,
-                    items: [
-                        { label: qsTr("Sort by name"),  iconName: "sliders" },
-                        { label: qsTr("Sort by date"),  iconName: "sliders" },
-                        { separator: true },
-                        { label: qsTr("Library settings…"), iconName: "settings",
-                          action: function() { AppState.openModal("settings", {}) } }
-                    ]
-                })
+                AppState.openContextMenuAt(footerSettingsBtn, 0, -180, [
+                    { label: qsTr("Sort by name"),  iconName: "sliders" },
+                    { label: qsTr("Sort by date"),  iconName: "sliders" },
+                    { separator: true },
+                    { label: qsTr("Library settings…"), iconName: "settings",
+                      action: function() { AppState.openModal("settings", {}) } }
+                ])
             }
         }
     }

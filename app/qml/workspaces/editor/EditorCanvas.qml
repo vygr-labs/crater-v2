@@ -89,11 +89,38 @@ Item {
                 border.width: 1
             }
 
-            // Click-outside-node to deselect.
-            MouseArea {
+            // Click-outside-node to deselect; right-click opens the canvas
+            // menu (add new node, frame all, reset zoom).
+            RightClickArea {
                 anchors.fill: parent
-                onClicked: workspace.selectedNodeId = ""
                 z: -1
+                onLeftClicked:  workspace.selectedNodeId = ""
+                onRightClicked: workspace.selectedNodeId = ""
+                menuItems: [
+                    { label: qsTr("Add text node"), iconName: "type",
+                      action: function() {
+                          const id = workspace.workingTheme.addNode("text")
+                          if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
+                      } },
+                    { label: qsTr("Add container"), iconName: "square",
+                      action: function() {
+                          const id = workspace.workingTheme.addNode("container")
+                          if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
+                      } },
+                    { separator: true },
+                    { label: qsTr("Zoom in"),  iconName: "zoom-in",  kbd: "+",
+                      action: function() {
+                          workspace.zoom = Math.min(4.0,
+                              Math.round((workspace.zoom + 0.1) * 10) / 10)
+                      } },
+                    { label: qsTr("Zoom out"), iconName: "zoom-out", kbd: "-",
+                      action: function() {
+                          workspace.zoom = Math.max(0.1,
+                              Math.round((workspace.zoom - 0.1) * 10) / 10)
+                      } },
+                    { label: qsTr("Reset zoom"), iconName: "maximize-2", kbd: "0",
+                      action: function() { workspace.zoom = 1.0 } }
+                ]
             }
 
             // Nodes — pre-sorted by z so render order matches layer order.

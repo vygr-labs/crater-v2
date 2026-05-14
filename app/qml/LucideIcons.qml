@@ -157,7 +157,13 @@ QtObject {
         "signal":             "",
         "paint-bucket":       "",
         "tags":               "",
-        "loader-circle":      ""
+        "loader-circle":      "",
+
+        // Schedule kinds + playlist header. Lucide equivalents of
+        // electron's TbPlaylist / TbPresentation. \uXXXX escape form
+        // so entries are greppable and survive encoding round-trips.
+        "list-music":         "\ue2e0",
+        "presentation":       "\ue4ae"
     })
 
     // ── Theme-editor icons (canvas + toolbar + properties panel) ─────────

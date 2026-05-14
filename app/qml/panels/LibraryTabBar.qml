@@ -8,6 +8,15 @@ Item {
 
     height: 42
 
+    // Panel surface for the tab strip — sits on the same `bg.muted`
+    // equivalent as electron's Tabs.List so it reads as a raised band over
+    // the slightly darker bgContent area underneath it.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.elevated
+        z: -1
+    }
+
     readonly property var tabs: [
         { label: qsTr("Songs"),     iconName: "music"     },
         { label: qsTr("Scripture"), iconName: "book-open" },

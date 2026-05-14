@@ -7,7 +7,8 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    color: "transparent"
+    // Panel surface — matches electron's `bg.muted` panel container.
+    color: Theme.color.elevated
 
     // What's currently in the Preview pane. Two sources:
     //   1. AppState.libraryPreviewItem ─ set when the operator clicks a row in
@@ -74,18 +75,14 @@ Rectangle {
             iconName: "settings"
             iconSize: 13
             onClicked: {
-                const p = settingsBtn.mapToItem(null, settingsBtn.width, settingsBtn.height + 4)
-                AppState.openModal("contextMenu", {
-                    anchorX: p.x - 220,
-                    anchorY: p.y,
-                    items: [
-                        { label: qsTr("Sort by index"),   iconName: "sliders" },
-                        { label: qsTr("Refresh"),         iconName: "refresh-cw" },
-                        { separator: true },
-                        { label: qsTr("Preview settings…"), iconName: "settings",
-                          action: function() { AppState.openModal("settings", {}) } }
-                    ]
-                })
+                AppState.openContextMenuAt(settingsBtn,
+                    settingsBtn.width, settingsBtn.height + 4, [
+                    { label: qsTr("Sort by index"),   iconName: "sliders" },
+                    { label: qsTr("Refresh"),         iconName: "refresh-cw" },
+                    { separator: true },
+                    { label: qsTr("Preview settings…"), iconName: "settings",
+                      action: function() { AppState.openModal("settings", {}) } }
+                ], { dx: -220 })
             }
         }
 
@@ -131,7 +128,7 @@ Rectangle {
                 height: pageText.implicitHeight + Theme.space.lg * 2
                 radius: Theme.radius.md
                 color: AppState.previewSubIndex === index ? Theme.color.previewSubtle
-                                                          : pageMa.containsMouse ? Theme.color.elevated
+                                                          : pageMa.containsMouse ? Theme.color.raised
                                                                                  : "transparent"
                 border.color: AppState.previewSubIndex === index ? Theme.color.preview
                                                                  : "transparent"

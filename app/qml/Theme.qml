@@ -10,17 +10,18 @@ QtObject {
         readonly property color elevated:      "#18181b"   // gray.900
         readonly property color raised:        "#27272a"   // gray.800
         readonly property color overlay:       "#2a2a28"   // neutralDark.300 — used for hover wash
-        readonly property color borderSubtle:  "#1c1c1c"   // between gray.900 and gray.950 — the panel/divider hairline
+        readonly property color borderSubtle:  "#27272a"   // gray.800 — panel/divider hairline. Matches electron's `borderColor="gray.800"`. One shade lighter than the `elevated` panel surface so dividers stay visible against it.
         readonly property color borderStrong:  "#3f3f46"   // gray.700 — focused input border
 
-        // Per-panel backgrounds. The library sidebar and the right pane each
-        // get a very subtle differentiation from `canvas` so the operator's
-        // eye can find pane boundaries even when borders are quiet. Both
-        // sit a hair darker than canvas — mirrors electron's
-        // `bg="gray.950/50"` (sidebar) and `bg="gray.950/30"` (content) which
-        // composite to ~same color on a dark page.
-        readonly property color bgSidebar:     "#0e0e0e"
-        readonly property color bgContent:     "#0c0c0c"
+        // Per-panel backgrounds. Sit on the panel surface (`elevated`, the
+        // gray.900 equivalent) as subtle insets, mirroring electron's library
+        // overlays — `bg="gray.950/50"` for the sidebar (~14% blend toward
+        // gray.950) and `bg="gray.950/30"` for the content (~30% blend toward
+        // gray.950). Earlier values pointed *below* canvas which read as
+        // recessed cutouts; these sit just under the panel surface so the
+        // hierarchy is page < library overlay < panel surface.
+        readonly property color bgSidebar:     "#14141a"
+        readonly property color bgContent:     "#16161a"
 
         // Text — calibrated for AA contrast on `canvas`/`elevated`. Values
         // mirror electron's gray.200 / gray.400 / gray.500 / gray.600.
@@ -123,7 +124,7 @@ QtObject {
         readonly property int outputPanelWidth:  380
         readonly property int rowHeight:         44
         readonly property int controlHeight:     32
-        readonly property int scheduleRowHeight: 64
+        readonly property int scheduleRowHeight: 36
     }
 
     // Schedule-item display helpers — derive label + color from item `kind`
@@ -141,6 +142,19 @@ QtObject {
             case "video":        return color.typeVideo
             case "presentation": return color.typeSermon
             default:             return color.textSecondary
+        }
+    }
+    // Lucide icon name for a schedule item's kind. Mirrors electron's
+    // typeIcons map in SchedulePanel.tsx (TbMusic / TbBook2 / TbPresentation /
+    // TbVideo / TbPhoto / TbList default).
+    function scheduleKindIcon(kind) {
+        switch (kind) {
+            case "song":         return "music"
+            case "scripture":    return "book-2"
+            case "image":        return "image"
+            case "video":        return "video"
+            case "presentation": return "presentation"
+            default:             return "list"
         }
     }
 }

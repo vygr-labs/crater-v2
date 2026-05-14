@@ -259,6 +259,28 @@ QtObject {
         modalProps = {}
     }
 
+    // Open a context menu anchored at a mouse position inside `originItem`.
+    // Replaces the boilerplate every call site used to repeat:
+    //
+    //     const p = mapToItem(null, mouse.x, mouse.y)
+    //     AppState.openModal("contextMenu", {
+    //         anchorX: p.x, anchorY: p.y, menuWidth: 220, items: items })
+    //
+    // `opts` is optional and may carry: `menuWidth` (default 220),
+    // `dx` / `dy` (offsets added to the mapped point — handy for menus
+    // anchored relative to a button corner, e.g. dx: -220 to right-align).
+    function openContextMenuAt(originItem, mouseX, mouseY, items, opts) {
+        if (!originItem) return
+        const o = opts || {}
+        const p = originItem.mapToItem(null, mouseX, mouseY)
+        openModal("contextMenu", {
+            anchorX:   p.x + (o.dx || 0),
+            anchorY:   p.y + (o.dy || 0),
+            menuWidth: o.menuWidth || 220,
+            items:     items
+        })
+    }
+
     // ─── Workspaces ─────────────────────────────────────────────────────
     // Workspaces are full-window UI surfaces that hide the normal operator
     // console behind them — bigger than a modal, suitable for canvas-based
@@ -335,6 +357,20 @@ QtObject {
         "media":     "title"
     })
 
+    // Per-mode remembered input for tabs that flip between distinct search
+    // modes (today: scripture's reference ↔ search). Operators commonly want
+    // to compare a filter result ("Gen 1:1") against an FTS hit ("For God")
+    // and toggle back and forth; clearing on every flip throws away that
+    // context. setLibrarySearchModeWithMemory stashes the current text under
+    // the *previous* mode and rehydrates the input from the new mode's slot.
+    //
+    // Songs' mode flip (title/lyrics/author) does NOT route through here —
+    // its input is shared across modes (changing mode just changes what the
+    // text filters against), so there's nothing to remember separately.
+    property var searchTextByMode: ({
+        "scripture": { "reference": "", "search": "" }
+    })
+
     // Sort-mode keyed per tab. "none" preserves natural ordering (title for
     // songs); other modes drive ORDER BY on the filtered list inside the tab.
     // Songs supports: "none" | "recent" (updated_at DESC) | "oldest"
@@ -367,6 +403,25 @@ QtObject {
         let copy = Object.assign({}, librarySearchMode)
         copy[tabKey] = mode
         librarySearchMode = copy
+    }
+
+    // Memory-aware mode flip. Stashes the current input under the outgoing
+    // mode's slot, then writes the incoming mode's remembered text BEFORE
+    // flipping the mode so binding cascades observe a consistent (text, mode)
+    // pair — most importantly TabSearchBar.onIsControlledModeChanged, which
+    // hydrates segmented state from searchText when it fires.
+    function setLibrarySearchModeWithMemory(tabKey, nextMode) {
+        const prevMode = librarySearchMode[tabKey]
+        if (prevMode === nextMode) return
+
+        let byMode = Object.assign({}, searchTextByMode)
+        let tabMem = Object.assign({}, byMode[tabKey] || {})
+        tabMem[prevMode] = searchText[tabKey] || ""
+        byMode[tabKey]   = tabMem
+        searchTextByMode = byMode
+
+        setSearch(tabKey, tabMem[nextMode] || "")
+        setLibrarySearchMode(tabKey, nextMode)
     }
 
     function setLibrarySortMode(tabKey, mode) {

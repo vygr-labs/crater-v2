@@ -49,7 +49,8 @@ qt_add_qml_module(crater
         qml/controls/SearchBar.qml
         qml/controls/TabSearchBar.qml
         qml/controls/PopoverMenu.qml
-        qml/controls/ContextMenu.qml
+        qml/controls/MenuRow.qml
+        qml/controls/RightClickArea.qml
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
         qml/controls/Combobox.qml

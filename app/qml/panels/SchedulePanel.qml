@@ -15,116 +15,162 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    color: "transparent"
+    // Panel surface — gray.900 equivalent, matching electron's `bg.muted`
+    // used on Tabs.ContentGroup and panel containers. Header sits on the
+    // same surface and is differentiated only by its 1px bottom border.
+    color: Theme.color.elevated
 
     // ── Header ──────────────────────────────────────────────────────────
-    Item {
+    // Single-line, ~32px tall — matches electron's `h={8}` header with a
+    // playlist icon, label, parenthesised count, optional "• N selected"
+    // accent, and a right cluster of (trash, menu).
+    Rectangle {
         id: header
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 48
+        height: 32
+        color: Theme.color.elevated
 
-        // Left cluster: schedule label + counts. The label shows the loaded
-        // schedule name when one is loaded, "Schedule" otherwise. A small
-        // warning-colored dot appears when there are unsaved edits.
-        Item {
+        // Left cluster: playlist glyph + name + count + selection accent.
+        // The dirty dot stays inline (small, between the name and count) so
+        // we don't grow the header to two lines.
+        Row {
             anchors.left: parent.left
-            anchors.leftMargin: Theme.space.lg
-            anchors.right: kebab.left
+            anchors.leftMargin: Theme.space.md
+            anchors.right: actions.left
             anchors.rightMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
+            spacing: Theme.space.sm
 
-            Column {
+            AppIcon {
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.right: parent.right
-                spacing: 2
+                name: "list-music"
+                color: Theme.color.textTertiary
+                size: 14
+            }
 
-                Row {
-                    spacing: Theme.space.sm
-                    AppIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "menu"
-                        color: Theme.color.textSecondary
-                        size: 14
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: ScheduleService.loadedScheduleName.length > 0
-                            ? ScheduleService.loadedScheduleName
-                            : qsTr("Schedule")
-                        color: Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
-                        font.weight: Theme.font.weightMedium
-                        elide: Text.ElideRight
-                    }
-                    Rectangle {
-                        visible: ScheduleService.isDirty
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 6; height: 6
-                        radius: 3
-                        color: Theme.color.warning
-                    }
-                }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: ScheduleService.loadedScheduleName.length > 0
+                    ? ScheduleService.loadedScheduleName
+                    : qsTr("Schedule")
+                color: Theme.color.textTitle
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize + 1   // 12px
+                font.weight: Theme.font.weightMedium
+                elide: Text.ElideRight
+            }
 
-                Text {
-                    visible: ScheduleService.currentItems.length > 0
-                          || AppState.selectedScheduleIndices.length > 0
-                    text: {
-                        const n = ScheduleService.currentItems.length
-                        const sel = AppState.selectedScheduleIndices.length
-                        const itemsStr = (n === 1)
-                                       ? qsTr("1 item")
-                                       : qsTr("%1 items").arg(n.toLocaleString(Qt.locale(), "f", 0))
-                        return sel > 1
-                             ? itemsStr + qsTr(" · %1 selected").arg(sel)
-                             : itemsStr
-                    }
-                    color: Theme.color.textTertiary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
-                }
+            // Unsaved-edits dot. Smaller than before (4px) so it reads as an
+            // annotation, not a status badge.
+            Rectangle {
+                visible: ScheduleService.isDirty
+                anchors.verticalCenter: parent.verticalCenter
+                width: 5; height: 5
+                radius: 2.5
+                color: Theme.color.warning
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: ScheduleService.currentItems.length > 0
+                text: "(" + ScheduleService.currentItems.length + ")"
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: AppState.selectedScheduleIndices.length > 0
+                text: "• " + AppState.selectedScheduleIndices.length + " " + qsTr("selected")
+                color: Theme.color.preview
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
             }
         }
 
-        IconButton {
-            id: kebab
+        // Right cluster: trash (visible only when there are items) + kebab.
+        Row {
+            id: actions
             anchors.right: parent.right
-            anchors.rightMargin: Theme.space.md
+            anchors.rightMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
-            iconName: "more-vertical"
-            iconSize: 14
-            onClicked: {
-                const p = mapToItem(null, 0, height + 4)
-                const items = []
-                if (AppState.selectedScheduleIndices.length > 0) {
-                    items.push({
-                        label: qsTr("Clear selection"),
-                        iconName: "x",
-                        action: function() { AppState.clearScheduleSelection() }
+            spacing: 2
+
+            // Trash — bulk-delete the current multi-selection, or "clear all"
+            // when nothing is selected (matches electron's deleteSelectedItems).
+            IconButton {
+                id: trashBtn
+                visible: ScheduleService.currentItems.length > 0
+                iconName: "trash"
+                iconSize: 13
+                tintHover: Theme.color.live   // electron's red.400 hover
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: {
+                    const sel = AppState.selectedScheduleIndices
+                    if (sel.length === 0) {
+                        AppState.openModal("confirm", {
+                            title: qsTr("Clear schedule?"),
+                            body:  qsTr("Remove all items from the working schedule? Saved schedules are not affected."),
+                            confirmText: qsTr("Clear all"),
+                            onConfirm: function() {
+                                ScheduleService.clearAll()
+                                AppState.clearScheduleSelection()
+                                AppState.liveScheduleIndex = -1
+                                AppState.libraryLiveActive = false
+                                AppState.clearLibraryPreview()
+                            }
+                        })
+                        return
+                    }
+                    // Remove selected in reverse so earlier indices stay valid
+                    // through the splice loop — same approach as electron.
+                    const sorted = sel.slice().sort(function(a, b) { return b - a })
+                    AppState.openModal("confirm", {
+                        title: sorted.length === 1
+                            ? qsTr("Remove item?")
+                            : qsTr("Remove %1 items?").arg(sorted.length),
+                        body:  qsTr("Remove the selected items from the schedule?"),
+                        confirmText: qsTr("Remove"),
+                        onConfirm: function() {
+                            for (let i = 0; i < sorted.length; i++) {
+                                ScheduleService.removeAt(sorted[i])
+                            }
+                            AppState.clearScheduleSelection()
+                        }
                     })
                 }
-                if (ScheduleService.loadedScheduleId > 0) {
+            }
+
+            IconButton {
+                id: kebab
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "more-vertical"
+                iconSize: 14
+                onClicked: {
+                    const items = []
+                    if (AppState.selectedScheduleIndices.length > 0) {
+                        items.push({
+                            label: qsTr("Clear selection"),
+                            iconName: "x",
+                            action: function() { AppState.clearScheduleSelection() }
+                        })
+                    }
+                    if (ScheduleService.loadedScheduleId > 0) {
+                        items.push({
+                            label: qsTr("Close loaded schedule"),
+                            iconName: "x",
+                            action: function() { ScheduleService.closeLoaded() }
+                        })
+                    }
+                    if (items.length > 0) items.push({ separator: true })
                     items.push({
-                        label: qsTr("Close loaded schedule"),
-                        iconName: "x",
-                        action: function() { ScheduleService.closeLoaded() }
-                    })
-                }
-                if (items.length > 0) items.push({ separator: true })
-                items.push({
-                    label: qsTr("Clear all items"),
-                    iconName: "trash",
-                    destructive: true,
-                    action: function() {
-                        // Defer so the kebab popover finishes closing before the
-                        // confirm modal opens — otherwise the contextMenu
-                        // activeModal swap blocks the new openModal call.
-                        Qt.callLater(function() {
+                        label: qsTr("Clear all items"),
+                        iconName: "trash",
+                        destructive: true,
+                        action: function() {
                             AppState.openModal("confirm", {
                                 title: qsTr("Clear schedule?"),
                                 body:  qsTr("Remove all items from the working schedule? Saved schedules are not affected."),
@@ -137,17 +183,11 @@ Rectangle {
                                     AppState.clearLibraryPreview()
                                 }
                             })
-                        })
-                    }
-                })
-                // Right-align the menu under the kebab — the popover clamps
-                // to the window, so over-shooting on x is safe.
-                AppState.openModal("contextMenu", {
-                    anchorX: p.x - 200,
-                    anchorY: p.y,
-                    menuWidth: 220,
-                    items: items
-                })
+                        }
+                    })
+                    AppState.openContextMenuAt(kebab, 0, kebab.height + 4,
+                        items, { dx: -200 })
+                }
             }
         }
 
@@ -171,7 +211,7 @@ Rectangle {
         EmptyState {
             anchors.fill: parent
             visible: ScheduleService.currentItems.length === 0
-            iconName: "music"
+            iconName: "list-music"
             title: qsTr("No items in schedule")
             body: qsTr("Add songs, scriptures, or media from the tabs below")
         }
@@ -179,8 +219,10 @@ Rectangle {
         ListView {
             id: list
             anchors.fill: parent
-            anchors.topMargin: Theme.space.sm
-            anchors.bottomMargin: Theme.space.sm
+            // Rows are now flat (no card inset) so they sit flush against
+            // the header — drop the top margin, keep a small bottom one for
+            // scroll padding on the last row.
+            anchors.bottomMargin: Theme.space.xs
             visible: ScheduleService.currentItems.length > 0
             model: ScheduleService.currentItems
             clip: true
@@ -269,11 +311,10 @@ Rectangle {
                     }
                     const item = ScheduleService.currentItems[index]
                     if (!item) return
-                    const p = mapToItem(null, mouseX, mouseY)
 
-                    // Build the "Theme..." submenu — filtered to themes matching
-                    // this item's kind, with a checkmark on the active choice
-                    // and a "Use default" entry at the bottom.
+                    // Theme submenu — filtered to themes matching this item's
+                    // kind, with a check on the active choice and a "Use
+                    // default" fallback at the bottom.
                     const themeItems = []
                     const allThemes = ThemeService.allThemes
                     const itemKind = item.kind || "song"
@@ -294,52 +335,39 @@ Rectangle {
                         action: function() { ScheduleService.setItemTheme(index, 0) }
                     })
 
-                    AppState.openModal("contextMenu", {
-                        anchorX: p.x,
-                        anchorY: p.y,
-                        items: [
-                            { label: qsTr("Send to Live"), iconName: "play",
-                              action: function() { AppState.goLive() } },
-                            { label: qsTr("Edit"), iconName: "edit",
-                              action: function() {
-                                  AppState.openModal(
-                                      item.kind === "song" ? "songEditor" : "themeEditor",
-                                      { itemIndex: index })
-                              } },
-                            { label: qsTr("Duplicate"), iconName: "copy",
-                              action: function() {
-                                  // addItem assigns a fresh id; strip the old one
-                                  // so we don't end up with two rows sharing identity.
-                                  const copy = Object.assign({}, item)
-                                  delete copy.id
-                                  ScheduleService.addItem(copy)
-                              } },
-                            { label: qsTr("Theme…"), iconName: "palette",
-                              action: function() {
-                                  // Defer the second open until the first context
-                                  // menu has finished closing — opening contextMenu
-                                  // while another contextMenu is unmounting can
-                                  // lose modalProps.
-                                  Qt.callLater(function() {
-                                      AppState.openModal("contextMenu", {
-                                          anchorX: p.x + 180,
-                                          anchorY: p.y,
-                                          items: themeItems
-                                      })
-                                  })
-                              } },
-                            { separator: true },
-                            { label: qsTr("Remove"), iconName: "trash", destructive: true,
-                              action: function() {
-                                  AppState.openModal("confirm", {
-                                      title: qsTr("Remove item?"),
-                                      body:  qsTr("Remove \"") + (item.title || "") + qsTr("\" from the schedule?"),
-                                      confirmText: qsTr("Remove"),
-                                      onConfirm: function() { ScheduleService.removeAt(index) }
-                                  })
-                              } }
-                        ]
-                    })
+                    AppState.openContextMenuAt(this, mouseX, mouseY, [
+                        { label: qsTr("Send to Live"), iconName: "play",
+                          action: function() { AppState.goLive() } },
+                        { label: qsTr("Edit"), iconName: "edit",
+                          action: function() {
+                              AppState.openModal(
+                                  item.kind === "song" ? "songEditor" : "themeEditor",
+                                  { itemIndex: index })
+                          } },
+                        { label: qsTr("Duplicate"), iconName: "copy",
+                          action: function() {
+                              // addItem assigns a fresh id; strip the old one
+                              // so we don't end up with two rows sharing identity.
+                              const copy = Object.assign({}, item)
+                              delete copy.id
+                              ScheduleService.addItem(copy)
+                          } },
+                        // First-class submenu — chevron + hover-open inside
+                        // PopoverMenu. Used to be two sibling top-level
+                        // contextMenu modals chained via Qt.callLater.
+                        { label: qsTr("Theme…"), iconName: "palette",
+                          submenu: themeItems },
+                        { separator: true },
+                        { label: qsTr("Remove"), iconName: "trash", destructive: true,
+                          action: function() {
+                              AppState.openModal("confirm", {
+                                  title: qsTr("Remove item?"),
+                                  body:  qsTr("Remove \"") + (item.title || "") + qsTr("\" from the schedule?"),
+                                  confirmText: qsTr("Remove"),
+                                  onConfirm: function() { ScheduleService.removeAt(index) }
+                              })
+                          } }
+                    ])
                 }
 
                 onDragStarted: function(i) {
@@ -376,17 +404,19 @@ Rectangle {
             // target row for moves up, bottom of the target row for moves down
             // — which matches where the row will actually slot in after the
             // moveItem call resolves.
+            // Drop-target indicator. Edge-to-edge (no inset margins) since
+            // rows are now flat. Slightly lighter brand color so it reads
+            // clearly against the deeper brand-tinted selected-row bg.
             Rectangle {
                 id: dropIndicator
                 parent: list.contentItem
                 visible: list.draggedRow >= 0
                       && list.dropTargetIndex() !== list.draggedRow
-                x: Theme.space.lg
-                width: list.width - Theme.space.lg * 2
-                height: 3
-                radius: 1.5
+                x: 0
+                width: list.width
+                height: 2
                 z: 1000
-                color: Theme.color.brand
+                color: Qt.lighter(Theme.color.brand, 1.6)
 
                 y: {
                     if (!visible) return 0

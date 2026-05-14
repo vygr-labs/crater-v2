@@ -6,7 +6,8 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    color: "transparent"
+    // Panel surface — matches electron's `bg.muted` panel container.
+    color: Theme.color.elevated
 
     // Live item — two sources. When the library pushed straight to live
     // (operator double-clicked a song / verse / media item without first
@@ -108,20 +109,16 @@ Rectangle {
             iconName: "settings"
             iconSize: 13
             onClicked: {
-                const p = settingsBtn.mapToItem(null, settingsBtn.width, settingsBtn.height + 4)
-                AppState.openModal("contextMenu", {
-                    anchorX: p.x - 220,
-                    anchorY: p.y,
-                    items: [
-                        { label: qsTr("Clear output"),     iconName: "x",
-                          action: function() { AppState.clearLive() } },
-                        { label: qsTr("Toggle logo"),      iconName: "list-ordered",
-                          action: function() { AppState.toggleLogo() } },
-                        { separator: true },
-                        { label: qsTr("Output settings…"), iconName: "monitor",
-                          action: function() { AppState.openModal("settings", {}) } }
-                    ]
-                })
+                AppState.openContextMenuAt(settingsBtn,
+                    settingsBtn.width, settingsBtn.height + 4, [
+                    { label: qsTr("Clear output"),     iconName: "x",
+                      action: function() { AppState.clearLive() } },
+                    { label: qsTr("Toggle logo"),      iconName: "list-ordered",
+                      action: function() { AppState.toggleLogo() } },
+                    { separator: true },
+                    { label: qsTr("Output settings…"), iconName: "monitor",
+                      action: function() { AppState.openModal("settings", {}) } }
+                ], { dx: -220 })
             }
         }
 
@@ -168,7 +165,7 @@ Rectangle {
                 height: pageText.implicitHeight + Theme.space.lg * 2
                 radius: Theme.radius.md
                 color: AppState.liveSubIndex === index ? Theme.color.liveSubtle
-                                                       : pageMa.containsMouse ? Theme.color.elevated
+                                                       : pageMa.containsMouse ? Theme.color.raised
                                                                               : "transparent"
                 border.color: AppState.liveSubIndex === index ? Theme.color.live : "transparent"
                 border.width: 1

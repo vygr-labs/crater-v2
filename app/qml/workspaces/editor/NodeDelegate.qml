@@ -72,6 +72,64 @@ Item {
         AppIcon { anchors.centerIn: parent; name: "lock"; size: 10; color: "#ffffff" }
     }
 
+    // Right-click context menu — sits above the left-button drag MouseArea
+    // and accepts only the right button so it never competes with drag. The
+    // drag/select MouseArea below stays unchanged.
+    RightClickArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        enabled: !root._hidden
+        z: 1
+        onRightClicked: workspace.selectedNodeId = root.nodeId
+        menuItems: [
+            { label: qsTr("Duplicate"), iconName: "copy", kbd: "Ctrl+D",
+              action: function() {
+                  const id = workspace.workingTheme.duplicateNode(root.nodeId)
+                  if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
+              } },
+            { label: qsTr("Delete"), iconName: "trash", kbd: "Del", destructive: true,
+              action: function() {
+                  workspace.workingTheme.removeNode(root.nodeId)
+                  if (workspace.selectedNodeId === root.nodeId) workspace.selectedNodeId = ""
+                  workspace.saveToHistory()
+              } },
+            { separator: true },
+            { label: qsTr("Bring to front"), iconName: "chevrons-up",
+              action: function() {
+                  workspace.workingTheme.reorderZ(root.nodeId, 999)
+                  workspace.saveToHistory()
+              } },
+            { label: qsTr("Send to back"),   iconName: "chevrons-down",
+              action: function() {
+                  workspace.workingTheme.reorderZ(root.nodeId, -999)
+                  workspace.saveToHistory()
+              } },
+            { label: qsTr("Bring forward"),  iconName: "chevron-up",
+              action: function() {
+                  workspace.workingTheme.reorderZ(root.nodeId, 1)
+                  workspace.saveToHistory()
+              } },
+            { label: qsTr("Send backward"),  iconName: "chevron-down",
+              action: function() {
+                  workspace.workingTheme.reorderZ(root.nodeId, -1)
+                  workspace.saveToHistory()
+              } },
+            { separator: true },
+            { label: root._locked ? qsTr("Unlock") : qsTr("Lock"),
+              iconName: root._locked ? "unlock" : "lock",
+              action: function() {
+                  workspace.workingTheme.setNodeData(root.nodeId, "locked", !root._locked)
+                  workspace.saveToHistory()
+              } },
+            { label: root._hidden ? qsTr("Show") : qsTr("Hide"),
+              iconName: root._hidden ? "eye" : "eye-off",
+              action: function() {
+                  workspace.workingTheme.setNodeData(root.nodeId, "hidden", !root._hidden)
+                  workspace.saveToHistory()
+              } }
+        ]
+    }
+
     // Drag / select
     MouseArea {
         id: dragMa
