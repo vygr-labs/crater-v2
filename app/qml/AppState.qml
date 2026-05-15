@@ -101,8 +101,10 @@ QtObject {
         liveScheduleIndex  = -1       // signal: live did not come from schedule
         liveSubIndex       = 0
         previewSubIndex    = 0
-        const theme = resolveItemTheme(item)
-        ProjectionService.goLive(item, 0, theme)
+        // Theme is resolved reactively by ProjectionWindow.qml — it reads
+        // the item's themeId override and ThemeService.defaultFor(kind),
+        // so default changes update the live render without re-Go-Live.
+        ProjectionService.goLive(item, 0)
     }
 
     function selectScheduleItem(i) {
@@ -210,8 +212,8 @@ QtObject {
         isClear            = false
         libraryLiveActive  = false   // schedule is driving live now
 
-        const theme = resolveItemTheme(item)
-        ProjectionService.goLive(item, previewSubIndex, theme)
+        // Theme resolution moved into ProjectionWindow — see pushLibraryLive.
+        ProjectionService.goLive(item, previewSubIndex)
         projectorVisible = true
     }
 

@@ -241,7 +241,7 @@ Item {
                     anchors.centerIn: parent
                     name: "plus"
                     color: addMa.containsMouse ? Theme.color.textPrimary : Theme.color.textSecondary
-                    size: 13
+                    size: Theme.icon.sm
                     Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                 }
 
@@ -276,14 +276,14 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "settings"
                         color: gearMa.containsMouse ? Theme.color.textPrimary : Theme.color.textSecondary
-                        size: 13
+                        size: Theme.icon.sm
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                     }
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "chevron-down"
                         color: Theme.color.textSecondary
-                        size: 9
+                        size: Theme.icon.tiny
                     }
                 }
 
@@ -435,14 +435,14 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "x"
                     color: Theme.color.textSecondary
-                    size: 12
+                    size: Theme.icon.sm
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Clear search")
                     color: Theme.color.textSecondary
                     font.family: Theme.font.family
-                    font.pixelSize: 12
+                    font.pixelSize: 14
                 }
             }
 
@@ -521,7 +521,7 @@ Item {
                 color: modelData.isFavorite ? Theme.color.brand
                      : songRow._selected   ? Theme.color.textTitle
                                            : Theme.color.textTertiary
-                size: 16
+                size: Theme.icon.lg
             }
 
             // LIVE pill — anchored right; visible only when this row is on
@@ -544,7 +544,7 @@ Item {
                     text: "LIVE"
                     color: Theme.color.brandInk
                     font.family: Theme.font.monoFamily
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     font.weight: Theme.font.weightBold
                 }
             }
@@ -566,7 +566,7 @@ Item {
                     color: songRow._selected ? Theme.color.textPrimary
                                              : Theme.color.textTitle
                     font.family: Theme.font.family
-                    font.pixelSize: 14
+                    font.pixelSize: 16
                     font.weight: songRow._selected ? Theme.font.weightMedium
                                                    : Theme.font.weightRegular
                     elide: Text.ElideRight
@@ -578,7 +578,7 @@ Item {
                     color: songRow._selected ? Theme.color.textSecondary
                                              : Theme.color.textTertiary
                     font.family: Theme.font.family
-                    font.pixelSize: 12
+                    font.pixelSize: 14
                     elide: Text.ElideRight
                     width: parent.width
                 }

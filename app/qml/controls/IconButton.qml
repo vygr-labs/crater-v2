@@ -1,14 +1,14 @@
 import QtQuick
 
 // Square hover-highlight button with a Lucide icon.
-// Usage: IconButton { iconName: "settings"; iconSize: 14 }
+// Usage: IconButton { iconName: "settings"; iconSize: Theme.icon.md }
 Item {
     id: root
 
     property string iconName: ""
     property color  tint: Theme.color.textSecondary
     property color  tintHover: Theme.color.textPrimary
-    property real   iconSize: 14
+    property real   iconSize: Theme.icon.md
 
     // `enabled` is inherited from Item — setting it false on the caller side
     // propagates to all descendants (including the MouseArea below), so we

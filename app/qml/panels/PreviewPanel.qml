@@ -47,7 +47,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "eye"
                 color: Theme.color.preview
-                size: 14
+                size: Theme.icon.md
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -73,7 +73,7 @@ Rectangle {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             iconName: "settings"
-            iconSize: 13
+            iconSize: Theme.icon.sm
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
@@ -242,7 +242,7 @@ Rectangle {
                 }
                 color: root.selectedItem ? Theme.color.textPrimary : Theme.color.textTertiary
                 font.family: Theme.font.family
-                font.pixelSize: 13
+                font.pixelSize: 15
                 font.weight: Theme.font.weightLight
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter

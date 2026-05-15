@@ -60,7 +60,7 @@ ModalShell {
                             anchors.verticalCenter: parent.verticalCenter
                             name: modelData.iconName
                             color: root.selectedType === modelData.id ? Theme.color.brand : Theme.color.textSecondary
-                            size: 14
+                            size: Theme.icon.md
                         }
                         Column {
                             anchors.verticalCenter: parent.verticalCenter

@@ -251,7 +251,7 @@ Column {
                             AppIcon {
                                 anchors.centerIn: parent
                                 visible: autoFitRow._on
-                                name: "check"; size: 9
+                                name: "check"; size: Theme.icon.tiny
                                 color: Theme.color.brandInk
                             }
                         }

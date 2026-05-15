@@ -96,7 +96,7 @@ Item {
                             anchors.leftMargin: Theme.space.md
                             anchors.verticalCenter: parent.verticalCenter
                             name: savedRow._loaded ? "check" : "file-text"
-                            size: 13
+                            size: Theme.icon.sm
                             color: savedRow._loaded ? Theme.color.brand
                                                     : Theme.color.textSecondary
                         }
@@ -161,7 +161,7 @@ Item {
                                 AppIcon {
                                     anchors.centerIn: parent
                                     name: "edit"
-                                    size: 12
+                                    size: Theme.icon.sm
                                     color: Theme.color.textSecondary
                                 }
                                 MouseArea {
@@ -201,7 +201,7 @@ Item {
                                 AppIcon {
                                     anchors.centerIn: parent
                                     name: "trash"
-                                    size: 12
+                                    size: Theme.icon.sm
                                     color: delMa.containsMouse
                                          ? Theme.color.live
                                          : Theme.color.textSecondary
@@ -361,7 +361,7 @@ Item {
                 AppIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: ai.iconName
-                    size: 13
+                    size: Theme.icon.sm
                     color: Theme.color.textSecondary
                 }
                 Text {

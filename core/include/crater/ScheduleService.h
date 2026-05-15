@@ -23,9 +23,11 @@ namespace crater {
 // reads `item.title`, `item.kind`, `item.pages[0].content`, etc.
 //
 // One optional field on every item — `themeId` (qint64) — names a per-item
-// theme override. ProjectionService doesn't know about it; AppState resolves
-// the effective theme at goLive() time, falling back to the kind's default
-// when the override is absent or stale.
+// theme override. ProjectionService doesn't know about it; the projection
+// window reads it reactively via AppState.resolveItemTheme(item), which
+// falls back to ThemeService.defaultFor(kind) when the override is absent
+// or stale. The resolution is live — changing the kind's default updates
+// the projection without requiring a re-Go-Live.
 //
 // Auto-save: a QTimer fires every 5s; if the schedule is dirty, current_schedule
 // is updated and a backup is written to AppData/schedules/.history/<ts>.json
@@ -72,7 +74,8 @@ public:
 
     // Sets (or clears, when themeId == 0) the per-item theme override. The
     // operator's choice is stored as a `themeId` field on the item itself.
-    // AppState.resolveItemTheme handles the lookup + fallback at goLive time.
+    // AppState.resolveItemTheme reads it whenever the projection window
+    // re-evaluates its theme binding.
     Q_INVOKABLE void setItemTheme(int index, qint64 themeId);
 
     // Saved-schedule operations.

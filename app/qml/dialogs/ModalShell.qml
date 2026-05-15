@@ -86,7 +86,7 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "x"
-                iconSize: 14
+                iconSize: Theme.icon.md
                 onClicked: AppState.closeModal()
             }
 

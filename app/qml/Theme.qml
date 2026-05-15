@@ -3,6 +3,20 @@ pragma Singleton
 import QtQuick
 
 QtObject {
+    id: theme
+
+    // ── Global UI scale ─────────────────────────────────────────────────
+    // Every Theme.font.* and Theme.icon.* token multiplies its base value by
+    // this scale, so a single property bumps the whole UI together. Default
+    // 1.0; future SettingsService wiring will persist a per-user value (think
+    // accessibility / "increase text size" preference). Setting this at
+    // runtime re-evaluates every binding that reads through the tokens.
+    //
+    // Hardcoded font.pixelSize / size: values at call sites do NOT scale —
+    // those are deliberate one-off pixel choices. Most app surface area
+    // routes through the tokens, so the practical impact is small.
+    property real uiScale: 1.0
+
     readonly property QtObject color: QtObject {
         // Surfaces — neutral near-blacks aligned with the Electron palette
         // (Tailwind/Radix gray scale). Avoid #000 (harsh, OLED-burn-y).
@@ -98,17 +112,42 @@ QtObject {
         readonly property string monoFamily:
             "JetBrains Mono, Cascadia Code, SF Mono, Consolas, DejaVu Sans Mono, monospace"
 
-        readonly property int displaySize: 26
-        readonly property int titleSize:   16
-        readonly property int bodySize:    13
-        readonly property int smallSize:   11
-        readonly property int microSize:   10
+        // Pixel sizes scale with Theme.uiScale. Base values represent
+        // uiScale=1.0 and were bumped +2 from earlier defaults
+        // (13/11/10/16/26 → 15/13/12/18/30) to better match electron's
+        // typography on operator-console screens.
+        readonly property int displaySize: Math.round(30 * theme.uiScale)
+        readonly property int titleSize:   Math.round(18 * theme.uiScale)
+        readonly property int bodySize:    Math.round(15 * theme.uiScale)
+        readonly property int smallSize:   Math.round(13 * theme.uiScale)
+        readonly property int microSize:   Math.round(12 * theme.uiScale)
 
         readonly property int weightLight:    300
         readonly property int weightRegular:  400
         readonly property int weightMedium:   500
         readonly property int weightSemiBold: 600
         readonly property int weightBold:     700
+    }
+
+    // ── Icon sizes ──────────────────────────────────────────────────────
+    // Lucide-glyph point sizes used by AppIcon and IconButton.iconSize.
+    // Base values were chosen to absorb the previous +2 size bump:
+    //   former 9-11   → tiny (11)
+    //   former 10-11  → xs   (12)
+    //   former 12-13  → sm   (14)
+    //   former 14-15  → md   (16)
+    //   former 16-17  → lg   (18)
+    //   former 28-32  → xl   (30)   — empty-state illustrations
+    //   former 52     → xxl  (52)   — hero feature illustrations
+    // Like the font tokens, each multiplies through theme.uiScale.
+    readonly property QtObject icon: QtObject {
+        readonly property int tiny: Math.round(11 * theme.uiScale)
+        readonly property int xs:   Math.round(12 * theme.uiScale)
+        readonly property int sm:   Math.round(14 * theme.uiScale)
+        readonly property int md:   Math.round(16 * theme.uiScale)
+        readonly property int lg:   Math.round(18 * theme.uiScale)
+        readonly property int xl:   Math.round(30 * theme.uiScale)
+        readonly property int xxl:  Math.round(52 * theme.uiScale)
     }
 
     readonly property QtObject motion: QtObject {

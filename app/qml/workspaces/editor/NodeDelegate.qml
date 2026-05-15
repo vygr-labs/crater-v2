@@ -69,7 +69,7 @@ Item {
         anchors.margins: 4
         width: 18; height: 18; radius: 3
         color: "#000000A0"
-        AppIcon { anchors.centerIn: parent; name: "lock"; size: 10; color: "#ffffff" }
+        AppIcon { anchors.centerIn: parent; name: "lock"; size: Theme.icon.xs; color: "#ffffff" }
     }
 
     // Right-click context menu — sits above the left-button drag MouseArea

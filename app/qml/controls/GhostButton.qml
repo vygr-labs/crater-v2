@@ -40,7 +40,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
             color: root.iconColor
-            size: 14
+            size: Theme.icon.md
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter

@@ -53,7 +53,7 @@ Item {
                         color: tabItem.isActive    ? Theme.color.brand
                              : tabMa.containsMouse ? Theme.color.textPrimary
                                                    : Theme.color.textTertiary
-                        size: 13
+                        size: Theme.icon.sm
 
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                     }
@@ -65,7 +65,7 @@ Item {
                              : tabMa.containsMouse ? Theme.color.textPrimary
                                                    : Theme.color.textTertiary
                         font.family: Theme.font.family
-                        font.pixelSize: 14
+                        font.pixelSize: 16
                         font.weight: Theme.font.weightSemiBold
                         font.italic: true
 

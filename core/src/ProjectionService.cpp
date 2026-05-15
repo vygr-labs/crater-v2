@@ -69,11 +69,10 @@ int ProjectionService::pageCount() const
     return pages.size();
 }
 
-void ProjectionService::goLive(QVariantMap item, int page, crater::Theme theme)
+void ProjectionService::goLive(QVariantMap item, int page)
 {
-    m_currentItem  = std::move(item);
-    m_contentKind  = m_currentItem.value(QStringLiteral("kind")).toString();
-    m_currentTheme = std::move(theme);
+    m_currentItem = std::move(item);
+    m_contentKind = m_currentItem.value(QStringLiteral("kind")).toString();
 
     const int n = pageCount();
     m_pageIndex = (n > 0) ? qBound(0, page, n - 1) : 0;

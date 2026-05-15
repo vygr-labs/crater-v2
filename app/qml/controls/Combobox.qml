@@ -68,7 +68,7 @@ Item {
             anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             name: root._open ? "chevron-up" : "chevron-down"
-            size: 12
+            size: Theme.icon.sm
             color: Theme.color.textTertiary
         }
 
@@ -147,7 +147,7 @@ Item {
                 anchors.leftMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
                 name: "search"
-                size: 12
+                size: Theme.icon.sm
                 color: Theme.color.textTertiary
             }
             TextInput {

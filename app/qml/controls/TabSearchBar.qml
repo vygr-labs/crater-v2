@@ -474,14 +474,14 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     name: root.leadingIconName
                     color: Theme.color.textSecondary
-                    size: 15
+                    size: Theme.icon.md
                 }
                 AppIcon {
                     visible: root.tabKey === "songs"
                     anchors.verticalCenter: parent.verticalCenter
                     name: "chevron-down"
                     color: Theme.color.textTertiary
-                    size: 9
+                    size: Theme.icon.tiny
                 }
             }
 
@@ -704,7 +704,7 @@ Item {
                 anchors.centerIn: parent
                 name: "x"
                 color: Theme.color.textTertiary
-                size: 12
+                size: Theme.icon.sm
             }
 
             MouseArea {
@@ -740,7 +740,7 @@ Item {
                 text: root.shortcutLabel
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 9
+                font.pixelSize: 11
             }
         }
     }

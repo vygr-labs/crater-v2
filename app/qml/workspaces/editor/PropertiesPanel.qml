@@ -93,7 +93,7 @@ Rectangle {
                 Column {
                     anchors.centerIn: parent
                     spacing: Theme.space.sm
-                    AppIcon { name: "move"; size: 32; color: Theme.color.textTertiary
+                    AppIcon { name: "move"; size: Theme.icon.xl; color: Theme.color.textTertiary
                         anchors.horizontalCenter: parent.horizontalCenter }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter

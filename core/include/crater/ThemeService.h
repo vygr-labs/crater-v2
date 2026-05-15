@@ -74,6 +74,11 @@ public:
 
 signals:
     void allThemesChanged();
+    // Fires when a default-for-kind selection changes. Separate from
+    // allThemesChanged because the kv-table writes done by setDefaultFor
+    // don't touch the themes table — overloading allThemesChanged would
+    // force every tile to recompute on unrelated edits.
+    void defaultsChanged();
 
 private:
     struct Impl;

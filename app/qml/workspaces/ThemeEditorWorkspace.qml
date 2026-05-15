@@ -145,15 +145,33 @@ Rectangle {
     }
 
     // ── Save / cancel ─────────────────────────────────────────────────
+    // Surfaced when ThemeService refuses the tokens (validation) or the
+    // write itself fails. The C++ side logs to qWarning and returns a
+    // sentinel; without echoing it back to the UI the button looks dead.
+    property string saveError: ""
+
     function saveTheme() {
         if (!themeName || themeName.length === 0) return
         const tokens = workingTheme.toTokens()
+
+        // Pre-validate via the same checker create()/update() use, so the
+        // user sees the specific reason in-place instead of an inert button.
+        const errs = ThemeService.validateTokens(tokens)
+        if (errs.length > 0) {
+            saveError = errs.join(" · ")
+            saveErrorClearTimer.restart()
+            return
+        }
+
         if (workspace._isNew) {
             const newId = ThemeService.create(themeKind, themeName, tokens)
             if (newId > 0) {
                 workspace.themeId = newId
                 workspace.savedIndex = workspace.historyIndex
                 AppState.closeThemeEditor()
+            } else {
+                saveError = qsTr("Could not save theme — check the log for details")
+                saveErrorClearTimer.restart()
             }
         } else {
             ThemeService.update(themeId, themeName, tokens)
@@ -161,6 +179,13 @@ Rectangle {
             AppState.closeThemeEditor()
         }
     }
+
+    Timer {
+        id: saveErrorClearTimer
+        interval: 8000
+        onTriggered: workspace.saveError = ""
+    }
+
     function requestClose() {
         if (hasUnsavedChanges) confirmOverlay.openConfirm()
         else AppState.closeThemeEditor()
@@ -190,7 +215,12 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 56
+        // Grows to accommodate the inline error bar when saveError is set;
+        // the canvas region shrinks instead of the Save button shifting.
+        height: workspace.saveError.length > 0 ? 88 : 56
+        Behavior on height {
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
         workspace: workspace
     }
 

@@ -87,7 +87,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     name: modelData.kind === "text" ? "type" : "square"
                     color: row._selected ? Theme.color.brand : Theme.color.textSecondary
-                    size: 14
+                    size: Theme.icon.md
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
@@ -108,22 +108,22 @@ Rectangle {
                 anchors.rightMargin: Theme.space.sm
                 spacing: 0
                 visible: rowMa.containsMouse || row._selected || row._hidden || row._locked
-                IconButton { iconName: row._hidden ? "eye-off" : "eye"; iconSize: 12
+                IconButton { iconName: row._hidden ? "eye-off" : "eye"; iconSize: Theme.icon.sm
                     onClicked: {
                         workspace.workingTheme.setNodeData(modelData.id, "hidden", !row._hidden)
                         workspace.saveToHistory()
                     } }
-                IconButton { iconName: row._locked ? "lock" : "unlock"; iconSize: 12
+                IconButton { iconName: row._locked ? "lock" : "unlock"; iconSize: Theme.icon.sm
                     onClicked: {
                         workspace.workingTheme.setNodeData(modelData.id, "locked", !row._locked)
                         workspace.saveToHistory()
                     } }
-                IconButton { iconName: "copy"; iconSize: 12
+                IconButton { iconName: "copy"; iconSize: Theme.icon.sm
                     onClicked: {
                         const id = workspace.workingTheme.duplicateNode(modelData.id)
                         if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
                     } }
-                IconButton { iconName: "trash"; iconSize: 12
+                IconButton { iconName: "trash"; iconSize: Theme.icon.sm
                     onClicked: {
                         workspace.workingTheme.removeNode(modelData.id)
                         if (workspace.selectedNodeId === modelData.id)

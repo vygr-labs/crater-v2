@@ -44,7 +44,7 @@ Rectangle {
         IconButton {
             anchors.verticalCenter: parent.verticalCenter
             iconName: "settings"
-            iconSize: 14
+            iconSize: Theme.icon.md
             onClicked: AppState.openModal("settings", {})
         }
 

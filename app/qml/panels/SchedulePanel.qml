@@ -47,7 +47,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "list-music"
                 color: Theme.color.textTertiary
-                size: 14
+                size: Theme.icon.md
             }
 
             Text {
@@ -105,7 +105,7 @@ Rectangle {
                 id: trashBtn
                 visible: ScheduleService.currentItems.length > 0
                 iconName: "trash"
-                iconSize: 13
+                iconSize: Theme.icon.sm
                 tintHover: Theme.color.live   // electron's red.400 hover
                 anchors.verticalCenter: parent.verticalCenter
                 onClicked: {
@@ -148,7 +148,7 @@ Rectangle {
                 id: kebab
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "more-vertical"
-                iconSize: 14
+                iconSize: Theme.icon.md
                 onClicked: {
                     const items = []
                     if (AppState.selectedScheduleIndices.length > 0) {

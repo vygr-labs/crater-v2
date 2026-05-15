@@ -25,7 +25,7 @@ Rectangle {
 
         IconButton {
             iconName: "x"
-            iconSize: 16
+            iconSize: Theme.icon.lg
             anchors.verticalCenter: parent.verticalCenter
             onClicked: workspace.requestClose()
         }
@@ -54,7 +54,7 @@ Rectangle {
                 text: (workspace.themeKind || "").toUpperCase()
                 color: Theme.color.brand
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 10
+                font.pixelSize: 12
                 font.weight: Theme.font.weightSemiBold
                 font.letterSpacing: 1
             }
@@ -72,7 +72,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space.xs
             visible: workspace.hasUnsavedChanges
-            AppIcon { name: "alert-triangle"; color: Theme.color.warning; size: 12
+            AppIcon { name: "alert-triangle"; color: Theme.color.warning; size: Theme.icon.sm
                 anchors.verticalCenter: parent.verticalCenter }
             Text {
                 anchors.verticalCenter: parent.verticalCenter

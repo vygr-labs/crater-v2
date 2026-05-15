@@ -1,7 +1,5 @@
 #pragma once
 
-#include "crater/value/Theme.h"
-
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
@@ -18,6 +16,12 @@ namespace crater {
 // affect the live output until they explicitly re-Go-Live. This is critical
 // for stage stability — you don't want a typo in the song editor to show up
 // on the audience screen mid-service.
+//
+// Themes are NOT snapshotted here. ProjectionWindow.qml resolves the
+// effective theme reactively from `currentItem.themeId` (per-item override)
+// and ThemeService.defaultFor(kind) — so when the operator changes the
+// kind's default theme via the Themes tab, the live projection re-renders
+// immediately. Matches Electron's RenderProjection.tsx createMemo pattern.
 class ProjectionService : public QObject
 {
     Q_OBJECT
@@ -29,7 +33,6 @@ class ProjectionService : public QObject
     Q_PROPERTY(QVariantMap    currentItem  READ currentItem  NOTIFY stateChanged)
     Q_PROPERTY(int            pageIndex    READ pageIndex    NOTIFY stateChanged)
     Q_PROPERTY(int            pageCount    READ pageCount    NOTIFY stateChanged)
-    Q_PROPERTY(crater::Theme  currentTheme READ currentTheme NOTIFY stateChanged)
     Q_PROPERTY(bool           isClear      READ isClear      NOTIFY stateChanged)
     Q_PROPERTY(bool           showLogo     READ showLogo     NOTIFY stateChanged)
     // Persistent path to the projection's "logo / pre-service" background
@@ -46,13 +49,12 @@ public:
     QVariantMap    currentItem()  const { return m_currentItem; }
     int            pageIndex()    const { return m_pageIndex; }
     int            pageCount()    const;
-    crater::Theme  currentTheme() const { return m_currentTheme; }
     bool           isClear()      const { return m_isClear; }
     bool           showLogo()     const { return m_showLogo; }
     QString        logoBgPath()   const { return m_logoBgPath; }
 
-    // Snapshot `item` (deep copy) and theme; set pageIndex. Clears isClear.
-    Q_INVOKABLE void goLive(QVariantMap item, int page, crater::Theme theme);
+    // Snapshot `item` (deep copy) and set pageIndex. Clears isClear.
+    Q_INVOKABLE void goLive(QVariantMap item, int page);
 
     Q_INVOKABLE void clear();              // shows background only (no content)
     Q_INVOKABLE void setPage(int i);
@@ -73,7 +75,6 @@ private:
     QVariantMap    m_currentItem;
     QString        m_contentKind;     // "" | "song" | "scripture" | "image" | "video"
     int            m_pageIndex   = 0;
-    crater::Theme  m_currentTheme;
     bool           m_isClear     = false;
     bool           m_showLogo    = false;
     QString        m_logoBgPath;

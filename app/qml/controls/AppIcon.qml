@@ -1,7 +1,7 @@
 import QtQuick
 
 // Icon glyph from the bundled Lucide font.
-// Usage: AppIcon { name: "settings"; size: 16; color: Theme.color.textSecondary }
+// Usage: AppIcon { name: "settings"; size: Theme.icon.lg; color: Theme.color.textSecondary }
 //
 // The font is registered as family "lucide" in main.cpp via
 // QFontDatabase::addApplicationFont(":/fonts/lucide.ttf").
@@ -10,7 +10,7 @@ Item {
 
     property string name: ""
     property color  color: Theme.color.textSecondary
-    property real   size: 16
+    property real   size: Theme.icon.lg
 
     implicitWidth: size
     implicitHeight: size

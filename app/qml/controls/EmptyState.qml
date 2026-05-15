@@ -16,7 +16,7 @@ Item {
     property string title: ""
     property string body: ""
     property color  iconColor: Theme.color.textTertiary
-    property real   iconSize: 32
+    property real   iconSize: Theme.icon.xl
     property real   maxBodyWidth: 320
 
     ColumnLayout {

@@ -50,7 +50,7 @@ Rectangle {
         IconButton {
             anchors.verticalCenter: parent.verticalCenter
             iconName: "plus"
-            iconSize: 14
+            iconSize: Theme.icon.md
             onClicked: {
                 // Context-aware: prompts to name a new item of the current tab type.
                 const tabKey = AppState.tabKeys[AppState.activeTab]

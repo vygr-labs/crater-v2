@@ -213,13 +213,68 @@ Item {
         ]
     }
 
-    // Bounds-clamp fluid index when the list shrinks.
+    // Track filteredMedia.length across change-firings so we can detect
+    // "grew" — that's our proxy for "an item was just added", which is the
+    // signal we actually want to react to. This is more robust than tying
+    // the snap to importFinished: it doesn't care about C++ signal ordering,
+    // doesn't race with binding evaluation, and naturally handles every
+    // path that adds rows (drag-drop, the + button, the empty-state CTA).
+    //
+    // First-mount sets `_initialized = true` without triggering a snap, so
+    // existing rows on startup don't all flash a "new!" selection.
+    property int  _prevFilteredMediaLength: 0
+    property bool _initialized: false
+
+    // Bounds-clamp fluid index when the list shrinks, AND snap to the most
+    // recently added row whenever filteredMedia gains an item.
     onFilteredMediaChanged: {
         const n = filteredMedia.length
+        console.log("MediaTab onFilteredMediaChanged: n=" + n
+                    + " prev=" + _prevFilteredMediaLength
+                    + " init=" + _initialized
+                    + " allMedia.length=" + MediaService.allMedia.length)
+
         if (n === 0) {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
+            _prevFilteredMediaLength = 0
+            _initialized = true
             return
         }
+
+        const grew = _initialized && n > _prevFilteredMediaLength
+        _prevFilteredMediaLength = n
+        _initialized = true
+
+        if (grew) {
+            // Find the item with the highest addedAt — that's the row the
+            // worker just INSERTed (it stamps QDateTime::currentMSecsSinceEpoch).
+            let newestIdx = 0
+            let newestAt  = filteredMedia[0].addedAt || 0
+            for (let i = 1; i < n; i++) {
+                const at = filteredMedia[i].addedAt || 0
+                if (at > newestAt) { newestAt = at; newestIdx = i }
+            }
+            const tgt = newestIdx
+            AppState.setLibraryFluid(tabKey, tgt)
+            if (AppState.tabKeys[AppState.activeTab] === tabKey)
+                pushPreviewFor(tgt)
+            // Defer scroll until the GridView/ListView have processed the
+            // model rebind. onFilteredMediaChanged fires the same tick the
+            // var property is reassigned; the views' own `model:` bindings
+            // re-evaluate in a separate pass, so calling positionViewAtIndex
+            // inline here can land on the stale (pre-import) delegate count
+            // and silently no-op — leaving the new tile offscreen. callLater
+            // (+ forceLayout) gives the views a tick to materialize the new
+            // row before we scroll to it.
+            Qt.callLater(function() {
+                grid.forceLayout()
+                listView.forceLayout()
+                grid.positionViewAtIndex(tgt, GridView.Center)
+                listView.positionViewAtIndex(tgt, ListView.Center)
+            })
+            return
+        }
+
         const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
@@ -234,32 +289,8 @@ Item {
         }
     }
 
-    // Newly imported items land at filteredMedia[0] (ORDER BY added_at DESC),
-    // but the GridView/ListView don't auto-scroll to acknowledge a model
-    // append. Without this snap, an operator who'd scrolled down at all would
-    // see existing items but not the import they just triggered — making the
-    // import look broken even though the row landed in the DB. We position
-    // both views at the top and select index 0 so the new file is visually
-    // confirmed and the preview pane reflects it immediately.
-    //
-    // Qt.callLater defers until the current synchronous chain (the
-    // allMediaChanged → filteredMedia rebind cascade) has flushed, so the
-    // GridView's model has already grown by the time we call
-    // positionViewAtBeginning.
-    Connections {
-        target: MediaService
-        function onImportFinished(imported, skipped) {
-            if (imported <= 0) return
-            Qt.callLater(function() {
-                grid.positionViewAtBeginning()
-                listView.positionViewAtBeginning()
-                if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
-                    AppState.setLibraryFluid(root.tabKey, 0)
-                    root.pushPreviewFor(0)
-                }
-            })
-        }
-    }
+    // No importFinished hook needed for the snap-to-newest: the
+    // onFilteredMediaChanged handler above detects model growth on its own.
 
     // ── Import affordance ───────────────────────────────────────────────
     // Two paths feed importPaths(): drag-drop on the DropArea below, and the
@@ -322,7 +353,7 @@ Item {
                 color: clearBatchMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
-                    name: "x"; size: 10
+                    name: "x"; size: Theme.icon.xs
                     color: Theme.color.textTertiary
                 }
                 MouseArea {
@@ -350,7 +381,7 @@ Item {
 
             AppIcon {
                 anchors.centerIn: parent
-                name: "plus"; size: 13
+                name: "plus"; size: Theme.icon.sm
                 color: Theme.color.textSecondary
             }
 
@@ -385,7 +416,7 @@ Item {
                     spacing: 4
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "trash"; size: 11
+                        name: "trash"; size: Theme.icon.xs
                         color: Theme.color.live
                     }
                     Text {
@@ -420,7 +451,7 @@ Item {
                 color: gridViewMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
-                    name: "layout-grid"; size: 13
+                    name: "layout-grid"; size: Theme.icon.sm
                     color: AppState.mediaViewMode === "grid" ? Theme.color.brand : Theme.color.textSecondary
                 }
                 MouseArea {
@@ -439,7 +470,7 @@ Item {
                 color: listViewMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
-                    name: "layout-list"; size: 13
+                    name: "layout-list"; size: Theme.icon.sm
                     color: AppState.mediaViewMode === "list" ? Theme.color.brand : Theme.color.textSecondary
                 }
                 MouseArea {
@@ -473,7 +504,7 @@ Item {
                     spacing: 4
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "grid-3x3"; size: 13
+                        name: "grid-3x3"; size: Theme.icon.sm
                         color: Theme.color.textSecondary
                     }
                     Text {
@@ -485,7 +516,7 @@ Item {
                     }
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "chevron-down"; size: 9
+                        name: "chevron-down"; size: Theme.icon.tiny
                         color: Theme.color.textSecondary
                     }
                 }
@@ -528,7 +559,7 @@ Item {
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: AppState.mediaSortOrder === "asc" ? "sort-asc" : "sort-desc"
-                        size: 13
+                        size: Theme.icon.sm
                         color: Theme.color.textSecondary
                     }
                     Text {
@@ -541,7 +572,7 @@ Item {
                     }
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "chevron-down"; size: 9
+                        name: "chevron-down"; size: Theme.icon.tiny
                         color: Theme.color.textSecondary
                     }
                 }
@@ -634,7 +665,7 @@ Item {
                 spacing: Theme.space.sm
                 AppIcon {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    name: "cloud-upload"; size: 52
+                    name: "cloud-upload"; size: Theme.icon.xxl
                     color: Theme.color.brand
                 }
                 Text {
@@ -730,11 +761,17 @@ Item {
                     Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
                     // Image preview (best-effort — Qt Image handles png/jpg/etc).
+                    // Gate `source` on type === "image": `visible: false` only
+                    // hides the render, it does NOT cancel the loader, so a
+                    // video row's .mp4 path was being fed to QImageReader and
+                    // logging "Unsupported image format" repeatedly.
                     Image {
                         anchors.fill: parent
                         anchors.margins: 2
                         visible: modelData.type === "image"
-                        source: "file:///" + modelData.path
+                        source: modelData.type === "image"
+                              ? "file:///" + modelData.path
+                              : ""
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
@@ -754,7 +791,7 @@ Item {
                         AppIcon {
                             anchors.centerIn: parent
                             visible: videoThumb.status !== Image.Ready
-                            name: "video"; size: 28
+                            name: "video"; size: Theme.icon.xl
                             color: Theme.color.textTertiary
                         }
 
@@ -789,7 +826,7 @@ Item {
                         AppIcon {
                             anchors.centerIn: parent
                             name: modelData.type === "video" ? "video" : "image"
-                            size: 10
+                            size: Theme.icon.xs
                             color: "#ffffff"
                         }
                     }
@@ -806,7 +843,7 @@ Item {
                         color: Theme.color.success
                         AppIcon {
                             anchors.centerIn: parent
-                            name: "sparkles"; size: 10
+                            name: "sparkles"; size: Theme.icon.xs
                             color: "#ffffff"
                         }
                     }
@@ -826,7 +863,7 @@ Item {
                         AppIcon {
                             anchors.centerIn: parent
                             visible: cell._batch
-                            name: "check"; size: 10
+                            name: "check"; size: Theme.icon.xs
                             color: "#ffffff"
                         }
                         MouseArea {
@@ -853,7 +890,7 @@ Item {
                             text: qsTr("LIVE")
                             color: "#ffffff"
                             font.family: Theme.font.family
-                            font.pixelSize: 9
+                            font.pixelSize: 11
                             font.weight: Theme.font.weightSemiBold
                             font.letterSpacing: 0.5
                         }
@@ -878,7 +915,7 @@ Item {
                             text: root.formatDuration(modelData.durationMs)
                             color: "#ffffff"
                             font.family: Theme.font.family
-                            font.pixelSize: 10
+                            font.pixelSize: 12
                             font.weight: Theme.font.weightMedium
                         }
                     }
@@ -903,7 +940,7 @@ Item {
                             text: modelData.title
                             color: "#ffffff"
                             font.family: Theme.font.family
-                            font.pixelSize: 10
+                            font.pixelSize: 12
                             elide: Text.ElideRight
                         }
                     }
@@ -1000,7 +1037,7 @@ Item {
                     AppIcon {
                         anchors.centerIn: parent
                         visible: listRow._batch
-                        name: "check"; size: 10
+                        name: "check"; size: Theme.icon.xs
                         color: "#ffffff"
                     }
                     MouseArea {
@@ -1024,7 +1061,10 @@ Item {
                     Image {
                         anchors.fill: parent
                         visible: modelData.type === "image"
-                        source: "file:///" + modelData.path
+                        // Same gate as the grid Image — see the comment there.
+                        source: modelData.type === "image"
+                              ? "file:///" + modelData.path
+                              : ""
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         sourceSize.width: 120
@@ -1050,7 +1090,7 @@ Item {
                         anchors.centerIn: parent
                         visible: modelData.type === "video"
                               && rowVideoThumb.status !== Image.Ready
-                        name: "video"; size: 16
+                        name: "video"; size: Theme.icon.lg
                         color: Theme.color.textTertiary
                     }
                 }
@@ -1083,7 +1123,7 @@ Item {
                         Row {
                             visible: listRow._logo
                             spacing: 2
-                            AppIcon { name: "sparkles"; size: 11; color: Theme.color.success }
+                            AppIcon { name: "sparkles"; size: Theme.icon.xs; color: Theme.color.success }
                             Text {
                                 text: qsTr("Logo")
                                 color: Theme.color.success
@@ -1114,7 +1154,7 @@ Item {
                             text: qsTr("LIVE")
                             color: "#ffffff"
                             font.family: Theme.font.family
-                            font.pixelSize: 9
+                            font.pixelSize: 11
                             font.weight: Theme.font.weightSemiBold
                         }
                     }
@@ -1126,7 +1166,7 @@ Item {
                         color: favMa.containsMouse ? Theme.color.overlay : "transparent"
                         AppIcon {
                             anchors.centerIn: parent
-                            name: "star"; size: 11
+                            name: "star"; size: Theme.icon.xs
                             color: Theme.color.textTertiary
                         }
                         MouseArea {
@@ -1140,7 +1180,7 @@ Item {
                     AppIcon {
                         visible: modelData.isFavorite
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "heart"; size: 12
+                        name: "heart"; size: Theme.icon.sm
                         color: Theme.color.brand
                     }
                 }

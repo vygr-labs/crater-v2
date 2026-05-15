@@ -70,7 +70,7 @@ Item {
                 text: "16:9 · 1920×1080"
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 8
+                font.pixelSize: 10
             }
         }
     }

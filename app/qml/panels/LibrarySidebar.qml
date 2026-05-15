@@ -246,7 +246,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "plus"
                     color: Theme.color.textSecondary
-                    size: 13
+                    size: Theme.icon.sm
                 }
                 MouseArea {
                     id: addCollectionMa
@@ -271,7 +271,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "settings"
                     color: Theme.color.textSecondary
-                    size: 13
+                    size: Theme.icon.sm
                 }
                 MouseArea {
                     id: gearCollectionMa

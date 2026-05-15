@@ -53,7 +53,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
             color: root.active ? Theme.color.brand : Theme.color.textTertiary
-            size: 13
+            size: Theme.icon.sm
         }
         Text {
             visible: root.iconName.length === 0 && root.symbol.length > 0
@@ -61,7 +61,7 @@ Item {
             text: root.symbol
             color: root.active ? Theme.color.brand : Theme.color.textTertiary
             font.family: Theme.font.family
-            font.pixelSize: 13
+            font.pixelSize: 15
             width: 16
             horizontalAlignment: Text.AlignHCenter
         }

@@ -14,6 +14,10 @@
 #include <QVideoFrame>
 #include <QVideoSink>
 
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+
 namespace crater {
 
 namespace {
@@ -28,6 +32,31 @@ constexpr int kPerItemTimeoutMs = 6000;
 // (cellWidth ~320 at 4 columns) at near-native crispness.
 constexpr int kThumbW = 320;
 constexpr int kThumbH = 180;
+
+// Convert a long Windows path to its 8.3 short equivalent if available,
+// so paths like "C:/Users/.../Voyager Labs/Crater/media/Screen Recording
+// 2026-04-30 164258.mp4" become "C:/Users/.../VOYAGE~1/Crater/media/
+// SCREEN~1.MP4" — no spaces, no organization-name embedded. Qt's FFmpeg
+// backend on Windows pipes the URL through FFmpeg's `file:` protocol
+// handler, which has been observed to reject paths with spaces (the
+// avformat_open_input() call returns InvalidMedia immediately, even when
+// ffprobe handles the same file cleanly outside Qt). The 8.3 short name
+// sidesteps that. Returns the input unchanged on non-Windows or when 8.3
+// is disabled on the volume.
+QString toBackendPath(const QString& path)
+{
+#ifdef Q_OS_WIN
+    const std::wstring wpath = path.toStdWString();
+    DWORD len = GetShortPathNameW(wpath.c_str(), nullptr, 0);
+    if (len == 0) return path;          // GetShortPathNameW failed; use input
+    std::wstring buf(len, L'\0');
+    len = GetShortPathNameW(wpath.c_str(), buf.data(), len);
+    if (len == 0 || len >= buf.size()) return path;
+    return QString::fromStdWString(std::wstring(buf.data(), len));
+#else
+    return path;
+#endif
+}
 
 }  // namespace
 
@@ -108,32 +137,43 @@ void VideoThumbnailer::processNext()
         return;
     }
 
-    m_player->stop();
-    m_player->setSource(QUrl::fromLocalFile(item.path));
+    // Hand the file to the FFmpeg backend. Two tricks for the Windows
+    // FFmpeg path:
+    //   1) NO explicit m_player->stop() before setSource — stop() sets the
+    //      demuxer's interrupt flag, and the very next setSource()'s
+    //      avformat_open_input() reads that same flag back as "abort"
+    //      ("Immediate exit requested" in older logs). setSource() handles
+    //      the state transition from any prior state internally.
+    //   2) Convert the path to its 8.3 short form on Windows. The
+    //      organization-prefixed AppData layout ("Voyager Labs/Crater/...")
+    //      plus filenames like "Screen Recording 2026-04-30 …mp4" embed
+    //      spaces that Qt's FFmpeg `file:` protocol handler chokes on,
+    //      returning InvalidMedia. The 8.3 short name has no spaces.
+    const QString playPath = toBackendPath(item.path);
+    m_player->setSource(QUrl::fromLocalFile(playPath));
+    // Play immediately rather than waiting for mediaStatusChanged →
+    // LoadedMedia. The status transition is unreliable on Qt 6.11's FFmpeg
+    // backend (LoadedMedia sometimes never fires while frames still flow);
+    // play() works from any non-Invalid state.
+    m_player->play();
     m_timeout->start();
-    // play() is deferred until mediaStatusChanged() reaches LoadedMedia, so
-    // a setPosition() is honored — issuing it before the codec is ready is
-    // a documented no-op on some backends.
 }
 
 void VideoThumbnailer::onMediaStatus(QMediaPlayer::MediaStatus status)
 {
     if (m_currentId == 0) return;
 
-    if (status == QMediaPlayer::LoadedMedia
-        || status == QMediaPlayer::BufferedMedia) {
-        // Seek 1 s in to skip studio idents / fade-from-black. Tiny clips
-        // get a 100 ms seek, sub-200 ms clips get the very first frame.
-        const qint64 dur  = m_player->duration();
-        const qint64 seek = (dur > 1100) ? 1000
-                          : (dur >  200) ?  100
-                                         :    0;
-        m_player->setPosition(seek);
-        m_player->play();
-    } else if (status == QMediaPlayer::InvalidMedia
+    // We no longer wait on LoadedMedia to seek+play — processNext() already
+    // calls play(). Only InvalidMedia matters here, as an early-exit when
+    // the backend can't open the file at all. Surface the player's own
+    // error string and the path we passed so the next failure (if any) is
+    // actionable.
+    if (status == QMediaPlayer::InvalidMedia
             || status == QMediaPlayer::NoMedia) {
+        const QString err = m_player->errorString();
         qWarning().noquote() << "VideoThumbnailer: invalid media for id"
-                             << m_currentId;
+                             << m_currentId
+                             << (err.isEmpty() ? QString() : QStringLiteral("— ") + err);
         finishCurrent();
     }
 }
@@ -198,7 +238,10 @@ void VideoThumbnailer::onPlayerError(QMediaPlayer::Error error,
 void VideoThumbnailer::finishCurrent()
 {
     m_timeout->stop();
-    m_player->stop();
+    // Clear the source first, THEN stop. The other order (stop → setSource)
+    // is what caused the FFmpeg interrupt-callback issue described in
+    // processNext(). setSource(QUrl{}) is enough to fully release the file
+    // handle and tear the demuxer down.
     m_player->setSource(QUrl{});
     m_currentId = 0;
     m_captured  = false;

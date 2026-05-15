@@ -89,7 +89,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "radio"
                 color: Theme.color.textTertiary
-                size: 14
+                size: Theme.icon.md
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -107,7 +107,7 @@ Rectangle {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             iconName: "settings"
-            iconSize: 13
+            iconSize: Theme.icon.sm
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
@@ -288,7 +288,7 @@ Rectangle {
                 }
                 color: Theme.color.textPrimary
                 font.family: Theme.font.family
-                font.pixelSize: 14
+                font.pixelSize: 16
                 font.weight: Theme.font.weightLight
                 wrapMode: Text.WordWrap
                 horizontalAlignment: Text.AlignHCenter
@@ -307,7 +307,7 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     name: "list-ordered"
                     color: Theme.color.brand
-                    size: 28
+                    size: Theme.icon.xl
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter

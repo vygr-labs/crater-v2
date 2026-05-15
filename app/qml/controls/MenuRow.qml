@@ -61,7 +61,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 name: rowData.iconName || ""
                 color: rowData.destructive ? Theme.color.live : Theme.color.textSecondary
-                size: 13
+                size: Theme.icon.sm
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -81,7 +81,7 @@ Item {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             name: "chevron-right"
-            size: 12
+            size: Theme.icon.sm
             color: Theme.color.textTertiary
         }
 
@@ -103,7 +103,7 @@ Item {
                 text: rowData.kbd || ""
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 10
+                font.pixelSize: 12
             }
         }
 
@@ -146,9 +146,16 @@ Item {
                     row.host._openSubmenuImmediately(row.rowIndex)
                     return
                 }
-                row.host.itemActivated(row.rowIndex, row.rowData)
+                // Cache the host BEFORE running the action — if the action
+                // opens a new modal, the contextMenu Loader (which owns this
+                // PopoverMenu) deactivates and destroys the host before our
+                // close() can run. Closing first sets active=false, which
+                // the ModalLayer's onActiveChanged honors only when nothing
+                // else has claimed activeModal yet.
+                const h = row.host
+                h.itemActivated(row.rowIndex, row.rowData)
+                h.close()
                 if (typeof row.rowData.action === "function") row.rowData.action()
-                row.host.close()
             }
         }
     }

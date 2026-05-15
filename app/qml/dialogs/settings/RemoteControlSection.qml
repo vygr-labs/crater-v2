@@ -92,7 +92,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         name: "info"
                         color: Theme.color.brand
-                        size: 13
+                        size: Theme.icon.sm
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter

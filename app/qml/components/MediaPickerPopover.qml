@@ -121,7 +121,7 @@ Item {
                             name: parent.parent.parent._isNone ? "x"
                                 : modelData.type === "video"   ? "film"
                                                                  : "image"
-                            size: 14
+                            size: Theme.icon.md
                             color: Theme.color.textTertiary
                         }
                     }

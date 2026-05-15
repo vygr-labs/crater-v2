@@ -94,9 +94,27 @@ Window {
     readonly property var    _item      : ProjectionService.currentItem
     readonly property string _kind      : ProjectionService.contentKind
     readonly property int    _page      : ProjectionService.pageIndex
-    readonly property var    _theme     : ProjectionService.currentTheme
     readonly property bool   _isClear   : ProjectionService.isClear
     readonly property bool   _showLogo  : ProjectionService.showLogo
+
+    // ── Theme resolution (reactive) ─────────────────────────────────────
+    // Mirrors Electron's RenderProjection createMemo: prefer the per-item
+    // override (item.themeId), else fall back to ThemeService.defaultFor(kind).
+    // The `_themeRevision` int is bumped by Connections below so the binding
+    // re-evaluates whenever the operator changes the default theme for a kind
+    // OR a theme is added/deleted — without forcing the operator to re-Go-Live.
+    property int _themeRevision: 0
+
+    readonly property var _theme: {
+        _themeRevision   // dependency: re-fires this binding on signal bumps
+        return AppState.resolveItemTheme(_item)
+    }
+
+    Connections {
+        target: ThemeService
+        function onDefaultsChanged()  { projectionWindow._themeRevision++ }
+        function onAllThemesChanged() { projectionWindow._themeRevision++ }
+    }
 
     readonly property var    _tokens    : _theme && _theme.tokens ? _theme.tokens : ({})
     readonly property var    _canvas    : _tokens.canvas || ({ width: 1920, height: 1080 })
@@ -181,6 +199,31 @@ Window {
                     }
                 }
             }
+        }
+
+        // ── No-theme fallback ────────────────────────────────────────────
+        // Shown when a song/scripture goes live but the operator hasn't set a
+        // default theme for that kind and no built-in matches. Without this,
+        // the projection would be silently black — confusing during a service.
+        // Mirrors Electron's NoThemeError in RenderProjection.tsx. Text-bearing
+        // kinds only — image/video items don't render through the theme path.
+        Text {
+            id: noThemeText
+            anchors.centerIn: parent
+            anchors.margins: 40
+            width: parent.width - 80
+            visible: !projectionWindow._isClear
+                  && !projectionWindow._showLogo
+                  && (projectionWindow._kind === "song" || projectionWindow._kind === "scripture")
+                  && (!projectionWindow._theme || (projectionWindow._theme.id || 0) === 0)
+            text: qsTr("Default %1 theme has not been set").arg(projectionWindow._kind)
+                       .toUpperCase()
+            color: "#ffffff"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            font.family: Theme.font.family
+            font.pixelSize: 72
+            font.weight: Theme.font.weightBold
         }
 
         // Logo overlay — sits above the content layer when toggled on.

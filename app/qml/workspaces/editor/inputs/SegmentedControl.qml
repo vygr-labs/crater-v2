@@ -51,7 +51,7 @@ Item {
                             visible: !!modelData.iconName
                             name: modelData.iconName || ""
                             color: root.current === modelData.value ? Theme.color.brand : Theme.color.textSecondary
-                            size: 12
+                            size: Theme.icon.sm
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         Text {

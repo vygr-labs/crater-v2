@@ -491,6 +491,7 @@ void ThemeService::setDefaultFor(QString kind, qint64 themeId)
         stmt.bind(1, kvKey);
         stmt.bind(2, QString::number(themeId));
         stmt.step();
+        emit defaultsChanged();
     } catch (const db::Error& e) {
         qWarning().noquote() << "ThemeService::setDefaultFor():" << e.message();
     }

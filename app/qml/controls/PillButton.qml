@@ -34,7 +34,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
             color: root.iconColor
-            size: 15
+            size: Theme.icon.md
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -49,7 +49,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             name: "chevron-down"
             color: Theme.color.textTertiary
-            size: 12
+            size: Theme.icon.sm
         }
     }
 

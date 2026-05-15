@@ -34,7 +34,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             name: "search"
             color: Theme.color.textTertiary
-            size: 14
+            size: Theme.icon.md
         }
 
         TextInput {
@@ -79,7 +79,7 @@ Item {
                 text: root.shortcutHint
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 9
+                font.pixelSize: 11
             }
         }
     }

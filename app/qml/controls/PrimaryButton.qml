@@ -58,7 +58,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
             color: root._ink
-            size: 13
+            size: Theme.icon.sm
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter

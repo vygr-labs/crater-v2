@@ -9,7 +9,95 @@ import Crater
 Item {
     id: root
 
-    // ── Header row: New / Import buttons ────────────────────────────────
+    // ── Filter + defaults state ─────────────────────────────────────────
+    // kindFilter narrows the grid to a single kind ("song" | "scripture" |
+    // "presentation") or shows everything ("all"). Local to the tab; resets
+    // on app restart.
+    property string kindFilter: "all"
+
+    // Mirror of the user-selected default theme id per kind. Updated on
+    // ThemeService.defaultsChanged so each tile's DEFAULT badge rebinds
+    // without polling defaultFor() on every paint.
+    // Also refreshed on allThemesChanged because deleting the active default
+    // shifts the resolver to the first built-in of that kind.
+    property var _defaultIds: ({ song: 0, scripture: 0, presentation: 0 })
+
+    function _refreshDefaults() {
+        _defaultIds = {
+            song:         ThemeService.defaultFor("song").id         || 0,
+            scripture:    ThemeService.defaultFor("scripture").id    || 0,
+            presentation: ThemeService.defaultFor("presentation").id || 0
+        }
+    }
+
+    Component.onCompleted: _refreshDefaults()
+
+    Connections {
+        target: ThemeService
+        function onDefaultsChanged()  { root._refreshDefaults() }
+        function onAllThemesChanged() { root._refreshDefaults() }
+    }
+
+    // Composes the sidebar search query (TabSearchBar writes to
+    // AppState.searchText.themes) with the kind chip filter. Name matching is
+    // case-insensitive substring — same shape as the songs/scripture tabs.
+    readonly property string _searchQuery:
+        (AppState.searchText.themes || "").toLowerCase().trim()
+
+    readonly property var filteredThemes: {
+        const all  = ThemeService.allThemes
+        const q    = _searchQuery
+        const kind = kindFilter
+        return all.filter(function(t) {
+            if (kind !== "all" && t.kind !== kind) return false
+            if (q.length > 0 && t.name.toLowerCase().indexOf(q) < 0) return false
+            return true
+        })
+    }
+
+    // ── Import error surface ────────────────────────────────────────────
+    property string _importError: ""
+
+    Timer {
+        id: errorClearTimer
+        interval: 5000
+        onTriggered: root._importError = ""
+    }
+
+    // ── Header: filter chips (left) + Import / New theme (right) ────────
+    Row {
+        id: filterRow
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: Theme.space.lg
+        spacing: Theme.space.sm
+        z: 1
+
+        GhostButton {
+            text: qsTr("All")
+            active: root.kindFilter === "all"
+            onClicked: root.kindFilter = "all"
+        }
+        GhostButton {
+            text: qsTr("Songs")
+            iconName: Theme.scheduleKindIcon("song")
+            active: root.kindFilter === "song"
+            onClicked: root.kindFilter = "song"
+        }
+        GhostButton {
+            text: qsTr("Scriptures")
+            iconName: Theme.scheduleKindIcon("scripture")
+            active: root.kindFilter === "scripture"
+            onClicked: root.kindFilter = "scripture"
+        }
+        GhostButton {
+            text: qsTr("Presentations")
+            iconName: Theme.scheduleKindIcon("presentation")
+            active: root.kindFilter === "presentation"
+            onClicked: root.kindFilter = "presentation"
+        }
+    }
+
     Row {
         id: header
         anchors.top: parent.top
@@ -28,30 +116,119 @@ Item {
                 if (path && path.length > 0) {
                     const id = ThemeService.importThemeFile(path)
                     if (id === 0) {
-                        // Surface the error inline via the toast layer once that lands.
-                        console.warn("Import failed:", ThemeService.lastImportError())
+                        root._importError = ThemeService.lastImportError()
+                                         || qsTr("Import failed")
+                        errorClearTimer.restart()
                     }
                 }
             }
         }
         GhostButton {
+            id: newThemeBtn
             text: qsTr("New theme")
             iconName: "plus"
-            onClicked: AppState.openThemeEditor(-1, "song")
+            // Kind picker — opens a context menu offering one entry per kind.
+            // Anchored bottom-right of the button (dx: -menuWidth) so the menu
+            // doesn't fall off the right edge of the tab.
+            onClicked: {
+                AppState.openContextMenuAt(newThemeBtn,
+                    newThemeBtn.width, newThemeBtn.height,
+                    [
+                        { label: qsTr("Song theme"),
+                          iconName: Theme.scheduleKindIcon("song"),
+                          action: function() { AppState.openThemeEditor(-1, "song") } },
+                        { label: qsTr("Scripture theme"),
+                          iconName: Theme.scheduleKindIcon("scripture"),
+                          action: function() { AppState.openThemeEditor(-1, "scripture") } },
+                        { label: qsTr("Presentation theme"),
+                          iconName: Theme.scheduleKindIcon("presentation"),
+                          action: function() { AppState.openThemeEditor(-1, "presentation") } }
+                    ],
+                    { dx: -220 })
+            }
         }
     }
 
-    EmptyState {
-        anchors.fill: parent
-        visible: ThemeService.allThemes.length === 0
-        iconName: "palette"
-        title: qsTr("No themes yet")
-        body: qsTr("Create a custom theme or import one from a file")
+    // ── Import error bar (between header rows and grid) ─────────────────
+    // Height collapses to 0 when no error so the grid sits flush against
+    // filterRow.bottom in the common case.
+    Rectangle {
+        id: errorBar
+        anchors.top: filterRow.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Theme.space.lg
+        anchors.rightMargin: Theme.space.lg
+        anchors.topMargin: visible ? Theme.space.sm : 0
+        height: visible ? 36 : 0
+        visible: root._importError.length > 0
+        radius: Theme.radius.md
+        color: Theme.color.liveSubtle
+        border.color: Theme.color.live
+        border.width: 1
+        z: 1
+
+        Row {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Theme.space.md
+            spacing: Theme.space.sm
+
+            AppIcon {
+                name: "alert-triangle"
+                color: Theme.color.live
+                size: Theme.icon.sm
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: root._importError
+                color: Theme.color.textPrimary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+
+        IconButton {
+            iconName: "x"
+            iconSize: Theme.icon.sm
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.rightMargin: Theme.space.sm
+            onClicked: root._importError = ""
+        }
     }
 
+    // ── Empty states ────────────────────────────────────────────────────
+    // Two variants: "no themes at all" vs "nothing in this filter". The
+    // second is recoverable (switch filter), the first needs creation.
+    // Three empty-state variants depending on what's narrowing the grid:
+    //   1. DB has no themes        → "No themes yet"
+    //   2. Search has no matches   → "No themes match \"…\""
+    //   3. Kind filter has no rows → "No <kind> themes"
+    EmptyState {
+        anchors.fill: parent
+        visible: root.filteredThemes.length === 0
+        iconName: "palette"
+        title: {
+            if (ThemeService.allThemes.length === 0) return qsTr("No themes yet")
+            if (root._searchQuery.length > 0)
+                return qsTr("No themes match \"%1\"").arg(root._searchQuery)
+            return qsTr("No %1 themes").arg(root.kindFilter)
+        }
+        body: {
+            if (ThemeService.allThemes.length === 0)
+                return qsTr("Create a custom theme or import one from a file")
+            if (root._searchQuery.length > 0)
+                return qsTr("Try a different search term, or clear it from the sidebar")
+            return qsTr("Create a new one, or switch the filter to All")
+        }
+    }
+
+    // ── Grid ────────────────────────────────────────────────────────────
     GridView {
         id: grid
-        anchors.top: header.bottom
+        anchors.top: errorBar.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -59,8 +236,8 @@ Item {
         anchors.rightMargin: Theme.space.lg
         anchors.bottomMargin: Theme.space.lg
         anchors.topMargin: Theme.space.sm
-        visible: ThemeService.allThemes.length > 0
-        model: ThemeService.allThemes
+        visible: root.filteredThemes.length > 0
+        model: root.filteredThemes
         cellWidth: 220
         cellHeight: 148
         clip: true
@@ -70,6 +247,9 @@ Item {
             id: tileRoot
             width: grid.cellWidth - 10
             height: grid.cellHeight - 10
+
+            readonly property bool _isActiveDefault:
+                root._defaultIds[modelData.kind] === modelData.id
 
             Rectangle {
                 id: tile
@@ -112,6 +292,37 @@ Item {
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
                         font.weight: Theme.font.weightSemiBold
+                        // Black 1px drop shadow under each glyph — keeps the
+                        // title legible even when a theme's background pushes
+                        // through the translucent chip on a light scene.
+                        style: Text.Raised
+                        styleColor: "#000000"
+                    }
+                }
+
+                // "DEFAULT" indicator — top left, brand-colored. Mirrors the
+                // PRESET chip's shape (same font, size, letter-spacing) so
+                // the two corners read as a matched pair, just colored
+                // differently.
+                Rectangle {
+                    visible: tileRoot._isActiveDefault
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.margins: 8
+                    width: defaultLabel.implicitWidth + Theme.space.sm * 2
+                    height: 16
+                    radius: 2
+                    color: Theme.color.brand
+
+                    Text {
+                        id: defaultLabel
+                        anchors.centerIn: parent
+                        text: qsTr("DEFAULT")
+                        color: Theme.color.brandInk
+                        font.family: Theme.font.monoFamily
+                        font.pixelSize: 11
+                        font.weight: Theme.font.weightSemiBold
+                        font.letterSpacing: 0.8
                     }
                 }
 
@@ -132,7 +343,7 @@ Item {
                         text: qsTr("PRESET")
                         color: "#dddddd"
                         font.family: Theme.font.monoFamily
-                        font.pixelSize: 9
+                        font.pixelSize: 11
                         font.weight: Theme.font.weightSemiBold
                         font.letterSpacing: 0.8
                     }
@@ -157,8 +368,9 @@ Item {
                               if (path && path.length > 0)
                                   ThemeService.exportTheme(modelData.id, path)
                           } },
-                        { label: qsTr("Set as default for %1").arg(modelData.kind),
+                        { label: qsTr("Set as default"),
                           iconName: "star",
+                          enabled: !tileRoot._isActiveDefault,
                           action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
                         { separator: true },
                         { label: qsTr("Delete"),     iconName: "trash",

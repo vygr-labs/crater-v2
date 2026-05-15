@@ -33,7 +33,7 @@ Item {
             id: caret
             name: section.expanded ? "chevron-down" : "chevron-right"
             color: Theme.color.textSecondary
-            size: 12
+            size: Theme.icon.sm
             anchors.left: parent.left
             anchors.leftMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter

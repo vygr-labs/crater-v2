@@ -99,6 +99,21 @@ QString pickDestinationName(const QString& mediaDir, const QString& srcBasename)
     return dir.absoluteFilePath(candidate);
 }
 
+// Result of a successful per-file copy on the worker thread, captured by the
+// main-thread completion lambda to drive the INSERT. We keep INSERTs on the
+// owning connection because SQLite WAL frames written via a sibling
+// connection inside the same process are not reliably visible to the main
+// connection's next read transaction — a fresh SELECT returns the pre-commit
+// snapshot even after sqlite3_reset/step, which manifests as imports
+// "disappearing" until the app restarts (and reopens connections that see
+// the on-disk state from scratch).
+struct PendingImport {
+    QString dst;
+    QString title;
+    QString type;
+    qint64  addedAt;
+};
+
 }  // namespace
 
 struct MediaService::Impl
@@ -166,6 +181,7 @@ MediaService::~MediaService() = default;
 void MediaService::invalidateCache()
 {
     if (m_impl) m_impl->cachedAll.reset();
+    qInfo().noquote() << "MediaService::invalidateCache (emitting allMediaChanged)";
     emit allMediaChanged();
 }
 
@@ -179,7 +195,11 @@ void MediaService::setSizeCapBytes(qint64 v)
 QList<MediaItem> MediaService::allMedia()
 {
     if (!m_impl) return {};
-    if (m_impl->cachedAll) return *m_impl->cachedAll;
+    if (m_impl->cachedAll) {
+        qInfo().noquote() << "MediaService::allMedia (cached) rows="
+                          << m_impl->cachedAll->size();
+        return *m_impl->cachedAll;
+    }
 
     QList<MediaItem> out;
     try {
@@ -189,6 +209,7 @@ QList<MediaItem> MediaService::allMedia()
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::allMedia():" << e.message();
     }
+    qInfo().noquote() << "MediaService::allMedia (db read) rows=" << out.size();
     m_impl->cachedAll = out;
     return out;
 }
@@ -198,8 +219,7 @@ int MediaService::importPaths(QStringList paths)
     if (!m_impl || paths.isEmpty()) return 0;
 
     // Capture state needed off-thread.
-    const qint64 cap = m_sizeCapBytes;
-    const QString dbPath  = db::DbPaths::appDbPath();
+    const qint64  cap     = m_sizeCapBytes;
     const QString destDir = db::DbPaths::mediaDir();
 
     // The path-confinement check uses a canonical prefix so symlinks can't
@@ -207,27 +227,13 @@ int MediaService::importPaths(QStringList paths)
     // the user's media directory before any write").
     const QString destDirCanonical = QFileInfo(destDir).canonicalFilePath();
 
-    // Run validation + copy + insert on a worker so a multi-GB video import
-    // doesn't freeze the operator console. We open a *separate* connection on
-    // the worker thread — sqlite3 connections aren't safe to share (§3).
-    QtConcurrent::run([this, paths, cap, dbPath, destDirCanonical]() {
-        int imported = 0;
-        int skipped  = 0;
-
-        std::unique_ptr<db::Connection>           workerConn;
-        std::optional<db::Statement>              workerInsert;
-        try {
-            workerConn = std::make_unique<db::Connection>(dbPath);
-            workerInsert.emplace(workerConn->prepare(QStringLiteral(
-                "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms) "
-                "VALUES (?, ?, ?, 0, ?, 0)")));
-        } catch (const db::Error& e) {
-            qWarning().noquote() << "MediaService::importPaths(): worker DB open failed:"
-                                 << e.message();
-            QMetaObject::invokeMethod(this, "importFinished", Qt::QueuedConnection,
-                Q_ARG(int, 0), Q_ARG(int, paths.size()));
-            return;
-        }
+    // The slow part (multi-GB file copy, magic-byte sniff) runs on a worker
+    // so the UI doesn't freeze. The fast part (INSERT) runs back on the main
+    // thread on the owning connection — see PendingImport above for why we
+    // don't write from the worker's own sqlite3 handle.
+    QtConcurrent::run([this, paths, cap, destDirCanonical]() {
+        QList<PendingImport> pending;
+        int skipped = 0;
 
         for (const QString& raw : paths) {
             const QString src = normalizeInputPath(raw);
@@ -272,28 +278,47 @@ int MediaService::importPaths(QStringList paths)
                 continue;
             }
 
-            try {
-                auto& stmt = *workerInsert;
-                stmt.reset();
-                stmt.bind(1, dstClean);
-                stmt.bind(2, info.completeBaseName());
-                stmt.bind(3, type);
-                stmt.bind(4, QDateTime::currentMSecsSinceEpoch());
-                stmt.step();
-                ++imported;
-            } catch (const db::Error& e) {
-                qWarning().noquote() << "MediaService: insert failed for" << dstClean
-                                     << "—" << e.message();
-                // Roll back the file copy so we don't leak a duplicate.
-                QFile::remove(dstClean);
-                ++skipped;
-            }
+            pending.append(PendingImport{
+                dstClean,
+                info.completeBaseName(),
+                type,
+                QDateTime::currentMSecsSinceEpoch()
+            });
         }
 
-        // Hop back to the main thread to invalidate the cache + fire signals.
-        QMetaObject::invokeMethod(this, [this, imported, skipped]() {
+        qInfo().noquote() << "MediaService::importPaths worker done — pending="
+                          << pending.size() << "skipped=" << skipped
+                          << "(posting main-thread INSERTs)";
+
+        // INSERT on the owning connection on the main thread. Microsecond-
+        // scale work even for batched imports; well under the 16 ms frame
+        // budget for a single drag-drop of dozens of files.
+        QMetaObject::invokeMethod(this,
+            [this, pending = std::move(pending), skipped]() mutable {
+            qInfo().noquote() << "MediaService::importPaths main-thread INSERTs starting ("
+                              << pending.size() << "rows)";
+            int imported = 0;
+            int insertFails = 0;
+            for (const PendingImport& p : pending) {
+                try {
+                    auto& s = m_impl->insertItem;
+                    s.reset();
+                    s.bind(1, p.dst);
+                    s.bind(2, p.title);
+                    s.bind(3, p.type);
+                    s.bind(4, p.addedAt);
+                    s.step();
+                    ++imported;
+                } catch (const db::Error& e) {
+                    qWarning().noquote() << "MediaService: insert failed for" << p.dst
+                                         << "—" << e.message();
+                    // Roll back the worker's file copy so we don't leak.
+                    QFile::remove(p.dst);
+                    ++insertFails;
+                }
+            }
             if (imported > 0) invalidateCache();
-            emit importFinished(imported, skipped);
+            emit importFinished(imported, skipped + insertFails);
         }, Qt::QueuedConnection);
     });
 

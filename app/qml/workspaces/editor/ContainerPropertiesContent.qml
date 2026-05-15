@@ -107,7 +107,7 @@ Column {
                             anchors.centerIn: parent
                             name: root._media ? "film" : "image"
                             color: Theme.color.textTertiary
-                            size: 14
+                            size: Theme.icon.md
                         }
                     }
 
@@ -138,7 +138,7 @@ Column {
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     name: "chevron-down"
-                    size: 12
+                    size: Theme.icon.sm
                     color: Theme.color.textTertiary
                 }
 

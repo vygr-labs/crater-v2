@@ -109,7 +109,7 @@ Item {
                 anchors.centerIn: parent
                 visible: !root.isSelected
                 name: "grip-vertical"
-                size: 14
+                size: Theme.icon.md
                 color: handleMa.containsMouse || root.isDragging
                        ? Theme.color.textSecondary : Theme.color.textTertiary
                 opacity: handleMa.containsMouse || root.isDragging || ma.containsMouse
@@ -120,7 +120,7 @@ Item {
                 anchors.centerIn: parent
                 visible: root.isSelected
                 name: "check"
-                size: 14
+                size: Theme.icon.md
                 color: root.isPrimarySelected
                        ? Qt.lighter(Theme.color.brand, 1.8)
                        : Qt.lighter(Theme.color.brand, 1.4)
@@ -167,7 +167,7 @@ Item {
             anchors.left: handle.right
             anchors.verticalCenter: parent.verticalCenter
             name: root._kindIcon
-            size: 14
+            size: Theme.icon.md
             color: root.isPrimarySelected ? Qt.lighter(root._kindColor, 1.25)
                  : root.isSelected        ? root._kindColor
                                           : Qt.darker(root._kindColor, 1.15)
@@ -208,7 +208,7 @@ Item {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             name: "palette"
-            size: 12
+            size: Theme.icon.sm
             color: Qt.lighter(root._kindColor, 1.1)
             opacity: 0.85
         }

@@ -382,13 +382,13 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "settings"
                     color: Theme.color.textSecondary
-                    size: 13
+                    size: Theme.icon.sm
                 }
                 AppIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "chevron-down"
                     color: Theme.color.textSecondary
-                    size: 9
+                    size: Theme.icon.tiny
                 }
             }
 
@@ -534,7 +534,7 @@ Item {
                 // so the icon stays visible on the dark brandSubtle wash. The
                 // dark brand.800 used to disappear into the bg.
                 color: verseRow._selected ? "#daf1d7" : Theme.color.textTertiary
-                size: 16
+                size: Theme.icon.lg
                 opacity: verseRow._selected ? 1.0 : 0.7
             }
 
@@ -548,7 +548,7 @@ Item {
                 text: modelData.text || ""
                 color: verseRow._selected ? Theme.color.textPrimary : "#d4d4d8"   // gray.300
                 font.family: Theme.font.family
-                font.pixelSize: 15
+                font.pixelSize: 17
                 font.weight: verseRow._selected ? Theme.font.weightMedium
                                                 : Theme.font.weightRegular
                 elide: Text.ElideRight
@@ -563,7 +563,7 @@ Item {
                 color: verseRow._selected ? "#d4d4d8" /* gray.300 */
                                           : Theme.color.textTertiary
                 font.family: Theme.font.family
-                font.pixelSize: 14
+                font.pixelSize: 16
                 font.weight: Theme.font.weightMedium
                 font.capitalization: Font.Capitalize
             }
@@ -587,7 +587,7 @@ Item {
                     color: verseRow._selected ? "#daf1d7" /* brand.300 */
                                               : Theme.color.textSecondary
                     font.family: Theme.font.monoFamily
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     font.weight: Theme.font.weightBold
                     font.capitalization: Font.AllUppercase
                     font.letterSpacing: 0.5
