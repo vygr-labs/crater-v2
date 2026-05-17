@@ -178,7 +178,7 @@ Item {
             { separator: true },
             { label: qsTr("Set as Logo Background"), iconName: "sparkles",
               detail: isLogo ? "✓" : "",
-              action: function() { ProjectionService.setLogoBgPath(media.path) } },
+              action: function() { ProjectionService.setLogoBg(media.path, media.type) } },
             { label: qsTr("Rename"), iconName: "edit",
               action: function() {
                   AppState.openModal("naming", {

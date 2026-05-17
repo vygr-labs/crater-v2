@@ -179,18 +179,10 @@ Rectangle {
     }
 
     // ── Mini monitor ────────────────────────────────────────────────────
-    // Renders one of three things, in priority order:
-    //   1. Image / looping video (muted) when the selected item is a
-    //      media kind. MediaMonitor's internal Loader gates the decoder,
-    //      so when the operator picks a non-media item the player is
-    //      destroyed entirely — no pinned GPU memory.
-    //   2. Page text for everything else (songs, scripture, etc.).
-    //   3. Empty-state copy when nothing is selected.
-    readonly property bool _isMediaPreview:
-        root.selectedItem !== null
-        && (root.selectedItem.kind === "image" || root.selectedItem.kind === "video")
-        && (root.selectedItem.mediaPath || "").length > 0
-
+    // Thumbnail-scale mirror of the projection: ThemedMonitor resolves the
+    // appropriate theme for the selected item's kind (per-item override or
+    // user default), or hands off to MediaMonitor when the item is an
+    // image/video. Operator audio is muted here — live carries audio.
     Item {
         id: monitorWrap
         anchors.bottom: parent.bottom
@@ -220,34 +212,12 @@ Rectangle {
                 }
             }
 
-            MediaMonitor {
+            ThemedMonitor {
                 anchors.fill: parent
                 anchors.margins: 1
-                mediaKind: root._isMediaPreview ? root.selectedItem.kind : ""
-                mediaPath: root._isMediaPreview ? root.selectedItem.mediaPath : ""
-                muted: true        // operator monitors silently; live carries audio
-                crop:  false       // letterbox in the mini-monitor — full frame visible
-            }
-
-            Text {
-                anchors.centerIn: parent
-                anchors.margins: Theme.space.md
-                width: parent.width * 0.85
-                visible: !root._isMediaPreview
-                text: {
-                    if (!root.selectedItem) return qsTr("No preview")
-                    if (root.pages.length === 0) return qsTr("No pages")
-                    const page = root.pages[AppState.previewSubIndex]
-                    return (page && page.content) ? page.content : qsTr("No content")
-                }
-                color: root.selectedItem ? Theme.color.textPrimary : Theme.color.textTertiary
-                font.family: Theme.font.family
-                font.pixelSize: 15
-                font.weight: Theme.font.weightLight
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                maximumLineCount: 3
-                elide: Text.ElideRight
+                item: root.selectedItem
+                pageIndex: AppState.previewSubIndex
+                muted: true
             }
         }
     }

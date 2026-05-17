@@ -105,6 +105,14 @@ Item {
                 // it doesn't clobber a live binding.
                 property int _fittedSize: _style.fontPixelSize || 48
 
+                // True after _refit() has produced a valid result. Until
+                // then, visibleText is hidden (opacity 0) so the operator
+                // never sees a frame painted at the stale initial size —
+                // most visible in ThemePreview thumbnails, where the stored
+                // pixel size (suited to 1920px) towers over the thumb box
+                // before the binary search converges to the real fit.
+                property bool _fitted: false
+
                 // Hidden probe — mirrors layout-affecting properties of
                 // visibleText so paintedHeight/Width report accurate metrics
                 // at each trial pixelSize during binary search.
@@ -149,6 +157,7 @@ Item {
                     if (!_data.autoResize) {
                         // Track user-set pixel size when auto-resize is off.
                         _fittedSize = _style.fontPixelSize || 48
+                        _fitted = true
                         return
                     }
                     const w = textHost.width
@@ -167,10 +176,15 @@ Item {
                         }
                     }
                     _fittedSize = best
+                    _fitted = true
                 }
 
                 // Debounce: many of these triggers fire in bursts during
-                // a drag-resize. Coalesce to one fit per frame.
+                // a drag-resize. Coalesce to one fit per frame. The very
+                // first fit, however, runs synchronously — pairing the
+                // _fitted opacity gate below, this guarantees the text
+                // appears in one step at the correct size rather than
+                // flashing through the initial fontPixelSize for ~16ms.
                 Timer {
                     id: refitTimer
                     interval: 16
@@ -178,12 +192,20 @@ Item {
                     onTriggered: textHost._refit()
                 }
 
-                onWidthChanged:  refitTimer.restart()
-                onHeightChanged: refitTimer.restart()
+                onWidthChanged:  textHost._fitted ? refitTimer.restart() : textHost._refit()
+                onHeightChanged: textHost._fitted ? refitTimer.restart() : textHost._refit()
                 Connections {
                     target: nodeRoot
+                    // Node-property changes (style, data) can burst during a
+                    // drag-resize in the editor — keep these debounced.
                     function onNodeChanged()         { refitTimer.restart() }
-                    function onResolvedTextChanged() { refitTimer.restart() }
+                    // resolvedText changes are one-shots (slide advance, item
+                    // switch, single-keystroke edits) — never burst during a
+                    // drag. Refit synchronously so the new content never
+                    // paints a frame at the previous fitted size, which is
+                    // what causes the giant-text-then-shrink flash in the
+                    // preview / live monitors and ProjectionWindow.
+                    function onResolvedTextChanged() { textHost._refit() }
                 }
                 Component.onCompleted: _refit()
 
@@ -199,6 +221,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: -textHost._opticalShift
                     height: parent.height
+                    // Hidden until the first _refit() succeeds — see _fitted.
+                    opacity: textHost._fitted ? 1 : 0
                     text:               textHost._renderedText
                     color:              textHost._style.color || "#ffffff"
                     font.family:        textHost._style.fontFamily || Theme.font.family

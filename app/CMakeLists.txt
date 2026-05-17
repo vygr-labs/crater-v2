@@ -60,7 +60,10 @@ qt_add_qml_module(crater
         qml/components/NodeRenderer.qml
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
+        qml/components/ThemedMonitor.qml
         qml/components/ThemePreview.qml
+        qml/components/LogoView.qml
+        qml/components/LyricSectionEditor.qml
         qml/components/ColorPicker.qml
         qml/components/ColorPickerPopover.qml
         qml/components/ColorSwatchInput.qml

@@ -131,24 +131,37 @@ Item {
     }
 
     // Drag / select
+    //
+    // Coordinate-frame note: m.x / m.y from a MouseArea are reported in the
+    // MouseArea's LOCAL frame. This MouseArea fills the NodeDelegate, which
+    // is itself positioned by binding x/y to `_style.x|y * stageW|H / 100`.
+    // The instant a drag update writes back to setNodeStyle, the NodeDelegate
+    // moves — and so does the MouseArea — which means the next event's m.x
+    // is reported in a *different* local frame. Using local m.x directly
+    // produces a self-cancelling delta and a visibly lagging drag.
+    //
+    // The fix: project the press point and every move point into the STAGE
+    // frame via mapToItem(root.parent, ...). The stage doesn't move during
+    // a drag, so the start point and the running point share a stable basis
+    // and the delta is the true cursor displacement.
     MouseArea {
         id: dragMa
         anchors.fill: parent
         enabled: !root._hidden
         acceptedButtons: Qt.LeftButton
         cursorShape: root._locked ? Qt.ForbiddenCursor : Qt.SizeAllCursor
-        // dragging-state guards: lock the move plane to the canvas
         property bool _dragging: false
-        property real _startMouseX: 0
-        property real _startMouseY: 0
+        property real _startStageX: 0
+        property real _startStageY: 0
         property real _startNodeX:  0
         property real _startNodeY:  0
 
         onPressed: function(m) {
             workspace.selectedNodeId = root.nodeId
             if (root._locked) return
-            _startMouseX = m.x
-            _startMouseY = m.y
+            const p = mapToItem(root.parent, m.x, m.y)
+            _startStageX = p.x
+            _startStageY = p.y
             _startNodeX  = (root._style.x || 0)
             _startNodeY  = (root._style.y || 0)
             _dragging    = true
@@ -156,8 +169,9 @@ Item {
         }
         onPositionChanged: function(m) {
             if (!_dragging || !pressed) return
-            const dxPct = (m.x - _startMouseX) / root.stageW * 100
-            const dyPct = (m.y - _startMouseY) / root.stageH * 100
+            const p = mapToItem(root.parent, m.x, m.y)
+            const dxPct = (p.x - _startStageX) / root.stageW * 100
+            const dyPct = (p.y - _startStageY) / root.stageH * 100
             const nx = Math.max(0, Math.min(100, _startNodeX + dxPct))
             const ny = Math.max(0, Math.min(100, _startNodeY + dyPct))
             workspace.workingTheme.setNodeStyle(root.nodeId, "x", Math.round(nx * 10) / 10)

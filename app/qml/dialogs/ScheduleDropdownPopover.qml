@@ -61,8 +61,19 @@ Item {
             z: -1
         }
 
-        // Block backdrop clicks from inside the body.
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton }
+        // Absorb clicks landing on blank areas of the body so they don't
+        // fall through to the backdrop's onPressed handler (which would
+        // close the popover) and onward. `Qt.NoButton` looks like blocking
+        // but actually rejects the event and lets Qt propagate it — see
+        // the matching note in ModalShell.qml.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            onPressed: function(m) { m.accepted = true }
+            onClicked: function(m) { m.accepted = true }
+            onWheel:   function(w) { w.accepted = true }
+        }
 
         Column {
             id: contents

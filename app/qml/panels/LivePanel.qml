@@ -211,25 +211,17 @@ Rectangle {
     }
 
     // ── Mini monitor ────────────────────────────────────────────────────
-    // Rendering priority (top → bottom of z-stack):
+    // Rendering priority (top -> bottom of z-stack):
     //   1. Logo overlay (when AppState.showLogo) — always wins.
-    //   2. Page text (when item is non-media and showLogo is off).
-    //   3. MediaMonitor (image / looping video with audio) when the live
-    //      item is a media kind. The MediaPlayer is destroyed via Loader
-    //      whenever the live slot stops carrying a media item, so we
-    //      don't pay decoder cost during songs/scripture playback.
-    //   4. Gradient backdrop (always behind everything).
+    //   2. ThemedMonitor — renders the live item through its resolved theme
+    //      (or via MediaMonitor for image/video kinds). isClear / showLogo
+    //      are passed through so the content layer suppresses itself when
+    //      output is cleared or logo is up.
+    //   3. Gradient backdrop (always behind everything).
     //
     // Audio: live monitor is unmuted because Projection (the audience-
     // facing window) doesn't render yet. When Projection lands, audio
     // moves there and this monitor goes muted to avoid double-routing.
-    readonly property bool _isMediaLive:
-        root.isLive
-        && !AppState.isClear
-        && root.liveItem !== null
-        && (root.liveItem.kind === "image" || root.liveItem.kind === "video")
-        && (root.liveItem.mediaPath || "").length > 0
-
     Item {
         id: monitorWrap
         anchors.bottom: parent.bottom
@@ -258,66 +250,26 @@ Rectangle {
                 }
             }
 
-            MediaMonitor {
+            ThemedMonitor {
                 anchors.fill: parent
                 anchors.margins: 1.5
-                mediaKind: root._isMediaLive ? root.liveItem.kind : ""
-                mediaPath: root._isMediaLive ? root.liveItem.mediaPath : ""
-                // Audio on by default — see panel-level comment about
-                // Projection takeover when that surface ships.
+                item: root.liveItem
+                pageIndex: AppState.liveSubIndex
                 muted: false
-                crop:  false
+                isClear: AppState.isClear
+                showLogo: AppState.showLogo
             }
 
-            // Show the live page content, or "logo" overlay if showLogo is on.
-            Text {
-                anchors.centerIn: parent
-                anchors.margins: Theme.space.md
-                width: parent.width * 0.85
-                // Hide when media is rendering — the page content for a
-                // media item is empty anyway, but explicitly hiding keeps
-                // the text element off the render graph instead of
-                // painting an invisible string.
-                visible: !AppState.showLogo && !root._isMediaLive
-                text: {
-                    if (AppState.isClear) return ""
-                    if (!root.liveItem) return ""
-                    if (root.pages.length === 0) return ""
-                    const page = root.pages[AppState.liveSubIndex]
-                    return (page && page.content) ? page.content : ""
-                }
-                color: Theme.color.textPrimary
-                font.family: Theme.font.family
-                font.pixelSize: 16
-                font.weight: Theme.font.weightLight
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignHCenter
-                maximumLineCount: 3
-                elide: Text.ElideRight
-            }
-
-            // Logo placeholder when toggled on — declared last so it
-            // renders on top of MediaMonitor when both are active.
-            Column {
-                anchors.centerIn: parent
+            // Mirror the projection's logo overlay at mini-monitor scale —
+            // LogoView renders the configured image OR video (or the
+            // "CRATER" fallback) so the operator sees exactly what the
+            // audience is seeing. Declared last so it sits above
+            // ThemedMonitor when both are active.
+            LogoView {
+                anchors.fill: parent
+                anchors.margins: 1.5
+                active: AppState.showLogo
                 visible: AppState.showLogo
-                spacing: Theme.space.xs
-
-                AppIcon {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    name: "list-ordered"
-                    color: Theme.color.brand
-                    size: Theme.icon.xl
-                }
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: qsTr("LOGO")
-                    color: Theme.color.brand
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
-                    font.weight: Theme.font.weightSemiBold
-                    font.letterSpacing: 2.0
-                }
             }
         }
     }

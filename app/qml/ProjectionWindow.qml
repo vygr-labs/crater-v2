@@ -227,17 +227,17 @@ Window {
         }
 
         // Logo overlay — sits above the content layer when toggled on.
-        Text {
-            id: logoText
-            anchors.centerIn: parent
-            visible: projectionWindow._showLogo && !projectionWindow._isClear
-            opacity: visible ? 1.0 : 0.0
-            text: "CRATER"
-            color: "#ffffff"
-            font.family: Theme.font.family
-            font.pixelSize: 128
-            font.weight: 900
-            font.letterSpacing: 8
+        // LogoView renders the configured image OR video, or a "CRATER"
+        // fallback when no logo path has been chosen. `active` gates the
+        // video decoder; opacity drives the fade so the decoder doesn't
+        // bounce on every fade tick.
+        LogoView {
+            id: logoView
+            anchors.fill: parent
+            readonly property bool _shouldShow:
+                projectionWindow._showLogo && !projectionWindow._isClear
+            active: _shouldShow
+            opacity: _shouldShow ? 1.0 : 0.0
 
             Behavior on opacity {
                 NumberAnimation {

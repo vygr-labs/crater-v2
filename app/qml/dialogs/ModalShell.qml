@@ -57,8 +57,27 @@ Item {
         border.width: 1
         antialiasing: true
 
-        // Block backdrop clicks landing on the card
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton }
+        // Absorb every input event that lands on a "blank" region of the
+        // card — header padding, gaps between rows, preview-pane background,
+        // etc. Without this, those events propagate down to the backdrop's
+        // MouseArea (which calls closeModal) and onward through the modal
+        // entirely to items in the operator console behind.
+        //
+        // CRUCIAL: `acceptedButtons: Qt.NoButton` does NOT block events —
+        // it explicitly rejects them, telling Qt to walk down the z-order to
+        // the next receiver. Accepting all buttons + handling onWheel with
+        // an empty `accepted = true` is what actually absorbs the events.
+        // Hover is enabled so the cursor doesn't ghost-react to controls
+        // we're visually obscuring.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            onPressed:       function(m) { m.accepted = true }
+            onClicked:       function(m) { m.accepted = true }
+            onDoubleClicked: function(m) { m.accepted = true }
+            onWheel:         function(w) { w.accepted = true }
+        }
 
         // ── Title bar ───────────────────────────────────────────────────
         Item {

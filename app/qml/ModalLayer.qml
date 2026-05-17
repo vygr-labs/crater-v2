@@ -19,7 +19,7 @@ Item {
         sourceComponent: SettingsDialog { }
     }
 
-    // ── Song editor (placeholder) ───────────────────────────────────────
+    // ── Song editor ─────────────────────────────────────────────────────
     Loader {
         anchors.fill: parent
         active: AppState.activeModal === "songEditor"

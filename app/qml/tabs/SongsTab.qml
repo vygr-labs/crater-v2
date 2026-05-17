@@ -250,14 +250,10 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: AppState.openModal("naming", {
-                        title:       qsTr("Create new song"),
-                        placeholder: qsTr("Song title"),
-                        confirmText: qsTr("Create"),
-                        onConfirm:   function(name) {
-                            if (name && name.length > 0) SongService.create(name, "", "")
-                        }
-                    })
+                    // Open the full editor directly (matches electron's "+"
+                    // entry point). Omitting songId puts the editor in
+                    // create mode; Save persists via createWithSections.
+                    onClicked: AppState.openModal("songEditor", {})
                 }
             }
 
@@ -379,14 +375,9 @@ Item {
             variant: "brand"
             iconName: "plus"
             text: qsTr("Add your first song")
-            onClicked: AppState.openModal("naming", {
-                title:       qsTr("Create new song"),
-                placeholder: qsTr("Song title"),
-                confirmText: qsTr("Create"),
-                onConfirm:   function(name) {
-                    if (name && name.length > 0) SongService.create(name, "", "")
-                }
-            })
+            // Open the editor directly so the empty library funnel matches
+            // electron's first-run flow (title + lyrics + theme in one step).
+            onClicked: AppState.openModal("songEditor", {})
         }
     }
 

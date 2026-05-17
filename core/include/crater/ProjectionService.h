@@ -35,11 +35,16 @@ class ProjectionService : public QObject
     Q_PROPERTY(int            pageCount    READ pageCount    NOTIFY stateChanged)
     Q_PROPERTY(bool           isClear      READ isClear      NOTIFY stateChanged)
     Q_PROPERTY(bool           showLogo     READ showLogo     NOTIFY stateChanged)
-    // Persistent path to the projection's "logo / pre-service" background
-    // image. Lives here (not in AppState) because it's user data the
-    // projection actually renders — per ARCHITECTURE.md §1/§9 anything
-    // disk-backed belongs in crater-core. Backed by the `kv` table.
+    // Persistent reference to the projection's "logo / pre-service"
+    // background. Two coupled fields — path is the absolute file path
+    // inside MediaService's managed dir, kind is "image" | "video" so the
+    // renderer can pick `Image` vs `VideoOutput` (or its MediaMonitor
+    // equivalent). Both live here (not in AppState) because they're user
+    // data the projection actually renders — per ARCHITECTURE.md §1/§9
+    // anything disk-backed belongs in crater-core. Backed by the `kv`
+    // table; written atomically via setLogoBg().
     Q_PROPERTY(QString        logoBgPath   READ logoBgPath   NOTIFY logoBgPathChanged)
+    Q_PROPERTY(QString        logoBgKind   READ logoBgKind   NOTIFY logoBgKindChanged)
 
 public:
     explicit ProjectionService(QObject* parent = nullptr);
@@ -52,6 +57,7 @@ public:
     bool           isClear()      const { return m_isClear; }
     bool           showLogo()     const { return m_showLogo; }
     QString        logoBgPath()   const { return m_logoBgPath; }
+    QString        logoBgKind()   const { return m_logoBgKind; }
 
     // Snapshot `item` (deep copy) and set pageIndex. Clears isClear.
     Q_INVOKABLE void goLive(QVariantMap item, int page);
@@ -63,13 +69,17 @@ public:
     Q_INVOKABLE void toggleLogo();
     Q_INVOKABLE void setLogoVisible(bool visible);
 
-    // Set (and persist) the path to the background image shown when nothing
-    // is live or the logo overlay is enabled. Pass empty string to clear.
-    Q_INVOKABLE void setLogoBgPath(QString path);
+    // Set (and persist) the logo background. `kind` is "image" or "video"
+    // (matching MediaItem.type — both validated at import time). Pass an
+    // empty path to clear; kind is then ignored. Writes both fields and
+    // their kv rows atomically, emitting only the signals whose values
+    // actually changed.
+    Q_INVOKABLE void setLogoBg(QString path, QString kind);
 
 signals:
     void stateChanged();
     void logoBgPathChanged();
+    void logoBgKindChanged();
 
 private:
     QVariantMap    m_currentItem;
@@ -78,6 +88,7 @@ private:
     bool           m_isClear     = false;
     bool           m_showLogo    = false;
     QString        m_logoBgPath;
+    QString        m_logoBgKind;     // "" | "image" | "video"
 
     struct KvImpl;
     std::unique_ptr<KvImpl> m_kv;

@@ -6,6 +6,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include <memory>
 
@@ -42,9 +43,25 @@ public:
     // (no sections). Capped at 100 hits.
     Q_INVOKABLE QList<crater::Song> search(QString query);
 
-    // Creates a song. Sections are passed as raw data (QVariantList of objects
-    // with label/kind/lines fields) for QML-friendliness. Returns new song id.
+    // Creates a song with metadata only (no sections). Used by the "+ New Song"
+    // flow that names the song first and opens an empty editor afterwards.
+    // Returns new song id, or 0 on failure.
     Q_INVOKABLE qint64 create(QString title, QString author, QString ccli = {});
+
+    // Creates a song WITH sections in one transaction — the path the song
+    // editor uses when the operator clicks Save on a brand-new song. Sections
+    // are a QVariantList of objects: { label: QString, kind: QString optional,
+    // lines: QStringList }. Missing/unrecognized `kind` defaults to "other" so
+    // the schema CHECK constraint passes. Returns the new song id (0 on failure).
+    Q_INVOKABLE qint64 createWithSections(QString title, QString author, QString ccli,
+                                          qint64 themeId, QVariantList sections);
+
+    // Updates an existing song's title, author, ccli, themeId, and sections.
+    // Sections are replaced wholesale (delete-then-insert under one transaction).
+    // themeId == 0 clears the per-song override (NULL in DB). Returns true on
+    // success. FTS row is refreshed so search reflects the new lyrics immediately.
+    Q_INVOKABLE bool update(qint64 id, QString title, QString author, QString ccli,
+                            qint64 themeId, QVariantList sections);
 
     Q_INVOKABLE void destroy(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);

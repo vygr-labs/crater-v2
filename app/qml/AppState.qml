@@ -58,12 +58,14 @@ QtObject {
     property bool showLogo:           false   // Logo button toggled on/off
     property bool isClear:            false   // display cleared (overrides live content)
 
-    // Projection window visibility. Toggled true only by goLive() (the
-    // explicit "Go Live" button / Ctrl+L); reset to false only by endLive()
-    // (windowed projector's close button). clearLive() blanks content but
-    // does NOT lower the projector. No other click path — library
-    // double-click, schedule selection, logo toggle — raises or lowers
-    // the projector. The operator decides when the audience sees it.
+    // Projection window visibility. Toggled true only by goLive(true) (the
+    // explicit "Go Live" button, schedule double-click, and the schedule
+    // context-menu's "Go Live"); reset to false only by endLive() (the
+    // windowed projector's close button). clearLive() blanks content but
+    // does NOT lower the projector. Ctrl+L deliberately calls goLive(false)
+    // so the keyboard shortcut can transition content to live for rehearsal
+    // without exposing the audience screen — the operator must use a mouse
+    // gesture to actually raise the projector.
     property bool projectorVisible:   false
 
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
@@ -182,7 +184,7 @@ QtObject {
         return ThemeService.defaultFor((item && item.kind) || "song")
     }
 
-    function goLive() {
+    function goLive(raise) {
         // Promote the previewed item to live, and push it through to
         // ProjectionService so ProjectionWindow.qml re-renders on the second
         // monitor. Items in currentItems are already in canonical shape —
@@ -193,13 +195,16 @@ QtObject {
         // and Ctrl+L work whether the operator is staging from the library or
         // the schedule.
         //
-        // This function is the SINGLE entry point that raises the projector
-        // (via projectorVisible = true at the bottom). Other live-state
-        // mutators — pushLibraryLive on its own, toggleLogo, schedule clicks —
-        // do not touch projectorVisible.
+        // `raise` controls whether the projection window is brought up. The
+        // mouse-driven entry points (TopBar Go Live button, schedule double-
+        // click, schedule context-menu) pass true (the default); the Ctrl+L
+        // shortcut passes false so the operator can rehearse the live state
+        // in the operator console without exposing the audience screen.
+        if (raise === undefined) raise = true
+
         if (libraryPreviewItem !== null) {
             pushLibraryLive(libraryPreviewItem)
-            projectorVisible = true
+            if (raise) projectorVisible = true
             return
         }
 
@@ -214,7 +219,7 @@ QtObject {
 
         // Theme resolution moved into ProjectionWindow — see pushLibraryLive.
         ProjectionService.goLive(item, previewSubIndex)
-        projectorVisible = true
+        if (raise) projectorVisible = true
     }
 
     function clearLive() {

@@ -24,18 +24,22 @@ Rectangle {
     border.width: 1
     visible: !_isLocked
 
-    // Position relative to parent (NodeDelegate). Anchored by index.
+    // Position relative to parent (NodeDelegate). Each handle's CENTER sits
+    // on the corner or edge midpoint — half the dot inside the selection
+    // rectangle, half outside. That's the convention design tools (Figma,
+    // Sketch, Illustrator) use: the geometric grab point is exactly on the
+    // edge, so the cursor lands cleanly when the user aims at the corner.
     Component.onCompleted: _placeAnchors()
     function _placeAnchors() {
         switch (handleIndex) {
-            case 0: anchors.right = parentNode.left;  anchors.bottom = parentNode.top;    return
-            case 1: anchors.horizontalCenter = parentNode.horizontalCenter; anchors.bottom = parentNode.top; return
-            case 2: anchors.left  = parentNode.right; anchors.bottom = parentNode.top;    return
-            case 3: anchors.left  = parentNode.right; anchors.verticalCenter = parentNode.verticalCenter; return
-            case 4: anchors.left  = parentNode.right; anchors.top    = parentNode.bottom; return
-            case 5: anchors.horizontalCenter = parentNode.horizontalCenter; anchors.top    = parentNode.bottom; return
-            case 6: anchors.right = parentNode.left;  anchors.top    = parentNode.bottom; return
-            case 7: anchors.right = parentNode.left;  anchors.verticalCenter = parentNode.verticalCenter; return
+            case 0: anchors.horizontalCenter = parentNode.left;            anchors.verticalCenter   = parentNode.top;             return
+            case 1: anchors.horizontalCenter = parentNode.horizontalCenter; anchors.verticalCenter   = parentNode.top;             return
+            case 2: anchors.horizontalCenter = parentNode.right;           anchors.verticalCenter   = parentNode.top;             return
+            case 3: anchors.horizontalCenter = parentNode.right;           anchors.verticalCenter   = parentNode.verticalCenter;  return
+            case 4: anchors.horizontalCenter = parentNode.right;           anchors.verticalCenter   = parentNode.bottom;          return
+            case 5: anchors.horizontalCenter = parentNode.horizontalCenter; anchors.verticalCenter   = parentNode.bottom;          return
+            case 6: anchors.horizontalCenter = parentNode.left;            anchors.verticalCenter   = parentNode.bottom;          return
+            case 7: anchors.horizontalCenter = parentNode.left;            anchors.verticalCenter   = parentNode.verticalCenter;  return
         }
     }
 

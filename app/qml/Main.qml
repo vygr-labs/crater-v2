@@ -175,9 +175,12 @@ ApplicationWindow {
         // / Hidden without conflicting with ProjectionWindow.qml's own setup.
         //
         // Single source of truth: AppState.projectorVisible — set true only by
-        // AppState.goLive() (the explicit "Go Live" button / Ctrl+L), and false
-        // only by AppState.endLive() (the windowed projector's close button).
-        // clearLive() blanks content but does not lower the projector. Item
+        // the mouse-driven goLive(true) calls (TopBar "Go Live" button,
+        // schedule double-click, schedule context-menu), and false only by
+        // AppState.endLive() (the windowed projector's close button).
+        // clearLive() blanks content but does not lower the projector.
+        // Ctrl+L calls goLive(false) so the shortcut transitions content to
+        // live for rehearsal without exposing the audience screen. Item
         // clicks, library double-clicks, logo toggle, and schedule selection
         // do NOT raise or lower the projector.
         //
@@ -204,7 +207,12 @@ ApplicationWindow {
 
     // Production actions
     Shortcut { sequence: "Ctrl+,"; onActivated: AppState.openModal("settings", {}) }
-    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.goLive() }
+    // Ctrl+L deliberately passes raise=false so the keyboard shortcut
+    // transitions content to live (Live mini-monitor updates) without
+    // bringing up the projection window. The mouse-driven Go Live entry
+    // points (TopBar button, schedule double-click) keep the default
+    // raise=true behavior.
+    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.goLive(false) }
     // Ctrl+. is the "clear" shortcut from the Electron version — avoids
     // colliding with system Ctrl+C (copy).
     Shortcut { sequence: "Ctrl+."; onActivated: AppState.clearLive() }
