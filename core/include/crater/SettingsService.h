@@ -49,6 +49,17 @@ private:
     Q_PROPERTY(int     themeIdForPrimary  READ themeIdForPrimary  WRITE setThemeIdForPrimary  NOTIFY themeIdForPrimaryChanged)
     Q_PROPERTY(int     themeIdForNdi      READ themeIdForNdi      WRITE setThemeIdForNdi      NOTIFY themeIdForNdiChanged)
     Q_PROPERTY(int     themeIdForStage    READ themeIdForStage    WRITE setThemeIdForStage    NOTIFY themeIdForStageChanged)
+    // Render-pipeline mode. "single" (default): NDI grabs frames from the
+    // projection window's scene graph, so NDI inherits the projection's
+    // theme and the projection window must stay alive (parked offscreen)
+    // while broadcasting solo. "dual": a dedicated NdiCanvas window
+    // renders its own scene with `themeIdForNdi` honored separately, and
+    // the projection window can fully Window.Hidden when the operator
+    // closes it. Dual mode costs one extra scene-graph evaluation per
+    // frame; single mode is free. ThemesTab gates the "Set for NDI" menu
+    // item on this, and AppState.resolveItemTheme only consults the NDI
+    // slot when dual is active.
+    Q_PROPERTY(QString outputMode         READ outputMode         WRITE setOutputMode         NOTIFY outputModeChanged)
     Q_PROPERTY(bool    showVerseNumbers   READ showVerseNumbers   WRITE setShowVerseNumbers   NOTIFY showVerseNumbersChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
@@ -68,6 +79,7 @@ public:
     int     themeIdForPrimary() const;
     int     themeIdForNdi() const;
     int     themeIdForStage() const;
+    QString outputMode() const;
     bool    showVerseNumbers() const;
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
@@ -82,6 +94,7 @@ public:
     void setThemeIdForPrimary(int id);
     void setThemeIdForNdi(int id);
     void setThemeIdForStage(int id);
+    void setOutputMode(const QString& mode);
     void setShowVerseNumbers(bool v);
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
@@ -97,6 +110,7 @@ signals:
     void themeIdForPrimaryChanged();
     void themeIdForNdiChanged();
     void themeIdForStageChanged();
+    void outputModeChanged();
     void showVerseNumbersChanged();
     void showStrongsTabChanged();
     void showSongAuthorChanged();

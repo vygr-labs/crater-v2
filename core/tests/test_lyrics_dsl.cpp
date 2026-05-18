@@ -22,6 +22,7 @@ using crater::lyrics::dslLineToHtml;
 using crater::lyrics::dslToHtml;
 using crater::lyrics::flattenLine;
 using crater::lyrics::flattenText;
+using crater::lyrics::htmlToDsl;
 using crater::lyrics::linesToHtml;
 using crater::lyrics::namedColors;
 using crater::lyrics::parseDSL;
@@ -492,6 +493,106 @@ private slots:
         // should not refuse to render — just skip the transform.
         QCOMPARE(dslToHtml(QStringLiteral("hello"), QStringLiteral("smallcaps")),
                  QStringLiteral("hello"));
+    }
+
+    // ── htmlToDsl ────────────────────────────────────────────────────────
+
+    void htmlToDsl_plainText()
+    {
+        // Plain text, no markup — should round-trip through Qt's HTML
+        // parser unchanged. Qt wraps in <p> internally but the DSL output
+        // is just the text.
+        QCOMPARE(htmlToDsl(QStringLiteral("hello world")),
+                 QStringLiteral("hello world"));
+    }
+
+    void htmlToDsl_bold()
+    {
+        QCOMPARE(htmlToDsl(QStringLiteral("<b>hello</b>")),
+                 QStringLiteral("**hello**"));
+    }
+
+    void htmlToDsl_italic()
+    {
+        QCOMPARE(htmlToDsl(QStringLiteral("<i>hello</i>")),
+                 QStringLiteral("*hello*"));
+    }
+
+    void htmlToDsl_underline()
+    {
+        QCOMPARE(htmlToDsl(QStringLiteral("<u>hello</u>")),
+                 QStringLiteral("++hello++"));
+    }
+
+    void htmlToDsl_colorSpan()
+    {
+        // Color via <span style="color:#xxx"> — common form Qt emits.
+        QCOMPARE(htmlToDsl(QStringLiteral(
+                     "<span style=\"color:#e53935;\">grace</span>")),
+                 QStringLiteral("{color=#e53935}grace{/color}"));
+    }
+
+    void htmlToDsl_multiLineViaBr()
+    {
+        // <br> becomes U+2028 inside the QTextBlock; htmlToDsl splits
+        // on that boundary so the DSL gets two lines, not one with a
+        // separator char in the middle.
+        QCOMPARE(htmlToDsl(QStringLiteral("<b>foo</b><br>bar")),
+                 QStringLiteral("**foo**\nbar"));
+    }
+
+    void htmlToDsl_multiLineViaParagraphs()
+    {
+        // <p>...</p><p>...</p> structure — typed Enter in the editor
+        // creates new blocks. Each block becomes a DSL line.
+        QCOMPARE(htmlToDsl(QStringLiteral("<p>foo</p><p>bar</p>")),
+                 QStringLiteral("foo\nbar"));
+    }
+
+    void htmlToDsl_dropsRedundantWrapping()
+    {
+        // Qt's setHtml accepts full HTML documents; the parser should
+        // ignore <html>/<body> chrome and produce just the content.
+        QCOMPARE(htmlToDsl(QStringLiteral(
+                     "<html><body><p>hello</p></body></html>")),
+                 QStringLiteral("hello"));
+    }
+
+    // ── Round-trip: DSL → HTML → DSL ─────────────────────────────────────
+    // This is the load-bearing invariant of Phase 4: the structured
+    // editor stores HTML internally, emits DSL out, and re-parses DSL
+    // on the next edit cycle. If round-trip isn't stable, formatting
+    // mutates with each keystroke.
+
+    void roundTrip_dslHtmlPlain()
+    {
+        const QString dsl = QStringLiteral("Amazing grace");
+        QCOMPARE(htmlToDsl(dslToHtml(dsl)), dsl);
+    }
+
+    void roundTrip_dslHtmlBold()
+    {
+        const QString dsl = QStringLiteral("Amazing **grace**");
+        QCOMPARE(htmlToDsl(dslToHtml(dsl)), dsl);
+    }
+
+    void roundTrip_dslHtmlAllMarks()
+    {
+        // Hex form is what htmlToDsl emits (Qt's QColor.name() returns hex),
+        // so the round-trip canonicalizes named colors to their hex form.
+        // Start from the canonical-after-one-trip form so the second trip
+        // is stable.
+        const QString src = QStringLiteral(
+            "Amazing **grace** how *sweet* the ++sound++");
+        const QString once  = htmlToDsl(dslToHtml(src));
+        const QString twice = htmlToDsl(dslToHtml(once));
+        QCOMPARE(once, twice);
+    }
+
+    void roundTrip_dslHtmlMultiLine()
+    {
+        const QString dsl = QStringLiteral("**foo**\n*bar*\nbaz");
+        QCOMPARE(htmlToDsl(dslToHtml(dsl)), dsl);
     }
 };
 

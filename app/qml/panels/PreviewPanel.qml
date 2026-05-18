@@ -320,7 +320,14 @@ Rectangle {
                         anchors.topMargin:   Theme.space.sm
                         anchors.leftMargin:  Theme.space.sm
                         anchors.rightMargin: Theme.space.sm
-                        text:           modelData.content || ""
+                        // Route through dslToHtml so inline formatting
+                        // (bold/italic/underline/color) renders inline
+                        // — keeps the card a faithful miniature of what
+                        // the projection shows. Plain-text content is a
+                        // valid DSL string with no markers, so unformatted
+                        // lyrics still render as themselves.
+                        textFormat:     Text.RichText
+                        text:           LyricsService.dslToHtml(modelData.content || "")
                         color:          Theme.color.textPrimary
                         font.family:    Theme.font.family
                         font.pixelSize: Theme.font.bodySize
@@ -334,7 +341,14 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
-                    onClicked:    AppState.previewSubIndex = index
+                    onClicked: {
+                        AppState.previewSubIndex = index
+                        // Claim arrow-key navigation for this panel — the
+                        // operator clicked here, so subsequent Up/Down
+                        // should move within the page list rather than
+                        // through the library or schedule.
+                        AppState.setActiveFocus("preview")
+                    }
                     // Push the page to live but do NOT raise the projection
                     // window. The projection only raises via the explicit
                     // TopBar "Go Live" button (or schedule double-click).
@@ -343,9 +357,55 @@ Rectangle {
                     // audience-facing window pop.
                     onDoubleClicked: {
                         AppState.previewSubIndex = index
+                        AppState.setActiveFocus("preview")
                         AppState.goLive(false)
                     }
                 }
+            }
+        }
+
+        // ── Keyboard navigation ─────────────────────────────────────────
+        // Driven by Main.qml's window-level Up/Down shortcuts, which fan
+        // out via AppState.previewNavigate{Up,Down} when
+        // AppState.activeFocusPanel === "preview".
+        //
+        // Clamp-not-wrap matches the library list convention (see
+        // ScriptureTab.onLibraryNavigateUp/Down). Scroll uses
+        // ListView.Contain — only nudge the viewport when the active
+        // card is off-screen, otherwise the list stays put. Matches the
+        // scripture verse list's positionViewAtIndex policy.
+        Connections {
+            target: AppState
+            function onPreviewNavigateUp() {
+                if (root.pages.length === 0) return
+                AppState.previewSubIndex = Math.max(AppState.previewSubIndex - 1, 0)
+            }
+            function onPreviewNavigateDown() {
+                if (root.pages.length === 0) return
+                AppState.previewSubIndex = Math.min(AppState.previewSubIndex + 1,
+                                                   root.pages.length - 1)
+            }
+            function onPreviewSubIndexChanged() {
+                // Fires on every previewSubIndex update — click, key,
+                // schedule sync, anything. positionViewAtIndex with
+                // Contain is a no-op when the card is already fully
+                // visible (the common case on click), so the unified
+                // handler is safe to wire here.
+                if (pagesList.visible && AppState.previewSubIndex >= 0
+                                      && AppState.previewSubIndex < root.pages.length) {
+                    pagesList.positionViewAtIndex(AppState.previewSubIndex,
+                                                  ListView.Contain)
+                }
+            }
+            function onPreviewActivate() {
+                // Enter on a focused preview card → push to live. Same
+                // call path as the preview-card double-click: goLive
+                // with raise=false so the projection window isn't
+                // forcibly raised (matches the operator's mental model
+                // that arrow + Enter is a "quiet" stage action — they
+                // pop the projector themselves when ready).
+                if (root.pages.length === 0) return
+                AppState.goLive(false)
             }
         }
     }

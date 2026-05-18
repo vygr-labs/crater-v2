@@ -129,6 +129,7 @@ qt_add_resources(crater-core "crater_migrations"
     FILES
         src/db/migrations/bibles/V001__init.sql
         src/db/migrations/songs/V001__init.sql
+        src/db/migrations/songs/V002__fts_marker_strip.sql
         src/db/migrations/app/V001__init.sql
         src/db/migrations/app/V002__media.sql
         src/db/migrations/app/V003__theme_nodes.sql

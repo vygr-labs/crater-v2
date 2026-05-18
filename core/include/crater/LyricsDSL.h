@@ -167,4 +167,22 @@ QString dslToHtml(const QString& dsl, const QString& textTransform = QString());
 // pipelines that want one flattened string per line.
 QString flattenLine(const QString& dslLine);
 
+// ─── HTML ingest (for Qt RichText editors) ───────────────────────────────
+//
+// The reverse of dslToHtml/runsToHtml: parse a Qt-shaped HTML fragment into
+// the equivalent DSL string. Used by the rich-text editor when it needs to
+// hand its current document content back to the rest of the app in DSL
+// form (for storage, FTS, raw-mode display).
+//
+// Handles two flavors of line breaks that Qt's RichText engine can produce:
+//   - Block boundaries (typing Enter creates a new QTextBlock) — these map
+//     directly to DSL line boundaries.
+//   - U+2028 LINE SEPARATOR chars inside a single block (Qt's parsed form
+//     of <br>) — these also map to DSL line boundaries.
+//
+// The output is canonical DSL — bold uses `**`, italic uses `*`, etc.,
+// regardless of which HTML markup the input used. Round-trip through
+// dslToHtml -> htmlToDsl is stable for canonical-form input.
+QString htmlToDsl(const QString& html);
+
 }  // namespace crater::lyrics

@@ -24,25 +24,35 @@ Item {
 
     height: _separator ? (1 + Theme.space.xs * 2) : 32
 
-    // Separator
+    // Separator — inset horizontally by xs so it doesn't run into the
+    // rounded body corners, and uses a slightly lifted shade so it stays
+    // visible against the new bgMenu surface.
     Rectangle {
         visible: row._separator
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.leftMargin: Theme.space.xs
+        anchors.rightMargin: Theme.space.xs
         anchors.verticalCenter: parent.verticalCenter
         height: 1
         color: Theme.color.borderSubtle
     }
 
-    // Normal item
+    // Normal item. Destructive rows get a red-tinted hover wash so the
+    // affordance reinforces the destructive read; non-destructive rows
+    // keep the neutral `overlay` wash.
     Rectangle {
         visible: !row._separator
         anchors.fill: parent
         radius: Theme.radius.sm
-        color: (itemMa.containsMouse && row._enabled) || _isOpenSubmenuOwner()
-               ? Theme.color.overlay
-               : "transparent"
+        color: {
+            const hovered = (itemMa.containsMouse && row._enabled) || _isOpenSubmenuOwner()
+            if (!hovered) return "transparent"
+            return rowData.destructive ? Theme.color.liveSubtle : Theme.color.overlay
+        }
         opacity: row._enabled ? 1.0 : 0.5
+
+        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
         function _isOpenSubmenuOwner() {
             return !row.isSubmenu
@@ -85,16 +95,20 @@ Item {
             color: Theme.color.textTertiary
         }
 
+        // Keyboard shortcut hint chip. Hairline border on a slightly raised
+        // fill — quieter than the body's outer border so it reads as a
+        // glyph-sized accent, not a button. Width auto-fits the label
+        // (e.g. "E" gets a compact square, "Del" gets a wider pill).
         Rectangle {
             visible: !row._hasSubmenu && !!rowData.kbd
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: kbdText.implicitWidth + 12
-            implicitHeight: 16
-            radius: 3
+            implicitWidth: Math.max(18, kbdText.implicitWidth + 10)
+            implicitHeight: 18
+            radius: 4
             color: Theme.color.elevated
-            border.color: Theme.color.borderStrong
+            border.color: Theme.color.borderSubtle
             border.width: 1
 
             Text {
@@ -103,7 +117,8 @@ Item {
                 text: rowData.kbd || ""
                 color: Theme.color.textTertiary
                 font.family: Theme.font.monoFamily
-                font.pixelSize: 12
+                font.pixelSize: 11
+                font.weight: Theme.font.weightMedium
             }
         }
 

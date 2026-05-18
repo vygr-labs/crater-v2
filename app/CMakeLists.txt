@@ -13,6 +13,8 @@ qt_add_executable(crater
     src/NdiService.cpp
     src/NdiService.h
     src/NdiAbi.h
+    src/RichTextHelper.cpp
+    src/RichTextHelper.h
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.
@@ -38,6 +40,7 @@ qt_add_qml_module(crater
         qml/Workspaces.qml
         qml/ModalLayer.qml
         qml/ProjectionWindow.qml
+        qml/NdiCanvas.qml
 
         # ── Reusable control atoms ────────────────────────────────────
         qml/controls/AppIcon.qml
@@ -60,6 +63,7 @@ qt_add_qml_module(crater
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
+        qml/components/ProjectionScene.qml
         qml/components/NodeRenderer.qml
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
@@ -67,6 +71,7 @@ qt_add_qml_module(crater
         qml/components/ThemePreview.qml
         qml/components/LogoView.qml
         qml/components/LyricSectionEditor.qml
+        qml/components/LyricsToolbar.qml
         qml/components/ColorPicker.qml
         qml/components/ColorPickerPopover.qml
         qml/components/ColorSwatchInput.qml

@@ -441,7 +441,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         height: 36
-        radius: Theme.radius.md
+        radius: 0
         color: Theme.color.canvas
         border.color: inputField.activeFocus ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
@@ -462,7 +462,7 @@ Item {
             // songs or leave wasted padding elsewhere.
             width: modeRow.implicitWidth + 10
             height: 28
-            radius: 4
+            radius: 0
             // Songs and Scripture get a real trigger; others render as a static icon.
             readonly property bool interactive:
                 root.tabKey === "songs" || root.tabKey === "scripture"
@@ -639,6 +639,30 @@ Item {
                     return
                 }
 
+                // Media tab + grid view: Left/Right step the grid by one
+                // tile, but only at a text boundary (start for Left, end
+                // for Right) so editing search text keeps standard cursor
+                // movement. Empty text trivially satisfies both boundary
+                // checks so navigation works the moment the operator
+                // arrives on the tab. List view is excluded — Up/Down
+                // already cover the one-dimensional case there.
+                if (root.tabKey === "media"
+                    && AppState.mediaViewMode === "grid"
+                    && AppState.activeFocusPanel === "library") {
+                    if (event.key === Qt.Key_Left
+                        && inputField.cursorPosition === 0) {
+                        AppState.libraryNavigateLeft()
+                        event.accepted = true
+                        return
+                    }
+                    if (event.key === Qt.Key_Right
+                        && inputField.cursorPosition === inputField.text.length) {
+                        AppState.libraryNavigateRight()
+                        event.accepted = true
+                        return
+                    }
+                }
+
                 if (root.isControlledMode) {
                     if (root._ctrlHandleKey(event)) {
                         event.accepted = true
@@ -717,7 +741,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 22
             height: 22
-            radius: 4
+            radius: 0
             color: clearMa.containsMouse ? Theme.color.overlay : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
@@ -757,7 +781,7 @@ Item {
             visible: inputField.text.length === 0
             width: hintText.implicitWidth + 12
             height: 18
-            radius: 3
+            radius: 0
             color: Theme.color.elevated
             border.color: Theme.color.borderSubtle
             border.width: 1

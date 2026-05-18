@@ -335,7 +335,10 @@ Rectangle {
                         anchors.topMargin:   Theme.space.sm
                         anchors.leftMargin:  Theme.space.sm
                         anchors.rightMargin: Theme.space.sm
-                        text:           modelData.content || ""
+                        // Mirror PreviewPanel: RichText so the live card
+                        // shows the same formatting the projection does.
+                        textFormat:     Text.RichText
+                        text:           LyricsService.dslToHtml(modelData.content || "")
                         color:          Theme.color.textPrimary
                         font.family:    Theme.font.family
                         font.pixelSize: Theme.font.bodySize
@@ -349,7 +352,48 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
-                    onClicked:    AppState.liveSubIndex = index
+                    onClicked: {
+                        AppState.liveSubIndex = index
+                        // Claim arrow-key navigation for this panel —
+                        // mirrors PreviewPanel. Subsequent Up/Down moves
+                        // through the live page list.
+                        AppState.setActiveFocus("live")
+                    }
+                }
+            }
+        }
+
+        // ── Keyboard navigation ─────────────────────────────────────────
+        // Mirrors PreviewPanel's Connections block but scrolls with
+        // ListView.Center rather than ListView.Contain. Reason: the live
+        // panel is the operator's "what's on the projector right now"
+        // surface; keeping the active card centered means the cards
+        // immediately before and after it are always visible, which is
+        // what the operator looks at when deciding what to advance to
+        // next. The preview panel uses Contain because that list is
+        // about browsing stages, not anchoring on a single focal cue.
+        Connections {
+            target: AppState
+            function onLiveNavigateUp() {
+                if (root.pages.length === 0) return
+                AppState.liveSubIndex = Math.max(AppState.liveSubIndex - 1, 0)
+            }
+            function onLiveNavigateDown() {
+                if (root.pages.length === 0) return
+                AppState.liveSubIndex = Math.min(AppState.liveSubIndex + 1,
+                                                 root.pages.length - 1)
+            }
+            function onLiveSubIndexChanged() {
+                // Fires on every liveSubIndex update — click, key,
+                // schedule advance, etc. Centering on click is mostly
+                // harmless: the clicked card was already visible, so
+                // the scroll either no-ops or gently nudges to align,
+                // which feels like "the panel snapping to its focal
+                // point" rather than a jolt.
+                if (pagesList.visible && AppState.liveSubIndex >= 0
+                                      && AppState.liveSubIndex < root.pages.length) {
+                    pagesList.positionViewAtIndex(AppState.liveSubIndex,
+                                                  ListView.Center)
                 }
             }
         }

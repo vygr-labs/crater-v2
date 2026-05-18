@@ -12,6 +12,21 @@ StackLayout {
 
     currentIndex: AppState.activeTab
 
+    // ── Focus claim for empty-space clicks ──────────────────────────────
+    // Covers the "clicked inside the library area but not on any row"
+    // case — gaps between rows, padding around the list, headers
+    // without their own click handler, etc. Row clicks themselves go
+    // through each tab's MouseArea, which grabs the press exclusively
+    // before this TapHandler sees it; those handlers call
+    // AppState.setActiveFocus("library") directly. Splitting the work
+    // this way is what's needed because PointerHandlers don't preempt
+    // MouseArea exclusive grabs — they only fire for events that no
+    // child MouseArea claims.
+    TapHandler {
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onPressedChanged: if (pressed) AppState.setActiveFocus("library")
+    }
+
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true

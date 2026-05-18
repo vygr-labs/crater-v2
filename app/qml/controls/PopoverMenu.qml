@@ -119,23 +119,58 @@ Item {
     }
 
     // ── Main body ────────────────────────────────────────────────────────
+    // Open animation: opacity 0→1 and scale 0.96→1, originating from the
+    // top-left so the menu visually pops out from the cursor anchor point
+    // rather than ballooning from its center. Both transitions run on
+    // `Theme.motion.instant` (120ms, collapses to 0 under reduceMotion).
     Rectangle {
         id: body
         x: Math.max(8, Math.min(root.anchorX, root.width - width - 8))
         y: Math.max(8, Math.min(root.anchorY, root.height - height - 8))
         width: root.menuWidth
         height: contents.implicitHeight + Theme.space.sm * 2
-        color: Theme.color.raised
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
         radius: Theme.radius.md
 
+        transformOrigin: Item.TopLeft
+        opacity: root.active ? 1.0 : 0.0
+        scale:   root.active ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        // Layered drop shadow. Three offset rectangles with progressively
+        // larger inflations and progressively lower opacity give a soft
+        // falloff that reads like a real shadow — without pulling in
+        // QtQuick.Effects (which would add a new module import and GPU
+        // cost on the weak hardware Crater targets). Order matters: the
+        // largest, softest layer goes furthest back; the tightest, darkest
+        // layer hugs the body edge.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: parent.radius + 12
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: parent.radius + 6
+            color: "#00000028"
+            z: -2
+        }
         Rectangle {
             anchors.fill: parent
             anchors.margins: -1
             anchors.topMargin: 1
             radius: parent.radius + 1
-            color: "#00000040"
+            color: "#00000048"
             z: -1
         }
 
@@ -173,6 +208,9 @@ Item {
     }
 
     // ── Submenu body ─────────────────────────────────────────────────────
+    // Shadow + open animation mirror the main body. Scale origins from the
+    // top-left of the submenu (i.e. just past the right edge of the row that
+    // owns it) so it appears to slide out of its parent row.
     Rectangle {
         id: submenuBody
         visible: root._submenuRow >= 0 && root.active
@@ -180,18 +218,42 @@ Item {
         y: Math.max(8, Math.min(root._submenuY, root.height - height - 8))
         width: 220
         height: submenuContents.implicitHeight + Theme.space.sm * 2
-        color: Theme.color.raised
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
         radius: Theme.radius.md
         z: 1
 
+        transformOrigin: Item.TopLeft
+        opacity: visible ? 1.0 : 0.0
+        scale:   visible ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: parent.radius + 12
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: parent.radius + 6
+            color: "#00000028"
+            z: -2
+        }
         Rectangle {
             anchors.fill: parent
             anchors.margins: -1
             anchors.topMargin: 1
             radius: parent.radius + 1
-            color: "#00000040"
+            color: "#00000048"
             z: -1
         }
 

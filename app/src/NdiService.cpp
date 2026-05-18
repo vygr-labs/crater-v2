@@ -46,6 +46,13 @@ struct NdiService::Impl
     // a no-op when this is null even if sending == true.
     QQuickWindow* sourceWindow = nullptr;
 
+    // Optional sub-item to grab from instead of the window's contentItem.
+    // ProjectionWindow's canvas-native render Item sits inside a letterbox
+    // scaler; pointing at it directly via setSourceItem() yields canvas-
+    // native pixels (typically 1920×1080) regardless of display window
+    // size. When null, we fall back to sourceWindow->contentItem().
+    QQuickItem* sourceItem = nullptr;
+
     // Two-slot frame buffer ping-pong. NDIlib_send_send_video_async_v2
     // keeps the most-recently-sent buffer referenced until the NEXT call
     // for the same sender. We alternate slots so the buffer NDI is
@@ -258,6 +265,11 @@ void NdiService::setSourceWindow(QQuickWindow* window)
     m_impl->sourceWindow = window;
 }
 
+void NdiService::setSourceItem(QQuickItem* item)
+{
+    m_impl->sourceItem = item;
+}
+
 bool NdiService::start()
 {
     if (!m_impl->available) {
@@ -357,7 +369,15 @@ void NdiService::captureFrame()
     // from queuing capture requests faster than the render can serve.
     if (m_impl->captureInFlight) return;
 
-    QQuickItem* root = m_impl->sourceWindow->contentItem();
+    // Prefer the explicit sourceItem (canvas-native render surface) if
+    // wired; fall back to the window's full contentItem otherwise. The
+    // sourceItem path yields canvas-native pixels regardless of how big
+    // the actual display window is — important when the operator has the
+    // projection in a small windowed preview but NDI should still
+    // broadcast at full 1920×1080.
+    QQuickItem* root = m_impl->sourceItem
+        ? m_impl->sourceItem
+        : m_impl->sourceWindow->contentItem();
     if (!root) return;
 
     // Async grab — returns a QSharedPointer<QQuickItemGrabResult>
@@ -371,6 +391,17 @@ void NdiService::captureFrame()
 
     m_impl->captureInFlight = true;
 
+    // Qt::SingleShotConnection is critical here — without it, the
+    // connection persists after `ready()` fires once, which keeps the
+    // lambda (and its captured QSharedPointer<QQuickItemGrabResult>)
+    // alive forever. That creates a circular reference: the result
+    // can't be freed because the connection holds it via the lambda,
+    // and the connection can't be auto-removed because the result is
+    // still alive. At 30 Hz with ~8MB per grabbed 1080p frame, this
+    // leaks ~240MB/sec. SingleShotConnection auto-disconnects after
+    // the first emission so the chain unwinds cleanly: lambda is
+    // destroyed → shared pointer ref drops → result is freed → memory
+    // is reclaimed.
     connect(result.data(), &QQuickItemGrabResult::ready, this, [this, result]() {
         m_impl->captureInFlight = false;
 
@@ -418,7 +449,7 @@ void NdiService::captureFrame()
         } else {
             m_impl->fn_send_video(m_impl->sender, &frame);
         }
-    });
+    }, Qt::SingleShotConnection);
 }
 
 void NdiService::tallyLoop()

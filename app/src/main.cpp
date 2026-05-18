@@ -18,6 +18,7 @@
 #include "FileDialogService.h"
 #include "MediaPlaybackService.h"
 #include "NdiService.h"
+#include "RichTextHelper.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
@@ -281,6 +282,12 @@ int main(int argc, char* argv[])
     // Used by NodeRenderer to render formatted lyric/scripture text via
     // Text { textFormat: Text.RichText }, and by the song editor toolbar.
     crater::LyricsService     lyricsService;
+    // RichTextHelper drives the song editor's formatting toolbar — bold /
+    // italic / underline / color toggles operate on the live QTextCursor
+    // of the WYSIWYG TextEdit instance the toolbar targets. Lives in the
+    // app target because it depends on QQuickTextDocument (Qt6::Quick),
+    // which crater-core can't link per ARCHITECTURE.md §1.
+    crater::RichTextHelper    richTextHelper;
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -298,6 +305,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
 
     // After every successful import, backfill thumbs for the new videos.
     // The ensureForAllVideos() walk is cheap when nothing is missing, so we

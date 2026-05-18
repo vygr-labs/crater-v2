@@ -160,7 +160,11 @@ Rectangle {
                     Layout.fillWidth: true
                     spacing: 0
 
-                    readonly property bool hasSubs: modelData.subgroups && modelData.subgroups.length > 0
+                    // Coerce to strict bool — `modelData.subgroups && …` returns
+                    // `undefined` when subgroups is missing (instead of false),
+                    // which QML's `bool` property type rejects with thousands
+                    // of "Unable to assign [undefined] to bool" warnings.
+                    readonly property bool hasSubs: !!(modelData.subgroups && modelData.subgroups.length > 0)
                     readonly property bool isExpanded: !!root.expandedGroups[modelData.id]
 
                     LibraryRow {
@@ -169,7 +173,7 @@ Rectangle {
                         label:    modelData.label
                         count:    modelData.count
                         active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
-                        bgRadius: root.currentTabKey === "scripture" ? 2 : Theme.radius.md
+                        bgRadius: 0
                         onClicked: {
                             // Parents with subgroups also toggle their expansion
                             // on click so the operator can drill into collections

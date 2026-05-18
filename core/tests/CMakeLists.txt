@@ -10,6 +10,10 @@ qt_add_executable(test_lyrics_dsl
 
 target_link_libraries(test_lyrics_dsl PRIVATE
     Qt6::Core
+    # Qt6::Gui is required because LyricsDSL.cpp's htmlToDsl uses
+    # QTextDocument / QTextBlock / QTextCharFormat. crater-core links
+    # Qt6::Gui as PRIVATE so it doesn't propagate — we restate it here.
+    Qt6::Gui
     Qt6::Test
     crater-core
 )

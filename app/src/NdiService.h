@@ -6,6 +6,7 @@
 #include <memory>
 
 class QImage;
+class QQuickItem;
 class QQuickWindow;
 
 namespace crater {
@@ -85,6 +86,14 @@ public:
     // Component.onCompleted with the ProjectionWindow id. Required before
     // start() will succeed.
     Q_INVOKABLE void setSourceWindow(QQuickWindow* window);
+
+    // Optional override — point the grab at a specific QQuickItem inside
+    // the source window rather than the window's contentItem. ProjectionWindow
+    // exposes its canvas-native `renderItem` for this; setting it via
+    // setSourceItem makes NDI capture full-resolution frames from the
+    // stage (e.g. 1920×1080) regardless of how big the visible window is.
+    // Pass nullptr to revert to grabbing the full window contentItem.
+    Q_INVOKABLE void setSourceItem(QQuickItem* item);
 
 signals:
     void availableChanged();

@@ -3,6 +3,10 @@
 #include <QChar>
 #include <QHash>
 #include <QStringView>
+#include <QTextBlock>
+#include <QTextCharFormat>
+#include <QTextDocument>
+#include <QTextFragment>
 
 namespace crater::lyrics {
 
@@ -487,6 +491,77 @@ QString dslToHtml(const QString& dsl, const QString& textTransform)
         out.append(runsToHtml(d.at(i)));
     }
     return out;
+}
+
+// ─── htmlToDsl — Qt RichText document → canonical DSL ────────────────────
+QString htmlToDsl(const QString& html)
+{
+    QTextDocument doc;
+    doc.setHtml(html);
+
+    Doc result;
+    QTextBlock block = doc.firstBlock();
+    while (block.isValid()) {
+        // Within a block, fragments carry distinct char formats. We also
+        // need to split on U+2028 (LINE SEPARATOR) — Qt's parsed form of
+        // `<br>` — because those represent DSL line breaks within a single
+        // QTextBlock. Accumulator pattern: build the current Line until we
+        // hit a separator, then push it and start a new one.
+        Line currentLine;
+
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment frag = it.fragment();
+            if (!frag.isValid()) continue;
+            const QString fragText = frag.text();
+            if (fragText.isEmpty()) continue;
+
+            const QTextCharFormat fmt = frag.charFormat();
+            const bool bold      = fmt.fontWeight() >= QFont::Bold;
+            const bool italic    = fmt.fontItalic();
+            const bool underline = fmt.fontUnderline();
+
+            // Color extraction. We only store a color when the brush is
+            // an explicit solid pattern with a valid color — NoBrush means
+            // "inherit from parent," and we want that case to round-trip
+            // as "no color override" rather than serializing the inherited
+            // hex into the DSL.
+            QString color;
+            const QBrush fg = fmt.foreground();
+            if (fg.style() != Qt::NoBrush) {
+                const QColor c = fg.color();
+                if (c.isValid()) {
+                    color = c.name();  // canonical "#rrggbb"
+                }
+            }
+
+            // Split on U+2028 — each piece becomes its own line. The runs
+            // inherit the same char format across the split (you can't
+            // have one half of a `<br>` boundary be bold and the other
+            // not, since the markup applies to the whole fragment).
+            const QStringList parts = fragText.split(QChar::LineSeparator);
+            for (int pi = 0; pi < parts.size(); ++pi) {
+                if (pi > 0) {
+                    result.append(currentLine);
+                    currentLine.clear();
+                }
+                if (parts[pi].isEmpty()) continue;
+
+                Run r;
+                r.text      = parts[pi];
+                r.bold      = bold;
+                r.italic    = italic;
+                r.underline = underline;
+                r.color     = color;
+                currentLine.append(r);
+            }
+        }
+
+        result.append(currentLine);
+        block = block.next();
+    }
+
+    if (result.isEmpty()) result.append(Line{});
+    return serializeDSL(result);
 }
 
 }  // namespace crater::lyrics

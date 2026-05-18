@@ -969,6 +969,11 @@ Item {
 
                     onClicked: function(mouse) {
                         AppState.setLibraryFluid(root.tabKey, index)
+                        // Row click claims arrow-key focus for the library —
+                        // see ScriptureTab._focus for rationale. Covers the
+                        // right-click / shift / ctrl branches too; any one
+                        // of them is a user-initiated row interaction.
+                        AppState.setActiveFocus("library")
                         if (mouse.button === Qt.RightButton) {
                             root.pushPreviewFor(index)
                             AppState.openContextMenuAt(this, mouse.x, mouse.y,
@@ -988,6 +993,7 @@ Item {
                     }
                     onDoubleClicked: {
                         AppState.setLibraryFluid(root.tabKey, index)
+                        AppState.setActiveFocus("library")
                         root.pushLiveFor(index)
                     }
                 }
@@ -1208,6 +1214,9 @@ Item {
 
                     onClicked: function(mouse) {
                         AppState.setLibraryFluid(root.tabKey, index)
+                        // Library focus claim — see grid view above for
+                        // rationale.
+                        AppState.setActiveFocus("library")
                         if (mouse.button === Qt.RightButton) {
                             root.pushPreviewFor(index)
                             AppState.openContextMenuAt(this, mouse.x, mouse.y,
@@ -1226,6 +1235,7 @@ Item {
                     }
                     onDoubleClicked: {
                         AppState.setLibraryFluid(root.tabKey, index)
+                        AppState.setActiveFocus("library")
                         root.pushLiveFor(index)
                     }
                 }
@@ -1234,9 +1244,10 @@ Item {
     }
 
     // ── Keyboard navigation routed from TabSearchBar ────────────────────
-    // Grid view treats Up/Down as column-jump and Left/Right as adjacent;
-    // but since TabSearchBar only emits Up/Down/Activate, we treat them as
-    // sequence-next/previous (which feels right when typing to filter).
+    // Grid view: Up/Down step by `mediaGridColumns` (one row at a time) and
+    // Left/Right step by one tile (sequential, so Left at column 0 walks
+    // back into the previous row's last tile). List view: Up/Down step by 1;
+    // Left/Right are no-ops (gated below — list rows are one-dimensional).
     Connections {
         target: AppState
         function onLibraryNavigateDown() {
@@ -1255,6 +1266,23 @@ Item {
             const step = AppState.mediaViewMode === "grid"
                        ? Math.max(1, AppState.mediaGridColumns) : 1
             const next = Math.max(root.fluidIndex - step, 0)
+            AppState.setLibraryFluid(root.tabKey, next)
+            root.pushPreviewFor(next)
+        }
+        function onLibraryNavigateLeft() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            if (AppState.mediaViewMode !== "grid") return
+            if (root.filteredMedia.length === 0) return
+            const next = Math.max((root.fluidIndex < 0 ? 0 : root.fluidIndex) - 1, 0)
+            AppState.setLibraryFluid(root.tabKey, next)
+            root.pushPreviewFor(next)
+        }
+        function onLibraryNavigateRight() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            if (AppState.mediaViewMode !== "grid") return
+            if (root.filteredMedia.length === 0) return
+            const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
+                                  root.filteredMedia.length - 1)
             AppState.setLibraryFluid(root.tabKey, next)
             root.pushPreviewFor(next)
         }

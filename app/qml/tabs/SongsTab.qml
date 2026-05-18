@@ -264,7 +264,7 @@ Item {
             Rectangle {
                 id: addBtn
                 width: 28; height: 22
-                radius: 4
+                radius: 0
                 color: addMa.containsMouse ? Theme.color.raised : "transparent"
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
@@ -292,7 +292,7 @@ Item {
             Rectangle {
                 id: gearBtn
                 width: 36; height: 22
-                radius: 4
+                radius: 0
                 color: gearMa.containsMouse ? Theme.color.raised : "transparent"
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
@@ -486,7 +486,7 @@ Item {
             anchors.topMargin: 56
             implicitWidth: clearRow.width + 20
             implicitHeight: 28
-            radius: Theme.radius.md
+            radius: 0
             color: clearPillMa.containsMouse ? Theme.color.raised : Theme.color.elevated
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
@@ -598,7 +598,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 implicitWidth: liveText.implicitWidth + 10
                 implicitHeight: 14
-                radius: 3
+                radius: 0
                 color: Theme.color.live
 
                 Text {
@@ -697,12 +697,17 @@ Item {
 
                 function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    // See ScriptureTab._focus for why we also claim the
+                    // library focus here — row click → arrow keys should
+                    // walk this list, not the preview/live cards.
+                    AppState.setActiveFocus("library")
                     root.pushPreviewFor(index)
                 }
                 onLeftClicked:  _focus()
                 onRightClicked: _focus()
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    AppState.setActiveFocus("library")
                     root.pushLiveFor(index)
                 }
             }

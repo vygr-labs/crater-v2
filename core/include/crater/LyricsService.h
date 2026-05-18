@@ -43,6 +43,14 @@ public:
     // flows where formatting should be dropped.
     Q_INVOKABLE QString flattenLine(const QString& dslLine) const;
 
+    // Reverse of dslToHtml — parses an HTML fragment (as produced by Qt's
+    // RichText TextEdit) back into canonical DSL. Used by the song editor's
+    // structured-mode pane when it converts user-typed content into the
+    // storage form before emitting `linesEdited`. Round-trip stability:
+    // `htmlToDsl(dslToHtml(canonical))` equals `canonical` for any
+    // well-formed DSL input.
+    Q_INVOKABLE QString htmlToDsl(const QString& html) const;
+
     // Seven canonical named colors used by the editor toolbar swatch.
     // Returned in display order (red → orange → yellow → green → blue →
     // purple → gray); QML enumerates this for the picker grid.

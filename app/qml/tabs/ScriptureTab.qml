@@ -393,7 +393,7 @@ Item {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             width: 42; height: 22
-            radius: 4
+            radius: 0
             color: gearMa.containsMouse ? Theme.color.overlay : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
@@ -602,7 +602,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: versionLabel.implicitWidth + Theme.space.sm * 2
                 height: 16
-                radius: 2
+                radius: 0
                 // Selected: deeper brand wash; otherwise a flat gray.800 chip.
                 color: verseRow._selected ? Qt.darker(Theme.color.brand, 1.6)
                                           : Theme.color.raised
@@ -639,6 +639,14 @@ Item {
 
                 function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    // Claim Up/Down/Enter for the library — operator just
+                    // clicked a verse row, so subsequent arrow keys should
+                    // walk the verse list rather than the preview/live
+                    // page list (which may currently own focus). The
+                    // window-level TapHandler in LibraryContent only sees
+                    // clicks that land outside row MouseAreas; this call
+                    // covers the row-click path.
+                    AppState.setActiveFocus("library")
                     root.pushPreviewFor(index)
                     root._syncInputToVerse(index)
                 }
@@ -646,6 +654,7 @@ Item {
                 onRightClicked: _focus()
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    AppState.setActiveFocus("library")
                     root._syncInputToVerse(index)
                     root.pushLiveFor(index)
                 }

@@ -40,21 +40,57 @@ ApplicationWindow {
         function onShowStrongsTabChanged() {
             AppState._onStrongsTabVisibilityChanged()
         }
+        // Live re-pointing of the NDI grabber when the operator flips
+        // dual-output mode while broadcasting. No NDI restart required —
+        // the next capture tick (~33 ms) picks up the new source.
+        function onOutputModeChanged() {
+            root._updateNdiSource()
+        }
     }
 
     // One-shot init of showLogo from the operator's persisted default.
     // After this fires, manual Logo button / Ctrl+L toggles take over —
     // the dialog setting governs the next launch, not live override.
     //
-    // NDI source-window registration also happens here — NdiService needs
-    // the QQuickWindow pointer for grabWindow() but can't reach it from
-    // C++ at static-construction time (the projection window is created
-    // by QML). Pushing the pointer through here keeps the wiring
-    // straightforward.
+    // NDI source registration also happens here — NdiService needs the
+    // QQuickWindow + QQuickItem pointers but can't reach them from C++
+    // at static-construction time (the QML objects are created later).
+    // Re-points to the right pair based on output mode; subsequent
+    // mode flips ride the onOutputModeChanged handler above.
     Component.onCompleted: {
         AppState.showLogo = SettingsService.showLogoByDefault
         ProjectionService.setLogoVisible(AppState.showLogo)
-        NdiService.setSourceWindow(projectionWindow)
+        root._updateNdiSource()
+    }
+
+    // ── NDI source plumbing ────────────────────────────────────────────
+    // Selects which window+item pair NDI grabs frames from based on the
+    // current output mode:
+    //
+    //   single mode → projectionWindow + its renderItem. NDI mirrors
+    //     whatever the audience is seeing; the projection window has to
+    //     stay alive offscreen during solo broadcast so the scene graph
+    //     keeps producing frames (see ProjectionWindow.qml's keepRendering
+    //     binding, wired to NdiService.sending below).
+    //
+    //   dual mode → operator-console window + ndiCanvas's renderItem.
+    //     ndiCanvas is a hidden Item inside this ApplicationWindow rather
+    //     than a separate Window — see NdiCanvas.qml for *why*. The
+    //     window-level pointer is `root` itself (always exposed, scene
+    //     graph always live); the item pointer is the offscreen NDI
+    //     scene's stage.
+    //
+    // captureFrame in NdiService.cpp grabs from sourceItem when set,
+    // falling back to sourceWindow->contentItem(). We always set both
+    // so the fallback never matters.
+    function _updateNdiSource() {
+        if (SettingsService.outputMode === "dual") {
+            NdiService.setSourceWindow(root)
+            NdiService.setSourceItem(ndiCanvas.renderItem)
+        } else {
+            NdiService.setSourceWindow(projectionWindow)
+            NdiService.setSourceItem(projectionWindow.renderItem)
+        }
     }
 
     // ── Top bar ─────────────────────────────────────────────────────────
@@ -193,23 +229,41 @@ ApplicationWindow {
     ProjectionWindow {
         id: projectionWindow
         screenIndex: OutputService.selectedScreenIndex
-        // Single source of truth: AppState.projectorVisible — set true only
-        // by the mouse-driven goLive(true) calls (TopBar "Go Live" button,
-        // schedule double-click, schedule context-menu), and false only by
-        // AppState.endLive() (the windowed projector's close button).
-        // clearLive() blanks content but does not lower the projector.
-        // Ctrl+L calls goLive(false) so the shortcut transitions content to
-        // live for rehearsal without exposing the audience screen. Item
-        // clicks, library double-clicks, logo toggle, and schedule selection
-        // do NOT raise or lower the projector.
+        // Two orthogonal flags drive the projection window's state:
         //
-        // logicallyVisible drives ProjectionWindow's internal visibility +
-        // flags + position bindings. When false, the window stays alive in
-        // an offscreen / Qt.Tool state so the scene graph keeps rendering
-        // and NDI (or any other capture consumer) always has fresh frames.
-        // OutputService.projectionMode (Fullscreen vs Windowed) is honoured
-        // only when logicallyVisible is true.
-        logicallyVisible: AppState.projectorVisible
+        //   visibleToOperator — "is the audience seeing this right now?"
+        //     Set true by mouse-driven goLive(true) (TopBar Go Live button,
+        //     schedule double-click, schedule context-menu); set false by
+        //     AppState.endLive() (the windowed projector's close button or
+        //     Esc shortcut). clearLive() blanks content but doesn't lower
+        //     the projector. Ctrl+L is goLive(false) so the shortcut
+        //     transitions content to live for rehearsal without exposing
+        //     the audience screen.
+        //
+        //   keepRendering — "does anything need frames in the background?"
+        //     In single output mode this is `NdiService.sending` — NDI
+        //     pulls from this window's scene graph, so it has to stay
+        //     alive offscreen for broadcast to continue after the
+        //     operator closes the audience view. In dual output mode
+        //     this collapses to false: NdiCanvas owns the always-alive
+        //     role and the projection window can fully Window.Hidden
+        //     whenever the operator wants. Future hooks (recording,
+        //     stage monitor) would OR-in here the same way.
+        visibleToOperator: AppState.projectorVisible
+        keepRendering:     NdiService.sending
+                        && SettingsService.outputMode === "single"
+    }
+
+    // ── Dedicated NDI render canvas (dual output mode only) ─────────────
+    // Hidden Item parked far offscreen within this ApplicationWindow. It
+    // hosts a ProjectionScene with outputKind="ndi" so dual mode can grab
+    // an independently-themed frame. Lives inside the operator console
+    // (not as a separate Window) so its scene graph is always backed by
+    // this window's render context — see NdiCanvas.qml for *why* that
+    // matters. `visible: _shouldRender` inside NdiCanvas suspends scene-
+    // graph cost when not broadcasting.
+    NdiCanvas {
+        id: ndiCanvas
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────
@@ -339,21 +393,56 @@ ApplicationWindow {
         }
     }
 
-    // Up / Down always navigate the active library tab — selecting a
-    // schedule item no longer captures the arrow keys. The TabSearchBar's
-    // own Keys.onUpPressed handles the same call path when the search
-    // input has focus (and blocks this Shortcut via Keys.onShortcutOverride
-    // to avoid double-fire). This window-level Shortcut covers the case
-    // where focus is outside the search field (e.g. operator clicked a
-    // schedule row or a verse row).
+    // Up / Down dispatch by AppState.activeFocusPanel so the same physical
+    // key can mean "move within the staged page list", "move within the
+    // live page list", or "move within the library list" depending on
+    // which surface last received an interaction. Clicking a card in
+    // PreviewPanel / LivePanel claims focus for that panel; typing in the
+    // sidebar search input (TabSearchBar) claims it back for the library.
+    // The TabSearchBar's own Keys.onUpPressed handles the same call path
+    // when the search input has focus (and blocks this Shortcut via
+    // Keys.onShortcutOverride to avoid double-fire).
     Shortcut {
         sequence: "Up"
         enabled: AppState.activeModal === ""
-        onActivated: AppState.libraryNavigateUp()
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateUp(); break
+                case "live":    AppState.liveNavigateUp();    break
+                default:        AppState.libraryNavigateUp()
+            }
+        }
     }
     Shortcut {
         sequence: "Down"
         enabled: AppState.activeModal === ""
-        onActivated: AppState.libraryNavigateDown()
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateDown(); break
+                case "live":    AppState.liveNavigateDown();    break
+                default:        AppState.libraryNavigateDown()
+            }
+        }
+    }
+
+    // Enter / Return — "activate the focused thing". TabSearchBar already
+    // owns this when the search input has OS focus and we're routing to
+    // the library: its Keys.onReturnPressed + onShortcutOverride pair
+    // accept the key, suppressing this Shortcut on that path. For every
+    // other case — preview-card focus, library focus without the search
+    // input owning it — the window-level dispatch routes here. "live"
+    // intentionally has no activate semantics (the page is already on
+    // the projector, so there's nothing to "activate"); "schedule"
+    // similarly has no defined Enter action yet, so Enter is a no-op
+    // there.
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        enabled: AppState.activeModal === ""
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewActivate(); break
+                case "library": AppState.libraryActivate(); break
+            }
+        }
     }
 }

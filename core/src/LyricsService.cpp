@@ -18,6 +18,11 @@ QString LyricsService::flattenLine(const QString& dslLine) const
     return lyrics::flattenLine(dslLine);
 }
 
+QString LyricsService::htmlToDsl(const QString& html) const
+{
+    return lyrics::htmlToDsl(html);
+}
+
 QStringList LyricsService::namedColors() const
 {
     return lyrics::namedColors();

@@ -254,6 +254,37 @@ Item {
                 }
             }
 
+            // ── RENDERING ────────────────────────────────────────────────
+            // Single vs dual scene-graph pipeline. Single (default) is the
+            // lower-cost path: NDI grabs from the projection window's
+            // render and mirrors whatever the operator is projecting. Dual
+            // spins up a dedicated NdiCanvas with its own ProjectionScene
+            // so NDI can render a different theme — costs one extra
+            // scene-graph evaluation per frame while broadcasting, which
+            // is negligible for text+image themes and notable for video
+            // backgrounds (decode runs twice).
+            //
+            // Dual mode also collapses the projection window's "stay
+            // alive offscreen during NDI broadcast" trick: NdiCanvas owns
+            // the always-alive role, projection can fully Hide whenever
+            // the operator closes it.
+            SettingsSectionHeader { title: qsTr("Rendering") }
+
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
+                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.outputMode === "dual"
+                    onToggled: SettingsService.outputMode =
+                        (SettingsService.outputMode === "dual" ? "single" : "dual")
+                }
+            }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
     }

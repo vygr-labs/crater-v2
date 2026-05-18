@@ -1,0 +1,25 @@
+-- Songs schema v2 — clear songs_fts so the new C++ code can repopulate it
+-- with FLATTENED (DSL-marker-stripped) lyrics on first launch.
+--
+-- Phase 6 of the rich-text rollout (see qt/core/include/crater/LyricsDSL.h):
+-- starting in this commit, `song_sections.lines_json` entries are DSL
+-- strings — they may contain `**bold**`, `*italic*`, `++underline++`,
+-- `{color=red}…{/color}` markup. The FTS5 trigram tokenizer would index
+-- those markup chars as ordinary tokens (`*`, `+`, `{`, etc.), polluting
+-- bm25 ranking and growing the index unnecessarily.
+--
+-- The fix is to index a FLATTENED projection (markers stripped, words
+-- only). That projection has to be computed in C++ via crater::lyrics::
+-- flattenLine — SQL can't do it.
+--
+-- So this migration just clears the index. SongService's constructor
+-- detects an empty songs_fts alongside a non-empty songs table and fires
+-- a sync `rebuildFtsIndex()` to repopulate with flattened content. The
+-- rebuild is bounded by total song count (typically <500) and takes well
+-- under a second on every machine we've tested.
+--
+-- Why 'delete-all' and not plain DELETE: `songs_fts` is a contentless
+-- FTS5 table (`content=''`). Plain DELETE is rejected by SQLite with
+-- "cannot DELETE from contentless fts5 table". The 'delete-all' command
+-- is the only way to clear it without per-row OLD values.
+INSERT INTO songs_fts(songs_fts) VALUES('delete-all');

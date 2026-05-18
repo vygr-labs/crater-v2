@@ -10,8 +10,17 @@ import Crater
 //
 // We bind directly to `label` and `linesText` rather than to a section
 // object so the parent can pass plain strings out of its Repeater
-// model. `linesText` is the string-form (lines joined with "\n"); the
-// parent splits it back into a QStringList before persisting.
+// model. `linesText` is the string-form (DSL lines joined with "\n");
+// the parent splits it back into a QStringList before persisting.
+//
+// Phase 4: the body editor now runs in WYSIWYG mode — `linesEdit`
+// uses `textFormat: TextEdit.RichText` and renders DSL formatting
+// inline. We bridge between the parent's DSL string and the editor's
+// HTML buffer via two helpers in LyricsService (dslToHtml / htmlToDsl).
+// The `_lastEmittedDsl` flag breaks the feedback loop: when the parent
+// echoes back our own emit, the new linesText equals what we just
+// emitted, so we skip the re-init. Without it, every keystroke would
+// reset the cursor to the start of the document.
 Rectangle {
     id: root
 
@@ -31,10 +40,50 @@ Rectangle {
     signal focused(int idx)
     signal deleteRequested(int idx)
     signal duplicateRequested(int idx)
+    // Emitted when this section's lyric body editor becomes active so the
+    // parent dialog can re-target its shared toolbar at this linesEdit.
+    // `editor` is the actual TextEdit QQuickItem — RichTextHelper takes
+    // it by pointer via the property system.
+    signal lyricEditorActivated(int idx, var editor)
 
     // Forward-edge accessor used by the parent so it can focus the label
     // input of a freshly-added section after the Repeater has built it.
     function focusLabel() { labelInput.forceActiveFocus() }
+
+    // ── WYSIWYG bridging state ──────────────────────────────────────────
+    // _settingText: true while we're writing HTML into linesEdit from the
+    //   parent's linesText. Suppresses the onTextChanged emit that would
+    //   otherwise re-feed the parent its own value.
+    // _lastEmittedDsl: the DSL we last emitted via linesEdited. When the
+    //   parent's linesText changes back to this same value (the normal
+    //   echo cycle), we skip re-init to preserve the cursor position.
+    //   When linesText changes to something ELSE (undo/redo, song reload,
+    //   section split), we DO re-init.
+    property bool   _settingText: false
+    property string _lastEmittedDsl: ""
+
+    function _applyDslToEditor(dsl) {
+        // Replace the editor buffer with the HTML rendering of `dsl`.
+        // The flag suppresses the onTextChanged emit that would otherwise
+        // bounce this same value back to the parent and into the undo
+        // history. Once HTML is in place, we record the DSL we just
+        // settled on so the next echo check has a stable comparator.
+        _settingText = true
+        linesEdit.text = LyricsService.dslToHtml(dsl || "")
+        _settingText = false
+        _lastEmittedDsl = dsl || ""
+    }
+
+    Component.onCompleted: _applyDslToEditor(root.linesText)
+    onLinesTextChanged: {
+        // Skip re-init when the incoming value is what we just emitted.
+        // That's the parent echoing our own change back; the editor's
+        // buffer already reflects it and re-applying would lose the
+        // cursor. Other transitions (undo, song reload, section split)
+        // produce a different linesText and DO need a re-init.
+        if (linesText === _lastEmittedDsl) return
+        _applyDslToEditor(linesText)
+    }
 
     // ── Layout ──────────────────────────────────────────────────────────
     implicitHeight: gutter.height
@@ -168,7 +217,16 @@ Rectangle {
             }
         }
 
-        // Lyric textarea — multi-line, autoresizes via implicitHeight.
+        // Phase 7+: formatting toolbar is no longer per-section. The
+        // SongEditorDialog hosts a single shared toolbar at the top of
+        // the structured pane, retargeted to whichever linesEdit has
+        // focus via the `lyricEditorActivated` signal below.
+
+        // Lyric textarea — multi-line WYSIWYG editor. Renders DSL
+        // formatting (bold/italic/underline/color) inline as the operator
+        // types or via the toolbar above. The text on the wire (between
+        // editor and parent) stays in DSL form — see _applyDslToEditor
+        // and the onTextChanged handler below.
         Rectangle {
             id: linesWrap
             width: parent.width
@@ -188,6 +246,11 @@ Rectangle {
                 id: linesEdit
                 anchors.fill: parent
                 anchors.margins: Theme.space.sm
+                // RichText so inline <b>/<i>/<u>/<span style="color:…">
+                // tags from LyricsService.dslToHtml render as WYSIWYG.
+                // The Run.text values come through with the proper marks
+                // baked into the document's QTextCharFormats.
+                textFormat: TextEdit.RichText
                 color: Theme.color.textPrimary
                 font.family: Theme.font.family
                 // bodySize — matches the title input above and the raw-mode
@@ -196,14 +259,32 @@ Rectangle {
                 font.pixelSize: Theme.font.bodySize
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
-                text: root.linesText
-                onTextChanged: if (text !== root.linesText) root.linesEdited(root.index, text)
-                onActiveFocusChanged: if (activeFocus) root.focused(root.index)
+                onTextChanged: {
+                    // Skip echoes from our own _applyDslToEditor() writes.
+                    if (root._settingText) return
+                    const dsl = LyricsService.htmlToDsl(text)
+                    if (dsl !== root._lastEmittedDsl) {
+                        root._lastEmittedDsl = dsl
+                        root.linesEdited(root.index, dsl)
+                    }
+                }
+                onActiveFocusChanged: {
+                    if (activeFocus) {
+                        root.focused(root.index)
+                        // Tell the parent dialog which TextEdit to re-target
+                        // the shared toolbar at. Carries `linesEdit` as the
+                        // actual QQuickItem so RichTextHelper can pull
+                        // textDocument + selection state from it.
+                        root.lyricEditorActivated(root.index, linesEdit)
+                    }
+                }
 
-                // Placeholder — TextEdit doesn't ship one, so we overlay a Text
-                // when empty + unfocused. Same pattern as TextPropertiesContent.
+                // Placeholder — TextEdit doesn't ship one, so we overlay
+                // a Text when empty + unfocused. Use `length` (plain-text
+                // char count) not `text.length` — the latter is the size
+                // of the HTML buffer and is never 0 in RichText mode.
                 Text {
-                    visible: linesEdit.text.length === 0 && !linesEdit.activeFocus
+                    visible: linesEdit.length === 0 && !linesEdit.activeFocus
                     anchors.left: parent.left
                     anchors.top: parent.top
                     text: qsTr("Enter lyrics here…")

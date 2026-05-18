@@ -442,11 +442,15 @@ Item {
                           enabled: !tileRoot._isActiveDefault,
                           action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
                         { separator: true },
-                        // Per-output assignment. Primary HDMI is live —
-                        // assigning takes effect immediately via
-                        // AppState.resolveItemTheme. NDI / Stage persist
-                        // but don't drive rendering until multi-output
-                        // ships in v1.1; disabled+suffixed accordingly.
+                        // Per-output assignment. Primary HDMI is always
+                        // live. NDI is live only in dual output mode —
+                        // when single, the menu item is disabled and
+                        // labelled with the dependency so the operator
+                        // knows what to flip. An already-set NDI pin
+                        // remains unsettable from single mode so the
+                        // operator isn't stuck with a stale assignment
+                        // they can't clear. Stage stays Soon until
+                        // multi-output activation lands in v1.1.
                         { label: tileRoot._isPrimary
                                 ? qsTr("Unset for Primary HDMI")
                                 : qsTr("Set for Primary HDMI"),
@@ -456,9 +460,13 @@ Item {
                                   tileRoot._isPrimary ? 0 : modelData.id
                           } },
                         { label: tileRoot._isNdi
-                                ? qsTr("Unset for NDI Broadcast (Soon)")
-                                : qsTr("Set for NDI Broadcast (Soon)"),
+                                ? qsTr("Unset for NDI Broadcast")
+                                : (SettingsService.outputMode === "dual"
+                                    ? qsTr("Set for NDI Broadcast")
+                                    : qsTr("Set for NDI Broadcast (requires Dual output mode)")),
                           iconName: "radio",
+                          enabled: SettingsService.outputMode === "dual"
+                                || tileRoot._isNdi,
                           action: () => {
                               SettingsService.themeIdForNdi =
                                   tileRoot._isNdi ? 0 : modelData.id

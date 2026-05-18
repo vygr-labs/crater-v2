@@ -1,5 +1,6 @@
 #include "crater/SongService.h"
 
+#include "crater/LyricsDSL.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
@@ -62,6 +63,59 @@ QByteArray linesToJson(const QStringList& lines)
     QJsonArray arr;
     for (const auto& line : lines) arr.append(line);
     return QJsonDocument(arr).toJson(QJsonDocument::Compact);
+}
+
+// Build a single space-separated plain-text string from a list of DSL lines,
+// stripping all markdown-like markers (** _ ++ {color=…}). Used to feed the
+// FTS5 index: bm25 ranking is cleaner when the token stream is just words,
+// not the `*`/`+`/`{`/`}` chars from the DSL grammar. Newlines collapse to
+// single spaces because FTS5 doesn't treat them specially anyway.
+QString flattenDslLines(const QStringList& dslLines)
+{
+    QString out;
+    bool first = true;
+    for (const QString& line : dslLines) {
+        const QString plain = crater::lyrics::flattenLine(line);
+        if (plain.isEmpty()) continue;
+        if (!first) out.append(QLatin1Char(' '));
+        first = false;
+        out.append(plain);
+    }
+    return out;
+}
+
+// Decode lines_json from a song_sections row and pass through flattenDslLines.
+// Used by FTS code paths that need to materialize the OLD or CURRENT lyrics
+// for an existing song (e.g. delete-and-reinsert during update, full rebuild).
+QString flattenLinesFromJson(const QString& linesJsonText)
+{
+    const QJsonDocument doc = QJsonDocument::fromJson(linesJsonText.toUtf8());
+    if (!doc.isArray()) return QString();
+    QStringList lines;
+    for (const auto& v : doc.array()) lines.append(v.toString());
+    return flattenDslLines(lines);
+}
+
+// Project a section-shaped QVariantMap list (the QML side hands these in
+// for create/update calls) down to a single FTS-ready plain string. Lives
+// here so create/createWithSections/update share one code path for FTS
+// content derivation.
+QString flattenSectionsForFts(const QVariantList& sections)
+{
+    QString out;
+    bool first = true;
+    for (const QVariant& v : sections) {
+        const QVariantMap m = v.toMap();
+        const QStringList lines = m.value(QStringLiteral("lines")).toStringList();
+        for (const QString& line : lines) {
+            const QString plain = crater::lyrics::flattenLine(line);
+            if (plain.isEmpty()) continue;
+            if (!first) out.append(QLatin1Char(' '));
+            first = false;
+            out.append(plain);
+        }
+    }
+    return out;
 }
 
 }  // namespace
@@ -134,22 +188,29 @@ struct SongService::Impl
         , toggleFavorite(conn.prepare(QStringLiteral(
             "UPDATE songs SET is_favorite = NOT is_favorite, updated_at = ? WHERE id = ?")))
         , upsertFtsForSong(conn.prepare(QStringLiteral(
+            // Lyrics arrive pre-flattened from C++ (DSL markers stripped)
+            // because the FTS5 trigram tokenizer would otherwise index `*`,
+            // `+`, `{`, `}` as ordinary chars and degrade bm25 ranking. Title
+            // and author are SELECTed inline — they're plain text already.
+            // Binds: 1 = flattened lyrics, 2 = song id.
             "INSERT INTO songs_fts (rowid, title, author, lyrics) "
-            "SELECT s.id, s.title, COALESCE(s.author, ''), "
-            "       COALESCE((SELECT GROUP_CONCAT(lines_json, ' ') FROM song_sections WHERE song_id = s.id), '') "
+            "SELECT s.id, s.title, COALESCE(s.author, ''), ? "
             "FROM songs s WHERE s.id = ?")))
         , deleteFtsForSong(conn.prepare(QStringLiteral(
             // songs_fts is a CONTENTLESS FTS5 table (content=''), so a plain
             // DELETE is rejected by SQLite with "cannot DELETE from contentless
             // fts5 table". The only way to remove a row is the FTS5 'delete'
             // command, which requires the OLD column values so FTS can subtract
-            // the right tokens from the inverted index. We read those values
-            // from the source tables — which means callers MUST run this BEFORE
-            // mutating songs / song_sections for this id, so the SELECT sees
-            // the same text that's currently indexed.
+            // the right tokens from the inverted index.
+            //
+            // The lyrics value MUST be the same FLATTENED form that was
+            // INSERTed by upsertFtsForSong — otherwise the index becomes
+            // inconsistent (Phase 6: we strip DSL markers everywhere FTS
+            // touches lyrics). Callers compute the flatten in C++ via
+            // flattenLinesFromJson() over the CURRENT song_sections rows
+            // (before any mutation) and bind it as parameter 1.
             "INSERT INTO songs_fts(songs_fts, rowid, title, author, lyrics) "
-            "SELECT 'delete', s.id, s.title, COALESCE(s.author, ''), "
-            "       COALESCE((SELECT GROUP_CONCAT(lines_json, ' ') FROM song_sections WHERE song_id = s.id), '') "
+            "SELECT 'delete', s.id, s.title, COALESCE(s.author, ''), ? "
             "FROM songs s WHERE s.id = ?")))
         , duplicateSongRow(conn.prepare(QStringLiteral(
             // Binds (1=nowMs, 2=nowMs, 3=src id). is_favorite resets to 0 so
@@ -187,6 +248,32 @@ struct SongService::Impl
         song.updatedAt  = s.columnInt64(idCol + 8);
         return song;
     }
+
+    // Pull the CURRENT (pre-mutation) flattened lyrics for a song from the
+    // song_sections table — DSL markers stripped, lines space-joined. Used
+    // by deleteFtsForSong / pre-update workflows so the FTS5 'delete'
+    // command receives values matching what was originally inserted.
+    QString fetchFlattenedLyrics(qint64 songId)
+    {
+        auto& stmt = selectSectionsForSong;
+        stmt.reset();
+        stmt.bind(1, songId);
+        QString out;
+        bool first = true;
+        while (stmt.step()) {
+            const QString linesJsonText = stmt.columnText(2);
+            const QJsonDocument doc = QJsonDocument::fromJson(linesJsonText.toUtf8());
+            if (!doc.isArray()) continue;
+            for (const auto& v : doc.array()) {
+                const QString plain = crater::lyrics::flattenLine(v.toString());
+                if (plain.isEmpty()) continue;
+                if (!first) out.append(QLatin1Char(' '));
+                first = false;
+                out.append(plain);
+            }
+        }
+        return out;
+    }
 };
 
 SongService::SongService(QObject* parent)
@@ -194,6 +281,33 @@ SongService::SongService(QObject* parent)
 {
     try {
         m_impl = std::make_unique<Impl>(db::DbPaths::songsDbPath());
+
+        // Phase 6 auto-heal: V002 migration clears songs_fts so that the
+        // index can be repopulated with FLATTENED lyrics (DSL markers
+        // stripped). If we detect that condition — non-empty songs table
+        // alongside an empty songs_fts — fire a sync rebuild now so the
+        // first search after startup returns hits. Subsequent launches
+        // hit this path with `ftsCount == songCount`, short-circuit, and
+        // pay only two trivial COUNT queries.
+        auto songCountStmt = m_impl->conn.prepare(
+            QStringLiteral("SELECT count(*) FROM songs"));
+        int songCount = 0;
+        if (songCountStmt.step()) songCount = songCountStmt.columnInt(0);
+
+        if (songCount > 0) {
+            auto ftsCountStmt = m_impl->conn.prepare(
+                QStringLiteral("SELECT count(*) FROM songs_fts"));
+            int ftsCount = 0;
+            if (ftsCountStmt.step()) ftsCount = ftsCountStmt.columnInt(0);
+            if (ftsCount == 0) {
+                qInfo().noquote() << "SongService: songs_fts empty for"
+                                  << songCount << "songs — rebuilding now";
+                // Use the QFuture path for code-sharing; wait on it
+                // synchronously so the service is search-ready by the
+                // time QML binds against it.
+                rebuildFtsIndex().waitForFinished();
+            }
+        }
     } catch (const db::Error& e) {
         qCritical().noquote() << "SongService: failed to open DB —" << e.message();
     }
@@ -297,10 +411,11 @@ qint64 SongService::create(QString title, QString author, QString ccli)
 
         const qint64 id = m_impl->conn.lastInsertRowId();
 
-        // Sync FTS row for the new song (even though sections may be empty).
+        // Sync FTS row for the new song. No sections yet, so lyrics = "".
         auto& fts = m_impl->upsertFtsForSong;
         fts.reset();
-        fts.bind(1, id);
+        fts.bind(1, QString());
+        fts.bind(2, id);
         fts.step();
 
         invalidateCache();
@@ -351,11 +466,14 @@ qint64 SongService::createWithSections(QString title, QString author, QString cc
             secStmt.step();
         }
 
-        // FTS sync runs after sections so its GROUP_CONCAT subquery sees the
-        // freshly-inserted rows. Same pattern as duplicate().
+        // FTS sync runs after sections so the new song's row exists when
+        // we INSERT. Lyrics are flattened from the input QVariantList — no
+        // need to re-fetch from DB since we already have the canonical
+        // section list in hand.
         auto& fts = m_impl->upsertFtsForSong;
         fts.reset();
-        fts.bind(1, newId);
+        fts.bind(1, flattenSectionsForFts(sections));
+        fts.bind(2, newId);
         fts.step();
 
         tx.commit();
@@ -387,19 +505,21 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 
         // FTS bookkeeping must straddle the source-table mutation:
-        //   1. delFts FIRST (reads OLD title/author/lyrics from songs +
-        //      song_sections via SELECT — those rows still hold the values
-        //      currently indexed in songs_fts, so the 'delete' command
-        //      subtracts the right tokens).
-        //   2. Mutate songs + song_sections.
-        //   3. upsertFtsForSong (reads NEW values, inserts fresh FTS row).
-        // The previous code ran delFts AFTER the section rewrite, which both
-        // a) used a plain DELETE forbidden on contentless FTS5 tables, and
-        // b) would have read the wrong (new) values if we tried to convert
-        // it to the 'delete' command in place.
+        //   1. Fetch OLD flattened lyrics from the CURRENT song_sections
+        //      rows BEFORE any mutation. These match what's currently
+        //      indexed in songs_fts (Phase 6: FTS stores flattened DSL).
+        //   2. Issue the FTS 'delete' command with the OLD lyrics so the
+        //      index removes exactly the tokens that were previously
+        //      inserted — required for index consistency.
+        //   3. Mutate songs + song_sections (UPDATE songs, DELETE + INSERT
+        //      song_sections to replace them wholesale).
+        //   4. upsertFtsForSong with the NEW flattened lyrics computed
+        //      directly from the input QVariantList.
+        const QString oldLyrics = m_impl->fetchFlattenedLyrics(id);
         auto& delFts = m_impl->deleteFtsForSong;
         delFts.reset();
-        delFts.bind(1, id);
+        delFts.bind(1, oldLyrics);
+        delFts.bind(2, id);
         delFts.step();
 
         auto& upd = m_impl->updateSong;
@@ -437,12 +557,13 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
             secStmt.step();
         }
 
-        // FTS row was already deleted at the top of the transaction (when the
-        // source tables still held the OLD values). Now that they hold NEW
-        // values, upsertFtsForSong reads them and inserts the fresh FTS row.
+        // FTS row was already deleted at the top of the transaction (using
+        // the OLD flattened lyrics). Now insert with the NEW flattened
+        // lyrics computed from the input sections.
         auto& fts = m_impl->upsertFtsForSong;
         fts.reset();
-        fts.bind(1, id);
+        fts.bind(1, flattenSectionsForFts(sections));
+        fts.bind(2, id);
         fts.step();
 
         tx.commit();
@@ -459,9 +580,14 @@ void SongService::destroy(qint64 id)
     if (!m_impl) return;
     try {
         db::Transaction tx(m_impl->conn);
+        // Same ordering rule as update(): compute OLD flattened lyrics
+        // before any mutation so the FTS 'delete' command receives values
+        // matching what was originally INSERTed.
+        const QString oldLyrics = m_impl->fetchFlattenedLyrics(id);
         auto& delFts = m_impl->deleteFtsForSong;
         delFts.reset();
-        delFts.bind(1, id);
+        delFts.bind(1, oldLyrics);
+        delFts.bind(2, id);
         delFts.step();
 
         auto& delSong = m_impl->deleteSong;
@@ -518,9 +644,15 @@ qint64 SongService::duplicate(qint64 id)
         secStmt.bind(2, id);
         secStmt.step();
 
+        // For a duplicate, the new song's lyrics ARE the original's. Read
+        // them back from the freshly-inserted song_sections rows and
+        // flatten — that's cheaper than carrying the data through a
+        // QVariantList path that doesn't exist here, and it matches what
+        // a subsequent update/destroy will read for OLD-lyric purposes.
         auto& fts = m_impl->upsertFtsForSong;
         fts.reset();
-        fts.bind(1, newId);
+        fts.bind(1, m_impl->fetchFlattenedLyrics(newId));
+        fts.bind(2, newId);
         fts.step();
 
         tx.commit();
@@ -536,17 +668,65 @@ QFuture<void> SongService::rebuildFtsIndex()
 {
     return QtConcurrent::run([]() {
         try {
+            // Worker thread gets its own connection — never share a
+            // db::Connection or its prepared statements across threads.
             db::Connection conn(db::DbPaths::songsDbPath());
             db::Transaction tx(conn);
-            conn.exec(QStringLiteral("DELETE FROM songs_fts"));
+
+            // 'delete-all' is the only way to clear a contentless FTS5
+            // table — plain `DELETE FROM songs_fts` is rejected. This
+            // wipes the inverted index without needing per-row values.
             conn.exec(QStringLiteral(
+                "INSERT INTO songs_fts(songs_fts) VALUES('delete-all')"));
+
+            // Walk songs + their sections in C++ so we can run flattenLine
+            // on each DSL line. SQL can't do that — the DSL parser lives
+            // in crater::lyrics. Two prepared statements, one inserted
+            // row per song.
+            db::Statement songsStmt = conn.prepare(QStringLiteral(
+                "SELECT id FROM songs"));
+            db::Statement sectionsStmt = conn.prepare(QStringLiteral(
+                "SELECT lines_json FROM song_sections WHERE song_id = ? "
+                "ORDER BY sort_order"));
+            db::Statement insertFts = conn.prepare(QStringLiteral(
                 "INSERT INTO songs_fts (rowid, title, author, lyrics) "
-                "SELECT s.id, s.title, COALESCE(s.author, ''), "
-                "       COALESCE((SELECT GROUP_CONCAT(lines_json, ' ') "
-                "                 FROM song_sections WHERE song_id = s.id), '') "
-                "FROM songs s"));
+                "SELECT s.id, s.title, COALESCE(s.author, ''), ? "
+                "FROM songs s WHERE s.id = ?"));
+
+            int nSongs = 0;
+            while (songsStmt.step()) {
+                const qint64 sid = songsStmt.columnInt64(0);
+
+                // Flatten this song's lyrics by walking each section's
+                // lines_json and stripping DSL markers.
+                QString lyrics;
+                bool first = true;
+                sectionsStmt.reset();
+                sectionsStmt.bind(1, sid);
+                while (sectionsStmt.step()) {
+                    const QString linesJsonText = sectionsStmt.columnText(0);
+                    const QJsonDocument doc =
+                        QJsonDocument::fromJson(linesJsonText.toUtf8());
+                    if (!doc.isArray()) continue;
+                    for (const auto& v : doc.array()) {
+                        const QString plain = crater::lyrics::flattenLine(v.toString());
+                        if (plain.isEmpty()) continue;
+                        if (!first) lyrics.append(QLatin1Char(' '));
+                        first = false;
+                        lyrics.append(plain);
+                    }
+                }
+
+                insertFts.reset();
+                insertFts.bind(1, lyrics);
+                insertFts.bind(2, sid);
+                insertFts.step();
+                ++nSongs;
+            }
+
             tx.commit();
-            qInfo() << "SongService: FTS index rebuilt";
+            qInfo().noquote() << "SongService: FTS index rebuilt for"
+                              << nSongs << "songs";
         } catch (const db::Error& e) {
             qCritical().noquote() << "SongService::rebuildFtsIndex():" << e.message();
         }

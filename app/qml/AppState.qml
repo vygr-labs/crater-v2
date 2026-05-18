@@ -201,25 +201,44 @@ QtObject {
 
     // Resolve the effective theme for a schedule item — three-tier priority:
     //   1. Per-item override stored on the item itself
-    //   2. Per-output theme pinned via the Themes tab (Primary HDMI today —
-    //      once multi-output renders, this takes an outputId parameter and
-    //      consults the right slot)
+    //   2. Per-output theme pinned via the Themes tab. Which slot we consult
+    //      depends on the (outputKind, outputMode) pair:
+    //        single mode → every consumer collapses to themeIdForPrimary, so
+    //                      NDI / Stage inherit Primary's pin (and the visible
+    //                      projection IS what NDI grabs from anyway).
+    //        dual mode + outputKind="ndi"   → themeIdForNdi (the NdiCanvas
+    //                                          renders its own scene)
+    //        dual mode + outputKind="stage" → themeIdForStage (reserved for
+    //                                          v1.1 multi-output)
+    //        else → themeIdForPrimary
     //   3. Per-kind default from ThemeService.defaultFor(kind)
     //
     // The sentinel-check on t.id at each tier handles the case where the
     // referenced theme was deleted; we fall through to the next tier rather
     // than render a bogus theme.
-    function resolveItemTheme(item) {
+    //
+    // outputKind defaults to "primary" so existing callers (ThemedMonitor,
+    // and any future consumer that doesn't know about per-output themes)
+    // get the same behavior they had before this signature change.
+    function resolveItemTheme(item, outputKind) {
+        if (outputKind === undefined) outputKind = "primary"
+
         const overrideId = (item && typeof item.themeId === "number") ? item.themeId : 0
         if (overrideId > 0) {
             const t = ThemeService.theme(overrideId)
             if (t.id > 0) return t
         }
-        const outputId = SettingsService.themeIdForPrimary
+
+        const dual = SettingsService.outputMode === "dual"
+        let outputId = 0
+        if (dual && outputKind === "ndi")        outputId = SettingsService.themeIdForNdi
+        else if (dual && outputKind === "stage") outputId = SettingsService.themeIdForStage
+        else                                     outputId = SettingsService.themeIdForPrimary
         if (outputId > 0) {
             const t = ThemeService.theme(outputId)
             if (t.id > 0) return t
         }
+
         return ThemeService.defaultFor((item && item.kind) || "song")
     }
 
@@ -572,6 +591,22 @@ QtObject {
     // MediaTab) gate themselves with `tabKeys[activeTab] === tabKey`. Tabs
     // without schedule semantics (Strongs, Themes) simply ignore the signal.
     signal libraryAddToSchedule()
+
+    // ─── Preview / Live page navigation ─────────────────────────────────
+    // Emitted by Main.qml's Up/Down shortcuts when activeFocusPanel is
+    // "preview" or "live". The respective panel owns the clamp logic
+    // because the page count is filtered locally (empty-content pages
+    // are stripped out before display) and only the panel knows the
+    // visible length.
+    signal previewNavigateUp()
+    signal previewNavigateDown()
+    signal liveNavigateUp()
+    signal liveNavigateDown()
+    // Enter on a preview card → push to live. Same call path as the
+    // existing preview-card double-click (goLive(false), no projector
+    // raise). PreviewPanel owns the handler so it can read its own
+    // previewSubIndex / selectedItem at activation time.
+    signal previewActivate()
 
     // ─── Active focus panel ─────────────────────────────────────────────
     // Names which UI surface currently "owns" keyboard navigation. The
