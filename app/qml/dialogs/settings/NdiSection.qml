@@ -1,15 +1,15 @@
 import QtQuick
 import QtQuick.Layouts
 
-// NDI — Network Device Interface broadcast output (planned for v1).
-// Entire section is preview-only; the banner at the top signals that,
-// and controls below are dimmed + disabled until the NDI engine lands.
+// NDI — Network Device Interface broadcast output.
+// Wired to NdiService: dynamic loading at startup, real send pipeline.
+// Quality + audio knobs stay Soon for v1 — quality is fixed at the
+// projection window's native resolution and BGRA / 29.97 fps; audio
+// is a Phase-3 follow-up (see NdiService.h header comment).
 Item {
     id: root
 
-    property bool   featureEnabled: false
-    property string streamName: "Crater Live"
-    property string quality: "High"
+    property string quality:      "Native"
     property bool   includeAudio: false
 
     Flickable {
@@ -27,33 +27,114 @@ Item {
             anchors.topMargin: Theme.space.xxxl
             spacing: 0
 
-            // ── Section disclaimer ───────────────────────────────────────
+            // ── Status banner ────────────────────────────────────────────
+            // Three states drive the banner colour:
+            //   • not available (runtime missing) → live-red wash
+            //   • available but not sending       → subtle brand wash
+            //   • sending                         → bright brand
+            // Caption text comes verbatim from NdiService.diagnostic so we
+            // never invent a status string that diverges from runtime state.
+            // Tally pills (PGM / PVW) sit on the right edge while broadcasting
+            // and light up when receivers signal program / preview state.
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 radius: 0
-                color: Theme.color.brandSubtle
-                border.color: Theme.color.brand
+                color: !NdiService.available    ? Theme.color.liveSubtle
+                     : NdiService.sending       ? Theme.color.brand
+                                                : Theme.color.brandSubtle
+                border.color: !NdiService.available ? Theme.color.live
+                            : NdiService.sending    ? Theme.color.brand
+                                                    : Theme.color.brand
                 border.width: 1
 
+                // Left cluster — icon + diagnostic prose.
                 Row {
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: tallyCluster.left
                     anchors.leftMargin: Theme.space.md
-                    anchors.rightMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.sm
                     spacing: Theme.space.sm
 
                     AppIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        name: "info"
-                        color: Theme.color.brand
+                        name: !NdiService.available ? "alert-triangle"
+                            : NdiService.sending    ? "radio"
+                                                    : "info"
+                        color: !NdiService.available ? Theme.color.live
+                             : NdiService.sending    ? Theme.color.brandInk
+                                                     : Theme.color.brand
                         size: Theme.icon.sm
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("NDI broadcast ships in v1 — controls below are a preview.")
-                        color: Theme.color.textSecondary
+                        text: NdiService.diagnostic
+                        color: NdiService.sending ? Theme.color.brandInk
+                                                  : Theme.color.textPrimary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
+                        font.weight: NdiService.sending ? Theme.font.weightMedium
+                                                        : Theme.font.weightRegular
+                        elide: Text.ElideRight
+                        width: Math.max(0, parent.width - parent.spacing - Theme.icon.sm)
+                    }
+                }
+
+                // Right cluster — tally pills. PGM = program (on-air, live red);
+                // PVW = preview (champagne). Visible only while broadcasting.
+                // When the corresponding tally bit is true the pill fills;
+                // otherwise it sits as a hollow chip so the operator can see
+                // where the indicator WOULD light up.
+                Row {
+                    id: tallyCluster
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.rightMargin: Theme.space.md
+                    spacing: Theme.space.xs
+                    visible: NdiService.sending
+
+                    Rectangle {
+                        width: pgmText.implicitWidth + Theme.space.sm * 2
+                        height: 20
+                        radius: 0
+                        color: NdiService.onProgram ? Theme.color.live : "transparent"
+                        border.color: NdiService.onProgram ? Theme.color.live
+                                                           : Theme.color.borderSubtle
+                        border.width: 1
+
+                        Text {
+                            id: pgmText
+                            anchors.centerIn: parent
+                            text: qsTr("PGM")
+                            color: NdiService.onProgram ? "#ffffff" : Theme.color.textTertiary
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 10
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
+                    }
+
+                    Rectangle {
+                        width: pvwText.implicitWidth + Theme.space.sm * 2
+                        height: 20
+                        radius: 0
+                        color: NdiService.onPreview ? Theme.color.preview : "transparent"
+                        border.color: NdiService.onPreview ? Theme.color.preview
+                                                           : Theme.color.borderSubtle
+                        border.width: 1
+
+                        Text {
+                            id: pvwText
+                            anchors.centerIn: parent
+                            text: qsTr("PVW")
+                            color: NdiService.onPreview ? Theme.color.previewSubtle
+                                                        : Theme.color.textTertiary
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 10
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
                     }
                 }
             }
@@ -69,10 +150,13 @@ Item {
                 ToggleSwitch {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    value: root.featureEnabled
-                    opacity: 0.45
-                    enabled: false
-                    onToggled: { }
+                    value: NdiService.sending
+                    enabled: NdiService.available
+                    opacity: NdiService.available ? 1.0 : 0.45
+                    onToggled: {
+                        if (NdiService.sending) NdiService.stop()
+                        else                    NdiService.start()
+                    }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
@@ -88,9 +172,9 @@ Item {
                     width: 220; height: 30
                     radius: 0
                     color: Theme.color.canvas
-                    border.color: Theme.color.borderStrong
+                    border.color: streamInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
                     border.width: 1
-                    opacity: 0.45
+                    opacity: NdiService.available ? 1.0 : 0.45
 
                     TextInput {
                         id: streamInput
@@ -98,45 +182,75 @@ Item {
                         anchors.leftMargin: Theme.space.md
                         anchors.rightMargin: Theme.space.md
                         verticalAlignment: TextInput.AlignVCenter
-                        text: root.streamName
+                        // One-way bind on focus so the operator's edit
+                        // doesn't fight a model write mid-keystroke.
+                        // onEditingFinished pushes the final value.
+                        text: NdiService.streamName
                         color: Theme.color.textPrimary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
-                        enabled: false
-                        readOnly: true
+                        enabled: NdiService.available
+                        selectByMouse: true
+                        onEditingFinished: {
+                            if (text !== NdiService.streamName) {
+                                NdiService.streamName = text
+                            }
+                        }
                     }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Quality"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
-                SelectChip {
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Quality"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Resolution + format of the broadcast stream"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Row {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    label: root.quality
-                    opacity: 0.45
-                    enabled: false
-                    radius: 0
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    SelectChip {
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: qsTr("Native BGRA")
+                        opacity: 0.45
+                        enabled: false
+                        radius: 0
+                    }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Include audio"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
-                ToggleSwitch {
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Include audio"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Tap the projection's audio output and broadcast it"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Row {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    value: root.includeAudio
-                    opacity: 0.45
-                    enabled: false
-                    onToggled: { }
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    ToggleSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        value: root.includeAudio
+                        opacity: 0.45
+                        enabled: false
+                        onToggled: { }
+                    }
                 }
             }
 

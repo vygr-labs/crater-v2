@@ -10,6 +10,9 @@ qt_add_executable(crater
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp
     src/MediaPlaybackService.h
+    src/NdiService.cpp
+    src/NdiService.h
+    src/NdiAbi.h
 )
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.

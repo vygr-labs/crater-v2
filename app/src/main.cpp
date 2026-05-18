@@ -17,11 +17,13 @@
 
 #include "FileDialogService.h"
 #include "MediaPlaybackService.h"
+#include "NdiService.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
 #include "crater/ElectronDataImporter.h"
+#include "crater/LyricsService.h"
 #include "crater/MediaService.h"
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
@@ -29,6 +31,8 @@
 #include "crater/SettingsService.h"
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
+// NDI lives in the app layer (not crater-core) because pixel capture
+// requires Qt6::Quick — see qt/app/src/NdiService.h header comment.
 #include "crater/Version.h"
 #include "crater/WorkingTheme.h"
 
@@ -259,6 +263,10 @@ int main(int argc, char* argv[])
     // any other early bindings have a populated source. No service deps;
     // it owns its own QSettings instance.
     crater::SettingsService   settingsService;
+    // NDI sender. Dynamic-loads Processing.NDI.Lib.x64.dll at construction;
+    // if absent, NdiService.available stays false and the dialog reflects
+    // that. Source window is wired from Main.qml's Component.onCompleted.
+    crater::NdiService        ndiService;
     crater::FileDialogService fileDialogService;
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
@@ -268,6 +276,11 @@ int main(int argc, char* argv[])
     // refcounted across Preview / Live / Projection subscribers. No
     // dependencies on other services — it's a pure caching player pool.
     crater::MediaPlaybackService mediaPlaybackService;
+    // LyricsService is a stateless QML-callable wrapper around the pure
+    // crater::lyrics DSL functions (parse / serialize / HTML / palette).
+    // Used by NodeRenderer to render formatted lyric/scripture text via
+    // Text { textFormat: Text.RichText }, and by the song editor toolbar.
+    crater::LyricsService     lyricsService;
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -280,9 +293,11 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
 
     // After every successful import, backfill thumbs for the new videos.
     // The ensureForAllVideos() walk is cheap when nothing is missing, so we

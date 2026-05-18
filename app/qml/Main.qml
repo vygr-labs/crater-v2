@@ -45,9 +45,16 @@ ApplicationWindow {
     // One-shot init of showLogo from the operator's persisted default.
     // After this fires, manual Logo button / Ctrl+L toggles take over —
     // the dialog setting governs the next launch, not live override.
+    //
+    // NDI source-window registration also happens here — NdiService needs
+    // the QQuickWindow pointer for grabWindow() but can't reach it from
+    // C++ at static-construction time (the projection window is created
+    // by QML). Pushing the pointer through here keeps the wiring
+    // straightforward.
     Component.onCompleted: {
         AppState.showLogo = SettingsService.showLogoByDefault
         ProjectionService.setLogoVisible(AppState.showLogo)
+        NdiService.setSourceWindow(projectionWindow)
     }
 
     // ── Top bar ─────────────────────────────────────────────────────────
@@ -186,11 +193,8 @@ ApplicationWindow {
     ProjectionWindow {
         id: projectionWindow
         screenIndex: OutputService.selectedScreenIndex
-        // Use `visibility` (not `visible`) so we can toggle FullScreen / Windowed
-        // / Hidden without conflicting with ProjectionWindow.qml's own setup.
-        //
-        // Single source of truth: AppState.projectorVisible — set true only by
-        // the mouse-driven goLive(true) calls (TopBar "Go Live" button,
+        // Single source of truth: AppState.projectorVisible — set true only
+        // by the mouse-driven goLive(true) calls (TopBar "Go Live" button,
         // schedule double-click, schedule context-menu), and false only by
         // AppState.endLive() (the windowed projector's close button).
         // clearLive() blanks content but does not lower the projector.
@@ -199,15 +203,13 @@ ApplicationWindow {
         // clicks, library double-clicks, logo toggle, and schedule selection
         // do NOT raise or lower the projector.
         //
-        // The OutputService.projectionMode arm distinguishes Fullscreen (the
-        // production target — frameless, fills the selected screen) from
-        // Windowed (an OS-framed preview window for single-monitor / dev).
-        // Default mode is computed from available displays (see OutputService).
-        visibility: !AppState.projectorVisible
-                  ? Window.Hidden
-                  : OutputService.projectionMode === OutputService.Windowed
-                      ? Window.Windowed
-                      : Window.FullScreen
+        // logicallyVisible drives ProjectionWindow's internal visibility +
+        // flags + position bindings. When false, the window stays alive in
+        // an offscreen / Qt.Tool state so the scene graph keeps rendering
+        // and NDI (or any other capture consumer) always has fresh frames.
+        // OutputService.projectionMode (Fullscreen vs Windowed) is honoured
+        // only when logicallyVisible is true.
+        logicallyVisible: AppState.projectorVisible
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────

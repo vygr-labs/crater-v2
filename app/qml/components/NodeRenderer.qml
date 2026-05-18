@@ -89,16 +89,15 @@ Item {
                 readonly property var _style: nodeRoot.node.style || ({})
                 readonly property var _data:  nodeRoot.node.data  || ({})
 
-                // textTransform via JS — QML Text has no CSS text-transform.
-                function _applyCase(s) {
-                    switch (_style.textTransform) {
-                        case "uppercase":  return (s || "").toUpperCase()
-                        case "lowercase":  return (s || "").toLowerCase()
-                        case "capitalize": return (s || "").replace(/\b\w/g, c => c.toUpperCase())
-                        default:           return s
-                    }
-                }
-                readonly property string _renderedText: _applyCase(nodeRoot.resolvedText)
+                // textTransform + DSL formatting both go through LyricsService.
+                // resolvedText may contain inline DSL markers (bold/italic/
+                // underline/color) — plain text is a valid DSL string with no
+                // markers, so unformatted content still renders as-is. The
+                // service applies the case transform AFTER parsing so that
+                // markers like {color=red} stay lowercase and parseable.
+                readonly property string _renderedText:
+                    LyricsService.dslToHtml(nodeRoot.resolvedText || "",
+                                             _style.textTransform || "")
 
                 // Fitted pixel size. Updated by _refit() — kept as a plain
                 // property (not a binding) so the binary search writing to
@@ -116,9 +115,18 @@ Item {
                 // Hidden probe — mirrors layout-affecting properties of
                 // visibleText so paintedHeight/Width report accurate metrics
                 // at each trial pixelSize during binary search.
+                //
+                // textFormat MUST match visibleText (RichText): paintedWidth /
+                // paintedHeight differ between plain and rich text when inline
+                // formatting changes line heights (e.g. a bold run pushes the
+                // ascent line). Without RichText here the binary search would
+                // either over-shrink (probe is plain so reports less height)
+                // or under-shrink (probe is plain so reports more width) the
+                // fitted size.
                 Text {
                     id: probe
                     visible: false
+                    textFormat:         Text.RichText
                     text:               visibleText.text
                     font.family:        visibleText.font.family
                     font.weight:        visibleText.font.weight
@@ -223,6 +231,12 @@ Item {
                     height: parent.height
                     // Hidden until the first _refit() succeeds — see _fitted.
                     opacity: textHost._fitted ? 1 : 0
+                    // RichText so inline DSL formatting (bold/italic/underline/
+                    // color via <b>/<i>/<u>/<span style="color:#…">) is honored.
+                    // Plain text content (no markers) still renders correctly
+                    // through this path — Qt's RichText engine treats a tag-
+                    // free string as ordinary text.
+                    textFormat:         Text.RichText
                     text:               textHost._renderedText
                     color:              textHost._style.color || "#ffffff"
                     font.family:        textHost._style.fontFamily || Theme.font.family

@@ -18,6 +18,16 @@ Window {
     // The screen index to target. Main.qml binds this to OutputService.
     property int screenIndex: 0
 
+    // Whether the projection is "logically open" — i.e. shown to the operator
+    // and the audience. When false, the window stays *alive* but is parked
+    // offscreen with no taskbar / Alt+Tab presence, so the scene graph keeps
+    // rendering and NDI (or any other capture consumer) always has fresh
+    // frames. This is the cheap version of the render-pipeline-decouple
+    // story — the real decouple (headless QQuickRenderControl + shared FBO)
+    // lives in a future PR; this gets us 90% of the benefit today by simply
+    // not letting visibility go Hidden.
+    property bool logicallyVisible: true
+
     readonly property var _targetScreen:
         Qt.application.screens[screenIndex] || Qt.application.screens[0]
 
@@ -34,38 +44,58 @@ Window {
     // projection is fullscreen on a single-monitor laptop.
     transientParent: null
 
-    // Production mode (fullscreen) keeps frameless + on-top for the projector
-    // aesthetic; windowed mode drops both so the OS gives the user a real
-    // title bar, drag/resize edges, and a close button. Main.qml controls
-    // which visibility (FullScreen / Windowed / Hidden) is in effect; flags
-    // just tune chrome behavior within that mode.
-    flags: _windowed
-        ? Qt.Window
-        : (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    // Visibility never reaches Window.Hidden — even when "logically closed"
+    // we keep the window in Window.Windowed state at an off-screen position
+    // so the Qt scene graph keeps rendering and grabWindow() returns valid
+    // frames for NDI. When logically visible, we honour OutputService's
+    // Fullscreen / Windowed preference.
+    visibility: logicallyVisible
+        ? (_windowed ? Window.Windowed : Window.FullScreen)
+        : Window.Windowed
+
+    // Flags: standard window in production; tool-flagged (no taskbar entry,
+    // no Alt+Tab, doesn't accept focus) when parked offscreen so the
+    // operator never sees the "hidden" projection window in their OS chrome.
+    flags: !logicallyVisible
+        ? (Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+        : _windowed
+            ? Qt.Window
+            : (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
     title: qsTr("Crater Projection")
 
-    // Windowed-mode geometry. 480x270 is a 16:9 canvas-aspect thumbnail
-    // anchored to the bottom-right of the target screen with a 24 px inset
-    // so it doesn't crowd taskbars or the operator console. Fullscreen
-    // visibility overrides these, so leaving them set unconditionally is
-    // safe — they only take effect when Main.qml flips to Window.Windowed.
-    width:  480
-    height: 270
-    x: _targetScreen
-        ? _targetScreen.virtualX + _targetScreen.width  - width  - 24
-        : 100
-    y: _targetScreen
-        ? _targetScreen.virtualY + _targetScreen.height - height - 24
-        : 100
+    // Windowed-mode geometry. When logically visible: 480x270 16:9 canvas-
+    // aspect thumbnail anchored to the bottom-right of the target screen
+    // with a 24 px inset. When offscreen: full 1920x1080 so the scene
+    // renders at projection resolution (NDI receivers get proper-sized
+    // frames) and positioned way off the virtual desktop so no display
+    // ever shows it. Fullscreen visibility overrides width/height/x/y, so
+    // setting these unconditionally is safe — they only take effect when
+    // visibility is Window.Windowed.
+    width:  logicallyVisible ?  480 : 1920
+    height: logicallyVisible ?  270 : 1080
+    x: !logicallyVisible
+        ? -32000
+        : (_targetScreen
+            ? _targetScreen.virtualX + _targetScreen.width  - width  - 24
+            : 100)
+    y: !logicallyVisible
+        ? -32000
+        : (_targetScreen
+            ? _targetScreen.virtualY + _targetScreen.height - height - 24
+            : 100)
 
     // Background color = first container's color, falling back to black.
     // Painted BEFORE the canvas stage so anything outside the letterbox
     // looks intentional (matte black, not theme color stretched).
     color: "#000000"
 
-    onVisibleChanged: {
-        if (visible) OutputService.notifyProjectionOpened()
-        else         OutputService.notifyProjectionClosed()
+    // OutputService.projectionOpen now tracks logical visibility, not OS
+    // visibility. Since the window stays OS-visible even when "closed",
+    // onVisibleChanged would fire exactly once at startup and never again;
+    // onLogicallyVisibleChanged is the right hook for the open/close semantic.
+    onLogicallyVisibleChanged: {
+        if (logicallyVisible) OutputService.notifyProjectionOpened()
+        else                  OutputService.notifyProjectionClosed()
     }
 
     // User clicked the close (X) button on the windowed projector. Reject

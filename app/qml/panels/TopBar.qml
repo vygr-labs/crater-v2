@@ -65,6 +65,31 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.space.sm
 
+        // NDI status chip. Only present when the NDI runtime is available
+        // (Tools/Runtime installed). Clicking toggles broadcast. The icon
+        // colour cascades through three states:
+        //   • on-air (PGM)  → live red — somebody has us on their program output
+        //   • on-preview    → champagne — somebody has us in their preview slot
+        //   • broadcasting  → brand green — sending but nobody's looking yet
+        //   • idle          → text secondary — runtime ready, not sending
+        // Tooltip caption mirrors the dialog's diagnostic so the operator
+        // can hover for the full state without opening Settings.
+        GhostButton {
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "radio"
+            text: qsTr("NDI")
+            visible: NdiService.available
+            active: NdiService.sending
+            iconColor: NdiService.onProgram ? Theme.color.live
+                     : NdiService.onPreview ? Theme.color.preview
+                     : NdiService.sending    ? Theme.color.brand
+                                             : Theme.color.textSecondary
+            onClicked: {
+                if (NdiService.sending) NdiService.stop()
+                else                    NdiService.start()
+            }
+        }
+
         GhostButton {
             anchors.verticalCenter: parent.verticalCenter
             iconName: "image"

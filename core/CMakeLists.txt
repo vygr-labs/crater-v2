@@ -34,6 +34,8 @@ add_library(crater-core STATIC
     src/ProjectionService.cpp
     src/SettingsService.cpp
     src/WorkingTheme.cpp
+    src/LyricsDSL.cpp
+    src/LyricsService.cpp
 
     # Headers (Q_OBJECT + Q_GADGET). Listed explicitly so AUTOMOC scans them —
     # without this, AUTOMOC walks .cpp #includes but doesn't always discover
@@ -58,6 +60,8 @@ add_library(crater-core STATIC
     include/crater/value/Theme.h
     include/crater/value/Screen.h
     include/crater/value/MediaItem.h
+    include/crater/LyricsDSL.h
+    include/crater/LyricsService.h
 )
 
 target_include_directories(crater-core
@@ -132,3 +136,12 @@ qt_add_resources(crater-core "crater_migrations"
 )
 
 add_library(Crater::Core ALIAS crater-core)
+
+# Headless unit tests. Off by default so dev rebuilds stay snappy; enable
+# with `cmake -DCRATER_BUILD_TESTS=ON` (or via the test preset). Tests live
+# under tests/ as their own subdir to keep this CMakeLists scannable.
+option(CRATER_BUILD_TESTS "Build crater-core unit tests" OFF)
+if(CRATER_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
