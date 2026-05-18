@@ -33,3 +33,7 @@ Thumbs.db
 # Local DB / runtime artifacts
 *.sqlite-journal
 *.log
+
+# Release packaging output (qt/scripts/release.ps1)
+dist/
+packaging/vc_redist.x64.exe

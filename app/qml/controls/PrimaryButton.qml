@@ -38,7 +38,10 @@ Rectangle {
     implicitHeight: 36
     implicitWidth: contentRow.implicitWidth + Theme.space.xl * 2
 
-    radius: Theme.radius.md
+    // Squared by design — matches the rest of the dialog/console chrome.
+    // Was Theme.radius.md (6) when the design leaned softer; we've shifted
+    // toward flat, architectural button shapes app-wide.
+    radius: 0
     color: !root.enabled    ? Qt.darker(_base, 1.6)
          : ma.pressed       ? _pressed
          : ma.containsMouse ? _hover

@@ -96,7 +96,6 @@ qt_add_qml_module(crater
         qml/panels/LibraryTabBar.qml
         qml/panels/LibrarySidebar.qml
         qml/panels/LibraryContent.qml
-        qml/panels/FooterBar.qml
         qml/panels/LibraryRow.qml
         qml/panels/ScheduleRow.qml
 
@@ -117,6 +116,7 @@ qt_add_qml_module(crater
         qml/dialogs/ScheduleDropdownPopover.qml
 
         # ── Settings sections ─────────────────────────────────────────
+        qml/dialogs/settings/SettingsSectionHeader.qml
         qml/dialogs/settings/AppearanceSection.qml
         qml/dialogs/settings/ProjectionSection.qml
         qml/dialogs/settings/ScriptureSection.qml

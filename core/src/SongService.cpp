@@ -139,7 +139,18 @@ struct SongService::Impl
             "       COALESCE((SELECT GROUP_CONCAT(lines_json, ' ') FROM song_sections WHERE song_id = s.id), '') "
             "FROM songs s WHERE s.id = ?")))
         , deleteFtsForSong(conn.prepare(QStringLiteral(
-            "DELETE FROM songs_fts WHERE rowid = ?")))
+            // songs_fts is a CONTENTLESS FTS5 table (content=''), so a plain
+            // DELETE is rejected by SQLite with "cannot DELETE from contentless
+            // fts5 table". The only way to remove a row is the FTS5 'delete'
+            // command, which requires the OLD column values so FTS can subtract
+            // the right tokens from the inverted index. We read those values
+            // from the source tables — which means callers MUST run this BEFORE
+            // mutating songs / song_sections for this id, so the SELECT sees
+            // the same text that's currently indexed.
+            "INSERT INTO songs_fts(songs_fts, rowid, title, author, lyrics) "
+            "SELECT 'delete', s.id, s.title, COALESCE(s.author, ''), "
+            "       COALESCE((SELECT GROUP_CONCAT(lines_json, ' ') FROM song_sections WHERE song_id = s.id), '') "
+            "FROM songs s WHERE s.id = ?")))
         , duplicateSongRow(conn.prepare(QStringLiteral(
             // Binds (1=nowMs, 2=nowMs, 3=src id). is_favorite resets to 0 so
             // copies don't inherit the favorite flag.
@@ -375,6 +386,22 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
         db::Transaction tx(m_impl->conn);
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 
+        // FTS bookkeeping must straddle the source-table mutation:
+        //   1. delFts FIRST (reads OLD title/author/lyrics from songs +
+        //      song_sections via SELECT — those rows still hold the values
+        //      currently indexed in songs_fts, so the 'delete' command
+        //      subtracts the right tokens).
+        //   2. Mutate songs + song_sections.
+        //   3. upsertFtsForSong (reads NEW values, inserts fresh FTS row).
+        // The previous code ran delFts AFTER the section rewrite, which both
+        // a) used a plain DELETE forbidden on contentless FTS5 tables, and
+        // b) would have read the wrong (new) values if we tried to convert
+        // it to the 'delete' command in place.
+        auto& delFts = m_impl->deleteFtsForSong;
+        delFts.reset();
+        delFts.bind(1, id);
+        delFts.step();
+
         auto& upd = m_impl->updateSong;
         upd.reset();
         upd.bind(1, title);
@@ -410,13 +437,9 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
             secStmt.step();
         }
 
-        // FTS row must be fully rebuilt for this song — title/author/lyrics
-        // can all change. Easiest path: delete + re-insert via upsertFtsForSong.
-        auto& delFts = m_impl->deleteFtsForSong;
-        delFts.reset();
-        delFts.bind(1, id);
-        delFts.step();
-
+        // FTS row was already deleted at the top of the transaction (when the
+        // source tables still held the OLD values). Now that they hold NEW
+        // values, upsertFtsForSong reads them and inserts the fresh FTS row.
         auto& fts = m_impl->upsertFtsForSong;
         fts.reset();
         fts.bind(1, id);

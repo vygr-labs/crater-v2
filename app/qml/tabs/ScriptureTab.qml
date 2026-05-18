@@ -33,6 +33,28 @@ Item {
     readonly property string mode:    AppState.librarySearchMode.scripture || "reference"
     readonly property string queryText: AppState.searchText.scripture || ""
 
+    // Debounced shadow of queryText — coalesces fast typing into one
+    // settle-then-search instead of search-per-keystroke. The heavy
+    // downstream paths (FTS5 search, parsedRef → indexOf scan over the
+    // full verse list → positionViewAtIndex → pushLibraryPreview) all
+    // read `_debouncedQuery` rather than `queryText`. The search input
+    // itself still updates per-keystroke (TabSearchBar binds straight to
+    // AppState.searchText), so typing feels instant.
+    //
+    // Why not debounce in TabSearchBar: that file's comment ("no
+    // debouncing here", line 16) deliberately keeps the bar
+    // presentational. Tab-local debounce is the architectural seam —
+    // each tab gets to shape its own cost profile (Songs FTS over song
+    // lyrics is cheaper because the index is smaller, so it doesn't
+    // need this yet).
+    property string _debouncedQuery: queryText
+    Timer {
+        id: queryDebounce
+        interval: 120
+        onTriggered: root._debouncedQuery = root.queryText
+    }
+    onQueryTextChanged: queryDebounce.restart()
+
     // Translations come back as uppercase codes ("KJV"); the sidebar stores
     // them lowercase ("kjv").
     readonly property string activeTranslation:
@@ -51,8 +73,8 @@ Item {
     // matches the electron behavior of returning `allScriptures()` when the
     // search box is empty regardless of mode.
     readonly property var currentVerses: {
-        if (mode === "search" && queryText.length > 0) {
-            return BibleService.search(queryText, activeTranslation)
+        if (mode === "search" && _debouncedQuery.length > 0) {
+            return BibleService.search(_debouncedQuery, activeTranslation)
         }
         return versesForActiveTranslation
     }
@@ -60,8 +82,8 @@ Item {
     // Reference-parser result (reference mode only). Used to scroll-to-match.
     readonly property var parsedRef: {
         if (mode !== "reference") return null
-        if (queryText.length === 0) return null
-        const v = BibleService.parseReference(queryText, activeTranslation)
+        if (_debouncedQuery.length === 0) return null
+        const v = BibleService.parseReference(_debouncedQuery, activeTranslation)
         return (v && v.text && v.text.length > 0) ? v : null
     }
 
@@ -548,7 +570,11 @@ Item {
                 text: modelData.text || ""
                 color: verseRow._selected ? Theme.color.textPrimary : "#d4d4d8"   // gray.300
                 font.family: Theme.font.family
-                font.pixelSize: 17
+                // Scales with the operator's Font size setting via Theme.uiScale.
+                // The literal 17 is the baseline pixel size (slightly larger
+                // than Theme.font.bodySize so verse rows read more substantial
+                // than song-row titles).
+                font.pixelSize: Math.round(17 * Theme.uiScale)
                 font.weight: verseRow._selected ? Theme.font.weightMedium
                                                 : Theme.font.weightRegular
                 elide: Text.ElideRight
@@ -559,11 +585,12 @@ Item {
                 anchors.right: versionBadge.left
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
-                text: modelData.book + " " + modelData.chapter + ":" + modelData.verse
+                text: modelData.book + " " + modelData.chapter
+                    + (SettingsService.showVerseNumbers ? ":" + modelData.verse : "")
                 color: verseRow._selected ? "#d4d4d8" /* gray.300 */
                                           : Theme.color.textTertiary
                 font.family: Theme.font.family
-                font.pixelSize: 16
+                font.pixelSize: Math.round(16 * Theme.uiScale)
                 font.weight: Theme.font.weightMedium
                 font.capitalization: Font.Capitalize
             }
@@ -587,7 +614,7 @@ Item {
                     color: verseRow._selected ? "#daf1d7" /* brand.300 */
                                               : Theme.color.textSecondary
                     font.family: Theme.font.monoFamily
-                    font.pixelSize: 11
+                    font.pixelSize: Math.round(11 * Theme.uiScale)
                     font.weight: Theme.font.weightBold
                     font.capitalization: Font.AllUppercase
                     font.letterSpacing: 0.5

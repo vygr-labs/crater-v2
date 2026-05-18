@@ -32,6 +32,7 @@ add_library(crater-core STATIC
     src/MediaService.cpp
     src/OutputService.cpp
     src/ProjectionService.cpp
+    src/SettingsService.cpp
     src/WorkingTheme.cpp
 
     # Headers (Q_OBJECT + Q_GADGET). Listed explicitly so AUTOMOC scans them —
@@ -44,6 +45,7 @@ add_library(crater-core STATIC
     include/crater/MediaService.h
     include/crater/OutputService.h
     include/crater/ProjectionService.h
+    include/crater/SettingsService.h
     include/crater/ElectronDataImporter.h
     include/crater/WorkingTheme.h
     include/crater/value/Translation.h

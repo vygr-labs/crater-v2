@@ -18,7 +18,8 @@ Rectangle {
     implicitHeight: 34
     implicitWidth: contentRow.implicitWidth + Theme.space.lg * 2
 
-    radius: Theme.radius.md
+    // Squared — see PrimaryButton.qml comment for the app-wide rationale.
+    radius: 0
     color: !root.enabled    ? "transparent"
          : root.active      ? Theme.color.brandSubtle
          : ma.containsMouse ? Theme.color.overlay

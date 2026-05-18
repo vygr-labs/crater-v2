@@ -169,11 +169,16 @@ Window {
         height: projectionWindow._canvas.height * _scale
         clip: true
 
-        // Content layer — fades in/out on go-live, page-change, clear.
+        // Content layer — fades in/out on go-live, page-change, logo.
+        // `isClear` no longer hides the whole stage; instead it hides only
+        // *text* nodes (handled per-delegate below) so the theme background
+        // and any non-text nodes remain visible. Logo overlay still drives
+        // a full-stage fade because the logo is meant to replace the
+        // entire scene visually.
         Item {
             id: contentLayer
             anchors.fill: parent
-            opacity: (projectionWindow._isClear || projectionWindow._showLogo) ? 0 : 1
+            opacity: projectionWindow._showLogo ? 0 : 1
             Behavior on opacity {
                 NumberAnimation {
                     duration: projectionWindow._transMs
@@ -192,10 +197,29 @@ Window {
                     opacity:  _style.opacity !== undefined ? _style.opacity : 1
                     rotation: _style.rotation || 0
 
-                    NodeRenderer {
+                    // Per-node "clear fader" — a nested Item whose opacity
+                    // drops to 0 only when the node is a TEXT node AND the
+                    // projection is cleared. Non-text nodes (image
+                    // backgrounds, containers, decorative shapes) keep
+                    // their parent opacity and remain visible. Separated
+                    // from the outer Item's opacity so theme-editor edits
+                    // to `style.opacity` continue to snap (no Behavior
+                    // there), while the clear fade is animated here.
+                    Item {
                         anchors.fill: parent
-                        node: modelData
-                        resolvedText: projectionWindow.resolveText(modelData)
+                        opacity: (projectionWindow._isClear && modelData.kind === "text") ? 0 : 1
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: projectionWindow._transMs
+                                easing.type: Easing.InOutCubic
+                            }
+                        }
+
+                        NodeRenderer {
+                            anchors.fill: parent
+                            node: modelData
+                            resolvedText: projectionWindow.resolveText(modelData)
+                        }
                     }
                 }
             }
@@ -231,13 +255,14 @@ Window {
         // fallback when no logo path has been chosen. `active` gates the
         // video decoder; opacity drives the fade so the decoder doesn't
         // bounce on every fade tick.
+        //
+        // Logo visibility is now independent of `isClear` — clearing only
+        // hides text, so a logo toggled on stays visible through a clear.
         LogoView {
             id: logoView
             anchors.fill: parent
-            readonly property bool _shouldShow:
-                projectionWindow._showLogo && !projectionWindow._isClear
-            active: _shouldShow
-            opacity: _shouldShow ? 1.0 : 0.0
+            active: projectionWindow._showLogo
+            opacity: projectionWindow._showLogo ? 1.0 : 0.0
 
             Behavior on opacity {
                 NumberAnimation {

@@ -22,11 +22,24 @@ Rectangle {
                    ? ScheduleService.currentItems[AppState.liveScheduleIndex]
                    : null)
 
-    readonly property var pages: liveItem && liveItem.pages ? liveItem.pages : []
+    // Filter to pages that have *content* to display. Media items
+    // (image/video) carry one placeholder page with empty content — we
+    // suppress empty rows here. ThemedMonitor reads item.pages directly,
+    // so the bottom thumbnail still renders the media. Mirrors the same
+    // filter in PreviewPanel.
+    readonly property var pages: {
+        const raw = liveItem && liveItem.pages ? liveItem.pages : []
+        return raw.filter(function(p) {
+            return p && p.content && String(p.content).length > 0
+        })
+    }
+    // `isClear` no longer makes the live state collapse — clearing hides
+    // text but keeps the theme background (and logo, if showing) on the
+    // projector. From the operator's perspective the channel is still
+    // live; only the audience-facing text content is suppressed.
     readonly property bool isLive:
-        !AppState.isClear
-        && ((AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
-            || (AppState.liveScheduleIndex >= 0 && liveItem !== null))
+        (AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
+        || (AppState.liveScheduleIndex >= 0 && liveItem !== null)
 
     // ── Header ──────────────────────────────────────────────────────────
     Item {
@@ -113,7 +126,7 @@ Rectangle {
                     settingsBtn.width, settingsBtn.height + 4, [
                     { label: qsTr("Clear output"),     iconName: "x",
                       action: function() { AppState.clearLive() } },
-                    { label: qsTr("Toggle logo"),      iconName: "list-ordered",
+                    { label: qsTr("Toggle logo"),      iconName: "image",
                       action: function() { AppState.toggleLogo() } },
                     { separator: true },
                     { label: qsTr("Output settings…"), iconName: "monitor",
@@ -143,9 +156,11 @@ Rectangle {
             anchors.fill: parent
             visible: !root.isLive
             iconName: "radio"
-            title: AppState.isClear ? qsTr("Display cleared") : qsTr("Nothing live")
-            body: AppState.isClear ? qsTr("Output is currently blank")
-                                   : qsTr("Double-click a preview item to go live")
+            // `isClear` no longer collapses isLive (see property comment
+            // above), so the previous "Display cleared" branch is now
+            // unreachable. Single message when no live item exists.
+            title: qsTr("Nothing live")
+            body: qsTr("Double-click a preview item to go live")
         }
 
         ListView {
@@ -158,53 +173,183 @@ Rectangle {
             model: root.pages
             clip: true
             cacheBuffer: 200
-            spacing: Theme.space.xs
+            spacing: Theme.space.sm
 
+            // Production-cue card delegate — same anatomy as PreviewPanel's
+            // delegate, but channel-recoloured to crimson. Structure
+            // mirrored so the operator sees a parallel pair of cue lists:
+            // champagne = staged, crimson = on-air. Three zones (indexCol,
+            // headerBand, bodyArea) — see PreviewPanel.qml for the
+            // detailed rationale.
             delegate: Rectangle {
-                width: pagesList.width
-                height: pageText.implicitHeight + Theme.space.lg * 2
-                radius: Theme.radius.md
-                color: AppState.liveSubIndex === index ? Theme.color.liveSubtle
-                                                       : pageMa.containsMouse ? Theme.color.raised
-                                                                              : "transparent"
-                border.color: AppState.liveSubIndex === index ? Theme.color.live : "transparent"
+                id: card
+
+                readonly property bool   isActive: AppState.liveSubIndex === index
+                readonly property bool   isHover:  pageMa.containsMouse
+                readonly property string headLabel: (modelData && modelData.label && String(modelData.label).length > 0)
+                                                    ? String(modelData.label)
+                                                    : ""
+                // Translation badge — scripture only. Songs/media omit the
+                // separator and code entirely so absence doesn't perform.
+                readonly property string translationCode:
+                    (root.liveItem && root.liveItem.scriptureRef && root.liveItem.scriptureRef.translationCode)
+                        ? String(root.liveItem.scriptureRef.translationCode)
+                        : ""
+                // Header band collapses to zero height when there's no
+                // label and no translation code. Mirrors PreviewPanel.
+                readonly property bool hasHeader: headLabel.length > 0
+                                               || translationCode.length > 0
+
+                width:  pagesList.width
+                height: bodyArea.y + bodyArea.height + 1
+
+                color: isActive ? Theme.color.liveSubtle
+                                : isHover  ? Theme.color.overlay
+                                           : Theme.color.raised
+                border.color: isActive ? Theme.color.live
+                                       : isHover  ? Qt.rgba(177/255, 54/255, 52/255, 0.22)
+                                                  : "transparent"
                 border.width: 1
 
                 Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
                 Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
-                Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: (index + 1).toString()
-                    color: Theme.color.textTertiary
-                    font.family: Theme.font.monoFamily
-                    font.pixelSize: Theme.font.smallSize
-                    width: 18
+                // ── Index column (left rail) ────────────────────────────
+                Rectangle {
+                    id: indexCol
+                    anchors.top:    parent.top
+                    anchors.left:   parent.left
+                    anchors.bottom: parent.bottom
+                    anchors.topMargin:    1
+                    anchors.leftMargin:   1
+                    anchors.bottomMargin: 1
+                    width: 32
+
+                    color: card.isActive ? "#4d1918"
+                                         : card.isHover  ? "#22222a"
+                                                         : "#1c1c20"
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: (index + 1).toString()
+                        // Active text uses textPrimary (white) rather than
+                        // a tinted crimson. Saturated reds like
+                        // Theme.color.live sit at mid-luminance, so even
+                        // lightened (Qt.lighter, 1.5x) they stay in the
+                        // red family — close in brightness to the
+                        // #4d1918 rail bg, giving the digit only a faint
+                        // glow against it. The active "this is live" cue
+                        // is already carried by the rail tint, the
+                        // crimson card border, and the title in the
+                        // header band; the digit doesn't also need to be
+                        // red-on-red. White wins clarity outright.
+                        color: card.isActive ? Theme.color.textPrimary
+                                             : Theme.color.textTertiary
+                        font.family:    Theme.font.monoFamily
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight:    Theme.font.weightSemiBold
+                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                    }
                 }
 
-                Text {
-                    id: pageText
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.space.xl + 6
+                // ── Vertical demarcator ─────────────────────────────────
+                // Mirrors PreviewPanel — 1px line separating the indexCol
+                // from the title/body area so the L-shape doesn't blur
+                // into one continuous block when tints match.
+                Rectangle {
+                    id: vDivider
+                    anchors.top:    parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left:   indexCol.right
+                    anchors.topMargin:    1
+                    anchors.bottomMargin: 1
+                    width: 1
+                    color: card.isActive ? Qt.rgba(177/255, 54/255, 52/255, 0.30) : Theme.color.borderSubtle
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+
+                // ── Header band ─────────────────────────────────────────
+                // Collapses to zero height when there's no label/translation.
+                Rectangle {
+                    id: headerBand
+                    visible: card.hasHeader
+                    height:  card.hasHeader ? 22 : 0
+                    anchors.top:   parent.top
+                    anchors.left:  vDivider.right
                     anchors.right: parent.right
-                    anchors.rightMargin: Theme.space.lg
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.content || ""
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    wrapMode: Text.WordWrap
-                    lineHeight: 1.4
+                    anchors.rightMargin: 1
+                    anchors.topMargin:   1
+
+                    color: card.isActive ? "#4d1918"
+                                         : card.isHover  ? "#22222a"
+                                                         : "#1c1c20"
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                    Text {
+                        anchors.fill: parent
+                        anchors.leftMargin:  Theme.space.sm
+                        anchors.rightMargin: Theme.space.sm
+                        verticalAlignment: Text.AlignVCenter
+                        text: card.headLabel.toUpperCase()
+                              + (card.translationCode.length > 0
+                                   ? "  ·  " + card.translationCode
+                                   : "")
+                        color: card.isActive ? Theme.color.textPrimary : Theme.color.textSecondary
+                        font.family:    Theme.font.family
+                        font.pixelSize: Theme.font.microSize
+                        font.weight:    Theme.font.weightSemiBold
+                        font.letterSpacing: 1.2
+                        elide: Text.ElideRight
+                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                    }
+                }
+
+                // 1px horizontal divider — hides along with the header.
+                Rectangle {
+                    id: divider
+                    visible: card.hasHeader
+                    height:  card.hasHeader ? 1 : 0
+                    anchors.top:   headerBand.bottom
+                    anchors.left:  vDivider.right
+                    anchors.right: parent.right
+                    anchors.rightMargin: 1
+                    color: card.isActive ? Qt.rgba(177/255, 54/255, 52/255, 0.30) : Theme.color.borderSubtle
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+
+                // ── Body ────────────────────────────────────────────────
+                Item {
+                    id: bodyArea
+                    anchors.top:   divider.bottom
+                    anchors.left:  vDivider.right
+                    anchors.right: parent.right
+                    anchors.rightMargin: 1
+                    height: pageText.implicitHeight + Theme.space.sm * 2
+
+                    Text {
+                        id: pageText
+                        anchors.top:   parent.top
+                        anchors.left:  parent.left
+                        anchors.right: parent.right
+                        anchors.topMargin:   Theme.space.sm
+                        anchors.leftMargin:  Theme.space.sm
+                        anchors.rightMargin: Theme.space.sm
+                        text:           modelData.content || ""
+                        color:          Theme.color.textPrimary
+                        font.family:    Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        wrapMode:       Text.WordWrap
+                        lineHeight:     1.25
+                    }
                 }
 
                 MouseArea {
                     id: pageMa
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: AppState.liveSubIndex = index
+                    cursorShape:  Qt.PointingHandCursor
+                    onClicked:    AppState.liveSubIndex = index
                 }
             }
         }
@@ -222,13 +367,55 @@ Rectangle {
     // Audio: live monitor is unmuted because Projection (the audience-
     // facing window) doesn't render yet. When Projection lands, audio
     // moves there and this monitor goes muted to avoid double-routing.
+    // Size + position policy mirrors PreviewPanel:
+    //   • Compact: 160×90 thumb anchored left, with the item info
+    //     column on the right (title + "Slide N of M").
+    //   • Fullsize (media items): centered, expanded to fit the body area.
+    // Live shares Preview's base size (160×90). The crimson border on the
+    // monitor frame is enough visual separation — making live physically
+    // larger would over-emphasise it and break the paired-pane symmetry.
     Item {
         id: monitorWrap
         anchors.bottom: parent.bottom
         anchors.bottomMargin: Theme.space.lg
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: 320
-        height: 180
+        anchors.leftMargin: Theme.space.lg
+
+        // Guard on isLive — otherwise the empty pages list on fresh open
+        // (nothing live yet) would fire fullsize and the monitor would
+        // bloom into the body, squashing the "Nothing live" EmptyState.
+        // We only want to expand when there's a real live item *and* it
+        // has no text pages to render (i.e. media items).
+        readonly property bool fullsize: root.isLive && root.pages.length === 0
+        readonly property real maxFullW: parent.width - Theme.space.lg * 2
+        readonly property real maxFullH: parent.height - header.height
+                                          - Theme.space.md
+                                          - Theme.space.lg
+
+        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : 160
+        height: fullsize ? width * 9 / 16                        : 90
+
+        state: fullsize ? "fullsize" : "compact"
+        states: [
+            State {
+                name: "compact"
+                AnchorChanges {
+                    target: monitorWrap
+                    anchors.left: monitorWrap.parent.left
+                    anchors.horizontalCenter: undefined
+                }
+            },
+            State {
+                name: "fullsize"
+                AnchorChanges {
+                    target: monitorWrap
+                    anchors.left: undefined
+                    anchors.horizontalCenter: monitorWrap.parent.horizontalCenter
+                }
+            }
+        ]
+
+        Behavior on width  { NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic } }
+        Behavior on height { NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic } }
 
         Rectangle {
             anchors.fill: parent
@@ -271,6 +458,43 @@ Rectangle {
                 active: AppState.showLogo
                 visible: AppState.showLogo
             }
+        }
+    }
+
+    // ── Item info (right of monitor when compact) ──────────────────────
+    // Shows the live item's title plus "Slide N of M". Hidden when the
+    // monitor is fullsize (media takeover already commands attention) or
+    // when nothing is live (the EmptyState above carries the message).
+    Column {
+        id: monitorInfo
+        visible: !monitorWrap.fullsize && root.isLive
+        anchors.left:           monitorWrap.right
+        anchors.leftMargin:     Theme.space.lg
+        anchors.right:          parent.right
+        anchors.rightMargin:    Theme.space.lg
+        anchors.verticalCenter: monitorWrap.verticalCenter
+        spacing: Theme.space.xs
+
+        Text {
+            width: parent.width
+            text:  root.liveItem && root.liveItem.title
+                       ? String(root.liveItem.title)
+                       : ""
+            color: Theme.color.textPrimary
+            font.family:    Theme.font.family
+            font.pixelSize: Theme.font.bodySize
+            font.weight:    Theme.font.weightMedium
+            elide: Text.ElideRight
+        }
+
+        Text {
+            visible: root.pages.length > 1
+            text: qsTr("Slide %1 of %2")
+                    .arg(AppState.liveSubIndex + 1)
+                    .arg(root.pages.length)
+            color: Theme.color.textSecondary
+            font.family:    Theme.font.family
+            font.pixelSize: Theme.font.smallSize
         }
     }
 }

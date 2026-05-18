@@ -7,15 +7,15 @@ QtObject {
 
     // ── Global UI scale ─────────────────────────────────────────────────
     // Every Theme.font.* and Theme.icon.* token multiplies its base value by
-    // this scale, so a single property bumps the whole UI together. Default
-    // 1.0; future SettingsService wiring will persist a per-user value (think
-    // accessibility / "increase text size" preference). Setting this at
+    // this scale, so a single property bumps the whole UI together. Bound
+    // to SettingsService.fontScale (driven by the Appearance > Font size
+    // S/M/L picker; 0.9 / 1.0 / 1.15 respectively). Setting this at
     // runtime re-evaluates every binding that reads through the tokens.
     //
     // Hardcoded font.pixelSize / size: values at call sites do NOT scale —
     // those are deliberate one-off pixel choices. Most app surface area
     // routes through the tokens, so the practical impact is small.
-    property real uiScale: 1.0
+    property real uiScale: SettingsService.fontScale
 
     readonly property QtObject color: QtObject {
         // Surfaces — neutral near-blacks aligned with the Electron palette
@@ -63,10 +63,24 @@ QtObject {
         readonly property color rowHoverBrand: Qt.rgba(34/255, 118/255, 23/255, 0.30)
 
         // Broadcast semantics — these never get used decoratively.
-        readonly property color live:          "#e85a4a"
-        readonly property color liveSubtle:    "#3a1a17"
-        readonly property color preview:       "#5b9df0"
-        readonly property color previewSubtle: "#152538"
+        // Live — deep crimson. Carries dual semantics: the ON-AIR channel
+        // state (LivePanel, Monitor, schedule live indicators) AND every
+        // destructive/error UI in the app (Delete buttons, validation
+        // failures, batch-delete chrome). Crimson keeps both reads: it's
+        // unambiguously red for broadcast convention and destructive-UX
+        // muscle memory, but tonally deep enough to pair with the champagne
+        // preview without competing in saturation. Subtle variant follows
+        // the same depth/saturation compression as `previewSubtle`.
+        readonly property color live:          "#b13634"
+        readonly property color liveSubtle:    "#2c0f0f"
+        // Preview — pale champagne gold. Treats preview as a channel
+        // state paired with live=red, but keeps the saturation low so the
+        // staged card reads as dignified rather than alarming. Connects
+        // to Crater's original warm-gold brand mark; native to worship
+        // contexts (stage lighting, candles, scripture parchment).
+        // Subtle variant mirrors `liveSubtle`'s tonal relationship.
+        readonly property color preview:       "#cdb78e"
+        readonly property color previewSubtle: "#2a2418"
         readonly property color goLive:        "#22c55e"   // green: the "send it" action color
         readonly property color goLiveHover:   "#3ad273"
         readonly property color goLivePressed: "#1cae54"
@@ -151,9 +165,15 @@ QtObject {
     }
 
     readonly property QtObject motion: QtObject {
-        readonly property int instant: 120
-        readonly property int normal:  180
-        readonly property int slow:    240
+        // Gated on SettingsService.reduceMotion — when the operator opts
+        // out of motion (Appearance > Reduce motion), every Behavior /
+        // NumberAnimation that reads through this token collapses to
+        // duration 0, snapping rather than easing. We keep the binding
+        // here (rather than at each Behavior call site) so the toggle is
+        // a single source of truth.
+        readonly property int instant: SettingsService.reduceMotion ? 0 : 120
+        readonly property int normal:  SettingsService.reduceMotion ? 0 : 180
+        readonly property int slow:    SettingsService.reduceMotion ? 0 : 240
     }
 
     readonly property QtObject size: QtObject {

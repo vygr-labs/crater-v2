@@ -29,6 +29,22 @@ Item {
     }
 
     readonly property string query:  (AppState.searchText.songs || "").toLowerCase()
+
+    // Debounced shadow of query — coalesces fast typing into one
+    // settle-then-search per ~120ms. The expensive cascade reads this
+    // (filteredSongs → SongService.search FTS5 + in-memory filter sweep;
+    // onFilteredSongsChanged → SongService.fetchSong (second SQL) →
+    // pushLibraryPreview → PreviewPanel + ThemedMonitor re-render).
+    // The TabSearchBar input itself still updates per-keystroke, so
+    // typing stays instant; the consequence loop just waits a moment.
+    property string _debouncedQuery: query
+    Timer {
+        id: queryDebounce
+        interval: 120
+        onTriggered: root._debouncedQuery = root.query
+    }
+    onQueryChanged: queryDebounce.restart()
+
     readonly property string mode:   AppState.librarySearchMode.songs || "lyrics"
     // Sort dimension is independent of filter mode — picking "Sort by Newest"
     // from the gear no longer changes the input placeholder. "none" means
@@ -55,13 +71,18 @@ Item {
         const grp   = root.group
         const m     = root.mode
         const sort  = root.sortMode
-        const q     = root.query
+        // Debounced — see `_debouncedQuery` above. Reading `root.query`
+        // here would re-run FTS5 + fetchSong + preview-push per keystroke.
+        const q     = root._debouncedQuery
 
         // Step 1 — choose the base set. Lyrics-FTS produces its own list from
         // the index; everything else starts from the full library.
         let result = []
         if (m === "lyrics" && q.length > 0) {
-            result = SongService.search(AppState.searchText.songs || "")
+            // FTS5 (unicode61 tokenizer) is case-insensitive, so the
+            // lowercased debounced query yields the same matches as the
+            // raw input did.
+            result = SongService.search(q)
         } else if (m === "title" && q.length > 0) {
             result = all.filter(function(s) {
                 return s && (s.title || "").toLowerCase().indexOf(q) !== -1
@@ -153,10 +174,20 @@ Item {
         if (pages.length === 0) {
             pages = [{ label: "", content: song.title + (song.author ? "\n" + song.author : "") }]
         }
+        // Subtitle composition is gated by the operator's Song > Show
+        // author / Show CCLI number toggles (SettingsService). Each part
+        // is independently suppressible, joined by " · " for any
+        // surviving pairs. Empty when both toggles are off — ProjectionWindow
+        // renders an empty subtitle cleanly.
+        let subtitleParts = []
+        if (SettingsService.showSongAuthor && song.author)
+            subtitleParts.push(song.author)
+        if (SettingsService.showSongCcli && song.ccli)
+            subtitleParts.push("CCLI " + song.ccli)
         return {
             kind:     "song",
             title:    song.title,
-            subtitle: song.author + (song.ccli ? " · CCLI " + song.ccli : ""),
+            subtitle: subtitleParts.join(" · "),
             pages:    pages,
             songId:   song.id,
             // Carried through to AppState.resolveItemTheme() so Go Live honors
@@ -357,10 +388,19 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         visible: SongService.allSongs.length === 0
+        // music-off (a slashed music note) would read more clearly as
+        // "empty library" than the standard music glyph — but it isn't in
+        // the bundled lucide.ttf. Fall back to plain music until the font
+        // is refreshed.
         iconName: "music"
-        title: qsTr("No songs yet")
+        title: qsTr("No Songs Yet")
         body: qsTr("Import songs from a file or create them manually to get started")
     }
+    // Borderless "Add Your First Song" CTA. Sits just below vertical center
+    // so it lines up with the EmptyState above it. We don't reuse
+    // PrimaryButton here because a filled brand chip competes with the
+    // empty-state's centered icon+title — the design wants the CTA to read
+    // as a quiet text link, not a primary action button.
     Item {
         anchors.top: actionBar.bottom
         anchors.bottom: parent.bottom
@@ -368,16 +408,48 @@ Item {
         anchors.right: parent.right
         visible: SongService.allSongs.length === 0
 
-        PrimaryButton {
+        Item {
+            id: addFirstCta
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.verticalCenter
-            anchors.topMargin: 64
-            variant: "brand"
-            iconName: "plus"
-            text: qsTr("Add your first song")
-            // Open the editor directly so the empty library funnel matches
-            // electron's first-run flow (title + lyrics + theme in one step).
-            onClicked: AppState.openModal("songEditor", {})
+            anchors.topMargin: Theme.space.xl
+            implicitWidth: ctaRow.implicitWidth + Theme.space.lg * 2
+            implicitHeight: 36
+
+            Row {
+                id: ctaRow
+                anchors.centerIn: parent
+                spacing: Theme.space.md
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "plus"
+                    color: ctaMa.containsMouse ? Theme.color.textPrimary
+                                               : Theme.color.textSecondary
+                    size: Theme.icon.md
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Add Your First Song")
+                    color: ctaMa.containsMouse ? Theme.color.textPrimary
+                                               : Theme.color.textSecondary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
+                    font.weight: Theme.font.weightMedium
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+            }
+
+            MouseArea {
+                id: ctaMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                // Open the editor directly so the empty library funnel matches
+                // electron's first-run flow (title + lyrics + theme in one step).
+                onClicked: AppState.openModal("songEditor", {})
+            }
         }
     }
 
@@ -564,8 +636,19 @@ Item {
                     width: parent.width
                 }
                 Text {
-                    visible: modelData.author && modelData.author.length > 0
-                    text: modelData.author
+                    // Combined author + CCLI subtitle. Each part is
+                    // independently suppressible via Appearance settings;
+                    // " · " separator only appears when both survive.
+                    visible: text.length > 0
+                    text: {
+                        const parts = []
+                        if (modelData.author && modelData.author.length > 0)
+                            parts.push(modelData.author)
+                        if (SettingsService.showCcli
+                            && modelData.ccli && modelData.ccli.length > 0)
+                            parts.push("CCLI " + modelData.ccli)
+                        return parts.join(" · ")
+                    }
                     color: songRow._selected ? Theme.color.textSecondary
                                              : Theme.color.textTertiary
                     font.family: Theme.font.family

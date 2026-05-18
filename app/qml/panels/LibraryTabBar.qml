@@ -17,13 +17,20 @@ Item {
         z: -1
     }
 
-    readonly property var tabs: [
-        { label: qsTr("Songs"),     iconName: "music"     },
-        { label: qsTr("Scripture"), iconName: "book-open" },
-        { label: qsTr("Strong's"),  iconName: "",           customGlyph: "S" },
-        { label: qsTr("Media"),     iconName: "film"      },
-        { label: qsTr("Themes"),    iconName: "palette"   }
+    // Canonical 5-tab list. Strong's is filtered out when the operator's
+    // "Show Strong's tab" setting is off; the visible `tabs` array shrinks
+    // to 4 entries. Indices in `tabs` line up 1:1 with AppState.tabKeys
+    // so click-to-setActiveTab(index) routes correctly without remapping.
+    readonly property var allTabs: [
+        { key: "songs",     label: qsTr("Songs"),     iconName: "music"     },
+        { key: "scripture", label: qsTr("Scripture"), iconName: "book-open" },
+        { key: "strongs",   label: qsTr("Strong's"),  iconName: "",           customGlyph: "S" },
+        { key: "media",     label: qsTr("Media"),     iconName: "film"      },
+        { key: "themes",    label: qsTr("Themes"),    iconName: "palette"   }
     ]
+    readonly property var tabs: SettingsService.showStrongsTab
+        ? allTabs
+        : allTabs.filter(function(t) { return t.key !== "strongs" })
 
     Row {
         anchors.left: parent.left

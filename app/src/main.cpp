@@ -26,6 +26,7 @@
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
 #include "crater/ScheduleService.h"
+#include "crater/SettingsService.h"
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
 #include "crater/Version.h"
@@ -254,6 +255,10 @@ int main(int argc, char* argv[])
     crater::MediaService      mediaService;
     crater::OutputService     outputService;
     crater::ProjectionService projectionService;
+    // SettingsService is constructed BEFORE QML loads so Theme.uiScale +
+    // any other early bindings have a populated source. No service deps;
+    // it owns its own QSettings instance.
+    crater::SettingsService   settingsService;
     crater::FileDialogService fileDialogService;
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
@@ -274,6 +279,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);

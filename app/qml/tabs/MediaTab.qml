@@ -40,6 +40,22 @@ Item {
 
     readonly property string tabKey: "media"
     readonly property string query:  (AppState.searchText.media || "").toLowerCase()
+
+    // Debounced shadow of query — coalesces fast typing into one
+    // settle-then-filter per ~120ms. The dominant per-keystroke cost
+    // here isn't the in-memory filter (cheap), it's that
+    // onFilteredMediaChanged → pushPreviewFor → PreviewPanel's
+    // MediaMonitor reloads an image or video for each preview swap as
+    // the filter narrows. Debouncing the input collapses that to one
+    // load per typing burst.
+    property string _debouncedQuery: query
+    Timer {
+        id: queryDebounce
+        interval: 120
+        onTriggered: root._debouncedQuery = root.query
+    }
+    onQueryChanged: queryDebounce.restart()
+
     readonly property string typeFilter: AppState.mediaTypeFilter
 
     // Derived list after filtering, then sorting. The source is
@@ -47,7 +63,9 @@ Item {
     // backing table changes, so this binding stays live.
     readonly property var filteredMedia: {
         const all   = MediaService.allMedia
-        const q     = root.query
+        // Debounced — see `_debouncedQuery` above. Reading `root.query`
+        // here would trigger a PreviewPanel media reload per keystroke.
+        const q     = root._debouncedQuery
         const tf    = root.typeFilter
         // Sidebar "Favorites" group is orthogonal to the type filter — it's
         // applied here rather than via mediaTypeFilter so a mixed-type
@@ -229,10 +247,6 @@ Item {
     // recently added row whenever filteredMedia gains an item.
     onFilteredMediaChanged: {
         const n = filteredMedia.length
-        console.log("MediaTab onFilteredMediaChanged: n=" + n
-                    + " prev=" + _prevFilteredMediaLength
-                    + " init=" + _initialized
-                    + " allMedia.length=" + MediaService.allMedia.length)
 
         if (n === 0) {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)

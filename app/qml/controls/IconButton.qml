@@ -23,7 +23,8 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.radius.md
+        // Squared hover background — matches the other button atoms.
+        radius: 0
         color: ma.containsMouse ? Theme.color.overlay : "transparent"
 
         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }

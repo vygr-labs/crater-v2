@@ -33,7 +33,11 @@ Item {
 
     signal valueSelected(string v)
 
-    implicitHeight: 24
+    // 32px tracks Theme.size.controlHeight — the canonical height for
+    // dialog-grade controls (toggle switches, segmented buttons, etc.).
+    // Was 24 (tuned for the dense theme-editor inputs), which read as
+    // too small inside the more spacious settings dialog rows.
+    implicitHeight: Theme.size.controlHeight
 
     // Externally readable open state — callers (e.g. the Typography section
     // wrapping a font combobox) read this to lift their own z while we're
@@ -47,7 +51,9 @@ Item {
     Rectangle {
         id: button
         anchors.fill: parent
-        radius: Theme.radius.sm
+        // Squared corners — matches the rest of the dialog chrome and keeps
+        // the dropdown looking like a flat input rather than a pill.
+        radius: 0
         color: Theme.color.canvas
         border.color: root._open ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
@@ -88,7 +94,19 @@ Item {
         id: popover
         visible: false
         z: 1000
-        height: root.maxPopupHeight
+        // Snug-to-content height: search row (if present) + filtered rows +
+        // small bottom gutter, capped at maxPopupHeight for long lists.
+        // Without this the popover renders a fixed 280 px box even for a
+        // 3-item list, wasting screen real estate and forcing the eye to
+        // travel past empty rows. We reserve one row's worth of height when
+        // _filteredCount is 0 so the "no matches" state doesn't collapse
+        // the box into the search row.
+        height: {
+            const search = root.searchable ? (24 + 6 + 4) : 6
+            const rows   = Math.max(1, _filteredCount) * root.rowHeight
+            const bottom = 6
+            return Math.min(root.maxPopupHeight, search + rows + bottom)
+        }
         // Track the button's width even after reparenting to the window
         // root — anchors would tie us to a layout we're no longer in. The
         // binding stays live since `root` (and its width) outlive the
@@ -97,7 +115,7 @@ Item {
         color: Theme.color.raised
         border.color: Theme.color.borderStrong
         border.width: 1
-        radius: Theme.radius.md
+        radius: 0
         clip: true
 
         property string _filter: ""
@@ -137,7 +155,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 6
             height: 24
-            radius: Theme.radius.sm
+            radius: 0
             color: Theme.color.canvas
             border.color: Theme.color.borderSubtle
             border.width: 1
@@ -193,7 +211,7 @@ Item {
             delegate: Rectangle {
                 width: listView.width
                 height: root.rowHeight
-                radius: Theme.radius.sm
+                radius: 0
                 readonly property string _label: (typeof modelData === "string")
                     ? modelData
                     : (modelData.label || modelData.value || "")

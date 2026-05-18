@@ -53,6 +53,17 @@ ModalShell {
     property bool   _isSaving:   false
     property bool   _isLoading:  false
 
+    // Transient save-failure surface. SongService.update / createWithSections
+    // can return false (e.g. the song was deleted from another path, a DB
+    // constraint violated, etc.). Without this the failure is silent — the
+    // operator clicks Save and the dialog just sits there.
+    property string _saveError: ""
+    Timer {
+        id: saveErrorClearTimer
+        interval: 5000
+        onTriggered: root._saveError = ""
+    }
+
     // ── Undo/redo (mirrors electron's history snapshot stack) ───────────
     // Each entry is a deep clone of _sections at that point in time. We
     // push a snapshot BEFORE every mutation so undo returns to the prior
@@ -290,6 +301,40 @@ ModalShell {
         if (_currentSection >= parsed.length) _currentSection = parsed.length - 1
     }
 
+    // Find which section index the raw-mode cursor sits inside. Mirrors
+    // the _parseRawToSections walking logic, counting sections as we go,
+    // but stops at the line containing the cursor. Used by rawArea's
+    // onCursorPositionChanged to keep the right-pane preview in sync
+    // with whatever verse the operator is currently editing in raw mode.
+    function _sectionAtRawCursor(cursorPos) {
+        const text = _rawText
+        if (!text || cursorPos < 0) return 0
+        // Take the slice up through the END of the cursor's line so the
+        // line the cursor sits on is fully counted (not just the chars
+        // before the cursor within that line).
+        let endOfLine = text.indexOf("\n", cursorPos)
+        if (endOfLine < 0) endOfLine = text.length
+        const slice = text.substring(0, endOfLine)
+        const lines = slice.split("\n")
+        let sectionIdx = -1
+        let inSection  = false
+        for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim()
+            const isLabel = /^\[(.*)\]$/.test(trimmed)
+            if (isLabel) {
+                sectionIdx++
+                inSection = true
+            } else if (trimmed.length > 0) {
+                if (!inSection) { sectionIdx++; inSection = true }
+            } else {
+                inSection = false
+            }
+        }
+        if (sectionIdx < 0) sectionIdx = 0
+        if (sectionIdx >= _sections.length) sectionIdx = _sections.length - 1
+        return sectionIdx
+    }
+
     function _toggleViewMode() {
         if (_viewMode === "structured") {
             _refreshRawText()
@@ -313,6 +358,7 @@ ModalShell {
         if (_viewMode === "raw") _commitRawText(_rawText)
 
         _isSaving = true
+        _saveError = ""
         let ok = false
         if (_isEditMode) {
             ok = SongService.update(_songId, t, _author, _ccli, _themeId, _sections)
@@ -327,6 +373,20 @@ ModalShell {
             _history = [_clone(_sections)]
             _historyIndex = 0
             AppState.closeModal()
+        } else {
+            // Surface the failure: log to the Qt console for diagnosis, and
+            // show a transient banner in the footer so the operator sees
+            // something happened. SongService logs its own qWarning() to
+            // stderr describing the root cause (DB error, deleted song, etc.).
+            console.warn("SongEditorDialog: save failed"
+                       + " mode=" + (_isEditMode ? "update" : "create")
+                       + " songId=" + _songId
+                       + " title=" + JSON.stringify(t)
+                       + " sections=" + _sections.length)
+            _saveError = _isEditMode
+                ? qsTr("Could not save changes. See log for details.")
+                : qsTr("Could not create song. See log for details.")
+            saveErrorClearTimer.restart()
         }
     }
 
@@ -354,6 +414,12 @@ ModalShell {
     Shortcut { sequence: "Ctrl+Y"; onActivated: root._redo() }
     Shortcut { sequence: "Ctrl+Shift+Z"; onActivated: root._redo() }
     Shortcut { sequence: "Ctrl+M"; onActivated: root._toggleViewMode() }
+    // Ctrl+Tab toggles the editor's own view mode while the dialog is
+    // up — Main.qml's window-level Ctrl+Tab (which cycles operator
+    // console tabs) is disabled while activeModal !== "", so this is
+    // the only handler that fires.
+    Shortcut { sequence: "Ctrl+Tab";       onActivated: root._toggleViewMode() }
+    Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: root._toggleViewMode() }
 
     // Escape via Modal backdrop is already handled by ModalShell; we add
     // a Shortcut so the editor's own form fields don't swallow Esc.
@@ -365,7 +431,9 @@ ModalShell {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 90
+        // Taller header to accommodate the bigger title input row below
+        // (row1 stays 44; row2 gets the extra height for a 44-tall input).
+        height: 104
 
         // Row 1 — dialog title + section count + actions (undo/redo/close)
         Item {
@@ -455,15 +523,16 @@ ModalShell {
             anchors.leftMargin: Theme.space.lg
             anchors.rightMargin: Theme.space.lg
 
-            // Title input — left, expands to fill
+            // Title input — left, expands to fill. Taller + bigger font so
+            // the song title reads as the dialog's primary identifier.
             Rectangle {
                 id: titleWrap
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: viewToggleWrap.left
                 anchors.rightMargin: Theme.space.md
-                height: 32
-                radius: Theme.radius.md
+                height: 44
+                radius: 0
                 color: Theme.color.canvas
                 border.color: root._titleError ? Theme.color.live
                             : titleInput.activeFocus ? Theme.color.brand
@@ -482,8 +551,8 @@ ModalShell {
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.color.textPrimary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    font.weight: Theme.font.weightMedium
+                    font.pixelSize: Theme.font.bodySize + 4
+                    font.weight: Theme.font.weightSemiBold
                     selectByMouse: true
                     text: root._title
                     onTextEdited: { root._title = text; root._titleError = false }
@@ -495,18 +564,21 @@ ModalShell {
                         text: qsTr("Enter song title…")
                         color: Theme.color.textTertiary
                         font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: Theme.font.bodySize + 4
+                        font.weight: Theme.font.weightSemiBold
                     }
                 }
 
                 // Theme combobox — inline on the right of the title row.
+                // Taller (32) + wider (240) so the trigger feels like a peer
+                // affordance, not a vestigial chip squeezed into a corner.
                 Item {
                     id: themeComboWrap
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.rightMargin: Theme.space.sm
-                    width: 220
-                    height: 24
+                    width: 240
+                    height: 32
 
                     Combobox {
                         anchors.fill: parent
@@ -530,14 +602,15 @@ ModalShell {
                 }
             }
 
-            // View-mode toggle — segmented control, right side
+            // View-mode toggle — segmented control, right side. Flat radii
+            // match the rest of the modal's data-app aesthetic.
             Rectangle {
                 id: viewToggleWrap
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: 180
                 height: 32
-                radius: Theme.radius.md
+                radius: 0
                 color: Theme.color.canvas
                 border.color: Theme.color.borderStrong
                 border.width: 1
@@ -550,7 +623,7 @@ ModalShell {
                     Rectangle {
                         width: (parent.width) / 2
                         height: parent.height
-                        radius: Theme.radius.sm
+                        radius: 0
                         color: root._viewMode === "structured" ? Theme.color.raised : "transparent"
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                         Text {
@@ -571,7 +644,7 @@ ModalShell {
                     Rectangle {
                         width: (parent.width) / 2
                         height: parent.height
-                        radius: Theme.radius.sm
+                        radius: 0
                         color: root._viewMode === "raw" ? Theme.color.raised : "transparent"
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                         Text {
@@ -694,7 +767,7 @@ ModalShell {
                         Rectangle {
                             width: sectionsCol.width
                             height: 44
-                            radius: Theme.radius.md
+                            radius: 0
                             color: addMa.containsMouse ? Theme.color.overlay : "transparent"
                             border.color: Theme.color.borderStrong
                             border.width: 1
@@ -752,7 +825,7 @@ ModalShell {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: Theme.space.lg
-                    radius: Theme.radius.md
+                    radius: 0
                     color: Theme.color.canvas
                     border.color: rawArea.activeFocus ? Theme.color.brand : Theme.color.borderStrong
                     border.width: 1
@@ -770,6 +843,13 @@ ModalShell {
                         TextEdit {
                             id: rawArea
                             width: rawScroll.width
+                            // Always fill the viewport at minimum so clicks
+                            // below the last line still land on the editor.
+                            // Qt's default click-past-text behavior snaps the
+                            // cursor to end-of-text; without this the TextEdit
+                            // shrinks to its text size and the rest of the box
+                            // becomes inert background.
+                            height: Math.max(contentHeight, rawScroll.height)
                             color: Theme.color.textPrimary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
@@ -783,6 +863,17 @@ ModalShell {
                                 if (text === root._rawText) return
                                 root._rawText = text
                                 root._commitRawText(text)
+                            }
+                            // Track which section the cursor is inside so the
+                            // right-pane preview shows that verse — same UX
+                            // contract as structured mode (where clicking a
+                            // section card focuses-and-previews it).
+                            onCursorPositionChanged: {
+                                if (!activeFocus) return
+                                const idx = root._sectionAtRawCursor(cursorPosition)
+                                if (idx !== root._currentSection) {
+                                    root._currentSection = idx
+                                }
                             }
 
                             Text {
@@ -847,7 +938,7 @@ ModalShell {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radius.md
+                        radius: 0
                         color: "#000000"
                         border.color: Theme.color.borderStrong
                         border.width: 1
@@ -863,28 +954,25 @@ ModalShell {
                     }
                 }
 
-                // Per-section page indicator. Tapping cycles which section
-                // drives the preview without changing focus inside the editor.
-                Row {
+                // Section label hint — replaces the per-section dot row.
+                // The preview is intentionally single-card: it always shows
+                // whichever section the editor is focused on (or the
+                // cursor sits inside, in raw mode). This label gives the
+                // operator a small "you're previewing X" cue.
+                Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Theme.space.xs
                     visible: root._sections.length > 1
-                    Repeater {
-                        model: root._sections.length
-                        delegate: Rectangle {
-                            width: 8; height: 8; radius: 4
-                            color: root._currentSection === index
-                                ? Theme.color.brand
-                                : Theme.color.borderStrong
-                            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root._currentSection = index
-                            }
-                        }
+                    text: {
+                        const idx = root._currentSection
+                        const sec = root._sections[idx]
+                        const label = sec && sec.label ? String(sec.label) : ""
+                        return label.length > 0
+                            ? qsTr("Previewing: %1").arg(label)
+                            : qsTr("Previewing section %1").arg(idx + 1)
                     }
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
                 }
             }
         }
@@ -905,6 +993,33 @@ ModalShell {
             anchors.right: parent.right
             height: 1
             color: Theme.color.borderSubtle
+        }
+
+        // Transient save-failure banner — auto-clears after 5s. Sits on
+        // the left so it doesn't crowd the Cancel/Save buttons. Hidden
+        // when _saveError is empty so the footer stays clean in the
+        // common case.
+        Row {
+            visible: root._saveError.length > 0
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.space.lg
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.space.sm
+
+            AppIcon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: "alert-triangle"
+                color: Theme.color.live
+                size: Theme.icon.sm
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root._saveError
+                color: Theme.color.live
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.bodySize
+                font.weight: Theme.font.weightMedium
+            }
         }
 
         Row {

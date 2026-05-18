@@ -91,7 +91,6 @@ Item {
     readonly property bool _showStage:
         _hasItem
         && !_isMedia
-        && !isClear
         && !showLogo
         && _theme
         && (_theme.id || 0) > 0
@@ -128,6 +127,14 @@ Item {
                 opacity:  _style.opacity !== undefined ? _style.opacity : 1
                 rotation: _style.rotation || 0
 
+                // Text nodes hide instantly when isClear is true (mini-
+                // monitor mirrors the projection's clear semantic, but
+                // snaps because the operator monitor is intentionally
+                // animation-free for fast feedback). Non-text nodes
+                // (background images, containers, decorations) ignore
+                // isClear and stay visible — matching the projection.
+                visible: !(root.isClear && modelData.kind === "text")
+
                 NodeRenderer {
                     anchors.fill: parent
                     node: modelData
@@ -140,9 +147,12 @@ Item {
     }
 
     // ── Media branch (image/video kinds) ────────────────────────────────
+    // Pure media items have no text — `isClear` is a no-op for them under
+    // the new "hide text only" clear semantic. Visibility stays gated on
+    // showLogo (logo fully replaces the scene) but ignores isClear.
     MediaMonitor {
         anchors.fill: parent
-        visible: root._isMedia && !root.isClear && !root.showLogo
+        visible: root._isMedia && !root.showLogo
         mediaKind: visible ? root._kind : ""
         mediaPath: visible ? (root.item.mediaPath || "") : ""
         muted: root.muted

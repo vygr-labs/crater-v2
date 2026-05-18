@@ -17,6 +17,10 @@ ApplicationWindow {
     minimumWidth: 1080
     minimumHeight: 680
     visible: true
+    // Open maximized on first show. `width`/`height` above become the
+    // restore-down size when the user un-maximizes, so the 1440x900
+    // design target is preserved as the windowed fallback.
+    visibility: Window.Maximized
     title: qsTr("Crater")
     color: Theme.color.canvas
 
@@ -25,6 +29,26 @@ ApplicationWindow {
     // takes over the window — closing it (AppState.closeThemeEditor()) sets
     // workspaceMode back to "" and the console becomes visible again.
     readonly property bool _consoleVisible: AppState.workspaceMode === ""
+
+    // ── SettingsService → AppState glue ─────────────────────────────────
+    // These handlers live here (rather than on AppState directly) because
+    // AppState is a QtObject-rooted QML singleton and QtObject refuses
+    // child objects like Connections / Component.onCompleted blocks.
+    // ApplicationWindow is the closest ancestor that accepts them.
+    Connections {
+        target: SettingsService
+        function onShowStrongsTabChanged() {
+            AppState._onStrongsTabVisibilityChanged()
+        }
+    }
+
+    // One-shot init of showLogo from the operator's persisted default.
+    // After this fires, manual Logo button / Ctrl+L toggles take over —
+    // the dialog setting governs the next launch, not live override.
+    Component.onCompleted: {
+        AppState.showLogo = SettingsService.showLogoByDefault
+        ProjectionService.setLogoVisible(AppState.showLogo)
+    }
 
     // ── Top bar ─────────────────────────────────────────────────────────
     TopBar {
@@ -41,7 +65,7 @@ ApplicationWindow {
 
         visible: root._consoleVisible
         anchors.top: topBar.bottom
-        anchors.bottom: footerBar.top
+        anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
 
@@ -127,15 +151,6 @@ ApplicationWindow {
         }
     }
 
-    // ── Footer ──────────────────────────────────────────────────────────
-    FooterBar {
-        id: footerBar
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: root._consoleVisible
-    }
-
     // ── Full-screen workspaces (theme editor, future composers) ─────────
     // Lives between the operator console and the modal layer so editor
     // popovers (color picker, confirm overlay) still render above it via
@@ -202,19 +217,33 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+3"; onActivated: AppState.setActiveTab(2) }
     Shortcut { sequence: "Ctrl+4"; onActivated: AppState.setActiveTab(3) }
     Shortcut { sequence: "Ctrl+5"; onActivated: AppState.setActiveTab(4) }
-    Shortcut { sequence: "Ctrl+Tab";       onActivated: AppState.cycleTab( 1) }
-    Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: AppState.cycleTab(-1) }
+    // Disabled while a modal is open so dialogs (e.g. SongEditor) can
+    // claim Ctrl+Tab for their own view-mode toggles without two
+    // handlers fighting over the same sequence.
+    Shortcut { sequence: "Ctrl+Tab";       enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab( 1) }
+    Shortcut { sequence: "Ctrl+Shift+Tab"; enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab(-1) }
 
     // Production actions
     Shortcut { sequence: "Ctrl+,"; onActivated: AppState.openModal("settings", {}) }
-    // Ctrl+L deliberately passes raise=false so the keyboard shortcut
-    // transitions content to live (Live mini-monitor updates) without
-    // bringing up the projection window. The mouse-driven Go Live entry
-    // points (TopBar button, schedule double-click) keep the default
-    // raise=true behavior.
-    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.goLive(false) }
-    // Ctrl+. is the "clear" shortcut from the Electron version — avoids
-    // colliding with system Ctrl+C (copy).
+    // Ctrl+L = toggle the logo overlay. "L for Logo." Both the projection
+    // window and the live mini-monitor read AppState.showLogo (via their
+    // respective LogoView components), so a single toggleLogo() flip
+    // updates both surfaces in lockstep. Going-live remains the TopBar
+    // "Go Live" button + schedule double-click; the keyboard shortcut
+    // is reserved for the lighter operator action of showing/hiding
+    // the splash/wallpaper.
+    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.toggleLogo() }
+    // Ctrl+C = clear the projection (hide text, keep theme background +
+    // logo). Same simple one-liner form as Ctrl+L — earlier attempts with
+    // a text-input guard and Qt.ApplicationShortcut context appeared to
+    // suppress the shortcut entirely. Tradeoff: Ctrl+C fires Clear even
+    // when a text input is focused with selected text, so in-dialog copy
+    // is shadowed by Clear. Ctrl+. remains as the redundant clear
+    // binding; right-click → copy still works in text fields.
+    Shortcut { sequence: "Ctrl+C"; onActivated: AppState.clearLive() }
+    // Ctrl+. is the legacy "clear" shortcut from the Electron version —
+    // kept as a backup binding that always fires (no text-input guard) so
+    // operators inside a text field can still clear via this combo.
     Shortcut { sequence: "Ctrl+."; onActivated: AppState.clearLive() }
     // Ctrl+T = stage the currently focused library item. The active tab
     // (ScriptureTab / SongsTab / MediaTab) handles via its
@@ -308,41 +337,21 @@ ApplicationWindow {
         }
     }
 
-    // Up / Down: focus-aware navigation. Routed by AppState.activeFocusPanel
-    // so an operator browsing the library list isn't moving the schedule
-    // selection on every arrow press, and vice-versa.
-    //
-    // Note: when the TabSearchBar input has focus, its own Keys.onUpPressed
-    // handles the key AND its Keys.onShortcutOverride blocks this Shortcut
-    // from firing — see TabSearchBar.qml. This Shortcut only kicks in when
-    // focus is OUTSIDE the input (e.g. operator clicked a verse row).
+    // Up / Down always navigate the active library tab — selecting a
+    // schedule item no longer captures the arrow keys. The TabSearchBar's
+    // own Keys.onUpPressed handles the same call path when the search
+    // input has focus (and blocks this Shortcut via Keys.onShortcutOverride
+    // to avoid double-fire). This window-level Shortcut covers the case
+    // where focus is outside the search field (e.g. operator clicked a
+    // schedule row or a verse row).
     Shortcut {
         sequence: "Up"
         enabled: AppState.activeModal === ""
-        onActivated: {
-            if (AppState.activeFocusPanel === "schedule") {
-                if (ScheduleService.currentItems.length === 0) return
-                const next = Math.max(0, AppState.selectedScheduleIndex - 1)
-                AppState.selectScheduleItem(next)
-            } else {
-                AppState.libraryNavigateUp()
-            }
-        }
+        onActivated: AppState.libraryNavigateUp()
     }
     Shortcut {
         sequence: "Down"
         enabled: AppState.activeModal === ""
-        onActivated: {
-            if (AppState.activeFocusPanel === "schedule") {
-                if (ScheduleService.currentItems.length === 0) return
-                const max = ScheduleService.currentItems.length - 1
-                const next = AppState.selectedScheduleIndex < 0
-                           ? 0
-                           : Math.min(max, AppState.selectedScheduleIndex + 1)
-                AppState.selectScheduleItem(next)
-            } else {
-                AppState.libraryNavigateDown()
-            }
-        }
+        onActivated: AppState.libraryNavigateDown()
     }
 }

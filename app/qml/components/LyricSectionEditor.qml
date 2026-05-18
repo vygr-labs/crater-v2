@@ -39,7 +39,9 @@ Rectangle {
     // ── Layout ──────────────────────────────────────────────────────────
     implicitHeight: gutter.height
     color: Theme.color.canvas
-    radius: Theme.radius.sm
+    // Flat to match the song editor modal's data-app aesthetic — the dialog
+    // dropped its rounded chrome and these cards follow suit.
+    radius: 0
     border.color: root.active        ? Theme.color.brand
                 : hoverArea.containsMouse ? Theme.color.borderStrong
                                           : Theme.color.borderSubtle
@@ -128,7 +130,7 @@ Rectangle {
             id: labelWrap
             width: parent.width
             height: 28
-            radius: Theme.radius.sm
+            radius: 0
             color: labelInput.activeFocus ? Theme.color.raised : "transparent"
             border.color: labelInput.activeFocus ? Theme.color.brand : "transparent"
             border.width: 1
@@ -144,7 +146,10 @@ Rectangle {
                 verticalAlignment: TextInput.AlignVCenter
                 color: Theme.color.textPrimary
                 font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
+                // bodySize matches the song-title input and the rest of the
+                // app's primary text controls. smallSize made the section
+                // label feel like UI chrome instead of an editable field.
+                font.pixelSize: Theme.font.bodySize
                 font.weight: Theme.font.weightMedium
                 selectByMouse: true
                 text: root.label
@@ -158,7 +163,7 @@ Rectangle {
                     text: qsTr("Section label (e.g., Verse 1, Chorus)")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
+                    font.pixelSize: Theme.font.bodySize
                 }
             }
         }
@@ -171,7 +176,7 @@ Rectangle {
             // electron's `autoresize` Textarea. Floor at ~3 line-heights so a
             // brand-new empty section is comfortable to click into.
             height: Math.max(60, linesEdit.contentHeight + Theme.space.sm * 2)
-            radius: Theme.radius.sm
+            radius: 0
             color: linesEdit.activeFocus ? Theme.color.raised : "transparent"
             border.color: linesEdit.activeFocus ? Theme.color.brand : "transparent"
             border.width: 1
@@ -185,7 +190,10 @@ Rectangle {
                 anchors.margins: Theme.space.sm
                 color: Theme.color.textPrimary
                 font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
+                // bodySize — matches the title input above and the raw-mode
+                // textarea, so the operator's typing experience is uniform
+                // across the editor.
+                font.pixelSize: Theme.font.bodySize
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
                 text: root.linesText
@@ -201,7 +209,7 @@ Rectangle {
                     text: qsTr("Enter lyrics here…")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
+                    font.pixelSize: Theme.font.bodySize
                 }
             }
         }

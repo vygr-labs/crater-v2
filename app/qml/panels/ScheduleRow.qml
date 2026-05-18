@@ -94,9 +94,13 @@ Item {
             color: Qt.lighter(Theme.color.brand, 1.6)
         }
 
-        // ── Drag handle / selection-check column ─────────────────────────
-        // Houses two glyphs that swap based on selection: grip when not
-        // selected (handle for drag), check when selected. Width matches
+        // ── Drag handle column ───────────────────────────────────────────
+        // Always-visible grip — used to be a grip↔check swap on selection,
+        // but selection is already strongly signaled by the 3px brand left
+        // edge, the brandSubtle bg wash, the brighter title weight, and
+        // the kind-icon recoloring. A fifth selection cue (the check) was
+        // visual noise, and swapping the handle glyph also momentarily
+        // hid the drag affordance for selected rows. Width matches
         // electron's px={2} + icon — ~28px total.
         Item {
             id: handle
@@ -107,23 +111,17 @@ Item {
 
             AppIcon {
                 anchors.centerIn: parent
-                visible: !root.isSelected
                 name: "grip-vertical"
                 size: Theme.icon.md
                 color: handleMa.containsMouse || root.isDragging
                        ? Theme.color.textSecondary : Theme.color.textTertiary
-                opacity: handleMa.containsMouse || root.isDragging || ma.containsMouse
+                // Sit at full opacity whenever the row is hovered, being
+                // dragged, OR currently selected — so the handle visually
+                // ranks alongside the other "active row" cues.
+                opacity: handleMa.containsMouse || root.isDragging
+                       || ma.containsMouse        || root.isSelected
                          ? 1.0 : 0.6
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
-            }
-            AppIcon {
-                anchors.centerIn: parent
-                visible: root.isSelected
-                name: "check"
-                size: Theme.icon.md
-                color: root.isPrimarySelected
-                       ? Qt.lighter(Theme.color.brand, 1.8)
-                       : Qt.lighter(Theme.color.brand, 1.4)
             }
 
             MouseArea {

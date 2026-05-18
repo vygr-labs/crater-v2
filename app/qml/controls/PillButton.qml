@@ -17,7 +17,10 @@ Rectangle {
     implicitHeight: 34
     implicitWidth: contentRow.implicitWidth + Theme.space.lg * 2
 
-    radius: Theme.radius.md
+    // Squared — see PrimaryButton.qml. The "Pill" in this component's name
+    // is legacy from the earlier rounded design; we kept it to avoid a
+    // rename across every TopBar call site.
+    radius: 0
     color: root.active      ? Theme.color.overlay
          : ma.containsMouse ? Theme.color.overlay
                              : "transparent"

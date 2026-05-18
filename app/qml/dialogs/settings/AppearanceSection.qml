@@ -2,15 +2,17 @@ import QtQuick
 import QtQuick.Layouts
 
 // Appearance — theme, font size, motion preferences.
-// All values are local to this Loader's lifecycle (no persistence yet).
+// Wired rows read/write SettingsService directly (no local mirror). Soon-
+// flagged rows keep a local placeholder value so the disabled control
+// still renders a sensible selection.
 Item {
     id: root
 
+    // Local placeholders for the Soon-flagged rows. The disabled control
+    // shows these without ever writing back. Once a light palette / i18n
+    // catalog exists, these move to SettingsService too.
     property string themeMode: "dark"
-    property string fontSize: "medium"
-    property bool   showCcli: true
-    property bool   reduceMotion: false
-    property string language: "en-US"
+    property string language:  "en-US"
 
     Flickable {
         anchors.fill: parent
@@ -24,10 +26,12 @@ Item {
             anchors.right: parent.right
             anchors.leftMargin: Theme.space.xl
             anchors.rightMargin: Theme.space.xl
-            anchors.topMargin: Theme.space.lg
+            anchors.topMargin: Theme.space.xxxl
             spacing: 0
 
-            // ── Theme ────────────────────────────────────────────────────
+            // ── THEME ────────────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Theme"); first: true }
+
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 56
@@ -37,7 +41,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
 
-                    Text { text: qsTr("Theme"); color: Theme.color.textPrimary;
+                    Text { text: qsTr("Mode"); color: Theme.color.textPrimary;
                            font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize;
                            font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Surface color of the operator console");
@@ -48,42 +52,32 @@ Item {
                 Row {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.xs
+                    spacing: Theme.space.md
 
-                    Repeater {
-                        model: [
-                            { id: "light", label: qsTr("Light") },
-                            { id: "dark",  label: qsTr("Dark") },
-                            { id: "auto",  label: qsTr("Auto") }
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    SegmentedControl {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 200; height: 30
+                        opacity: 0.45
+                        enabled: false
+                        radius: 0
+                        current: root.themeMode
+                        options: [
+                            { value: "light", label: qsTr("Light") },
+                            { value: "dark",  label: qsTr("Dark") },
+                            { value: "auto",  label: qsTr("Auto") }
                         ]
-                        delegate: Rectangle {
-                            width: 64; height: 30
-                            radius: Theme.radius.md
-                            color: root.themeMode === modelData.id ? Theme.color.brand : Theme.color.overlay
-
-                            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                color: root.themeMode === modelData.id ? Theme.color.brandInk : Theme.color.textPrimary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.smallSize
-                                font.weight: Theme.font.weightMedium
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.themeMode = modelData.id
-                            }
-                        }
+                        onChanged: function(v) { root.themeMode = v }
                     }
                 }
             }
-
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            // ── Font size ────────────────────────────────────────────────
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 56
@@ -93,59 +87,73 @@ Item {
                        font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
                        font.weight: Theme.font.weightMedium }
 
-                Row {
+                SegmentedControl {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.xs
-
-                    Repeater {
-                        model: [{id: "small", l: "S"}, {id: "medium", l: "M"}, {id: "large", l: "L"}]
-                        delegate: Rectangle {
-                            width: 40; height: 30
-                            radius: Theme.radius.md
-                            color: root.fontSize === modelData.id ? Theme.color.brand : Theme.color.overlay
-                            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.l
-                                color: root.fontSize === modelData.id ? Theme.color.brandInk : Theme.color.textPrimary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.smallSize
-                                font.weight: Theme.font.weightSemiBold
-                            }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.fontSize = modelData.id }
-                        }
-                    }
+                    width: 140; height: 30
+                    radius: 0
+                    current: SettingsService.fontSize
+                    options: [
+                        { value: "small",  label: qsTr("S") },
+                        { value: "medium", label: qsTr("M") },
+                        { value: "large",  label: qsTr("L") }
+                    ]
+                    onChanged: function(v) { SettingsService.fontSize = v }
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+            // ── PREFERENCES ──────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Preferences") }
 
-            // ── Toggles ──────────────────────────────────────────────────
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show CCLI badges");  color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Show CCLI badges"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Display copyright info next to songs"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
                 ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    value: root.showCcli; onToggled: root.showCcli = !root.showCcli }
+                    value: SettingsService.showCcli
+                    onToggled: SettingsService.showCcli = !SettingsService.showCcli }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Reduce motion"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Disable hover/transition animations"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                    Text { text: qsTr("Disable hover and transition animations"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
                 ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    value: root.reduceMotion; onToggled: root.reduceMotion = !root.reduceMotion }
+                    value: SettingsService.reduceMotion
+                    onToggled: SettingsService.reduceMotion = !SettingsService.reduceMotion }
             }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            // ── Language ─────────────────────────────────────────────────
+            // ── LOCALE ───────────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Locale") }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Language"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                SelectChip { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; label: "English (en-US)" }
+                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                       text: qsTr("Language"); color: Theme.color.textPrimary
+                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
+                       font.weight: Theme.font.weightMedium }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    SelectChip {
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: "English (en-US)"
+                        opacity: 0.45
+                        enabled: false
+                        radius: 0
+                    }
+                }
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }

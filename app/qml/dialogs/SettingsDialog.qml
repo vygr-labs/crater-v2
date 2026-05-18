@@ -23,13 +23,18 @@ ModalShell {
         anchors.fill: parent
 
         // ── Left sidebar with section navigation ─────────────────────────
+        // Transparent over the card's `elevated` surface so the sidebar
+        // and content panel share one continuous background — only the
+        // 1px hairline on the right separates them. Was `canvas`, which
+        // made the sidebar read as a recessed strip and stuttered against
+        // the elevated content area.
         Rectangle {
             id: sidebar
             anchors.top: parent.top
             anchors.bottom: footer.top
             anchors.left: parent.left
             width: 200
-            color: Theme.color.canvas
+            color: "transparent"
 
             Rectangle {
                 anchors.right: parent.right
@@ -53,6 +58,10 @@ ModalShell {
                         iconName: modelData.iconName
                         label:    modelData.label
                         active:   AppState.settingsSection === modelData.id
+                        // Sharp active band matches the sharpened controls
+                        // inside each section pane (segmented controls,
+                        // chips, banners all at radius 0).
+                        bgRadius: 0
                         onClicked: AppState.settingsSection = modelData.id
                     }
                 }

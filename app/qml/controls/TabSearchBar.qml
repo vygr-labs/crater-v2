@@ -457,7 +457,10 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: 4
             anchors.verticalCenter: parent.verticalCenter
-            width: 28
+            // Content-sized: songs shows icon+chevron (~29px), other tabs show
+            // just the icon (~16px) — a fixed width would clip the chevron on
+            // songs or leave wasted padding elsewhere.
+            width: modeRow.implicitWidth + 10
             height: 28
             radius: 4
             // Songs and Scripture get a real trigger; others render as a static icon.
@@ -467,6 +470,7 @@ Item {
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
             Row {
+                id: modeRow
                 anchors.centerIn: parent
                 spacing: 2
 
@@ -618,6 +622,23 @@ Item {
             // (no chapter typed yet). All other keys take the standard text-
             // editing path.
             Keys.onPressed: function(event) {
+                // Ctrl+C — route to Clear instead of the text input's built-
+                // in copy. QQuickTextInput's C++ code accepts the
+                // ShortcutOverride event for QKeySequence::Copy while
+                // editable+focused, which shadows the window-level
+                // Shortcut element in Main.qml. Handling Ctrl+C here at the
+                // KeyPress stage (after the override has fired) and
+                // accepting the event suppresses TextInput's internal copy
+                // handler and routes to clearLive(). Right-click → copy
+                // still works in this field if the operator genuinely
+                // needs to copy search text.
+                if ((event.modifiers & Qt.ControlModifier)
+                    && event.key === Qt.Key_C) {
+                    AppState.clearLive()
+                    event.accepted = true
+                    return
+                }
+
                 if (root.isControlledMode) {
                     if (root._ctrlHandleKey(event)) {
                         event.accepted = true
@@ -721,21 +742,28 @@ Item {
 
         // Shortcut hint chip — visible whenever the input is empty, including
         // while focused. Matches electron, where the ⌘F badge is always shown
-        // until the operator starts typing. (Previous behavior hid it on
-        // focus, so it disappeared the moment the tab opened.)
+        // until the operator starts typing.
+        //
+        // Content-sized + subtle border: a fixed width was clipping "Ctrl+A"
+        // on Windows while leaving "⌘A" on macOS over-padded, and a strong
+        // border made the chip read as a second input field competing with
+        // the real one. Hairline border on a content-sized pill reads as a
+        // quiet keycap hint instead.
         Rectangle {
             id: hintChip
             anchors.right: parent.right
-            anchors.rightMargin: 5
+            anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             visible: inputField.text.length === 0
-            width: 32; height: 18
+            width: hintText.implicitWidth + 12
+            height: 18
             radius: 3
             color: Theme.color.elevated
-            border.color: Theme.color.borderStrong
+            border.color: Theme.color.borderSubtle
             border.width: 1
 
             Text {
+                id: hintText
                 anchors.centerIn: parent
                 text: root.shortcutLabel
                 color: Theme.color.textTertiary

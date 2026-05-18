@@ -51,7 +51,10 @@ Item {
         anchors.centerIn: parent
         width: Math.min(root.dialogWidth, root.width - 48)
         height: Math.min(root.dialogHeight, root.height - 48)
-        radius: Theme.radius.lg
+        // Squared corners — the modal frame intentionally drops Theme.radius.lg
+        // so its chrome reads as a flat, data-dense surface rather than a
+        // friendly card. All dialogs inherit this look.
+        radius: 0
         color: Theme.color.elevated
         border.color: Theme.color.borderStrong
         border.width: 1

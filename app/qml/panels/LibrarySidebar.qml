@@ -46,9 +46,15 @@ Rectangle {
                 // subgroups: collections placeholder. Empty until a
                 // CollectionService lands; the accordion structure is in place
                 // so adding collections is purely a data change downstream.
+                //
+                // All three rows use the folder glyph so the sidebar reads as
+                // a flat list of containers — the heart glyph for Favorites
+                // was visually inconsistent with Collections, which has no
+                // single-noun equivalent.
                 return [
-                    { id: "all-songs", iconName: "folder", label: qsTr("All Songs"),    count: songs.length, subgroups: [] },
-                    { id: "favorites", iconName: "heart",  label: qsTr("My Favorites"), count: favCount,     subgroups: [] }
+                    { id: "all-songs",   iconName: "folder", label: qsTr("All Songs"),      count: songs.length, subgroups: [] },
+                    { id: "favorites",   iconName: "folder", label: qsTr("My Favorites"),   count: favCount,     subgroups: [] },
+                    { id: "collections", iconName: "folder", label: qsTr("My Collections"), count: 0,            subgroups: [] }
                 ]
             }
             case "scripture": {
@@ -210,9 +216,15 @@ Rectangle {
     // hosting each tab's `actionMenus`). Songs gets "+ ⚙" for collection
     // management; other tabs leave the strip invisible until they have actions
     // worth shipping. The scroll container above adjusts its bottom anchor.
+    //
+    // TODO: Re-enable for the songs tab once CollectionService.{create,
+    //       rename,duplicate,destroy} lands — at that point the + and gear
+    //       below get real onClicked handlers. Hidden today because the
+    //       buttons are no-op stubs and the strip visually duplicates the
+    //       content-pane's "+ ⚙" cluster (same iconography, different scope).
     Rectangle {
         id: actionBar
-        visible: root.currentTabKey === "songs"
+        visible: false
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right

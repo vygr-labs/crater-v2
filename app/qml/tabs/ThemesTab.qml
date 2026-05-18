@@ -250,6 +250,12 @@ Item {
 
             readonly property bool _isActiveDefault:
                 root._defaultIds[modelData.kind] === modelData.id
+            // Per-output assignment flags. Primary HDMI's slot actually
+            // drives rendering (via AppState.resolveItemTheme); NDI / Stage
+            // persist for the v1.1 multi-output pipeline.
+            readonly property bool _isPrimary: SettingsService.themeIdForPrimary === modelData.id
+            readonly property bool _isNdi:     SettingsService.themeIdForNdi     === modelData.id
+            readonly property bool _isStage:   SettingsService.themeIdForStage   === modelData.id
 
             Rectangle {
                 id: tile
@@ -300,29 +306,92 @@ Item {
                     }
                 }
 
-                // "DEFAULT" indicator — top left, brand-colored. Mirrors the
-                // PRESET chip's shape (same font, size, letter-spacing) so
-                // the two corners read as a matched pair, just colored
-                // differently.
-                Rectangle {
-                    visible: tileRoot._isActiveDefault
+                // Top-left badge row — stacks per-kind DEFAULT and the
+                // per-output assignment chips horizontally. Each badge is
+                // independently visible; multiple can co-occur (e.g. a
+                // theme can be both the song-kind default AND the Primary
+                // HDMI output theme).
+                Row {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.margins: 8
-                    width: defaultLabel.implicitWidth + Theme.space.sm * 2
-                    height: 16
-                    radius: 2
-                    color: Theme.color.brand
+                    spacing: 4
 
-                    Text {
-                        id: defaultLabel
-                        anchors.centerIn: parent
-                        text: qsTr("DEFAULT")
-                        color: Theme.color.brandInk
-                        font.family: Theme.font.monoFamily
-                        font.pixelSize: 11
-                        font.weight: Theme.font.weightSemiBold
-                        font.letterSpacing: 0.8
+                    Rectangle {
+                        visible: tileRoot._isActiveDefault
+                        width: defaultLabel.implicitWidth + Theme.space.sm * 2
+                        height: 16
+                        radius: 2
+                        color: Theme.color.brand
+
+                        Text {
+                            id: defaultLabel
+                            anchors.centerIn: parent
+                            text: qsTr("DEFAULT")
+                            color: Theme.color.brandInk
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 11
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
+                    }
+                    Rectangle {
+                        visible: tileRoot._isPrimary
+                        width: primaryLabel.implicitWidth + Theme.space.sm * 2
+                        height: 16
+                        radius: 2
+                        color: Theme.color.preview
+
+                        Text {
+                            id: primaryLabel
+                            anchors.centerIn: parent
+                            text: qsTr("PRIMARY")
+                            color: Theme.color.previewSubtle
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 11
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
+                    }
+                    Rectangle {
+                        visible: tileRoot._isNdi
+                        width: ndiLabel.implicitWidth + Theme.space.sm * 2
+                        height: 16
+                        radius: 2
+                        color: Theme.color.overlay
+                        border.color: Theme.color.borderStrong
+                        border.width: 1
+
+                        Text {
+                            id: ndiLabel
+                            anchors.centerIn: parent
+                            text: qsTr("NDI")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 11
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
+                    }
+                    Rectangle {
+                        visible: tileRoot._isStage
+                        width: stageLabel.implicitWidth + Theme.space.sm * 2
+                        height: 16
+                        radius: 2
+                        color: Theme.color.overlay
+                        border.color: Theme.color.borderStrong
+                        border.width: 1
+
+                        Text {
+                            id: stageLabel
+                            anchors.centerIn: parent
+                            text: qsTr("STAGE")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.monoFamily
+                            font.pixelSize: 11
+                            font.weight: Theme.font.weightSemiBold
+                            font.letterSpacing: 0.8
+                        }
                     }
                 }
 
@@ -372,6 +441,36 @@ Item {
                           iconName: "star",
                           enabled: !tileRoot._isActiveDefault,
                           action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
+                        { separator: true },
+                        // Per-output assignment. Primary HDMI is live —
+                        // assigning takes effect immediately via
+                        // AppState.resolveItemTheme. NDI / Stage persist
+                        // but don't drive rendering until multi-output
+                        // ships in v1.1; disabled+suffixed accordingly.
+                        { label: tileRoot._isPrimary
+                                ? qsTr("Unset for Primary HDMI")
+                                : qsTr("Set for Primary HDMI"),
+                          iconName: "monitor",
+                          action: () => {
+                              SettingsService.themeIdForPrimary =
+                                  tileRoot._isPrimary ? 0 : modelData.id
+                          } },
+                        { label: tileRoot._isNdi
+                                ? qsTr("Unset for NDI Broadcast (Soon)")
+                                : qsTr("Set for NDI Broadcast (Soon)"),
+                          iconName: "radio",
+                          action: () => {
+                              SettingsService.themeIdForNdi =
+                                  tileRoot._isNdi ? 0 : modelData.id
+                          } },
+                        { label: tileRoot._isStage
+                                ? qsTr("Unset for Stage Monitor (Soon)")
+                                : qsTr("Set for Stage Monitor (Soon)"),
+                          iconName: "tv",
+                          action: () => {
+                              SettingsService.themeIdForStage =
+                                  tileRoot._isStage ? 0 : modelData.id
+                          } },
                         { separator: true },
                         { label: qsTr("Delete"),     iconName: "trash",
                           destructive: true,

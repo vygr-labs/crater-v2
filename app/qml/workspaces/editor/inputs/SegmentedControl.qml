@@ -13,6 +13,10 @@ Item {
     id: root
     property var options: []          // [{ value, label?, iconName? }]
     property var current: undefined
+    // Outer corner radius. Default Theme.radius.sm (4) matches the editor's
+    // segmented controls; call sites in the Settings dialog override to 0
+    // for the sharper, more architectural aesthetic that lives there.
+    property int radius: Theme.radius.sm
 
     signal changed(var v)
 
@@ -21,7 +25,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.radius.sm
+        radius: root.radius
         color: Theme.color.canvas
         border.color: Theme.color.borderStrong
         border.width: 1
@@ -35,7 +39,7 @@ Item {
                 delegate: Rectangle {
                     width: parent.width / Math.max(1, root.options.length) - 1
                     height: parent.height
-                    radius: Theme.radius.sm - 1
+                    radius: Math.max(0, root.radius - 1)
                     color: root.current === modelData.value ? Theme.color.brandSubtle
                          : btnMa.containsMouse              ? Theme.color.overlay
                                                              : "transparent"

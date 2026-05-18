@@ -20,11 +20,33 @@ QtObject {
     id: state
 
     // ─── Tab navigation ─────────────────────────────────────────────────
-    readonly property int tabCount: 5
-    readonly property var tabKeys: ["songs", "scripture", "strongs", "media", "themes"]
+    // tabKeys is reactive on SettingsService.showStrongsTab — flipping
+    // the operator's "Show Strong's tab" setting drops/adds the strongs
+    // slot. activeTab fix-up lives in Main.qml's Connections (QtObject
+    // can't host child objects, so the bookkeeping moves up to the
+    // ApplicationWindow which can).
+    readonly property var tabKeys: SettingsService.showStrongsTab
+        ? ["songs", "scripture", "strongs", "media", "themes"]
+        : ["songs", "scripture", "media", "themes"]
+    readonly property int tabCount: tabKeys.length
 
     property int activeTab: 0
     property var viewedTabs: [0]   // tabs that have been visited (keeps Loaders alive)
+
+    // Internal helper called by Main.qml's Connections when Strong's
+    // visibility flips. Strong's lives canonically at index 2 — hiding
+    // pushes tabs >= 2 down (or drops to Songs if Strong's was active);
+    // re-showing pushes tabs >= 2 back up by one. Implemented as a
+    // function rather than a signal handler because QtObject (the root
+    // of a QML singleton) refuses non-property children.
+    function _onStrongsTabVisibilityChanged() {
+        if (SettingsService.showStrongsTab) {
+            if (activeTab >= 2) activeTab = activeTab + 1
+        } else {
+            if (activeTab === 2)      activeTab = 0
+            else if (activeTab > 2)   activeTab = activeTab - 1
+        }
+    }
 
     function setActiveTab(i) {
         if (i < 0 || i >= tabCount) return
@@ -95,18 +117,24 @@ QtObject {
         libraryPreviewItem = null
     }
 
-    function pushLibraryLive(item) {
+    function pushLibraryLive(item, page) {
         if (!item) return
+        // `page` is optional and defaults to 0 for the original "library
+        // row double-click to push straight to live" callers (MediaTab /
+        // SongsTab / ScriptureTab). The preview-card double-click passes
+        // the operator's selected page so live picks up the same card the
+        // operator was looking at — not always page 0.
+        if (page === undefined) page = 0
         libraryPreviewItem = item     // mirror to preview so the panes agree
         libraryLiveActive  = true
         isClear            = false
         liveScheduleIndex  = -1       // signal: live did not come from schedule
-        liveSubIndex       = 0
-        previewSubIndex    = 0
+        liveSubIndex       = page
+        previewSubIndex    = page
         // Theme is resolved reactively by ProjectionWindow.qml — it reads
         // the item's themeId override and ThemeService.defaultFor(kind),
         // so default changes update the live render without re-Go-Live.
-        ProjectionService.goLive(item, 0)
+        ProjectionService.goLive(item, page)
     }
 
     function selectScheduleItem(i) {
@@ -171,14 +199,25 @@ QtObject {
         selectedScheduleIndices = []
     }
 
-    // Resolve the effective theme for a schedule item — prefer the per-item
-    // override stored on the item itself, fall back to the user's default for
-    // the kind. The sentinel-check on `t.id` handles the case where the
-    // override theme was deleted while the item still references it.
+    // Resolve the effective theme for a schedule item — three-tier priority:
+    //   1. Per-item override stored on the item itself
+    //   2. Per-output theme pinned via the Themes tab (Primary HDMI today —
+    //      once multi-output renders, this takes an outputId parameter and
+    //      consults the right slot)
+    //   3. Per-kind default from ThemeService.defaultFor(kind)
+    //
+    // The sentinel-check on t.id at each tier handles the case where the
+    // referenced theme was deleted; we fall through to the next tier rather
+    // than render a bogus theme.
     function resolveItemTheme(item) {
         const overrideId = (item && typeof item.themeId === "number") ? item.themeId : 0
         if (overrideId > 0) {
             const t = ThemeService.theme(overrideId)
+            if (t.id > 0) return t
+        }
+        const outputId = SettingsService.themeIdForPrimary
+        if (outputId > 0) {
+            const t = ThemeService.theme(outputId)
             if (t.id > 0) return t
         }
         return ThemeService.defaultFor((item && item.kind) || "song")
@@ -195,15 +234,18 @@ QtObject {
         // and Ctrl+L work whether the operator is staging from the library or
         // the schedule.
         //
-        // `raise` controls whether the projection window is brought up. The
-        // mouse-driven entry points (TopBar Go Live button, schedule double-
-        // click, schedule context-menu) pass true (the default); the Ctrl+L
-        // shortcut passes false so the operator can rehearse the live state
-        // in the operator console without exposing the audience screen.
+        // `raise` controls whether the projection window is brought up.
+        // Mouse-driven "commit" entry points (TopBar Go Live button,
+        // schedule double-click, schedule context-menu) pass true (the
+        // default). The preview-card double-click passes false so quick
+        // page-staging doesn't surprise the operator by opening the
+        // audience-facing window mid-rehearsal.
         if (raise === undefined) raise = true
 
         if (libraryPreviewItem !== null) {
-            pushLibraryLive(libraryPreviewItem)
+            // Pass the operator's currently-selected preview page so a
+            // mid-list double-click sends *that* page to live, not page 0.
+            pushLibraryLive(libraryPreviewItem, previewSubIndex)
             if (raise) projectorVisible = true
             return
         }
@@ -223,16 +265,30 @@ QtObject {
     }
 
     function clearLive() {
-        // "Clear live" means: blank the projector content (hide all text /
-        // images), but DO NOT close the projection window. If the projector
-        // is currently raised it stays raised showing nothing; if it's
-        // hidden it stays hidden. Only goLive() raises, only endLive()
-        // lowers — Clear is purely about content, not window visibility.
-        isClear            = true
-        liveScheduleIndex  = -1
-        liveSubIndex       = 0
-        libraryLiveActive  = false
-        ProjectionService.clear()
+        // Toggle "cleared" — hides text on the projector when set,
+        // restores text when cleared again. Theme background and logo
+        // (if on) stay visible across both states. The live channel itself
+        // is never collapsed; we deliberately do NOT touch
+        // liveScheduleIndex / liveSubIndex / libraryLiveActive.
+        //
+        // To "unclear", we re-stage the current item — ProjectionService's
+        // goLive() sets m_isClear=false as a side effect. The item and
+        // page are unchanged, so audience sees text fade back in over the
+        // existing background. To clear, we just call ProjectionService.clear()
+        // which only flips m_isClear=true on the C++ side.
+        //
+        // Projector window visibility is independent. Only goLive() with
+        // raise=true raises; only endLive() lowers.
+        if (isClear) {
+            const item = ProjectionService.currentItem
+            if (item && Object.keys(item).length > 0) {
+                ProjectionService.goLive(item, liveSubIndex)
+            }
+            isClear = false
+        } else {
+            isClear = true
+            ProjectionService.clear()
+        }
     }
 
     function endLive() {

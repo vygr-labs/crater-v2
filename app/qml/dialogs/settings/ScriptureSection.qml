@@ -2,12 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 
 // Scripture — default Bible version, verse number display, Strong's tab.
+// Highlight-current-verse and footer-line rows are aspirational (no
+// rendering site yet) and carry the "Soon" badge.
 Item {
     id: root
 
+    // Local placeholders for Soon-flagged rows. Wired rows
+    // (showVerseNumbers, showStrongsTab) read/write SettingsService.
     property string defaultVersion: "KJV"
-    property bool   showVerseNumbers: true
-    property bool   showStrongsTab: true
     property bool   highlightCurrentVerse: true
     property bool   showBookChapterFooter: false
 
@@ -23,42 +25,114 @@ Item {
             anchors.right: parent.right
             anchors.leftMargin: Theme.space.xl
             anchors.rightMargin: Theme.space.xl
-            anchors.topMargin: Theme.space.lg
+            anchors.topMargin: Theme.space.xxxl
             spacing: 0
+
+            // ── READING ──────────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Reading"); first: true }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Default version"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Version preselected when opening Scripture"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                SelectChip { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; label: root.defaultVersion }
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    SelectChip {
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: root.defaultVersion
+                        opacity: 0.45
+                        enabled: false
+                        radius: 0
+                    }
+                }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show verse numbers"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; value: root.showVerseNumbers; onToggled: root.showVerseNumbers = !root.showVerseNumbers }
+                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                       text: qsTr("Show verse numbers"); color: Theme.color.textPrimary
+                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
+                       font.weight: Theme.font.weightMedium }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.showVerseNumbers
+                    onToggled: SettingsService.showVerseNumbers = !SettingsService.showVerseNumbers }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Highlight current verse"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Brighten the verse on display"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    ToggleSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        value: root.highlightCurrentVerse
+                        opacity: 0.45
+                        enabled: false
+                        onToggled: { }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Show book:chapter in footer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Render a reference line at the bottom of the slide"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space.md
+
+                    Badge {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Soon")
+                        background: Theme.color.overlay
+                        foreground: Theme.color.textTertiary
+                    }
+                    ToggleSwitch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        value: root.showBookChapterFooter
+                        opacity: 0.45
+                        enabled: false
+                        onToggled: { }
+                    }
+                }
+            }
+
+            // ── TABS ─────────────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Tabs") }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Show Strong's tab"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Greek/Hebrew concordance lookup"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; value: root.showStrongsTab; onToggled: root.showStrongsTab = !root.showStrongsTab }
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Highlight current verse"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; value: root.highlightCurrentVerse; onToggled: root.highlightCurrentVerse = !root.highlightCurrentVerse }
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show book:chapter in footer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; value: root.showBookChapterFooter; onToggled: root.showBookChapterFooter = !root.showBookChapterFooter }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.showStrongsTab
+                    onToggled: SettingsService.showStrongsTab = !SettingsService.showStrongsTab }
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }

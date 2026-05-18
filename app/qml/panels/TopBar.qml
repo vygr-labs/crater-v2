@@ -67,8 +67,7 @@ Rectangle {
 
         GhostButton {
             anchors.verticalCenter: parent.verticalCenter
-            iconName: "list-ordered"
-            iconColor: Theme.color.brand
+            iconName: "image"
             text: qsTr("Logo")
             active: AppState.showLogo
             onClicked: AppState.toggleLogo()
@@ -76,8 +75,9 @@ Rectangle {
 
         GhostButton {
             anchors.verticalCenter: parent.verticalCenter
-            iconName: "menu"
+            iconName: "eye-off"
             text: qsTr("Clear")
+            active: AppState.isClear
             onClicked: AppState.clearLive()
         }
 
