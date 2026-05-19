@@ -285,6 +285,25 @@ Item {
                 }
             }
 
+            // Headless NDI renderer — the production-default path. Renders the
+            // NDI scene directly into a GPU texture (QQuickRenderControl + QRhi)
+            // and async-reads back to NDI at 60 Hz adaptive. Flipping this off
+            // falls back to the legacy `grabToImage` path on the NdiCanvas Item;
+            // intended only if a particular GPU misbehaves with QRhi readback.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
+                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.useHeadlessNdi
+                    onToggled: SettingsService.useHeadlessNdi = !SettingsService.useHeadlessNdi
+                }
+            }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
     }

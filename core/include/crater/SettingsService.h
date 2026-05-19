@@ -60,6 +60,15 @@ private:
     // item on this, and AppState.resolveItemTheme only consults the NDI
     // slot when dual is active.
     Q_PROPERTY(QString outputMode         READ outputMode         WRITE setOutputMode         NOTIFY outputModeChanged)
+    // NDI render-pipeline backend. true (default): headless QQuickRenderControl
+    // path — NDI scene renders into a GPU texture we own, with async readback
+    // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
+    // under sustained paint-cost pressure). false: legacy grabToImage path
+    // that depends on a real QQuickWindow being exposed (NdiCanvas as a hidden
+    // Item inside the operator console). Toggle is in the NDI section of
+    // Settings; intended as a user-facing fallback if QRhi struggles on a
+    // particular GPU. See qt/docs/render-pipeline-decouple.md.
+    Q_PROPERTY(bool    useHeadlessNdi     READ useHeadlessNdi     WRITE setUseHeadlessNdi     NOTIFY useHeadlessNdiChanged)
     Q_PROPERTY(bool    showVerseNumbers   READ showVerseNumbers   WRITE setShowVerseNumbers   NOTIFY showVerseNumbersChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
@@ -80,6 +89,7 @@ public:
     int     themeIdForNdi() const;
     int     themeIdForStage() const;
     QString outputMode() const;
+    bool    useHeadlessNdi() const;
     bool    showVerseNumbers() const;
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
@@ -95,6 +105,7 @@ public:
     void setThemeIdForNdi(int id);
     void setThemeIdForStage(int id);
     void setOutputMode(const QString& mode);
+    void setUseHeadlessNdi(bool v);
     void setShowVerseNumbers(bool v);
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
@@ -111,6 +122,7 @@ signals:
     void themeIdForNdiChanged();
     void themeIdForStageChanged();
     void outputModeChanged();
+    void useHeadlessNdiChanged();
     void showVerseNumbersChanged();
     void showStrongsTabChanged();
     void showSongAuthorChanged();

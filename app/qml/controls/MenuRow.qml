@@ -24,6 +24,33 @@ Item {
 
     height: _separator ? (1 + Theme.space.xs * 2) : 32
 
+    // Intrinsic width for dynamic menu sizing — the parent Column's
+    // implicitWidth picks up max(child.implicitWidth) automatically, and
+    // PopoverMenu's body width binding reads that to size the menu to its
+    // content. Separators contribute 0 so they don't drive the calculation;
+    // they stretch to whatever width the body ends up at. The right-side
+    // element is one of submenu chevron / kbd chip / detail text, so we
+    // only count one of them in the formula.
+    implicitWidth: {
+        if (_separator) return 0
+        const iconWidth = rowData.iconName ? Theme.icon.sm + Theme.space.md : 0
+        let rightWidth = 0
+        if (_hasSubmenu) {
+            rightWidth = Theme.icon.sm
+        } else if (rowData.kbd) {
+            rightWidth = Math.max(18, kbdText.implicitWidth + 10)
+        } else if (rowData.detail) {
+            rightWidth = detailText.implicitWidth
+        }
+        const gap = rightWidth > 0 ? Theme.space.lg : Theme.space.md
+        return Theme.space.md
+             + iconWidth
+             + labelText.implicitWidth
+             + gap
+             + rightWidth
+             + Theme.space.md
+    }
+
     // Separator — inset horizontally by xs so it doesn't run into the
     // rounded body corners, and uses a slightly lifted shade so it stays
     // visible against the new bgMenu surface.
@@ -44,7 +71,7 @@ Item {
     Rectangle {
         visible: !row._separator
         anchors.fill: parent
-        radius: Theme.radius.sm
+        radius: 0
         color: {
             const hovered = (itemMa.containsMouse && row._enabled) || _isOpenSubmenuOwner()
             if (!hovered) return "transparent"
@@ -74,11 +101,13 @@ Item {
                 size: Theme.icon.sm
             }
             Text {
+                id: labelText
                 anchors.verticalCenter: parent.verticalCenter
                 text: rowData.label || ""
                 color: rowData.destructive ? Theme.color.live : Theme.color.textPrimary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.bodySize
+                font.weight: Theme.font.weightMedium
             }
         }
 
@@ -106,7 +135,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             implicitWidth: Math.max(18, kbdText.implicitWidth + 10)
             implicitHeight: 18
-            radius: 4
+            radius: 0
             color: Theme.color.elevated
             border.color: Theme.color.borderSubtle
             border.width: 1
@@ -123,6 +152,7 @@ Item {
         }
 
         Text {
+            id: detailText
             visible: !row._hasSubmenu && !rowData.kbd && !!rowData.detail
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.md

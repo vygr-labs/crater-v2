@@ -11,6 +11,8 @@ class QQuickWindow;
 
 namespace crater {
 
+class NdiRenderer;
+
 // NDI broadcast sender — captures the projection window's rendered frames
 // and pushes them onto the local network via the NDI runtime.
 //
@@ -25,13 +27,17 @@ namespace crater {
 // that via `diagnostic`. We never link against the NDI SDK at build time —
 // the ABI we need is mirrored in src/NdiAbi.h.
 //
-// Capture loop: `setSourceWindow(QQuickWindow*)` registers the projection
-// window. While `sending` is true, a QTimer fires at ~30Hz, calls
-// QQuickWindow::grabWindow() to pull rendered pixels (BGRA in memory),
-// and hands them to the NDI runtime via send_video_v2. A future RHI
-// texture-readback upgrade will replace the timer-driven path with an
-// `afterRenderPassRecorded`-hooked async readback for 60 FPS at lower
-// UI-thread cost.
+// Capture paths — start() picks one based on the QSettings flag
+// `Settings/useHeadlessNdi` (default true):
+//   • Headless (preferred): consume frames from NdiRenderer::frameReady,
+//     which renders ProjectionScene into a QRhiTexture via
+//     QQuickRenderControl and async-reads back BGRA pixels. No OS window
+//     dependency; runs at 60 Hz adaptive (drops to 30 Hz under sustained
+//     paint-cost pressure). See qt/docs/render-pipeline-decouple.md.
+//   • Legacy (fallback): `setSourceWindow(QQuickWindow*)` registers a
+//     projection window; a 30 Hz QTimer calls grabToImage() on it. Used
+//     when the headless renderer is disabled by setting or when its
+//     start() fails.
 //
 // Threading: all public API is invoked from the QML/UI thread today.
 // grabWindow() is itself synchronous; NDI's send_video_v2 is internally
@@ -95,6 +101,14 @@ public:
     // Pass nullptr to revert to grabbing the full window contentItem.
     Q_INVOKABLE void setSourceItem(QQuickItem* item);
 
+    // Wire the headless renderer for the QRhi-based capture path. When
+    // SettingsService.useHeadlessNdi is true AND this renderer is set
+    // AND its start() succeeds, NdiService consumes frames from
+    // NdiRenderer::frameReady instead of polling grabToImage on the
+    // source window. Falls back to the legacy path on any gate failing.
+    // Pass nullptr to clear (forces legacy path on next start).
+    void setRenderer(NdiRenderer* renderer);
+
 signals:
     void availableChanged();
     void sendingChanged();
@@ -105,6 +119,13 @@ signals:
 
 private:
     void captureFrame();
+    // Headless path: invoked synchronously on NdiRenderer::frameReady.
+    // Stashes the frame into the ping-pong buffer and hands it to the
+    // NDI SDK's send_video_v2/_async_v2 entry. Mirrors the in-flight-
+    // safe handoff used by captureFrame() so NDI's required "previous
+    // buffer stays valid until next send" contract is honored across
+    // both paths.
+    void onHeadlessFrame(const QImage& image);
     // Dedicated worker thread body. Sits inside the NDI runtime's
     // blocking get_tally call and posts state changes back to the
     // GUI thread via QMetaObject::invokeMethod with Qt::QueuedConnection.

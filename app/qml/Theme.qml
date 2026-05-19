@@ -37,12 +37,14 @@ QtObject {
         readonly property color bgSidebar:     "#14141a"
         readonly property color bgContent:     "#16161a"
 
-        // Floating popover-menu surface. Sits between `elevated` (#18181b —
-        // matches some panels, would visually blend) and `raised` (#27272a —
-        // too close to the `overlay` hover wash, so hover becomes invisible).
-        // This shade gives popover menus a distinct floating identity AND
-        // leaves clear contrast for the row hover state.
-        readonly property color bgMenu:        "#1d1d20"
+        // Floating popover-menu surface. Sits one shade above `elevated`
+        // (#18181b — the panel surface) so menus read as a level "up" from
+        // panels rather than flush with them. A 1px `borderStrong` outline
+        // + drop shadow keep the floating identity. Earlier values flirted
+        // with `canvas`-adjacent (#111114) but that let menus visually
+        // merge with the page beneath them; this value gives clear lift
+        // without competing with the panel surfaces.
+        readonly property color bgMenu:        "#1a1a1d"
 
         // Text — calibrated for AA contrast on `canvas`/`elevated`. Values
         // mirror electron's gray.200 / gray.400 / gray.500 / gray.600.

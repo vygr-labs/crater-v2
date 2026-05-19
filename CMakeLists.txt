@@ -25,6 +25,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Core
     Concurrent      # QtConcurrent::run for worker-thread import + FTS rebuild
     Gui
+    GuiPrivate      # exposes <rhi/qrhi.h> for the headless NDI renderer
     Qml
     Quick
     QuickControls2

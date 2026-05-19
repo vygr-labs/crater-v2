@@ -62,6 +62,35 @@ Item {
     property real _submenuY:       0
     property var  _submenuItems:   []
 
+    // ── Dynamic-width plumbing ──────────────────────────────────────────
+    // Each MenuRow's `implicitWidth` is a pure function of its `rowData`
+    // (icon presence + label width + right-rail element). We can't lean
+    // on Column.implicitWidth to aggregate them — the children all set
+    // `width: contents.width`, so Column.implicitWidth collapses into a
+    // circular binding that pins the menu to its `menuWidth` floor.
+    // Instead, each row notifies us on implicitWidth change and we
+    // re-aggregate the max here, breaking the cycle.
+    property real _maxRowImplicitWidth:     0
+    property real _maxSubmenuRowImplicitWidth: 0
+
+    function _recomputeMaxRowWidth() {
+        let max = 0
+        for (let i = 0; i < repeater.count; i++) {
+            const it = repeater.itemAt(i)
+            if (it && it.implicitWidth > max) max = it.implicitWidth
+        }
+        _maxRowImplicitWidth = max
+    }
+
+    function _recomputeMaxSubmenuRowWidth() {
+        let max = 0
+        for (let i = 0; i < submenuRepeater.count; i++) {
+            const it = submenuRepeater.itemAt(i)
+            if (it && it.implicitWidth > max) max = it.implicitWidth
+        }
+        _maxSubmenuRowImplicitWidth = max
+    }
+
     Timer {
         id: submenuTimer
         interval: 180
@@ -127,12 +156,19 @@ Item {
         id: body
         x: Math.max(8, Math.min(root.anchorX, root.width - width - 8))
         y: Math.max(8, Math.min(root.anchorY, root.height - height - 8))
-        width: root.menuWidth
+        // menuWidth is a *floor*, not a fixed width — call sites pass it as
+        // the minimum (220 default) and the menu widens to fit the longest
+        // row when needed. _maxRowImplicitWidth is maintained by each
+        // delegate's onImplicitWidthChanged hook (see Repeater below);
+        // Column.implicitWidth would be circular here, so we aggregate
+        // explicitly. The Theme.space.sm * 2 covers the Column's own
+        // outer padding (anchored margins).
+        width: Math.max(root.menuWidth, root._maxRowImplicitWidth + Theme.space.sm * 2)
         height: contents.implicitHeight + Theme.space.sm * 2
         color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
-        radius: Theme.radius.md
+        radius: 0
 
         transformOrigin: Item.TopLeft
         opacity: root.active ? 1.0 : 0.0
@@ -196,12 +232,15 @@ Item {
             Repeater {
                 id: repeater
                 model: root.model
+                onItemAdded: root._recomputeMaxRowWidth()
+                onItemRemoved: root._recomputeMaxRowWidth()
                 delegate: MenuRow {
                     width: contents.width
                     rowData:   modelData
                     rowIndex:  index
                     host:      root
                     isSubmenu: false
+                    onImplicitWidthChanged: root._recomputeMaxRowWidth()
                 }
             }
         }
@@ -216,12 +255,14 @@ Item {
         visible: root._submenuRow >= 0 && root.active
         x: Math.max(8, Math.min(root._submenuX, root.width - width - 8))
         y: Math.max(8, Math.min(root._submenuY, root.height - height - 8))
-        width: 220
+        // Same dynamic-sizing pattern as the main body — 220 is the floor,
+        // submenus widen to fit their longest row when needed.
+        width: Math.max(220, root._maxSubmenuRowImplicitWidth + Theme.space.sm * 2)
         height: submenuContents.implicitHeight + Theme.space.sm * 2
         color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
-        radius: Theme.radius.md
+        radius: 0
         z: 1
 
         transformOrigin: Item.TopLeft
@@ -276,13 +317,17 @@ Item {
             spacing: 2
 
             Repeater {
+                id: submenuRepeater
                 model: root._submenuItems
+                onItemAdded: root._recomputeMaxSubmenuRowWidth()
+                onItemRemoved: root._recomputeMaxSubmenuRowWidth()
                 delegate: MenuRow {
                     width: submenuContents.width
                     rowData:   modelData
                     rowIndex:  index
                     host:      root
                     isSubmenu: true
+                    onImplicitWidthChanged: root._recomputeMaxSubmenuRowWidth()
                 }
             }
         }

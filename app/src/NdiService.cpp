@@ -1,5 +1,6 @@
 #include "NdiService.h"
 #include "NdiAbi.h"
+#include "NdiRenderer.h"
 
 #include <QDebug>
 #include <QImage>
@@ -8,6 +9,7 @@
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
+#include <QSettings>
 #include <QSharedPointer>
 #include <QStringList>
 #include <QTimer>
@@ -74,6 +76,17 @@ struct NdiService::Impl
     bool   captureInFlight = false;
 
     QTimer captureTimer;
+
+    // Headless capture wiring (the QRhi path). When `renderer` is set
+    // and SettingsService.useHeadlessNdi is true, start() will try to
+    // start the renderer and subscribe to its frameReady signal instead
+    // of running the captureTimer. `usingHeadless` tells stop() which
+    // path to tear down — it's set in start() based on the runtime
+    // decision, not on the QSettings flag (so flipping the flag
+    // mid-broadcast doesn't desync the two halves).
+    NdiRenderer*           renderer        = nullptr;
+    bool                   usingHeadless   = false;
+    QMetaObject::Connection frameConnection;
 
     // Tally polling — dedicated thread that sits inside NDI's blocking
     // get_tally call. Wakes every 100ms to check the stop flag so
@@ -270,6 +283,11 @@ void NdiService::setSourceItem(QQuickItem* item)
     m_impl->sourceItem = item;
 }
 
+void NdiService::setRenderer(NdiRenderer* renderer)
+{
+    m_impl->renderer = renderer;
+}
+
 bool NdiService::start()
 {
     if (!m_impl->available) {
@@ -277,7 +295,27 @@ bool NdiService::start()
         return false;
     }
     if (m_impl->sending) return true;
-    if (!m_impl->sourceWindow) {
+
+    // Decide capture path. Read the flag via QSettings directly so we
+    // don't take a hard dependency on SettingsService (which is a QML
+    // singleton, not a C++ one accessible here). Default true matches
+    // SettingsService's compiled-in default.
+    const bool wantHeadless = QSettings()
+        .value(QStringLiteral("Settings/useHeadlessNdi"), true).toBool();
+
+    bool useHeadless = false;
+    if (wantHeadless && m_impl->renderer) {
+        if (m_impl->renderer->start()) {
+            useHeadless = true;
+        } else {
+            qWarning() << "NDI: headless renderer start() failed — "
+                          "falling back to legacy grabToImage path";
+        }
+    }
+
+    // The legacy path needs a registered source window. The headless
+    // path doesn't — it brings its own scene + render target.
+    if (!useHeadless && !m_impl->sourceWindow) {
         m_impl->diagnostic = tr("NDI: no projection window registered");
         emit diagnosticChanged();
         return false;
@@ -292,15 +330,27 @@ bool NdiService::start()
 
     m_impl->sender = m_impl->fn_send_create(&settings);
     if (!m_impl->sender) {
+        if (useHeadless) m_impl->renderer->stop();
         m_impl->diagnostic = tr("NDI sender creation failed");
         emit diagnosticChanged();
         return false;
     }
 
-    m_impl->sending = true;
-    m_impl->activeBuffer = 0;       // reset ping-pong
-    m_impl->captureInFlight = false; // ensure clean slate after a previous stop
-    m_impl->captureTimer.start();
+    m_impl->sending         = true;
+    m_impl->usingHeadless   = useHeadless;
+    m_impl->activeBuffer    = 0;       // reset ping-pong
+    m_impl->captureInFlight = false;   // ensure clean slate after a previous stop
+
+    if (useHeadless) {
+        // Subscribe to the renderer's frame stream. The connection handle
+        // lets stop() disconnect cleanly without affecting other QObject
+        // signal/slot pairs on the same emitter.
+        m_impl->frameConnection = connect(
+            m_impl->renderer, &NdiRenderer::frameReady,
+            this, [this](const QImage& img) { onHeadlessFrame(img); });
+    } else {
+        m_impl->captureTimer.start();
+    }
 
     // Spawn tally polling thread. Only when get_tally is available; the
     // thread terminates within 100ms of tallyStop being set.
@@ -313,14 +363,27 @@ bool NdiService::start()
                              .arg(m_impl->streamName);
     emit sendingChanged();
     emit diagnosticChanged();
-    qInfo().noquote() << "NDI: broadcasting as" << m_impl->streamName;
+    qInfo().noquote() << "NDI: broadcasting as" << m_impl->streamName
+                      << "via"
+                      << (useHeadless ? "headless renderer" : "legacy grabToImage")
+                      << "path";
     return true;
 }
 
 void NdiService::stop()
 {
     if (!m_impl->sending) return;
-    m_impl->captureTimer.stop();
+
+    // Tear down the capture path we actually used (set in start()). The
+    // QSettings flag could have changed mid-broadcast — stick to the
+    // path we committed to so we don't leak a running timer OR a live
+    // signal connection.
+    if (m_impl->usingHeadless) {
+        QObject::disconnect(m_impl->frameConnection);
+        if (m_impl->renderer) m_impl->renderer->stop();
+    } else {
+        m_impl->captureTimer.stop();
+    }
 
     // Tear down the tally thread BEFORE destroying the sender — the loop
     // calls fn_send_get_tally(sender), which would crash on a freed
@@ -350,7 +413,8 @@ void NdiService::stop()
     m_impl->frameBuffers[0] = QImage();
     m_impl->frameBuffers[1] = QImage();
 
-    m_impl->sending = false;
+    m_impl->sending       = false;
+    m_impl->usingHeadless = false;
     m_impl->diagnostic = m_impl->available
         ? tr("NDI runtime ready")
         : m_impl->diagnostic;  // preserve install/init diagnostics
@@ -450,6 +514,54 @@ void NdiService::captureFrame()
             m_impl->fn_send_video(m_impl->sender, &frame);
         }
     }, Qt::SingleShotConnection);
+}
+
+void NdiService::onHeadlessFrame(const QImage& image)
+{
+    // Recheck guards — flag flipped or stop() ran between the renderer's
+    // emit and our slot invocation. The connection itself is disconnected
+    // by stop(), but a single in-flight signal can still arrive.
+    if (!m_impl->sending || !m_impl->sender) return;
+    if (image.isNull()) return;
+
+    // Toggle the ping-pong index FIRST so we never overwrite the buffer
+    // NDI is currently sending from (whatever was in the previous
+    // activeBuffer slot is what NDI's previous send_video_async_v2 call
+    // still holds; that ref is released when we issue the new send).
+    m_impl->activeBuffer ^= 1;
+    QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
+    dst = image;
+    if (dst.format() != QImage::Format_ARGB32) {
+        dst = dst.convertToFormat(QImage::Format_ARGB32);
+    }
+
+    NDIlib_video_frame_v2_t frame = {};
+    frame.xres                  = dst.width();
+    frame.yres                  = dst.height();
+    frame.FourCC                = NDIlib_FourCC_video_type_BGRA;
+    // Advertise 60000/1001 (≈59.94 NTSC 60) so receivers play smoothly
+    // at the headless renderer's native rate. Adaptive demotion to 30
+    // Hz still produces valid video — NDI just sees slower delivery
+    // against the advertised rate and tags frames with proportional
+    // timecodes. Receivers handle the gap correctly because clock_video
+    // was set to true at sender create time.
+    frame.frame_rate_N          = 60000;
+    frame.frame_rate_D          = 1001;
+    frame.picture_aspect_ratio  = dst.height() > 0
+        ? float(dst.width()) / float(dst.height())
+        : 16.0f / 9.0f;
+    frame.frame_format_type     = NDIlib_frame_format_type_progressive;
+    frame.timecode              = 0;       // 0 = "synthesise on receive"
+    frame.p_data                = dst.bits();
+    frame.line_stride_in_bytes  = dst.bytesPerLine();
+    frame.p_metadata            = nullptr;
+    frame.timestamp             = 0;
+
+    if (m_impl->fn_send_video_async) {
+        m_impl->fn_send_video_async(m_impl->sender, &frame);
+    } else {
+        m_impl->fn_send_video(m_impl->sender, &frame);
+    }
 }
 
 void NdiService::tallyLoop()

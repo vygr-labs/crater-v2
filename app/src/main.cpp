@@ -17,6 +17,7 @@
 
 #include "FileDialogService.h"
 #include "MediaPlaybackService.h"
+#include "NdiRenderer.h"
 #include "NdiService.h"
 #include "RichTextHelper.h"
 #include "VideoThumbnailer.h"
@@ -344,6 +345,19 @@ int main(int argc, char* argv[])
 
     qInfo() << "Loading QML from module Crater / Main";
     engine.loadFromModule("Crater", "Main");
+
+    // ─── Stage 6: wire the headless NDI renderer ────────────────────────
+    // Must come AFTER loadFromModule — the renderer shares the engine to
+    // resolve the Crater singletons (ProjectionService, SettingsService,
+    // AppState, etc.). Loading Main.qml first ensures the Crater module
+    // is registered so the inline scene QML in NdiRenderer can `import
+    // Crater`. NdiService.start() picks the headless path when
+    // SettingsService.useHeadlessNdi is true and this renderer's start()
+    // succeeds; otherwise it falls back to the legacy grabToImage path.
+    // The renderer instance lives for the app's lifetime — start/stop is
+    // gated by NdiService.
+    crater::NdiRenderer ndiRenderer(&engine);
+    ndiService.setRenderer(&ndiRenderer);
 
     return app.exec();
 }

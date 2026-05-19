@@ -31,6 +31,10 @@ struct SettingsService::Impl
     // Render-pipeline mode — see header. "single" is the lower-cost default
     // (NDI mirrors projection); "dual" enables independent NDI scene + theme.
     QString outputMode       = QStringLiteral("single");
+    // Headless NDI renderer toggle — see header. Default true so the QRhi
+    // path is the standard production behavior; flipping false drops back to
+    // the legacy grabToImage path as a fallback.
+    bool    useHeadlessNdi   = true;
     bool    showVerseNums    = true;
     bool    showStrongs      = true;
     bool    showSongAuthor   = true;
@@ -49,6 +53,7 @@ struct SettingsService::Impl
     static constexpr const char* kThemeForNdi      = "Settings/themeIdForNdi";
     static constexpr const char* kThemeForStage    = "Settings/themeIdForStage";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
+    static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
@@ -70,6 +75,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->themeIdForNdi     = s.value(QString::fromLatin1(Impl::kThemeForNdi),     m_impl->themeIdForNdi).toInt();
     m_impl->themeIdForStage   = s.value(QString::fromLatin1(Impl::kThemeForStage),   m_impl->themeIdForStage).toInt();
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
+    m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
     m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
@@ -88,6 +94,7 @@ int     SettingsService::themeIdForPrimary() const { return m_impl->themeIdForPr
 int     SettingsService::themeIdForNdi() const     { return m_impl->themeIdForNdi; }
 int     SettingsService::themeIdForStage() const   { return m_impl->themeIdForStage; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
+bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
@@ -189,6 +196,14 @@ void SettingsService::setOutputMode(const QString& mode)
     m_impl->outputMode = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputMode), normalized);
     emit outputModeChanged();
+}
+
+void SettingsService::setUseHeadlessNdi(bool v)
+{
+    if (m_impl->useHeadlessNdi == v) return;
+    m_impl->useHeadlessNdi = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kUseHeadlessNdi), v);
+    emit useHeadlessNdiChanged();
 }
 
 void SettingsService::setShowVerseNumbers(bool v)

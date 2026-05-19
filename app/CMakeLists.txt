@@ -13,6 +13,8 @@ qt_add_executable(crater
     src/NdiService.cpp
     src/NdiService.h
     src/NdiAbi.h
+    src/NdiRenderer.cpp
+    src/NdiRenderer.h
     src/RichTextHelper.cpp
     src/RichTextHelper.h
 )
@@ -156,6 +158,14 @@ target_link_libraries(crater
         # theme nodes. Linking it also triggers Qt's QML-import deployer
         # to copy the QtMultimedia QML module + its native DLLs.
         Qt6::Multimedia
+        # Qt6::GuiPrivate adds the include directories that make
+        # `<rhi/qrhi.h>` resolvable. The QRhi classes themselves are
+        # publicly accessible since Qt 6.6, but the headers still live
+        # under a private include path until Qt reorganises them — until
+        # then, linking GuiPrivate is the documented pattern for using
+        # them. NdiRenderer needs QRhi for its headless render target
+        # and async texture readback.
+        Qt6::GuiPrivate
         Crater::Core
 )
 
