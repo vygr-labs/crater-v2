@@ -20,6 +20,15 @@ Item {
     anchors.fill: parent
     z: 500
 
+    // Entrance animation gate. Mirrors PopoverMenu's `active` toggle but
+    // driven by mount/unmount instead of a property — the dropdown is
+    // brought up by ModalLayer when scheduleDropdown is the active modal,
+    // so we flip _open after Component.onCompleted on the next event loop
+    // tick (Qt.callLater) so the body renders one frame at opacity 0 /
+    // scale 0.96 before the Behaviors take over.
+    property bool _open: false
+    Component.onCompleted: Qt.callLater(function() { root._open = true })
+
     function close() { AppState.closeModal() }
 
     // Human-readable relative time. Larger increments collapse to a date so the
@@ -46,18 +55,45 @@ Item {
         y: Math.max(8, Math.min(root.anchorY, root.height - height - 8))
         width: 380
         height: contents.implicitHeight + Theme.space.sm * 2
-        color: Theme.color.raised
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
-        radius: Theme.radius.md
+        radius: 0
 
-        // Subtle drop shadow.
+        transformOrigin: Item.TopLeft
+        opacity: root._open ? 1.0 : 0.0
+        scale:   root._open ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        // Layered drop shadow — three offset rectangles with progressively
+        // larger inflations and lower opacity. Mirrors PopoverMenu (see
+        // its identical block) so floating surfaces share one shadow
+        // language across the app without pulling in QtQuick.Effects.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: parent.radius + 12
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: parent.radius + 6
+            color: "#00000028"
+            z: -2
+        }
         Rectangle {
             anchors.fill: parent
             anchors.margins: -1
             anchors.topMargin: 1
             radius: parent.radius + 1
-            color: "#00000040"
+            color: "#00000048"
             z: -1
         }
 
@@ -97,7 +133,7 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: Theme.radius.sm
+                        radius: 0
                         color: rowMa.containsMouse ? Theme.color.overlay : "transparent"
 
                         // Loaded checkmark / file-text default.
@@ -166,7 +202,7 @@ Item {
                                 width: 24; height: 24
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: Theme.radius.sm
+                                    radius: 0
                                     color: renameMa.containsMouse ? Theme.color.elevated : "transparent"
                                 }
                                 AppIcon {
@@ -204,7 +240,7 @@ Item {
                                 width: 24; height: 24
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: Theme.radius.sm
+                                    radius: 0
                                     color: delMa.containsMouse
                                          ? Qt.darker(Theme.color.live, 1.6)
                                          : "transparent"
@@ -360,7 +396,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radius.sm
+            radius: 0
             color: aiMa.containsMouse ? Theme.color.overlay : "transparent"
 
             Row {

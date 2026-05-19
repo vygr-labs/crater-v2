@@ -118,7 +118,7 @@ QVariantMap buildV2FromV1(const QString& kind, const QVariantMap& v1)
                             : (kind == QLatin1String("scripture")) ? QStringLiteral("Verse")
                                                                    : QStringLiteral("Text");
     textData["linkage"]     = defaultLinkageFor(kind);
-    textData["autoResize"]  = false;
+    textData["autoResize"]  = true;
     textData["maxFontSize"] = 220;
     if (textData.value("linkage").toString() == QLatin1String("custom"))
         textData["text"] = QString();

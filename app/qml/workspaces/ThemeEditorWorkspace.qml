@@ -100,7 +100,7 @@ Rectangle {
                            textAlign: "center", verticalAlign: "center" },
                   data:  { layerName: "Text", linkage: linkage,
                            text: linkage === "custom" ? qsTr("New text") : "",
-                           autoResize: false, maxFontSize: 220 } }
+                           autoResize: true, maxFontSize: 220 } }
             ]
         }
     }

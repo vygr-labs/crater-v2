@@ -532,18 +532,18 @@ Item {
 
             readonly property bool _selected: list.currentIndex === index
 
-            // Edge-to-edge background — matches electron's verse row, which
-            // has no border-radius and fills the row width. Hover wash is
-            // brand-tinted (electron's `bg=${defaultPalette}.900/30`); selected
-            // wash is the deeper brandSubtle so the row reads as "currently
-            // active". Both transition at 150ms to match electron's CSS easing.
+            // Edge-to-edge background. Selected wash sits at brandSubtle
+            // (#0E2528, deep cyan) — the calm cyan-presence tier where
+            // selected rows read as "tinted dark" rather than "filled
+            // cyan." Paired with textTitle (gray.300) body text, this is
+            // the chosen gray-on-cyan polarity. No Behavior on color
+            // (removed earlier to fix the arrow-key navigation flash).
             Rectangle {
                 anchors.fill: parent
                 radius: 0
                 color: verseRow._selected ? Theme.color.brandSubtle
-                     : verseMa.containsMouse ? Qt.rgba(34/255, 118/255, 23/255, 0.18)
+                     : verseMa.containsMouse ? Theme.color.rowHoverBrand
                                              : "transparent"
-                Behavior on color { ColorAnimation { duration: 150 } }
             }
 
             AppIcon {
@@ -552,10 +552,10 @@ Item {
                 anchors.leftMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 name: "book-2"
-                // Selected: light brand (brand.300, electron's defaultPalette.300)
-                // so the icon stays visible on the dark brandSubtle wash. The
-                // dark brand.800 used to disappear into the bg.
-                color: verseRow._selected ? "#daf1d7" : Theme.color.textTertiary
+                // Selected: `textTitle` (gray.300) on the deep-cyan wash.
+                // Contrast ~11.6:1 (AAA easy) with the eye-comfort
+                // benefit of softer-than-white ink.
+                color: verseRow._selected ? Theme.color.textTitle : Theme.color.textTertiary
                 size: Theme.icon.lg
                 opacity: verseRow._selected ? 1.0 : 0.7
             }
@@ -568,14 +568,18 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.text || ""
-                color: verseRow._selected ? Theme.color.textPrimary : "#d4d4d8"   // gray.300
+                // Selected: `textTitle` (gray.300) softer-than-textPrimary
+                // tone with semiBold (600) weight bump. Bolder strokes +
+                // softer color = same perceived presence with less raw
+                // luminance, addressing the eye-strain from pure white.
+                color: verseRow._selected ? Theme.color.textTitle : "#d4d4d8"   // gray.300
                 font.family: Theme.font.family
                 // Scales with the operator's Font size setting via Theme.uiScale.
                 // The literal 17 is the baseline pixel size (slightly larger
                 // than Theme.font.bodySize so verse rows read more substantial
                 // than song-row titles).
                 font.pixelSize: Math.round(17 * Theme.uiScale)
-                font.weight: verseRow._selected ? Theme.font.weightMedium
+                font.weight: verseRow._selected ? Theme.font.weightSemiBold
                                                 : Theme.font.weightRegular
                 elide: Text.ElideRight
             }
@@ -587,7 +591,10 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.book + " " + modelData.chapter
                     + (SettingsService.showVerseNumbers ? ":" + modelData.verse : "")
-                color: verseRow._selected ? "#d4d4d8" /* gray.300 */
+                // Selected: textSecondary (a1a1aa) — quieter than the
+                // verse text's textTitle, so the reference reads as
+                // secondary chrome against the deep-cyan wash.
+                color: verseRow._selected ? Theme.color.textSecondary
                                           : Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Math.round(16 * Theme.uiScale)
@@ -603,15 +610,22 @@ Item {
                 width: versionLabel.implicitWidth + Theme.space.sm * 2
                 height: 16
                 radius: 0
-                // Selected: deeper brand wash; otherwise a flat gray.800 chip.
-                color: verseRow._selected ? Qt.darker(Theme.color.brand, 1.6)
+                // Selected: brand-cyan chip on the deep-cyan-wash row.
+                // The chip becomes the bright accent inside an otherwise
+                // dark row, matching how Logic / Pro Tools treat colored
+                // chips on dark surfaces. Unselected: flat gray.800 chip.
+                color: verseRow._selected ? Theme.color.brand
                                           : Theme.color.raised
 
                 Text {
                     id: versionLabel
                     anchors.centerIn: parent
                     text: modelData.translationCode || root.activeTranslation
-                    color: verseRow._selected ? "#daf1d7" /* brand.300 */
+                    // Selected: white text on the brand-cyan chip. 11px
+                    // badge text wants the maximum contrast budget; white
+                    // on brand sits at ~7.9:1 (AAA) where any gray would
+                    // start chipping into legibility headroom.
+                    color: verseRow._selected ? Theme.color.textPrimary
                                               : Theme.color.textSecondary
                     font.family: Theme.font.monoFamily
                     font.pixelSize: Math.round(11 * Theme.uiScale)

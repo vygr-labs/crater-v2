@@ -140,7 +140,7 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             text: Math.round(workspace.zoom * 100) + "%"
             color: Theme.color.textSecondary
-            font.family: Theme.font.monoFamily
+            font.family: Theme.font.family
             font.pixelSize: Theme.font.smallSize
         }
         IconButton { iconName: "zoom-in"

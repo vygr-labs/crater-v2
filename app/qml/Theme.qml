@@ -57,30 +57,41 @@ QtObject {
         // dense list whose unselected rows shouldn't compete with focused ones.
         readonly property color textTitle:     "#d4d4d8"
 
-        // Brand — Radix Green (electron `brand.800 #227617`). Used for the
-        // brand mark, primary action affordances, scripture-tab selection
-        // tint, and focus outlines. Was warm gold; switched to match the
-        // electron experience.
-        readonly property color brand:         "#227617"   // brand.800 — primary
-        readonly property color brandHover:    "#2c7e21"   // brandDark.700
-        readonly property color brandPressed:  "#216518"   // brandDark.900
-        readonly property color brandSubtle:   "#173c13"   // brandDark.300 — selected-row wash
-        readonly property color brandInk:      "#ffffff"   // text on a solid brand button
-        // brand.900 at 30% alpha — the row-hover wash for library lists. The
-        // RGB matches `brand` (#227617 = 34/118/23). Mirrors electron's
-        // `bg=${defaultPalette}.900/30` used on Songs/Scripture row hovers.
-        readonly property color rowHoverBrand: Qt.rgba(34/255, 118/255, 23/255, 0.30)
-
-        // Mark accent — Mixer Cyan. Worn by the C-Aperture logo
-        // (qt/app/resources/brand/crater.svg) and any brand surface that
-        // should track the mark rather than the operative app-action `brand`
-        // above. Kept as its own block so the in-flight brand exploration is
-        // reversible: if Mixer Cyan promotes to the primary brand, repoint
-        // `brand` at these values and delete the block; if it gets dropped,
-        // delete the block alone and no other surface changes color.
-        readonly property color accentBase:     "#3AC8D4"   // mark fg on #111
-        readonly property color accentSelected: "#0E2528"   // active-row wash
-        readonly property color accentFocus:    "#7CE0E8"   // focus / hover ink
+        // Brand — Mixer Cyan. Promoted from the standalone `accent*` block
+        // (Mixer Cyan was originally introduced as the C-Aperture logo color
+        // only); the whole brand surface now tracks the mark, so chrome,
+        // selection washes, focus outlines, and primary buttons all carry
+        // this hue. Previously Radix Green (#227617) inherited from the
+        // electron build. The "send it" Go Live affordance is intentionally
+        // NOT in this block — see `goLive*` below; lime green stays the
+        // traffic-light "go" semantic regardless of the platform brand.
+        //
+        // brandInk flipped to dark ink (#0a1f25) because cyan is a light
+        // hue: white text on solid cyan is ~2.2:1 (fails AA Normal); dark
+        // ink on the same surface is ~9.8:1 (AAA). Same reasoning as goLive's
+        // dark ink on lime green.
+        // Center stop deepened in two iterative steps from the mark-color
+        // #3AC8D4 (luminance ~0.55) down to #1A767D (~0.18). The first
+        // step (#218E96, ~0.28) still read as "too prominent" on solid-wash
+        // surfaces because the eye's L/M/rod response peaks in the 480-510nm
+        // cyan band, making cyan read brighter than its luminance number
+        // suggests. The deep teal-cyan sits at a calmer perceived weight
+        // while still clearly carrying brand identity. brandHover steps
+        // back up to the mark color so hovering reads as a clear "lift";
+        // the mark itself (qt/app/resources/brand/crater.svg) keeps its
+        // own embedded #3AC8D4 — that's the logo-on-#111 chrome value,
+        // deliberately brighter than the wash-surface value so the small
+        // mark still pops at 16-32px on the titlebar.
+        readonly property color brand:         "#1A767D"   // mixer cyan deep — primary
+        readonly property color brandHover:    "#3AC8D4"   // lifts to the original mark color
+        readonly property color brandPressed:  "#135E64"   // darker on press
+        readonly property color brandSubtle:   "#0E2528"   // deep cyan wash — selected-row tint
+        readonly property color brandInk:      "#0a1f25"   // dark ink on solid-brand button
+        // brand at 18% alpha — the row-hover wash for library lists. RGB
+        // updated to match the new deeper center. Alpha unchanged at 18%
+        // (down from 30% in the Radix-green era — cyan reads heavier so
+        // a lower alpha gives the same subjective subtlety).
+        readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.18)
 
         // Broadcast semantics — these never get used decoratively.
         // Live — deep crimson. Carries dual semantics: the ON-AIR channel

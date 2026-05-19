@@ -26,20 +26,61 @@ Item {
     // when storing onto a node's data field so the schema reads cleanly.
     signal mediaChosen(int id)
 
+    // Drives the entrance animation each time the popover opens. Same
+    // pattern Combobox / ColorPickerPopover use — flipped inside openAt()
+    // and _close() so the binding re-fires per show/hide cycle.
+    property bool _open: false
+
     Rectangle {
         id: chrome
         visible: false
         z: 1000
-        width: 280
-        height: 340
-        radius: Theme.radius.lg
-        color: Theme.color.elevated
+        width: 320
+        height: 360
+        radius: 0
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
         clip: true
 
+        transformOrigin: Item.TopLeft
+        opacity: root._open ? 1.0 : 0.0
+        scale:   root._open ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        // Layered drop shadow — mirrors PopoverMenu / ColorPicker /
+        // Combobox so all floating surfaces share one shadow language.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: 0
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: 0
+            color: "#00000028"
+            z: -2
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -1
+            anchors.topMargin: 1
+            radius: 0
+            color: "#00000048"
+            z: -1
+        }
+
         // Header label — matches the section-header typography of the
-        // properties panel so the popover feels native to it.
+        // properties panel (smallSize / textPrimary / SemiBold) so the
+        // popover feels native to it.
         Text {
             id: header
             anchors.top: parent.top
@@ -47,9 +88,9 @@ Item {
             anchors.right: parent.right
             anchors.margins: Theme.space.md
             text: qsTr("MEDIA")
-            color: Theme.color.textTertiary
+            color: Theme.color.textPrimary
             font.family: Theme.font.family
-            font.pixelSize: Theme.font.microSize
+            font.pixelSize: Theme.font.smallSize
             font.weight: Theme.font.weightSemiBold
             font.letterSpacing: 1.2
         }
@@ -79,8 +120,8 @@ Item {
 
             delegate: Rectangle {
                 width: list.width
-                height: 40
-                radius: Theme.radius.sm
+                height: 48
+                radius: 0
                 readonly property bool _selected: modelData.id === root.targetId
                 readonly property bool _isNone:   modelData.id === 0
                 color: rowMa.containsMouse ? Theme.color.overlay
@@ -89,15 +130,15 @@ Item {
 
                 Row {
                     anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 6
-                    spacing: 8
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    spacing: 10
 
                     // Thumb — image preview for images, film icon for videos,
                     // and a different "x" affordance for the None option.
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 28; height: 28; radius: Theme.radius.sm
+                        width: 36; height: 36; radius: 0
                         color: Theme.color.canvas
                         border.color: Theme.color.borderSubtle
                         border.width: 1
@@ -136,19 +177,20 @@ Item {
                             text: modelData.title
                             color: parent.parent.parent._selected ? Theme.color.textPrimary
                                  : parent.parent.parent._isNone   ? Theme.color.textTertiary
-                                                                  : Theme.color.textSecondary
+                                                                  : Theme.color.textPrimary
                             font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
+                            font.pixelSize: Theme.font.bodySize
+                            font.weight: Theme.font.weightMedium
                             font.italic: parent.parent.parent._isNone
                             elide: Text.ElideRight
-                            width: list.width - 50
+                            width: list.width - 62
                         }
                         Text {
                             visible: !parent.parent.parent._isNone
                             text: modelData.type === "video" ? qsTr("Video") : qsTr("Image")
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
-                            font.pixelSize: Theme.font.microSize
+                            font.pixelSize: Theme.font.smallSize
                         }
                     }
                 }
@@ -202,10 +244,12 @@ Item {
 
         dismissArea.visible = true
         chrome.visible = true
+        root._open = true
     }
 
     function _close() {
         chrome.visible = false
         dismissArea.visible = false
+        root._open = false
     }
 }

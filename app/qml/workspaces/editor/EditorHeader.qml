@@ -42,7 +42,7 @@ Rectangle {
         Rectangle {
             width: kindLabel.implicitWidth + Theme.space.md
             height: 22
-            radius: 3
+            radius: 0
             color: Theme.color.brandSubtle
             border.color: Theme.color.brand
             border.width: 1
@@ -53,10 +53,10 @@ Rectangle {
                 anchors.centerIn: parent
                 text: (workspace.themeKind || "").toUpperCase()
                 color: Theme.color.brand
-                font.family: Theme.font.monoFamily
-                font.pixelSize: 12
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.microSize
                 font.weight: Theme.font.weightSemiBold
-                font.letterSpacing: 1
+                font.letterSpacing: 1.2
             }
         }
     }

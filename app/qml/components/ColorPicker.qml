@@ -9,8 +9,11 @@ Rectangle {
     id: root
     width: 240
     height: 320
-    radius: Theme.radius.md
-    color: Theme.color.elevated
+    // Squared per brand language. Wrapped by ColorPickerPopover's chrome,
+    // which carries the shadow + outer border; this inner Rectangle reads
+    // as the picker surface itself.
+    radius: 0
+    color: Theme.color.bgMenu
     border.color: Theme.color.borderStrong
     border.width: 1
 
@@ -119,7 +122,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: 16
-                radius: 2
+                radius: 0
                 gradient: Gradient {
                     GradientStop { position: 0.00; color: "#ff0000" }
                     GradientStop { position: 0.17; color: "#ffff00" }
@@ -133,7 +136,7 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: parent.width + 6; height: 3
                     y: parent.height * root.hue - 1
-                    color: "#ffffff"; radius: 1
+                    color: "#ffffff"; radius: 0
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -156,7 +159,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 110
                 height: 16
-                radius: 2
+                radius: 0
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: Qt.hsva(root.hue, root.sat, root.val, 0) }
@@ -166,7 +169,7 @@ Rectangle {
                     width: 3; height: parent.height + 6
                     y: -3
                     x: parent.width * root.alpha - 1
-                    color: "#ffffff"; radius: 1
+                    color: "#ffffff"; radius: 0
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -180,19 +183,19 @@ Rectangle {
             Rectangle {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 96; height: 22
-                radius: Theme.radius.sm
+                width: 100; height: 26
+                radius: 0
                 color: Theme.color.canvas
                 border.color: hexInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 1
                 TextInput {
                     id: hexInput
                     anchors.fill: parent
-                    anchors.leftMargin: 4
+                    anchors.leftMargin: 6
                     verticalAlignment: TextInput.AlignVCenter
                     color: Theme.color.textPrimary
-                    font.family: Theme.font.monoFamily
-                    font.pixelSize: Theme.font.smallSize
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
                     text: root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
                     selectByMouse: true
                     onEditingFinished: {
@@ -214,7 +217,7 @@ Rectangle {
             Repeater {
                 model: AppState.recentColors
                 delegate: Rectangle {
-                    width: 22; height: 22; radius: 3
+                    width: 22; height: 22; radius: 0
                     color: modelData
                     border.color: Theme.color.borderStrong
                     border.width: 1

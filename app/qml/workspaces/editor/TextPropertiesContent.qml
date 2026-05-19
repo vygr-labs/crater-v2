@@ -201,18 +201,18 @@ Column {
                 visible: node && node.data && node.data.linkage === "custom"
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 80
-                radius: Theme.radius.sm
+                height: 96
+                radius: 0
                 color: Theme.color.canvas
                 border.color: txtArea.activeFocus ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 1
                 TextEdit {
                     id: txtArea
                     anchors.fill: parent
-                    anchors.margins: 6
+                    anchors.margins: 8
                     color: Theme.color.textPrimary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
+                    font.pixelSize: Theme.font.bodySize
                     selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     text: (node && node.data && node.data.text) || ""
@@ -233,16 +233,16 @@ Column {
                 spacing: 8
                 Item {
                     id: autoFitRow
-                    width: 92
-                    height: 24
+                    width: 108
+                    height: 32
                     readonly property bool _on: !!(node && node.data && node.data.autoResize)
                     Row {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 14; height: 14
-                            radius: 3
+                            width: 18; height: 18
+                            radius: 0
                             color: autoFitRow._on ? Theme.color.brand : Theme.color.canvas
                             border.color: autoFitRow._on ? Theme.color.brand : Theme.color.borderStrong
                             border.width: 1
@@ -251,7 +251,7 @@ Column {
                             AppIcon {
                                 anchors.centerIn: parent
                                 visible: autoFitRow._on
-                                name: "check"; size: Theme.icon.tiny
+                                name: "check"; size: Theme.icon.sm
                                 color: Theme.color.brandInk
                             }
                         }
@@ -260,7 +260,8 @@ Column {
                             text: qsTr("Auto-fit")
                             color: Theme.color.textSecondary
                             font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
+                            font.pixelSize: Theme.font.bodySize
+                            font.weight: Theme.font.weightMedium
                         }
                     }
                     MouseArea {
@@ -271,7 +272,7 @@ Column {
                     }
                 }
                 NumericInput {
-                    width: parent.width - 92 - 8
+                    width: parent.width - 108 - 8
                     workspace: root.workspace
                     label: qsTr("Max"); suffix: "px"
                     enabled: !!(node && node.data && node.data.autoResize)

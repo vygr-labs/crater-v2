@@ -78,8 +78,8 @@ Column {
                 id: mediaSlot
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 44
-                radius: Theme.radius.sm
+                height: 48
+                radius: 0
                 color: Theme.color.canvas
                 border.color: slotMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 1
@@ -91,7 +91,7 @@ Column {
 
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 32; height: 32; radius: Theme.radius.sm
+                        width: 36; height: 36; radius: 0
                         color: Theme.color.elevated
                         Image {
                             visible: root._media && root._media.type === "image"

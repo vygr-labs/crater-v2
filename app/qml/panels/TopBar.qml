@@ -41,11 +41,35 @@ Rectangle {
             }
         }
 
-        IconButton {
+        // Settings gear — inline bordered square chip matching the adjacent
+        // PillButtons / GhostButtons. Kept inline rather than reusing
+        // IconButton because that atom is shared across 14 surfaces (editor
+        // toolbars, dialogs, tile menus) and changing its default chrome
+        // would ripple far beyond the topbar.
+        Rectangle {
+            id: settingsChip
             anchors.verticalCenter: parent.verticalCenter
-            iconName: "settings"
-            iconSize: Theme.icon.md
-            onClicked: AppState.openModal("settings", {})
+            height: 34
+            width:  34
+            color: settingsMa.containsMouse ? Theme.color.overlay
+                                            : "transparent"
+            border.color: Theme.color.borderStrong
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+            AppIcon {
+                anchors.centerIn: parent
+                name: "settings"
+                color: Theme.color.textSecondary
+                size: Theme.icon.md
+            }
+            MouseArea {
+                id: settingsMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: AppState.openModal("settings", {})
+            }
         }
 
         Item { width: Theme.space.md; height: 1 }

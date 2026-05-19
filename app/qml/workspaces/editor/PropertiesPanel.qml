@@ -7,7 +7,12 @@ import Crater
 Rectangle {
     id: root
     property var workspace
-    color: Theme.color.bgSidebar
+    // `elevated` matches the canonical panel surface used by the topbar and
+    // the rest of the brand-redesigned chrome. The Flickable contents inset
+    // their fields on `canvas` so the input chips read as recessed within
+    // this panel surface — same hierarchy as the right-side panels in the
+    // main library view.
+    color: Theme.color.elevated
 
     Rectangle {
         anchors.left: parent.left
@@ -48,7 +53,7 @@ Rectangle {
 
     Item {
         id: header
-        height: 36
+        height: 44
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -58,9 +63,9 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: Theme.space.lg
             text: qsTr("PROPERTIES")
-            color: Theme.color.textTertiary
+            color: Theme.color.textPrimary
             font.family: Theme.font.family
-            font.pixelSize: Theme.font.microSize
+            font.pixelSize: Theme.font.smallSize
             font.weight: Theme.font.weightSemiBold
             font.letterSpacing: 1.2
         }

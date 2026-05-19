@@ -48,6 +48,19 @@ Item {
 
                 readonly property bool isActive: AppState.activeTab === index
 
+                // Hover wash — gives the tab a visible click-target on
+                // pointer-over. Active tab stays unfilled (the underline +
+                // brand-tinted icon + textPrimary label already mark it),
+                // so hovering an inactive tab is the only state that
+                // actually changes background.
+                Rectangle {
+                    anchors.fill: parent
+                    color: !tabItem.isActive && tabMa.containsMouse
+                            ? Theme.color.overlay
+                            : "transparent"
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+
                 Row {
                     id: tabRow
                     anchors.centerIn: parent
@@ -59,20 +72,24 @@ Item {
                         name: modelData.iconName || ""
                         color: tabItem.isActive    ? Theme.color.brand
                              : tabMa.containsMouse ? Theme.color.textPrimary
-                                                   : Theme.color.textTertiary
+                                                   : Theme.color.textSecondary
                         size: Theme.icon.sm
 
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                     }
+                    // Strong's custom glyph — stands in for a Lucide icon.
+                    // Sized through Theme.icon.md (matches the visual weight
+                    // of the lucide icons in adjacent tabs and scales with
+                    // SettingsService.fontScale alongside them).
                     Text {
                         visible: !modelData.iconName || modelData.iconName.length === 0
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.customGlyph || ""
                         color: tabItem.isActive    ? Theme.color.brand
                              : tabMa.containsMouse ? Theme.color.textPrimary
-                                                   : Theme.color.textTertiary
+                                                   : Theme.color.textSecondary
                         font.family: Theme.font.family
-                        font.pixelSize: 16
+                        font.pixelSize: Theme.icon.md
                         font.weight: Theme.font.weightSemiBold
                         font.italic: true
 
@@ -82,25 +99,32 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.label
                         color: tabItem.isActive    ? Theme.color.textPrimary
-                             : tabMa.containsMouse ? Theme.color.textSecondary
-                                                   : Theme.color.textTertiary
+                             : tabMa.containsMouse ? Theme.color.textPrimary
+                                                   : Theme.color.textSecondary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.bodySize
+                        // Inactive tabs read as firmer body — Medium not
+                        // Regular — so the strip feels like five legible
+                        // siblings rather than four ghosted ones plus one.
                         font.weight: tabItem.isActive ? Theme.font.weightSemiBold
-                                                      : Theme.font.weightRegular
+                                                      : Theme.font.weightMedium
 
                         Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                     }
                 }
 
-                // Active underline
+                // Active underline — full tab width (no horizontal inset)
+                // and squared to match the rest of the brand language.
+                // Sits on top of the strip's bottom hairline so it reads as
+                // the hairline taking on the brand tint under the active
+                // tab rather than a floating bar above it.
                 Rectangle {
                     visible: tabItem.isActive
                     anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width - Theme.space.lg
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     height: 2
-                    radius: 1
+                    radius: 0
                     color: Theme.color.brand
                 }
 

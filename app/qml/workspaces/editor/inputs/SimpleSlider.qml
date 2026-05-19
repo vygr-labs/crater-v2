@@ -18,17 +18,18 @@ Item {
     signal commit(real v)
 
     implicitWidth: parent ? parent.width : 280
-    implicitHeight: 32
+    implicitHeight: 40
 
     Text {
         id: lbl
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         text: root.label
-        color: Theme.color.textTertiary
+        color: Theme.color.textSecondary
         font.family: Theme.font.family
-        font.pixelSize: Theme.font.smallSize
-        width: 64
+        font.pixelSize: Theme.font.bodySize
+        font.weight: Theme.font.weightMedium
+        width: 72
         elide: Text.ElideRight
         visible: root.label.length > 0
     }
@@ -40,8 +41,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         anchors.leftMargin: Theme.space.sm
         anchors.rightMargin: Theme.space.sm
-        height: 4
-        radius: 2
+        height: 6
+        radius: 0
         color: Theme.color.canvas
 
         readonly property real _frac: Math.max(0, Math.min(1, (root.value - root.min) / (root.max - root.min)))
@@ -51,17 +52,20 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: parent.width * track._frac
-            radius: parent.radius
+            radius: 0
             color: Theme.color.brand
         }
 
+        // Squared brand chip thumb — matches the rest of the editor's
+        // architectural language. Slightly larger than the track so it
+        // remains an obvious hit target on a 6px-tall track.
         Rectangle {
             id: thumb
-            width: 12; height: 12; radius: 6
-            color: "#ffffff"
-            border.color: Theme.color.brand
+            width: 14; height: 14; radius: 0
+            color: Theme.color.brand
+            border.color: "#ffffff"
             border.width: 2
-            x: track.width * track._frac - 6
+            x: track.width * track._frac - 7
             anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -85,10 +89,10 @@ Item {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         text: Number.isInteger(root.value) ? root.value.toString() : root.value.toFixed(2)
-        color: Theme.color.textSecondary
-        font.family: Theme.font.monoFamily
-        font.pixelSize: Theme.font.smallSize
-        width: 36
+        color: Theme.color.textPrimary
+        font.family: Theme.font.family
+        font.pixelSize: Theme.font.bodySize
+        width: 42
         horizontalAlignment: Text.AlignRight
     }
 }

@@ -1,8 +1,9 @@
 import QtQuick
 
-// Hover-tinted button without a border.
-// Used in TopBar for "Schedule" and "Import" — labels that double as
-// dropdown triggers and modal openers.
+// Bordered text button — mirrors GhostButton chrome (1px borderStrong,
+// transparent rest, overlay hover wash, brandSubtle fill + brand border
+// when `active`). Differs from GhostButton only in supporting a trailing
+// chevron, which dropdown triggers in TopBar (Schedule) need.
 Rectangle {
     id: root
 
@@ -21,11 +22,14 @@ Rectangle {
     // is legacy from the earlier rounded design; we kept it to avoid a
     // rename across every TopBar call site.
     radius: 0
-    color: root.active      ? Theme.color.overlay
+    color: root.active      ? Theme.color.brandSubtle
          : ma.containsMouse ? Theme.color.overlay
                              : "transparent"
+    border.color: root.active ? Theme.color.brand : Theme.color.borderStrong
+    border.width: 1
 
     Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+    Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
     Row {
         id: contentRow

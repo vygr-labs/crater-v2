@@ -7,7 +7,7 @@ import Crater
 Rectangle {
     id: root
     property var workspace
-    color: Theme.color.bgSidebar
+    color: Theme.color.elevated
 
     // Right hairline border separating from the canvas.
     Rectangle {
@@ -20,7 +20,7 @@ Rectangle {
 
     Item {
         id: header
-        height: 36
+        height: 44
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -30,9 +30,9 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             anchors.leftMargin: Theme.space.lg
             text: qsTr("LAYERS")
-            color: Theme.color.textTertiary
+            color: Theme.color.textPrimary
             font.family: Theme.font.family
-            font.pixelSize: Theme.font.microSize
+            font.pixelSize: Theme.font.smallSize
             font.weight: Theme.font.weightSemiBold
             font.letterSpacing: 1.2
         }
@@ -41,9 +41,9 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             anchors.rightMargin: Theme.space.lg
             text: workspace.workingTheme.nodes.length + ""
-            color: Theme.color.textTertiary
-            font.family: Theme.font.monoFamily
-            font.pixelSize: Theme.font.microSize
+            color: Theme.color.textSecondary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
         }
     }
 

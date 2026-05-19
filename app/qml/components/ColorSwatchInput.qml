@@ -12,17 +12,18 @@ Item {
 
     signal colorPicked(string hex)
 
-    implicitHeight: 28
+    implicitHeight: 36
 
     Text {
         id: lbl
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         text: root.label
-        color: Theme.color.textTertiary
+        color: Theme.color.textSecondary
         font.family: Theme.font.family
-        font.pixelSize: Theme.font.smallSize
-        width: 36
+        font.pixelSize: Theme.font.bodySize
+        font.weight: Theme.font.weightMedium
+        width: 44
         visible: root.label.length > 0
     }
 
@@ -32,8 +33,8 @@ Item {
         anchors.left: lbl.visible ? lbl.right : parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        height: 24
-        radius: Theme.radius.sm
+        height: 32
+        radius: 0
         color: Theme.color.canvas
         border.color: rowMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
@@ -42,9 +43,9 @@ Item {
             id: swatch
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: 4
-            width: 20; height: 16
-            radius: 2
+            anchors.leftMargin: 6
+            width: 26; height: 22
+            radius: 0
             color: root.value
             border.color: Theme.color.borderSubtle
             border.width: 1
@@ -52,11 +53,11 @@ Item {
         Text {
             anchors.left: swatch.right
             anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: 6
+            anchors.leftMargin: 8
             text: root.value
             color: Theme.color.textPrimary
-            font.family: Theme.font.monoFamily
-            font.pixelSize: Theme.font.smallSize
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.bodySize
         }
 
         MouseArea {

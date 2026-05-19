@@ -12,18 +12,59 @@ Item {
 
     width: 0; height: 0    // zero footprint when closed
 
+    // Tracks `chrome.visible` so the entrance animation re-fires on each
+    // open (the chrome Rectangle lives for the popover's lifetime; only its
+    // visibility toggles). Same shape as Combobox's `root._open`.
+    property bool _open: false
+
     // The picker chrome. Reparented to the window root on openAt() so panel
-    // scroll/clip don't truncate it.
+    // scroll/clip don't truncate it. Chrome surface matches PopoverMenu /
+    // ScheduleDropdown / Combobox — `bgMenu` token, squared corners.
     Rectangle {
         id: chrome
         visible: false
         z: 1000
-        radius: Theme.radius.lg
-        color: Theme.color.elevated
+        radius: 0
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
         width: picker.width + 2
         height: picker.height + 2
+
+        transformOrigin: Item.TopLeft
+        opacity: root._open ? 1.0 : 0.0
+        scale:   root._open ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        // Layered drop shadow — mirrors PopoverMenu so floating surfaces
+        // share one shadow language without pulling in QtQuick.Effects.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: 0
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: 0
+            color: "#00000028"
+            z: -2
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -1
+            anchors.topMargin: 1
+            radius: 0
+            color: "#00000048"
+            z: -1
+        }
 
         ColorPicker {
             id: picker
@@ -65,10 +106,12 @@ Item {
 
         dismissArea.visible = true
         chrome.visible = true
+        root._open = true
     }
 
     function _close() {
         chrome.visible = false
         dismissArea.visible = false
+        root._open = false
     }
 }

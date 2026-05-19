@@ -40,7 +40,7 @@ QVariantMap defaultDataForText()
     d["layerName"]   = QStringLiteral("Text");
     d["linkage"]     = QStringLiteral("custom");
     d["text"]        = QStringLiteral("New text");
-    d["autoResize"]  = false;
+    d["autoResize"]  = true;
     d["maxFontSize"] = 220;
     return d;
 }

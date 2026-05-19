@@ -26,9 +26,9 @@ Item {
     signal commit(real newValue)
 
     implicitWidth: parent ? parent.width : 120
-    implicitHeight: 28
+    implicitHeight: 36
 
-    // Label width is content-driven with a 30px floor — short labels (X/Y/Z)
+    // Label width is content-driven with a 36px floor — short labels (X/Y/Z)
     // keep the tight grid alignment we want across paired inputs, while longer
     // labels like "Weight" or "Max" expand to their natural width instead of
     // being clipped by the input box drawn on top.
@@ -37,10 +37,11 @@ Item {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         text: root.label
-        color: Theme.color.textTertiary
+        color: Theme.color.textSecondary
         font.family: Theme.font.family
-        font.pixelSize: Theme.font.smallSize
-        width: Math.max(30, implicitWidth + 4)
+        font.pixelSize: Theme.font.bodySize
+        font.weight: Theme.font.weightMedium
+        width: Math.max(36, implicitWidth + 6)
         visible: root.label.length > 0
     }
 
@@ -49,8 +50,8 @@ Item {
         anchors.left: lbl.visible ? lbl.right : parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        height: 24
-        radius: Theme.radius.sm
+        height: 32
+        radius: 0
         color: Theme.color.canvas
         border.color: input.activeFocus ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
@@ -58,12 +59,12 @@ Item {
         TextInput {
             id: input
             anchors.fill: parent
-            anchors.leftMargin: 6
-            anchors.rightMargin: suffixLabel.implicitWidth + 8
+            anchors.leftMargin: 8
+            anchors.rightMargin: suffixLabel.implicitWidth + 10
             verticalAlignment: TextInput.AlignVCenter
             color: Theme.color.textPrimary
-            font.family: Theme.font.monoFamily
-            font.pixelSize: Theme.font.smallSize
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.bodySize
             text: _format(root.value)
             selectByMouse: true
             inputMethodHints: Qt.ImhFormattedNumbersOnly
@@ -109,7 +110,7 @@ Item {
         Text {
             id: suffixLabel
             anchors.right: parent.right
-            anchors.rightMargin: 6
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             text: root.suffix
             color: Theme.color.textTertiary

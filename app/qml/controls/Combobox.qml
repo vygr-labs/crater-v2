@@ -28,8 +28,8 @@ Item {
     property var    options: []
     property string placeholder: ""
     property bool   searchable: true
-    property int    maxPopupHeight: 280
-    property int    rowHeight: 28
+    property int    maxPopupHeight: 320
+    property int    rowHeight: 34
 
     signal valueSelected(string v)
 
@@ -66,7 +66,7 @@ Item {
             text: root.value || root.placeholder
             color: root.value ? Theme.color.textPrimary : Theme.color.textTertiary
             font.family: Theme.font.family
-            font.pixelSize: Theme.font.smallSize
+            font.pixelSize: Theme.font.bodySize
             elide: Text.ElideRight
         }
         AppIcon {
@@ -74,8 +74,8 @@ Item {
             anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             name: root._open ? "chevron-up" : "chevron-down"
-            size: Theme.icon.sm
-            color: Theme.color.textTertiary
+            size: Theme.icon.md
+            color: Theme.color.textSecondary
         }
 
         MouseArea {
@@ -102,7 +102,7 @@ Item {
         // _filteredCount is 0 so the "no matches" state doesn't collapse
         // the box into the search row.
         height: {
-            const search = root.searchable ? (24 + 6 + 4) : 6
+            const search = root.searchable ? (30 + 6 + 4) : 6
             const rows   = Math.max(1, _filteredCount) * root.rowHeight
             const bottom = 6
             return Math.min(root.maxPopupHeight, search + rows + bottom)
@@ -112,11 +112,51 @@ Item {
         // binding stays live since `root` (and its width) outlive the
         // reparent for as long as the Combobox itself does.
         width: root.width
-        color: Theme.color.raised
+        // Floating-menu surface — matches PopoverMenu / ScheduleDropdown.
+        color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
         border.width: 1
         radius: 0
         clip: true
+
+        // Entrance animation — bound to root._open so each open/close cycle
+        // re-animates (the popover Rectangle lives for the Combobox's
+        // lifetime; only its `visible` toggles, so a Component.onCompleted
+        // gate would only fire once per session).
+        transformOrigin: Item.TopLeft
+        opacity: root._open ? 1.0 : 0.0
+        scale:   root._open ? 1.0 : 0.96
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: Theme.motion.instant; easing.type: Easing.OutCubic } }
+
+        // Layered drop shadow — mirrors PopoverMenu so all floating
+        // surfaces share one shadow language across the app.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -12
+            anchors.topMargin: -6
+            anchors.bottomMargin: -18
+            radius: 0
+            color: "#00000018"
+            z: -3
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -6
+            anchors.topMargin: -3
+            anchors.bottomMargin: -10
+            radius: 0
+            color: "#00000028"
+            z: -2
+        }
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -1
+            anchors.topMargin: 1
+            radius: 0
+            color: "#00000048"
+            z: -1
+        }
 
         property string _filter: ""
         property var _filteredOptions: {
@@ -154,7 +194,7 @@ Item {
             anchors.leftMargin: 6
             anchors.right: parent.right
             anchors.rightMargin: 6
-            height: 24
+            height: 30
             radius: 0
             color: Theme.color.canvas
             border.color: Theme.color.borderSubtle
@@ -162,21 +202,21 @@ Item {
 
             AppIcon {
                 anchors.left: parent.left
-                anchors.leftMargin: 6
+                anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 name: "search"
-                size: Theme.icon.sm
+                size: Theme.icon.md
                 color: Theme.color.textTertiary
             }
             TextInput {
                 id: searchField
                 anchors.fill: parent
-                anchors.leftMargin: 24
-                anchors.rightMargin: 6
+                anchors.leftMargin: 28
+                anchors.rightMargin: 8
                 verticalAlignment: TextInput.AlignVCenter
                 color: Theme.color.textPrimary
                 font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
+                font.pixelSize: Theme.font.bodySize
                 selectByMouse: true
                 clip: true
                 onTextChanged: popover._filter = text
@@ -225,13 +265,13 @@ Item {
                                            : "transparent"
                 Text {
                     anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
                     verticalAlignment: Text.AlignVCenter
                     text: parent._label
                     color: parent._selected ? Theme.color.brand : Theme.color.textPrimary
                     font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
+                    font.pixelSize: Theme.font.bodySize
                     elide: Text.ElideRight
                 }
                 MouseArea {

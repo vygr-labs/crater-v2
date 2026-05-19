@@ -22,7 +22,7 @@ Item {
     // Header
     Rectangle {
         id: header
-        height: 32
+        height: 40
         anchors.left: parent.left
         anchors.right: parent.right
         color: hdrMa.containsMouse ? Theme.color.overlay : "transparent"
@@ -32,8 +32,8 @@ Item {
         AppIcon {
             id: caret
             name: section.expanded ? "chevron-down" : "chevron-right"
-            color: Theme.color.textSecondary
-            size: Theme.icon.sm
+            color: Theme.color.textPrimary
+            size: Theme.icon.md
             anchors.left: parent.left
             anchors.leftMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
@@ -43,9 +43,9 @@ Item {
             anchors.leftMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
             text: section.title.toUpperCase()
-            color: Theme.color.textSecondary
+            color: Theme.color.textPrimary
             font.family: Theme.font.family
-            font.pixelSize: Theme.font.microSize
+            font.pixelSize: Theme.font.smallSize
             font.weight: Theme.font.weightSemiBold
             font.letterSpacing: 1.2
         }
