@@ -260,7 +260,7 @@ Item {
             Rectangle {
                 id: tile
                 anchors.fill: parent
-                radius: Theme.radius.lg
+                radius: 0
                 color: Theme.color.canvas
                 border.color: themeMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 2

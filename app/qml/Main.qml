@@ -24,6 +24,22 @@ ApplicationWindow {
     title: qsTr("Crater")
     color: Theme.color.canvas
 
+    // ── Frameless chrome ────────────────────────────────────────────────
+    // Drop the native title bar; we draw our own via panels/TitleBar.qml.
+    // Window dragging / Aero Snap / edge resize are handled with Qt 6.5+
+    // primitives (Window.startSystemMove / Window.startSystemResize) that
+    // delegate to the OS — no manual WM behavior reimplementation needed.
+    flags: Qt.Window | Qt.FramelessWindowHint
+
+    // Frameless maximized windows on Windows extend ~8 px past the screen
+    // bounds (Win expects an invisible resize border the WM normally
+    // draws). Apply an equal margin to the content wrapper when maximized
+    // so the operator sees crisp pixels at the screen edges instead of
+    // chrome that runs off-screen. macOS / Linux don't exhibit the
+    // overshoot, so the margin collapses to 0 elsewhere.
+    readonly property int _maxFix:
+        (Qt.platform.os === "windows" && visibility === Window.Maximized) ? 8 : 0
+
     // The operator console (top bar / main area / footer) is hidden when a
     // full-screen workspace is open. The workspace Loader below this region
     // takes over the window — closing it (AppState.closeThemeEditor()) sets
@@ -93,12 +109,33 @@ ApplicationWindow {
         }
     }
 
-    // ── Top bar ─────────────────────────────────────────────────────────
-    TopBar {
-        id: topBar
+    // ── Custom title bar ────────────────────────────────────────────────
+    // Replaces the OS-drawn title bar that Qt.FramelessWindowHint removed.
+    // Always visible — even during workspace mode (theme editor) the
+    // operator still needs window controls. The maxFix margins on the
+    // top/left/right keep it inside the visible screen pixels when
+    // maximized on Windows. z: 9999 keeps it above the workspaces Loader;
+    // ModalLayer below uses an even higher z so modals dim the titlebar
+    // when active and the operator dismisses modals via Esc / modal close.
+    TitleBar {
+        id: titleBar
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.topMargin:   root._maxFix
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
+        z: 9999
+    }
+
+    // ── Top bar ─────────────────────────────────────────────────────────
+    TopBar {
+        id: topBar
+        anchors.top: titleBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
         visible: root._consoleVisible
     }
 
@@ -111,6 +148,9 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
+        anchors.leftMargin:   root._maxFix
+        anchors.rightMargin:  root._maxFix
+        anchors.bottomMargin: root._maxFix
 
         // Top row split ratio. A future Workspace system will let users
         // drag a horizontal grip to adjust this; today it's a static
@@ -201,7 +241,16 @@ ApplicationWindow {
     // closing returns to the operator console with no rebuild cost.
     Loader {
         id: workspaceLoader
-        anchors.fill: parent
+        // Workspaces start below the title bar so the operator never loses
+        // window controls while the theme editor is open. Margins on the
+        // remaining sides absorb the Windows max-overshoot fix.
+        anchors.top: titleBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.leftMargin:   root._maxFix
+        anchors.rightMargin:  root._maxFix
+        anchors.bottomMargin: root._maxFix
         z: 100
         active: AppState.workspaceMode === "themeEditor"
         sourceComponent: active ? themeEditorWorkspaceComp : null
@@ -215,9 +264,132 @@ ApplicationWindow {
         }
     }
 
-    // ── Modal overlay (renders above everything, anchors.fill: parent) ──
+    // ── Modal overlay (renders above the entire frame including the
+    //    custom TitleBar once a modal is active — operator dismisses
+    //    via Esc / the modal's own close button) ──────────────────────
     ModalLayer {
         anchors.fill: parent
+        anchors.margins: root._maxFix
+        z: 10000
+    }
+
+    // ── Edge resize zones ───────────────────────────────────────────────
+    // 6 px-wide strips at each edge plus 8 px-square corner zones, hung
+    // directly off the ApplicationWindow root so they ride the actual
+    // visible window edges (not the inner content-margin edges). Each
+    // calls Window.startSystemResize() with the appropriate edge set —
+    // the OS then runs its native resize loop, so Aero Snap / dock-to-
+    // edge / cursor-warp on multi-monitor all work without extra QML
+    // state machines. Disabled when maximized; resizing a maximized
+    // window via startSystemResize kicks it into a half-restored
+    // intermediate state on Windows that's visually jarring.
+    Item {
+        id: resizeZones
+        anchors.fill: parent
+        z: 10001
+        enabled: !titleBar._isMaximized
+
+        readonly property int edge:   6
+        readonly property int corner: 10
+
+        // Left edge
+        MouseArea {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin:    resizeZones.corner
+            anchors.bottomMargin: resizeZones.corner
+            width: resizeZones.edge
+            cursorShape: Qt.SizeHorCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.LeftEdge)
+            }
+        }
+        // Right edge
+        MouseArea {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin:    resizeZones.corner
+            anchors.bottomMargin: resizeZones.corner
+            width: resizeZones.edge
+            cursorShape: Qt.SizeHorCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.RightEdge)
+            }
+        }
+        // Top edge (overlays the top of the TitleBar drag region — this
+        // matches OS-native behavior where the very top edge is a resize
+        // zone, not a drag zone, and only kicks in for the 6 px strip).
+        MouseArea {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin:  resizeZones.corner
+            anchors.rightMargin: resizeZones.corner
+            height: resizeZones.edge
+            cursorShape: Qt.SizeVerCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.TopEdge)
+            }
+        }
+        // Bottom edge
+        MouseArea {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin:  resizeZones.corner
+            anchors.rightMargin: resizeZones.corner
+            height: resizeZones.edge
+            cursorShape: Qt.SizeVerCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.BottomEdge)
+            }
+        }
+        // Top-left corner (↖↘ diagonal)
+        MouseArea {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            width: resizeZones.corner
+            height: resizeZones.corner
+            cursorShape: Qt.SizeFDiagCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
+            }
+        }
+        // Top-right corner (↗↙ diagonal)
+        MouseArea {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            width: resizeZones.corner
+            height: resizeZones.corner
+            cursorShape: Qt.SizeBDiagCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.TopEdge | Qt.RightEdge)
+            }
+        }
+        // Bottom-left corner (↗↙ diagonal)
+        MouseArea {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            width: resizeZones.corner
+            height: resizeZones.corner
+            cursorShape: Qt.SizeBDiagCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
+            }
+        }
+        // Bottom-right corner (↖↘ diagonal)
+        MouseArea {
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: resizeZones.corner
+            height: resizeZones.corner
+            cursorShape: Qt.SizeFDiagCursor
+            onPressed: function (m) {
+                if (m.button === Qt.LeftButton) root.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
+            }
+        }
     }
 
     // ── Projection output window ─────────────────────────────────────────

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Crater · C-Aperture mark.
+
+  Source of truth for every rendered form of the Crater logo: window icons
+  (.ico / .icns built from this), in-app splash/about surfaces, and brand
+  collateral. The viewBox is intentionally a clean 64-unit square so stroke
+  widths translate predictably across rasterizations (the 8-unit stroke is
+  12.5% of width — deliberately chunky so the silhouette survives 16px).
+
+  Notes for re-export:
+    · Center throw dot is r=6.5 (not r=5 as in the original mock). The
+      mock's r=5 reduces to ~1.25 logical px at 16px raster after AA,
+      where it can fuse into the surrounding C stroke on weaker GPUs.
+      r=6.5 keeps the dot reliably present at every shipped size with
+      no perceptible difference at 256px.
+    · `currentColor` lets a consuming QML/HTML context override the fill
+      via `color:` on a parent — useful for in-app rendering where the
+      mark needs to track Theme.color.accentBase. The default
+      color="#3AC8D4" (Mixer Cyan) is what renders if no override is
+      provided, e.g. when the file is loaded as a raw image by an OS
+      icon converter.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 64 64"
+     role="img"
+     aria-label="Crater"
+     color="#3AC8D4"
+     fill="currentColor"
+     stroke="currentColor">
+  <path d="M 54.5 19 A 26 26 0 1 0 54.5 45"
+        fill="none"
+        stroke-width="8"
+        stroke-linecap="butt"/>
+  <circle cx="32" cy="32" r="6.5"/>
+</svg>

@@ -19,6 +19,20 @@ qt_add_executable(crater
     src/RichTextHelper.h
 )
 
+# Windows .exe icon. The .rc file lives in qt/packaging/ alongside the
+# Inno Setup script so all installer-adjacent assets sit under one
+# directory. Adding it to the target's sources causes CMake to invoke
+# the platform's resource compiler (rc.exe under MSVC, windres under
+# MinGW) and link the resulting .res into crater.exe — making the
+# C-Aperture mark show up in File Explorer, on the start-menu shortcut,
+# and on the taskbar before QML loads. Non-Windows platforms ignore
+# this entirely.
+if(WIN32)
+    target_sources(crater PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.rc
+    )
+endif()
+
 # Mark singletons before qt_add_qml_module so the metadata is honored.
 # AppState joins Theme, LucideIcons, and Workspaces as a singleton — it
 # holds all transient UI state and is bound from every panel/dialog.
@@ -99,6 +113,7 @@ qt_add_qml_module(crater
         qml/workspaces/editor/inputs/SegmentedControl.qml
 
         # ── Major UI panels ───────────────────────────────────────────
+        qml/panels/TitleBar.qml
         qml/panels/TopBar.qml
         qml/panels/SchedulePanel.qml
         qml/panels/PreviewPanel.qml
@@ -143,6 +158,30 @@ qt_add_resources(crater "appfonts"
     FILES
         resources/fonts/lucide.ttf
         resources/fonts/FunnelSans-VariableFont_wght.ttf
+)
+
+# Bundle brand assets as Qt resources (qrc:/brand/*). The SVG is the
+# design source of truth — used for any in-app rendering; the ICO is
+# what QApplication::setWindowIcon loads at startup so Qt windows
+# carry the mark on the title bar, taskbar, and alt-tab on every
+# platform. The Windows .rc embedded above covers File Explorer and
+# pre-launch surfaces; this covers everything once the process is up.
+#
+# The ICO is single-sourced at qt/packaging/crater.ico (so the .rc and
+# the qrc never drift), reached from here via BASE pointing one
+# directory up. The SVG lives under resources/brand because it's only
+# consumed from inside the app, never by an installer step.
+qt_add_resources(crater "appbrand_svg"
+    PREFIX "/brand"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/resources/brand"
+    FILES
+        resources/brand/crater.svg
+)
+qt_add_resources(crater "appbrand_ico"
+    PREFIX "/brand"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/../packaging"
+    FILES
+        ../packaging/crater.ico
 )
 
 target_link_libraries(crater

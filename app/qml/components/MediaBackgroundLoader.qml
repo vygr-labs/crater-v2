@@ -58,14 +58,21 @@ Item {
     property int    sharedToken: -1
     property string activeUrl:   ""
 
-    function _videoUrl() {
-        return (_type === "video" && _path.length > 0 && autoPlay)
-                   ? "file:///" + _path
-                   : ""
-    }
-
-    function _refreshToken() {
-        const url = _videoUrl()
+    // Single function (no intra-QML-object helper call). The earlier
+    // split into _videoUrl() + _refreshToken() hit a Qt quirk: when
+    // Qt.callLater dispatches the deferred call, the inner JS body
+    // can't reliably resolve a *second* QML-object function via name
+    // lookup, surfacing as `QQmlVMEMetaObject: Internal error -
+    // attempted to evaluate a function in an invalid context` and
+    // `TypeError: Property '_videoUrl' ... is not a function`. The
+    // partially-evaluated state then cascades to other components
+    // (e.g. the NdiRenderer's inline ProjectionScene) failing with
+    // `Component is not ready` and an empty errorString. Inlining the
+    // URL computation removes the cross-function call entirely.
+    function refreshToken() {
+        const url = (_type === "video" && _path.length > 0 && autoPlay)
+                        ? "file:///" + _path
+                        : ""
         if (sharedToken >= 0 && activeUrl === url) return
         if (sharedToken >= 0) {
             MediaPlaybackService.release(sharedToken)
@@ -73,7 +80,8 @@ Item {
             activeUrl   = ""
         }
         if (url.length > 0) {
-            // wantsAudio=false — see header comment.
+            // wantsAudio=false — theme video backgrounds are decorative
+            // (see header comment).
             sharedToken = MediaPlaybackService.acquire(url, false)
             activeUrl   = url
         }
@@ -83,9 +91,9 @@ Item {
     // MediaService.byId lookup) — so watching the input is enough. Use
     // Qt.callLater so the readonly bindings settle first, then the
     // refresh reads the new values in one consistent pass.
-    onMediaIdChanged:  Qt.callLater(_refreshToken)
-    onAutoPlayChanged: Qt.callLater(_refreshToken)
-    Component.onCompleted: _refreshToken()
+    onMediaIdChanged:  Qt.callLater(refreshToken)
+    onAutoPlayChanged: Qt.callLater(refreshToken)
+    Component.onCompleted: refreshToken()
     Component.onDestruction: {
         if (sharedToken >= 0) MediaPlaybackService.release(sharedToken)
     }

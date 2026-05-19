@@ -71,6 +71,17 @@ QtObject {
         // `bg=${defaultPalette}.900/30` used on Songs/Scripture row hovers.
         readonly property color rowHoverBrand: Qt.rgba(34/255, 118/255, 23/255, 0.30)
 
+        // Mark accent — Mixer Cyan. Worn by the C-Aperture logo
+        // (qt/app/resources/brand/crater.svg) and any brand surface that
+        // should track the mark rather than the operative app-action `brand`
+        // above. Kept as its own block so the in-flight brand exploration is
+        // reversible: if Mixer Cyan promotes to the primary brand, repoint
+        // `brand` at these values and delete the block; if it gets dropped,
+        // delete the block alone and no other surface changes color.
+        readonly property color accentBase:     "#3AC8D4"   // mark fg on #111
+        readonly property color accentSelected: "#0E2528"   // active-row wash
+        readonly property color accentFocus:    "#7CE0E8"   // focus / hover ink
+
         // Broadcast semantics — these never get used decoratively.
         // Live — deep crimson. Carries dual semantics: the ON-AIR channel
         // state (LivePanel, Monitor, schedule live indicators) AND every

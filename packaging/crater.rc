@@ -1,0 +1,15 @@
+// Crater application icon. Embedded into crater.exe by the Windows resource
+// compiler — visible to File Explorer, Programs & Features (via the .iss's
+// UninstallDisplayIcon={app}\crater.exe directive), Start menu / desktop
+// shortcuts, and the taskbar before the QML engine takes over. The runtime
+// icon for QML windows is set via QApplication::setWindowIcon() in main.cpp
+// using the qrc-bundled copy at qrc:/brand/crater.ico — same source asset,
+// loaded a different way so parity holds across platforms (the .rc only
+// runs through Windows' resource compiler; macOS / Linux pick up the qrc
+// path from setWindowIcon).
+//
+// Resource id `1` (numeric, not the named `IDI_APPLICATION` constant) is
+// intentional: Windows picks the icon resource with the alphabetically-
+// lowest numeric id as the .exe's file-icon. Using `1` keeps us the
+// lowest no matter what any future-linked library tries to add.
+1 ICON "crater.ico"

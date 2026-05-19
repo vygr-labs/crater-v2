@@ -7,6 +7,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFuture>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlEngine>
 #include <QQmlError>
@@ -198,6 +199,13 @@ int main(int argc, char* argv[])
     qputenv("QT_MEDIA_BACKEND", "ffmpeg");
 
     QApplication app(argc, argv);
+
+    // Brand mark for every Qt-managed window surface (title bar, taskbar
+    // while running, alt-tab, dock on macOS). Loaded from the qrc-bundled
+    // ICO — the same source asset the Windows .rc embeds into crater.exe
+    // for pre-launch surfaces (File Explorer, start-menu shortcut), kept
+    // in lockstep at build time by both pointing at qt/packaging/crater.ico.
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/brand/crater.ico")));
 
     // Second bootstrap marker — confirms QApplication constructed without
     // dying. Anything past this point logs to the normal log file via
