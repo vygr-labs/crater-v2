@@ -41,6 +41,14 @@ Item {
     readonly property bool   _isClear : ProjectionService.isClear
     readonly property bool   _showLogo: ProjectionService.showLogo
 
+    // True when the live item is itself a picture or movie (vs a
+    // song/scripture/presentation whose theme may have a media background).
+    // For these, the entire stage = the media — no theme nodes overlay,
+    // no no-theme fallback. The themed Repeater is gated off below.
+    readonly property bool   _isMediaItem:
+        _item && (_kind === "image" || _kind === "video")
+              && (_item.mediaPath || "").length > 0
+
     // Theme resolution — bumps on default changes, theme adds/removes, the
     // outputMode toggle, and per-output theme writes. AppState.resolveItemTheme
     // is invoked with this scene's outputKind so dual-mode NDI sees its own
@@ -157,8 +165,51 @@ Item {
                     }
                 }
 
+                // ── Media-item branch ────────────────────────────────
+                // Renders when the live item is itself an image/video file.
+                // Sits inside `stage` at canvas-native size — NDI's frame
+                // grabber points at `stage`, so this is automatically part
+                // of the captured frame. Inside `contentLayer`, so a logo
+                // overlay still fades the media out via the contentLayer
+                // opacity transition.
+                //
+                // `isClear` is not applied here: the current clear semantic
+                // is "hide text nodes only; backgrounds and decorative
+                // content remain visible" (matches the per-delegate text
+                // gate below). A media item is by definition non-text, so
+                // clearing leaves it visible.
+                //
+                // Audio routing: only the primary (audience-facing) scene
+                // unmutes, and only while the projection window is actually
+                // visible to the operator. The NDI scene leaves audio
+                // muted — NDI carries its own audio channel at the SDK
+                // layer; we don't want this player double-driving the
+                // system audio bus. The shared MediaPlaybackService takes
+                // the OR of all subscribers' wantsAudio, so muting here is
+                // a real "this surface doesn't want audio" vote and the
+                // Preview / Live mini-monitor votes still govern audio
+                // when the projection is parked.
+                MediaMonitor {
+                    id: mediaItemMonitor
+                    anchors.fill: parent
+                    visible: scene._isMediaItem
+                    mediaKind: visible ? scene._kind : ""
+                    mediaPath: visible ? (scene._item.mediaPath || "") : ""
+                    muted:    scene.outputKind !== "primary"
+                                || !OutputService.projectionOpen
+                    // Audience expectations: see the whole frame,
+                    // letterboxed if needed. Operator can crop in v1.1 per
+                    // media item if we add a fit-mode property.
+                    crop: false
+                }
+
                 Repeater {
-                    model: scene._sortedNodes
+                    // For media items the stage = the media; theme nodes
+                    // (which may still resolve through the per-output
+                    // override path) would render *on top of* the video.
+                    // Force the model empty in that case — the MediaMonitor
+                    // sibling above is the only content.
+                    model: scene._isMediaItem ? [] : scene._sortedNodes
                     delegate: Item {
                         readonly property var _style: modelData.style || ({})
                         x:        stage.width  * ((_style.x      || 0) / 100)

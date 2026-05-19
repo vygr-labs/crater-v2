@@ -408,9 +408,15 @@ Rectangle {
     //      output is cleared or logo is up.
     //   3. Gradient backdrop (always behind everything).
     //
-    // Audio: live monitor is unmuted because Projection (the audience-
-    // facing window) doesn't render yet. When Projection lands, audio
-    // moves there and this monitor goes muted to avoid double-routing.
+    // Audio: ownership flips with OutputService.projectionOpen. When the
+    // projection window is on the audience screen, ProjectionScene's
+    // MediaMonitor is the unmuted subscriber (audience-facing) and this
+    // monitor goes muted — same audio bus, single voice. When projection
+    // is parked (NDI-only mode, or no second monitor configured yet), the
+    // live mini-monitor unmutes so the operator still hears the clip. The
+    // shared MediaPlaybackService takes the OR of all subscribers'
+    // wantsAudio votes, so flipping this flag is a real "this surface
+    // wants audio" toggle rather than a double-routing concern.
     // Size + position policy mirrors PreviewPanel:
     //   • Compact: 160×90 thumb anchored left, with the item info
     //     column on the right (title + "Slide N of M").
@@ -486,7 +492,10 @@ Rectangle {
                 anchors.margins: 1.5
                 item: root.liveItem
                 pageIndex: AppState.liveSubIndex
-                muted: false
+                // Mute when the audience-facing projection is up; unmute
+                // when it's parked (NDI-only) so the operator still hears
+                // the audio. See the audio-ownership paragraph above.
+                muted: OutputService.projectionOpen
                 isClear: AppState.isClear
                 showLogo: AppState.showLogo
             }
