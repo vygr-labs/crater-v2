@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import Crater
 
 // Full-screen theme editor — mounted by Main.qml when AppState.workspaceMode
@@ -37,7 +38,24 @@ Rectangle {
     property string themeName: ""
     property string selectedNodeId: ""
     property real   zoom: 1.0
-    property bool   inputFocused: false  // gates keyboard shortcuts
+    // Gates keyboard shortcuts (Ctrl+Z/Y, Delete, arrow-nudge, …): when a
+    // text-editing widget has focus the user is typing, so those keys must
+    // go to the field, not the editor.
+    //
+    // DERIVED, not mirrored. The previous version was a hand-set
+    // `property bool` flipped by every input's onActiveFocusChanged — but
+    // when a focused input is destroyed (switching nodes swaps the
+    // PropertiesPanel Loader content; deselecting unloads it) Qt doesn't
+    // fire the focus-lost signal, so the flag stuck `true` and every
+    // shortcut went permanently dead. Reading Window.activeFocusItem is
+    // reactive and self-correcting: destroy the focused input and this
+    // re-evaluates to false on the next tick. Catches every text widget
+    // transitively — NumericInput's TextInput, the name field, the
+    // custom-text TextEdit, the font combobox's search field.
+    readonly property bool inputFocused: {
+        const fi = Window.activeFocusItem
+        return !!fi && (fi instanceof TextInput || fi instanceof TextEdit)
+    }
 
     // History stack — snapshots produced by WorkingTheme.toTokens(). Capped
     // at 50; we drop the oldest entry when overflowing. saveTimestamp
@@ -298,15 +316,17 @@ Rectangle {
         } }
     Shortcut { sequence: "Ctrl+0";          onActivated: workspace.zoom = 1.0 }
 
-    // Arrow nudge — 1% normally, 5% with Shift.
+    // Arrow nudge — 1% normally, 5% with Shift. Range matches the drag
+    // and direct-input clamps (-200..200) so all three movement paths
+    // agree on what's reachable.
     function _nudge(dx, dy) {
         const id = workspace.selectedNodeId
         if (!id) return
         const n = workingTheme.node(id)
         if (!n || !n.style) return
-        workingTheme.setNodeStyle(id, "x", Math.max(0, Math.min(100,
+        workingTheme.setNodeStyle(id, "x", Math.max(-200, Math.min(200,
             Math.round(((n.style.x || 0) + dx) * 10) / 10)))
-        workingTheme.setNodeStyle(id, "y", Math.max(0, Math.min(100,
+        workingTheme.setNodeStyle(id, "y", Math.max(-200, Math.min(200,
             Math.round(((n.style.y || 0) + dy) * 10) / 10)))
     }
     Shortcut { sequence: "Left";        enabled: !workspace.inputFocused; onActivated: workspace._nudge(-1, 0) }

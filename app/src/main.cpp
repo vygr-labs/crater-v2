@@ -20,6 +20,7 @@
 #include "MediaPlaybackService.h"
 #include "NdiRenderer.h"
 #include "NdiService.h"
+#include "PdfPageImageProvider.h"
 #include "RichTextHelper.h"
 #include "VideoThumbnailer.h"
 
@@ -350,6 +351,13 @@ int main(int argc, char* argv[])
             QCoreApplication::exit(-1);
         },
         Qt::QueuedConnection);
+
+    // Register the PDF image provider BEFORE loading QML so any binding
+    // hit during component creation can already resolve image://pdfpage/...
+    // URLs. The engine takes ownership of the provider (per Qt docs) — we
+    // hand off a heap-allocated instance and never delete it ourselves.
+    engine.addImageProvider(QStringLiteral("pdfpage"),
+                            new crater::PdfPageImageProvider(&mediaService));
 
     qInfo() << "Loading QML from module Crater / Main";
     engine.loadFromModule("Crater", "Main");

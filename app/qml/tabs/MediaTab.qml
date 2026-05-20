@@ -38,6 +38,15 @@ import QtQuick
 Item {
     id: root
 
+    // Right-pane background — same `bgContent` as ScriptureTab / SongsTab
+    // so the tab area reads consistently across the library.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.bgContent
+        z: -1
+    }
+
+
     readonly property string tabKey: "media"
     readonly property string query:  (AppState.searchText.media || "").toLowerCase()
 
@@ -100,13 +109,34 @@ Item {
 
     function buildItemFromMedia(m) {
         if (!m) return null
+        // PDFs become multi-page schedule items: one page entry per source
+        // page so the existing page-advance machinery (Up/Down in Preview,
+        // arrow nav in Live) drives PDF page navigation without any new
+        // code path. Empty content keeps PreviewPanel's content-filter (it
+        // strips zero-content pages from the page list) from showing
+        // bordered rows — the cropper itself replaces that list for PDFs.
+        // Images and videos keep the single-placeholder-page shape.
+        let pages = [{ label: m.title, content: "" }]
+        if (m.type === "pdf" && m.pageCount > 1) {
+            pages = []
+            for (let i = 0; i < m.pageCount; ++i) {
+                pages.push({
+                    label:   qsTr("Page %1").arg(i + 1),
+                    content: ""
+                })
+            }
+        }
         return {
-            kind:      m.type,    // "image" | "video"
+            kind:      m.type,    // "image" | "video" | "pdf"
             title:     m.title,
-            subtitle:  "",
-            pages:     [{ label: m.title, content: "" }],
+            subtitle:  m.type === "pdf"
+                           ? qsTr("PDF · %1 page%2")
+                                 .arg(m.pageCount).arg(m.pageCount === 1 ? "" : "s")
+                           : "",
+            pages:     pages,
             mediaId:   m.id,
-            mediaPath: m.path
+            mediaPath: m.path,
+            pageCount: m.pageCount
         }
     }
 
@@ -752,7 +782,18 @@ Item {
                 width: grid.cellWidth
                 height: grid.cellHeight
 
-                readonly property bool _selected: grid.currentIndex === index
+                // _selected reads directly from fluidIndex (the canonical
+                // selection in AppState) rather than `grid.currentIndex`.
+                // Reason: GridView's currentIndex binding to fluidIndex can
+                // be silently broken by Qt's internal handling — when the
+                // `filteredMedia` property re-emits (which it does on any of
+                // its 6+ dependency changes, even when content is identical),
+                // GridView treats it as a model rebind and writes to
+                // currentIndex internally. That assignment severs the
+                // property binding, and from then on the visible selection
+                // drifts away from fluidIndex (typically resetting to 0).
+                // Reading fluidIndex directly is binding-rebind-safe.
+                readonly property bool _selected: index === root.fluidIndex
                 readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
                 // True while the library pane owns keyboard focus. When focus
                 // moves to Schedule / Preview / Live, the selected-tile border
@@ -844,6 +885,41 @@ Item {
                         }
                     }
 
+                    // PDF thumbnail. Pulls the first page through the same
+                    // image://pdfpage provider used by the live render path,
+                    // so the cache primed by viewing the PDF in Preview is
+                    // re-hit when the operator returns to the media grid.
+                    // No separate thumbnail file on disk — pdfium re-renders
+                    // at thumbnail size in ~10 ms, well under the framerate
+                    // budget for a cold tile.
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        visible: modelData.type === "pdf"
+                        color: "#13131a"
+
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: pdfThumb.status !== Image.Ready
+                            name: "file-text"; size: Theme.icon.xl
+                            color: Theme.color.textTertiary
+                        }
+
+                        Image {
+                            id: pdfThumb
+                            anchors.fill: parent
+                            source: modelData.type === "pdf"
+                                  ? "image://pdfpage/" + modelData.id + "?page=0"
+                                  : ""
+                            visible: status === Image.Ready
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 320
+                            sourceSize.height: 180
+                        }
+                    }
+
                     // Type badge (top-right)
                     Rectangle {
                         anchors.top: parent.top
@@ -854,7 +930,9 @@ Item {
                         color: "#000000bb"
                         AppIcon {
                             anchors.centerIn: parent
-                            name: modelData.type === "video" ? "video" : "image"
+                            name: modelData.type === "video" ? "video"
+                                : modelData.type === "pdf"   ? "file-text"
+                                                             : "image"
                             size: Theme.icon.xs
                             color: "#ffffff"
                         }
@@ -1032,7 +1110,11 @@ Item {
                 width: listView.width
                 height: 48
 
-                readonly property bool _selected: listView.currentIndex === index
+                // Same binding-rebind-safe pattern as the grid cell — read
+                // fluidIndex directly rather than listView.currentIndex, which
+                // can drift to 0 when ListView's internal handling writes to
+                // currentIndex during a model re-emit.
+                readonly property bool _selected: index === root.fluidIndex
                 readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
                 // Same focus-gating as the grid cell — selected row mutes
                 // when library pane loses focus.
@@ -1138,6 +1220,30 @@ Item {
                         visible: modelData.type === "video"
                               && rowVideoThumb.status !== Image.Ready
                         name: "video"; size: Theme.icon.lg
+                        color: Theme.color.textTertiary
+                    }
+
+                    // PDF: page-0 thumbnail through the same provider used
+                    // by Preview/Live so the QML image cache hits across
+                    // surfaces (open in MediaTab, hop to Preview, swap back
+                    // to MediaTab → no re-rasterize).
+                    Image {
+                        id: rowPdfThumb
+                        anchors.fill: parent
+                        visible: modelData.type === "pdf" && status === Image.Ready
+                        source: modelData.type === "pdf"
+                              ? "image://pdfpage/" + modelData.id + "?page=0"
+                              : ""
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        sourceSize.width: 120
+                        sourceSize.height: 70
+                    }
+                    AppIcon {
+                        anchors.centerIn: parent
+                        visible: modelData.type === "pdf"
+                              && rowPdfThumb.status !== Image.Ready
+                        name: "file-text"; size: Theme.icon.lg
                         color: Theme.color.textTertiary
                     }
                 }

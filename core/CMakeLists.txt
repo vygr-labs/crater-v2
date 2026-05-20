@@ -89,6 +89,16 @@ target_link_libraries(crater-core
         # absorb this as a PRIVATE dep so QScreen never appears in crater-core's
         # public headers — services expose only value types (Screen Q_GADGET).
         Qt6::Gui
+        # Qt6::Pdf wraps pdfium (Chromium's hardened PDF engine) and is the
+        # ONLY supported route — per ARCHITECTURE.md §5.1's policy of using
+        # OS/Qt-vetted decoders rather than linking a custom parser, which
+        # would put codec bugs inside our address space. Used by MediaService
+        # for page-count probing at import time and async page rasterization
+        # via QtConcurrent. No Quick dependency: we render to QImage and the
+        # app-side PdfPageImageProvider feeds those QImages into QML's plain
+        # Image element via the standard image:// URL scheme. crater-core
+        # stays Quick-free per §1.
+        Qt6::Pdf
         # NOTE: deliberately do NOT link Qt6::Sql. We build sqlite3 ourselves
         # with custom compile flags (FTS5, THREADSAFE=2, DQS=0). See the plan's
         # "Deviations from Electron" table.
@@ -134,6 +144,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V002__media.sql
         src/db/migrations/app/V003__theme_nodes.sql
         src/db/migrations/app/V004__media_duration.sql
+        src/db/migrations/app/V005__media_pdf.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)

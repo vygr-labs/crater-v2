@@ -233,7 +233,6 @@ Column {
                     text: (node && node.data && node.data.text) || ""
                     onTextChanged: if (root.node && text !== (root.node.data && root.node.data.text))
                                        root._setData("text", text)
-                    onActiveFocusChanged: root.workspace.inputFocused = activeFocus
                 }
             }
 

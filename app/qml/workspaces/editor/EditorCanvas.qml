@@ -16,6 +16,19 @@ Item {
     readonly property var _canvas: _wt.canvas || ({ width: 1920, height: 1080 })
     readonly property var _nodes:  _wt.nodes  || []
 
+    // Claim keyboard focus when the editor opens. The theme editor is a
+    // full-screen workspace mounted over the (now hidden) operator
+    // console — but opening it doesn't move focus, so activeFocusItem
+    // stays on whatever console TextInput had focus (a tab search bar,
+    // etc.). The workspace derives `inputFocused` from activeFocusItem,
+    // so a leftover focused TextInput would gate every editor shortcut
+    // (Ctrl+Z/Y, Delete, arrow-nudge) off. Grabbing focus onto this
+    // plain Item — not a text widget — makes inputFocused read false so
+    // the shortcuts are live from the moment the editor appears.
+    // Qt.callLater defers past the construction cascade so the window
+    // is fully active when we claim focus.
+    Component.onCompleted: Qt.callLater(forceActiveFocus)
+
     // Checkerboard backdrop indicating "outside the canvas". Painted once
     // per resize into a single scene-graph quad. Two near-blacks so it
     // doesn't compete visually with theme content. Tile size of 16 matches
@@ -94,8 +107,11 @@ Item {
             RightClickArea {
                 anchors.fill: parent
                 z: -1
-                onLeftClicked:  workspace.selectedNodeId = ""
-                onRightClicked: workspace.selectedNodeId = ""
+                // Clicking the canvas claims focus back from any text
+                // input (name field, numeric input) so editor shortcuts
+                // re-enable — MouseAreas don't take focus on their own.
+                onLeftClicked:  { workspace.selectedNodeId = ""; root.forceActiveFocus() }
+                onRightClicked: { workspace.selectedNodeId = ""; root.forceActiveFocus() }
                 menuItems: [
                     { label: qsTr("Add text node"), iconName: "type",
                       action: function() {

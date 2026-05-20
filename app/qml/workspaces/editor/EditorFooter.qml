@@ -127,7 +127,6 @@ Rectangle {
                     font.pixelSize: Theme.font.bodySize
                     selectByMouse: true
                     onTextChanged: if (text !== workspace.themeName) workspace.themeName = text
-                    onActiveFocusChanged: workspace.inputFocused = activeFocus
                 }
             }
 

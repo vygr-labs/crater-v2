@@ -80,12 +80,32 @@ int ProjectionService::pageCount() const
 
 void ProjectionService::goLive(QVariantMap item, int page)
 {
+    // Text-based commits (songs / scriptures) and the schedule-double-click
+    // path don't carry a crop intent. Reset to full-frame so a prior media
+    // item's stale rect can't leak into the new render. ProjectionScene
+    // gates the crop on the active content kind already (text branches
+    // ignore it), but resetting here keeps the cropRect property honest
+    // for any future consumer that reads it without kind-gating.
+    goLiveWithCrop(std::move(item), page, QRectF(0, 0, 1, 1));
+}
+
+void ProjectionService::goLiveWithCrop(QVariantMap item, int page, QRectF cropRect)
+{
     m_currentItem = std::move(item);
     m_contentKind = m_currentItem.value(QStringLiteral("kind")).toString();
 
     const int n = pageCount();
     m_pageIndex = (n > 0) ? qBound(0, page, n - 1) : 0;
     m_isClear   = false;
+
+    // Clamp + sanitize. An empty or invalid rect collapses to full-frame so
+    // ProjectionScene's renderer always has a valid sub-region to clip to.
+    if (!cropRect.isValid() || cropRect.isEmpty()) {
+        cropRect = QRectF(0, 0, 1, 1);
+    }
+    cropRect = cropRect.intersected(QRectF(0, 0, 1, 1));
+    if (cropRect.isEmpty()) cropRect = QRectF(0, 0, 1, 1);
+    m_cropRect = cropRect;
 
     emit stateChanged();
 }

@@ -34,6 +34,26 @@ Item {
     opacity:  _hidden ? 0.3 : (_style.opacity !== undefined ? _style.opacity : 1)
     rotation: _style.rotation || 0
 
+    // Center-origin skew. Bakes the pivot into the matrix as
+    // T(+center) × Skew × T(-center) so the shape shears around its own
+    // bounding-box center (design-tool convention) — Qt's Item has no
+    // skew property and Matrix4x4 transforms from local origin (top-
+    // left) by default. Applies BEFORE the implicit rotation above
+    // (QML transform list runs before Item.rotation), so a skewed
+    // parallelogram gets rotated as one unit.
+    transform: Matrix4x4 {
+        readonly property real _sx: (root._style.skewX || 0) * Math.PI / 180
+        readonly property real _sy: (root._style.skewY || 0) * Math.PI / 180
+        readonly property real _tx: Math.tan(_sx)
+        readonly property real _ty: Math.tan(_sy)
+        readonly property real _cx: root.width  / 2
+        readonly property real _cy: root.height / 2
+        matrix: Qt.matrix4x4(1,   _tx, 0, -_tx * _cy,
+                             _ty, 1,   0, -_ty * _cx,
+                             0,   0,   1, 0,
+                             0,   0,   0, 1)
+    }
+
     Connections {
         target: workspace.workingTheme
         function onNodeStyleChanged(id, field) {
@@ -151,6 +171,7 @@ Item {
         acceptedButtons: Qt.LeftButton
         cursorShape: root._locked ? Qt.ForbiddenCursor : Qt.SizeAllCursor
         property bool _dragging: false
+        property bool _moved:    false   // a real drag happened this press
         property real _startStageX: 0
         property real _startStageY: 0
         property real _startNodeX:  0
@@ -158,6 +179,9 @@ Item {
 
         onPressed: function(m) {
             workspace.selectedNodeId = root.nodeId
+            // Claim focus back from any text input so editor shortcuts
+            // re-enable (see EditorCanvas — MouseAreas don't take focus).
+            root.forceActiveFocus()
             if (root._locked) return
             const p = mapToItem(root.parent, m.x, m.y)
             _startStageX = p.x
@@ -165,19 +189,39 @@ Item {
             _startNodeX  = (root._style.x || 0)
             _startNodeY  = (root._style.y || 0)
             _dragging    = true
-            workspace.saveToHistory()
+            _moved       = false
+            // No saveToHistory here — a press that only SELECTS the node
+            // (no drag) must not create an undo step. The snapshot is
+            // taken on release, and only if the node actually moved.
         }
         onPositionChanged: function(m) {
             if (!_dragging || !pressed) return
             const p = mapToItem(root.parent, m.x, m.y)
-            const dxPct = (p.x - _startStageX) / root.stageW * 100
-            const dyPct = (p.y - _startStageY) / root.stageH * 100
-            const nx = Math.max(0, Math.min(100, _startNodeX + dxPct))
-            const ny = Math.max(0, Math.min(100, _startNodeY + dyPct))
+            const dx = p.x - _startStageX
+            const dy = p.y - _startStageY
+            // Ignore sub-threshold jitter so a click that selects doesn't
+            // nudge the node by a fraction of a percent. Once a real drag
+            // is recognised (_moved) we keep applying without re-checking.
+            if (!_moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return
+            _moved = true
+            const dxPct = dx / root.stageW * 100
+            const dyPct = dy / root.stageH * 100
+            // Allow nodes off-canvas — design-tool standard for off-screen
+            // staging (reveals, lower-third slide-ins). Bounded at ±200%
+            // so a node can't be lost forever; clicking its layer always
+            // re-selects it.
+            const nx = Math.max(-200, Math.min(200, _startNodeX + dxPct))
+            const ny = Math.max(-200, Math.min(200, _startNodeY + dyPct))
             workspace.workingTheme.setNodeStyle(root.nodeId, "x", Math.round(nx * 10) / 10)
             workspace.workingTheme.setNodeStyle(root.nodeId, "y", Math.round(ny * 10) / 10)
         }
-        onReleased: _dragging = false
+        onReleased: {
+            // Snapshot the post-drag state once — only when a real drag
+            // occurred. Pure selection clicks fall through with no entry.
+            if (_dragging && _moved) workspace.saveToHistory()
+            _dragging = false
+            _moved    = false
+        }
     }
 
     // 8 resize handles. Rendered only when selected — the locked check
@@ -189,5 +233,21 @@ Item {
             handleIndex: index
             parentNode: root
         }
+    }
+
+    // Rotate + skew handles. Instantiated through a Repeater (model 0/1)
+    // rather than a Loader: Repeater reparents its delegate to the
+    // Repeater's OWN parent (this NodeDelegate), so the handle's
+    // `anchors.* = parentNode.*` resolve correctly. A Loader keeps its
+    // loaded item parented to the Loader itself — anchoring to the
+    // grandparent NodeDelegate silently fails and the handle collapses
+    // to (0,0). Same pattern the 8 ResizeHandles above use.
+    Repeater {
+        model: root._selected ? 1 : 0
+        delegate: RotateHandle { parentNode: root }
+    }
+    Repeater {
+        model: root._selected ? 1 : 0
+        delegate: SkewHandle { parentNode: root }
     }
 }

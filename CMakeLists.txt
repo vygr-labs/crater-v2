@@ -31,6 +31,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     QuickControls2
     Sql
     Multimedia
+    Pdf             # PDF rasterization via pdfium — used by MediaService + PdfPageImageProvider
     Test            # Headless Qt Test runner — required when CRATER_BUILD_TESTS=ON
     WebSockets
     Widgets         # QApplication + QFileDialog (used by FileDialogService for native pickers)

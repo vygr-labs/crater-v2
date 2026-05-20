@@ -12,6 +12,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QPdfDocument>
+#include <QPdfDocumentRenderOptions>
 #include <QUrl>
 #include <QtConcurrent>
 
@@ -21,8 +23,8 @@ namespace crater {
 
 namespace {
 
-// Magic-byte sniffer. Returns "image", "video", or empty string when the
-// file's leading bytes don't match a supported container.
+// Magic-byte sniffer. Returns "image", "video", "pdf", or empty string when
+// the file's leading bytes don't match a supported container.
 //
 // We read a small prefix from the file rather than trusting the extension —
 // per ARCHITECTURE.md §5.1 ("validate at the boundary: magic bytes").
@@ -48,6 +50,14 @@ QString sniffMediaType(const QString& path)
     if (starts("BM", 2))                                 return QStringLiteral("image");   // BMP
     if (starts("RIFF", 4) && matchAt(8, "WEBP", 4))      return QStringLiteral("image");
 
+    // ── PDFs ─────────────────────────────────────────────────────────────
+    // '%PDF-' followed by the version (e.g. '%PDF-1.7'). The header may be
+    // preceded by up to 1024 bytes of comments per the PDF spec, but in
+    // practice every PDF we'll see has the magic at offset 0. If we ever
+    // need to support exotic emitters that put a UTF-8 BOM or comments
+    // before the header, widen the scan window here.
+    if (starts("%PDF-", 5))                              return QStringLiteral("pdf");
+
     // ── Videos ───────────────────────────────────────────────────────────
     if (matchAt(4, "ftyp", 4))                           return QStringLiteral("video");   // mp4 / mov / m4v
     if (starts("\x1a\x45\xdf\xa3", 4))                   return QStringLiteral("video");   // WebM / Matroska (EBML)
@@ -58,6 +68,17 @@ QString sniffMediaType(const QString& path)
     if (starts("FLV\x01", 4))                            return QStringLiteral("video");
 
     return {};
+}
+
+// Probe a PDF on disk and return its page count. Returns 0 when the document
+// can't be opened (corrupt / encrypted). Used at import time so the row's
+// page_count column is populated once, eliminating a per-render probe.
+int probePdfPageCount(const QString& path)
+{
+    QPdfDocument doc;
+    const auto err = doc.load(path);
+    if (err != QPdfDocument::Error::None) return 0;
+    return doc.pageCount();
 }
 
 // Normalize an input path. Returns a clean absolute filesystem path, or an
@@ -112,6 +133,7 @@ struct PendingImport {
     QString title;
     QString type;
     qint64  addedAt;
+    int     pageCount;   // 1 for image/video; QPdfDocument::pageCount() for pdf
 };
 
 }  // namespace
@@ -134,13 +156,13 @@ struct MediaService::Impl
     explicit Impl(const QString& path)
         : conn(path)
         , selectAll(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at, duration_ms "
+            "SELECT id, path, title, type, is_favorite, added_at, duration_ms, page_count "
             "FROM media ORDER BY added_at DESC")))
         , insertItem(conn.prepare(QStringLiteral(
-            "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms) "
-            "VALUES (?, ?, ?, 0, ?, 0)")))
+            "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms, page_count) "
+            "VALUES (?, ?, ?, 0, ?, 0, ?)")))
         , selectById(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at, duration_ms "
+            "SELECT id, path, title, type, is_favorite, added_at, duration_ms, page_count "
             "FROM media WHERE id = ?")))
         , deleteItem(conn.prepare(QStringLiteral(
             "DELETE FROM media WHERE id = ?")))
@@ -162,9 +184,92 @@ struct MediaService::Impl
         m.isFavorite = s.columnInt  (4) != 0;
         m.addedAt    = s.columnInt64(5);
         m.durationMs = s.columnInt64(6);
+        m.pageCount  = s.columnInt  (7);
         return m;
     }
 };
+
+// Render one PDF page on the calling thread. Constructs a fresh
+// QPdfDocument — see renderPdfPage for why we don't cache: QPdfDocument is
+// a QObject and a cache would hand one across threadpool threads, which is
+// undefined behavior in Qt's object model. Returns a null QImage (and logs)
+// on any failure so callers can fall back cleanly.
+static QImage renderPdfPageBlocking(const QString& path,
+                                    int            pageIndex,
+                                    QSize          targetSize,
+                                    QRectF         cropRect)
+{
+    if (path.isEmpty() || targetSize.isEmpty()) {
+        qWarning().noquote() << "renderPdfPage: rejected — path=" << path
+                             << "target=" << targetSize;
+        return {};
+    }
+
+    QPdfDocument doc;
+    const auto loadErr = doc.load(path);
+    if (loadErr != QPdfDocument::Error::None) {
+        qWarning().noquote() << "renderPdfPage: load failed for" << path
+                             << "err=" << static_cast<int>(loadErr);
+        return {};
+    }
+
+    const int pageCount = doc.pageCount();
+    if (pageCount <= 0 || pageIndex < 0 || pageIndex >= pageCount) {
+        qWarning().noquote() << "renderPdfPage: page" << pageIndex
+                             << "out of range (count=" << pageCount << ")";
+        return {};
+    }
+
+    // Normalize + clamp the crop. Empty/invalid → full page.
+    QRectF clip = cropRect;
+    if (!clip.isValid() || clip.isEmpty()) clip = QRectF(0, 0, 1, 1);
+    clip = clip.intersected(QRectF(0, 0, 1, 1));
+    if (clip.isEmpty()) clip = QRectF(0, 0, 1, 1);
+
+    const bool fullPage = qFuzzyIsNull(clip.x())
+                       && qFuzzyIsNull(clip.y())
+                       && qFuzzyCompare(clip.width(),  1.0)
+                       && qFuzzyCompare(clip.height(), 1.0);
+
+    // QPdfDocument::render scales the page to *exactly* the size it's given —
+    // it does not preserve aspect ratio. Handing it a 16:9 target for a
+    // portrait page produces a horizontally squished raster. So we fit the
+    // requested target to the page's true aspect first; the returned QImage
+    // then carries correct proportions and every QML Image element that
+    // shows it (all use PreserveAspectFit) displays it undistorted.
+    QSizeF ptSize = doc.pagePointSize(pageIndex);
+    if (ptSize.width() <= 0 || ptSize.height() <= 0) {
+        ptSize = QSizeF(targetSize);
+    }
+    QSize renderSize = ptSize.scaled(QSizeF(targetSize), Qt::KeepAspectRatio).toSize();
+    renderSize = renderSize.expandedTo(QSize(1, 1));
+
+    QImage img;
+    if (fullPage) {
+        // Full page — render straight to the aspect-fitted size. No
+        // scaledClipRect: an "identity" clip equal to the whole target
+        // changes how render() interprets its size args, and a clean
+        // two-arg render() removes that variable entirely.
+        img = doc.render(pageIndex, renderSize);
+    } else {
+        // Sub-region — scale the page to renderSize (page aspect) then clip
+        // to the pixel rect, so text inside the crop rasterizes at the
+        // higher effective DPI rather than upscaling a pre-rendered bitmap.
+        QPdfDocumentRenderOptions opts;
+        const QRect clipPx(qRound(clip.x()      * renderSize.width()),
+                           qRound(clip.y()      * renderSize.height()),
+                           qRound(clip.width()  * renderSize.width()),
+                           qRound(clip.height() * renderSize.height()));
+        opts.setScaledClipRect(clipPx);
+        img = doc.render(pageIndex, renderSize, opts);
+    }
+
+    qInfo().noquote() << "renderPdfPage: page=" << pageIndex
+                      << "target=" << targetSize << "renderSize=" << renderSize
+                      << "fullPage=" << fullPage
+                      << "-> image=" << img.size() << "null=" << img.isNull();
+    return img;
+}
 
 MediaService::MediaService(QObject* parent)
     : QObject(parent)
@@ -278,11 +383,31 @@ int MediaService::importPaths(QStringList paths)
                 continue;
             }
 
+            // PDF page-count probe runs after the copy on the worker thread —
+            // we read the document we just dropped into managed storage. This
+            // is cheap (single xref scan, sub-100 ms even on 200-page PDFs)
+            // and removes the need for a separate post-import probe pass.
+            // Images / videos default to 1; videos get duration_ms instead
+            // (probed later by the app-side VideoThumbnailer).
+            int pageCount = 1;
+            if (type == QStringLiteral("pdf")) {
+                pageCount = probePdfPageCount(dstClean);
+                if (pageCount <= 0) {
+                    qWarning().noquote() << "MediaService: skipping" << src
+                                         << "— PDF probe returned 0 pages "
+                                            "(corrupt or encrypted)";
+                    QFile::remove(dstClean);
+                    ++skipped;
+                    continue;
+                }
+            }
+
             pending.append(PendingImport{
                 dstClean,
                 info.completeBaseName(),
                 type,
-                QDateTime::currentMSecsSinceEpoch()
+                QDateTime::currentMSecsSinceEpoch(),
+                pageCount
             });
         }
 
@@ -307,6 +432,7 @@ int MediaService::importPaths(QStringList paths)
                     s.bind(2, p.title);
                     s.bind(3, p.type);
                     s.bind(4, p.addedAt);
+                    s.bind(5, qint64(p.pageCount));
                     s.step();
                     ++imported;
                 } catch (const db::Error& e) {
@@ -432,6 +558,44 @@ MediaItem MediaService::byId(qint64 id)
         qWarning().noquote() << "MediaService::byId():" << e.message();
     }
     return m;
+}
+
+// ── PDF API ─────────────────────────────────────────────────────────────
+
+int MediaService::pdfPageCount(qint64 mediaId)
+{
+    const MediaItem item = byId(mediaId);
+    if (item.id == 0 || item.type != QStringLiteral("pdf")) return 0;
+    // The row carries the count probed at import time — no need to reopen
+    // the document for a metadata-only query. Falls back to a fresh probe
+    // only if the column was 0 (legacy rows before V005, or an import that
+    // failed mid-probe).
+    if (item.pageCount > 0) return item.pageCount;
+    return probePdfPageCount(item.path);
+}
+
+QFuture<QImage> MediaService::renderPdfPage(qint64  mediaId,
+                                            int     pageIndex,
+                                            QSize   targetSize,
+                                            QRectF  cropRect)
+{
+    // Capture the path off the DB row up-front (sync, sub-ms). The render
+    // body then runs entirely on the threadpool without touching the
+    // service's sqlite3 handle — keeps the connection mainthread-only per
+    // the ARCHITECTURE.md §3 threading rule. A fresh QPdfDocument is built
+    // inside the lambda (see renderPdfPageBlocking) so a document is never
+    // shared across threadpool threads.
+    const MediaItem item = byId(mediaId);
+    const QString   path  = (item.type == QStringLiteral("pdf")) ? item.path
+                                                                 : QString{};
+    if (path.isEmpty()) {
+        qWarning().noquote() << "renderPdfPage: id" << mediaId
+                             << "is not a PDF row (type=" << item.type << ")";
+    }
+
+    return QtConcurrent::run([path, pageIndex, targetSize, cropRect]() -> QImage {
+        return renderPdfPageBlocking(path, pageIndex, targetSize, cropRect);
+    });
 }
 
 }  // namespace crater

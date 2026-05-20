@@ -33,7 +33,7 @@ Item {
     property real   min: -Infinity
     property real   max:  Infinity
     property real   step: 1
-    property var    workspace          // for inputFocused tracking
+    property var    workspace          // for the selectedNodeId re-sync below
 
     signal live(real newValue)
     signal commit(real newValue)
@@ -119,10 +119,10 @@ Item {
                 }
             }
 
-            onActiveFocusChanged: {
-                if (root.workspace) root.workspace.inputFocused = activeFocus
-                if (!activeFocus) _commitFromText()
-            }
+            // Commit on blur. (Shortcut gating no longer needs a manual
+            // focus flag — the workspace derives inputFocused from
+            // Window.activeFocusItem.)
+            onActiveFocusChanged: if (!activeFocus) _commitFromText()
             // Per-keystroke live update. Coalesced via Qt.callLater so a
             // burst of typed digits doesn't fire N setNodeStyle writes
             // within the same event-loop tick — only the last one sticks.

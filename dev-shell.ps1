@@ -15,14 +15,18 @@
 #   - Adds Qt's bundled Ninja to PATH so `cmake -G Ninja` works.
 #   - Adds Qt's `bin/` to PATH so windeployqt + Qt DLLs are reachable.
 #
-# Tweak $_qt_root if your Qt install isn't at C:\Qt\6.11.0\msvc2022_64.
+# Tweak $_qt_root if your Qt install isn't at C:\Qt\6.11.1\msvc2022_64.
+#
+# Pinned to 6.11.1 (not 6.11.0): the Qt PDF module — required for in-app
+# PDF projection — ships only for 6.11.1 via the Maintenance Tool's
+# Extensions channel. Qt 6.11.0 has no Qt PDF package available.
 #
 # Note: this file is intentionally pure ASCII so Windows PowerShell 5
 # parses it correctly without a UTF-8 BOM.
 
 $ErrorActionPreference = 'Stop'
 
-$_qt_root  = 'C:\Qt\6.11.0\msvc2022_64'
+$_qt_root  = 'C:\Qt\6.11.1\msvc2022_64'
 $_qt_ninja = 'C:\Qt\Tools\Ninja'
 
 # Visual Studio dev environment

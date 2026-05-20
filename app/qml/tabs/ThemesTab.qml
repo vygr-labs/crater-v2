@@ -9,6 +9,14 @@ import Crater
 Item {
     id: root
 
+    // Right-pane background — same `bgContent` as ScriptureTab / SongsTab
+    // so the tab area reads consistently across the library.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.bgContent
+        z: -1
+    }
+
     // ── Filter + defaults state ─────────────────────────────────────────
     // kindFilter narrows the grid to a single kind ("song" | "scripture" |
     // "presentation") or shows everything ("all"). Local to the tab; resets

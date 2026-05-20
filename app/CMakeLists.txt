@@ -17,6 +17,12 @@ qt_add_executable(crater
     src/NdiRenderer.h
     src/RichTextHelper.cpp
     src/RichTextHelper.h
+    # PDF page rendering bridge: turns image://pdfpage/<id>?page=...&cx=...
+    # URLs into rasterized QImages via crater::MediaService. Sits in the app
+    # target rather than crater-core because QQuickAsyncImageProvider is part
+    # of Qt6::Quick — and crater-core stays Quick-free per ARCHITECTURE.md §1.
+    src/PdfPageImageProvider.cpp
+    src/PdfPageImageProvider.h
 )
 
 # Windows .exe icon. The .rc file lives in qt/packaging/ alongside the
@@ -81,6 +87,7 @@ qt_add_qml_module(crater
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/ProjectionScene.qml
         qml/components/NodeRenderer.qml
+        qml/components/CroppableMediaPreview.qml
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
         qml/components/ThemedMonitor.qml
@@ -102,6 +109,8 @@ qt_add_qml_module(crater
         qml/workspaces/editor/EditorCanvas.qml
         qml/workspaces/editor/NodeDelegate.qml
         qml/workspaces/editor/ResizeHandle.qml
+        qml/workspaces/editor/RotateHandle.qml
+        qml/workspaces/editor/SkewHandle.qml
         qml/workspaces/editor/LayersPanel.qml
         qml/workspaces/editor/PropertiesPanel.qml
         qml/workspaces/editor/AccordionSection.qml

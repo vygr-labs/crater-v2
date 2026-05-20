@@ -31,6 +31,8 @@ QVariantMap defaultStyleForText()
     s["letterSpacing"]        = 0.0;
     s["textAlign"]            = QStringLiteral("center");
     s["verticalAlign"]        = QStringLiteral("center");
+    s["skewX"]                = 0;
+    s["skewY"]                = 0;
     return s;
 }
 
@@ -55,6 +57,8 @@ QVariantMap defaultStyleForContainer()
     s["z"]               = 5;
     s["opacity"]         = 1;
     s["backgroundColor"] = QStringLiteral("#1f1f24");
+    s["skewX"]           = 0;
+    s["skewY"]           = 0;
     return s;
 }
 

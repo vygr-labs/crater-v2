@@ -39,13 +39,19 @@ Rectangle {
     property bool _suppressUpdate: false
 
     function _hsvaToHex(h, s, v, a) {
-        const c = Qt.hsva(h, s, v, a)
-        // toString returns "#aarrggbb" — convert to "#rrggbbaa" canonical.
-        const str = c.toString()
-        if (str.length === 9) {
-            return "#" + str.substring(3) + str.substring(1, 3)
-        }
-        return str   // already "#rrggbb"
+        // Use Qt's native string format directly: "#rrggbb" when alpha=1,
+        // "#aarrggbb" when alpha<1. This is exactly what Qt.color() /
+        // QColor::fromString / QML's Rectangle.color parser all accept —
+        // so the hex this picker emits roundtrips losslessly through the
+        // value binding and through every renderer in the codebase.
+        //
+        // PREVIOUSLY: converted to "#rrggbbaa" (alpha last, CSS-style).
+        // Looked tidy, but Qt's color parser doesn't accept that format
+        // — so on each alpha change the roundtrip reinterpreted the
+        // alpha byte as blue, drifting the color toward whatever the
+        // previous alpha was. The fix is to keep Qt's native ordering;
+        // emit and parse now agree.
+        return Qt.hsva(h, s, v, a).toString()
     }
     function _hexToHsva(hex) {
         const c = Qt.color(hex)

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import Crater
 
 // Themed mini-monitor — renders a schedule item through the resolved
@@ -25,6 +26,13 @@ Item {
     property bool muted: true           // MediaMonitor audio (preview=true, live=false)
     property bool showLogo: false       // gate content while logo overlay is shown
     property bool isClear:  false       // gate content while output is cleared
+    // Normalized crop rectangle applied to image / PDF rendering. Identity
+    // {0,0,1,1} = no crop (full source). LivePanel passes
+    // ProjectionService.cropRect so the live mini-monitor shows what the
+    // audience sees (the section being displayed) rather than the full
+    // source. PreviewPanel's mini-monitor hides entirely for croppable
+    // media, so this defaults to identity for everyone else.
+    property rect cropRect: Qt.rect(0, 0, 1, 1)
 
     // ── Derived state ───────────────────────────────────────────────────
     readonly property bool _hasItem: !!item
@@ -33,6 +41,11 @@ Item {
         _hasItem
         && (_kind === "image" || _kind === "video")
         && (item.mediaPath || "").length > 0
+    readonly property bool _isPdf:
+        _hasItem && _kind === "pdf" && (item.mediaId || 0) > 0
+    readonly property bool _hasCrop:
+        cropRect.x !== 0 || cropRect.y !== 0
+        || cropRect.width !== 1 || cropRect.height !== 1
 
     // ── Reactive theme resolution ───────────────────────────────────────
     // Same revision-bump pattern as ProjectionWindow: bumping the int
@@ -91,6 +104,7 @@ Item {
     readonly property bool _showStage:
         _hasItem
         && !_isMedia
+        && !_isPdf
         && !showLogo
         && _theme
         && (_theme.id || 0) > 0
@@ -99,6 +113,7 @@ Item {
     readonly property bool _showNoTheme:
         _hasItem
         && !_isMedia
+        && !_isPdf
         && !isClear
         && !showLogo
         && (_kind === "song" || _kind === "scripture" || _kind === "presentation")
@@ -150,13 +165,78 @@ Item {
     // Pure media items have no text — `isClear` is a no-op for them under
     // the new "hide text only" clear semantic. Visibility stays gated on
     // showLogo (logo fully replaces the scene) but ignores isClear.
+    //
+    // Crop handling: the MediaMonitor below renders the full source when
+    // no crop is staged (the common case). When the LivePanel passes a
+    // non-identity cropRect (operator committed a cropped section), the
+    // mediaMonitor hides and `imageCropOverlay` renders the cropped sub-
+    // region instead. This keeps MediaMonitor a single-purpose "render
+    // this whole file" component without growing crop logic.
     MediaMonitor {
         anchors.fill: parent
-        visible: root._isMedia && !root.showLogo
+        visible: root._isMedia && !root.showLogo && !(root._kind === "image" && root._hasCrop)
         mediaKind: visible ? root._kind : ""
         mediaPath: visible ? (root.item.mediaPath || "") : ""
         muted: root.muted
         crop:  false
+    }
+
+    // Cropped-image branch — paints only the operator-selected sub-region
+    // of the image into the monitor. Used by LivePanel to show "the
+    // section being displayed" rather than the full source. PreviewPanel
+    // hides this monitor entirely for croppable media, so this only ever
+    // activates on the live channel.
+    Image {
+        anchors.fill: parent
+        visible: root._isMedia
+                 && root._kind === "image"
+                 && root._hasCrop
+                 && !root.showLogo
+        source: visible ? "file:///" + (root.item.mediaPath || "") : ""
+        asynchronous: true
+        cache: true
+        fillMode: Image.PreserveAspectFit
+        sourceClipRect: {
+            if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
+                return Qt.rect(0, 0, 0, 0)
+            }
+            const c = root.cropRect
+            return Qt.rect(c.x * sourceSize.width,
+                           c.y * sourceSize.height,
+                           c.width  * sourceSize.width,
+                           c.height * sourceSize.height)
+        }
+    }
+
+    // ── PDF branch ──────────────────────────────────────────────────────
+    // Renders the live page via the image://pdfpage/ provider. The crop
+    // ride-along in the URL means pdfium re-rasterizes the sub-region at
+    // this monitor's pixel size — text inside the crop stays crisp even
+    // at thumbnail dimensions.
+    Image {
+        anchors.fill: parent
+        visible: root._isPdf && !root.showLogo
+        asynchronous: true
+        cache: true
+        // Bind sourceSize to the monitor's pixel size so we don't ask
+        // pdfium for 4K when we only need ~280px wide.
+        sourceSize.width:
+            parent.width  > 0 ? Math.ceil(parent.width  * Screen.devicePixelRatio) : 512
+        sourceSize.height:
+            parent.height > 0 ? Math.ceil(parent.height * Screen.devicePixelRatio) : 288
+        source: {
+            if (!visible || !root._hasItem) return ""
+            const id   = Number(root.item.mediaId || 0)
+            const page = Math.max(0, root.pageIndex)
+            const c    = root.cropRect
+            return "image://pdfpage/" + id
+                 + "?page=" + page
+                 + "&cx="   + c.x
+                 + "&cy="   + c.y
+                 + "&cw="   + c.width
+                 + "&ch="   + c.height
+        }
+        fillMode: Image.PreserveAspectFit
     }
 
     // ── Fallback when no theme exists for a text-bearing kind ───────────

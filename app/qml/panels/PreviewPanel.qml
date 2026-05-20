@@ -29,7 +29,7 @@ Rectangle {
     // Canonical-shape items carry `pages` (array of {label, content}).
     //
     // Filter to pages that have *content* to display in the list. Media
-    // items (image/video) carry a single placeholder page with empty
+    // items (image/video/pdf) carry a single placeholder page with empty
     // content — there's nothing textual to project, so showing an empty
     // bordered row for them is just visual noise. ThemedMonitor reads
     // item.pages directly (not this filtered list), so the bottom
@@ -40,6 +40,20 @@ Rectangle {
             return p && p.content && String(p.content).length > 0
         })
     }
+
+    // Crop-and-commit kinds. Image and PDF both use the cropper; video
+    // stays out (cropping a playing clip means per-frame re-rasterize, and
+    // operator intent there is "watch + send", not "frame + send").
+    //
+    // The two are sized differently in the panel: a PDF page is a dense
+    // document that needs room to read while drawing a crop, so it gets the
+    // full body area. An image is already legible at thumbnail scale, so it
+    // keeps the established compact 16:9 monitor card.
+    readonly property bool isPdfMedia:
+        selectedItem !== null && selectedItem.kind === "pdf"
+    readonly property bool isImageMedia:
+        selectedItem !== null && selectedItem.kind === "image"
+    readonly property bool isCroppableMedia: isPdfMedia || isImageMedia
 
     // ── Header ──────────────────────────────────────────────────────────
     Item {
@@ -71,8 +85,16 @@ Rectangle {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                visible: root.pages.length > 0
-                text: "· " + (AppState.previewSubIndex + 1) + " / " + root.pages.length
+                // PDFs have no text "pages" (root.pages filters to content-
+                // bearing entries, of which a PDF has none) — fall back to
+                // the item's pageCount so the operator still sees "3 / 14"
+                // while scrolling through a document.
+                readonly property int _total: root.isPdfMedia
+                    ? ((root.selectedItem && root.selectedItem.pageCount > 0)
+                           ? root.selectedItem.pageCount : 1)
+                    : root.pages.length
+                visible: _total > 0
+                text: "· " + (AppState.previewSubIndex + 1) + " / " + _total
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
@@ -108,7 +130,11 @@ Rectangle {
     }
 
     // ── Body: empty state OR page list ──────────────────────────────────
+    // Croppable media (image / PDF) no longer restructures the body — the
+    // cropper now lives inside the existing mini-monitor frame below, so
+    // the Preview card keeps the exact size it had before PDF support.
     Item {
+        id: bodyArea
         anchors.top: header.bottom
         anchors.bottom: monitorWrap.top
         anchors.bottomMargin: Theme.space.md
@@ -129,7 +155,7 @@ Rectangle {
             anchors.leftMargin: Theme.space.lg
             anchors.rightMargin: Theme.space.lg
             anchors.topMargin: Theme.space.sm
-            visible: root.selectedItem !== null
+            visible: root.selectedItem !== null && !root.isCroppableMedia
             model: root.pages
             clip: true
             cacheBuffer: 200
@@ -382,10 +408,30 @@ Rectangle {
         Connections {
             target: AppState
             function onPreviewNavigateUp() {
+                // PDF: Up/Down moves the page (the same thing the mouse
+                // wheel does inside the cropper — this is the keyboard
+                // fallback when the cropper itself doesn't hold focus).
+                // When the cropper IS focused it consumes the arrow keys
+                // for crop-rectangle nudging and this never fires.
+                if (root.isPdfMedia) {
+                    if (!root.selectedItem) return
+                    AppState.previewSubIndex = Math.max(AppState.previewSubIndex - 1, 0)
+                    return
+                }
+                if (root.isImageMedia) return    // images are single-page
                 if (root.pages.length === 0) return
                 AppState.previewSubIndex = Math.max(AppState.previewSubIndex - 1, 0)
             }
             function onPreviewNavigateDown() {
+                if (root.isPdfMedia) {
+                    if (!root.selectedItem) return
+                    const total = (root.selectedItem.pageCount > 0)
+                                      ? root.selectedItem.pageCount : 1
+                    AppState.previewSubIndex = Math.min(AppState.previewSubIndex + 1,
+                                                       Math.max(0, total - 1))
+                    return
+                }
+                if (root.isImageMedia) return
                 if (root.pages.length === 0) return
                 AppState.previewSubIndex = Math.min(AppState.previewSubIndex + 1,
                                                    root.pages.length - 1)
@@ -403,12 +449,15 @@ Rectangle {
                 }
             }
             function onPreviewActivate() {
-                // Enter on a focused preview card → push to live. Same
-                // call path as the preview-card double-click: goLive
-                // with raise=false so the projection window isn't
-                // forcibly raised (matches the operator's mental model
-                // that arrow + Enter is a "quiet" stage action — they
-                // pop the projector themselves when ready).
+                // Enter on a focused preview card → push to live. For
+                // croppable media this routes through the cropper's
+                // crop-aware goLive path (so a staged rect goes live).
+                // For songs/scriptures, same call as the existing
+                // double-click path: goLive(false), no raise.
+                if (root.isCroppableMedia) {
+                    cropper.commitRequested()
+                    return
+                }
                 if (root.pages.length === 0) return
                 AppState.goLive(false)
             }
@@ -444,15 +493,24 @@ Rectangle {
         // nothing is selected (fresh open, or after clear) would fire
         // fullsize and the monitor would squash the "No item selected"
         // EmptyState. We only want to expand when something is selected
-        // *and* it has no text pages to render (i.e. media items).
+        // *and* it has no text pages to render (i.e. media items —
+        // image / video / pdf). Croppable media renders CroppableMediaPreview
+        // inside this same frame.
+        //
+        // PDF gets the full body area (a document page needs room to read
+        // while cropping); image / video keep the established 16:9 card.
         readonly property bool fullsize: root.selectedItem !== null && root.pages.length === 0
         readonly property real maxFullW: parent.width - Theme.space.lg * 2
         readonly property real maxFullH: parent.height - header.height
                                           - Theme.space.md      // body top gap
                                           - Theme.space.lg      // monitor bottom gap
 
-        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : 160
-        height: fullsize ? width * 9 / 16                        : 90
+        width:  root.isPdfMedia ? maxFullW
+              : fullsize        ? Math.min(maxFullW, maxFullH * 16 / 9)
+                                : 160
+        height: root.isPdfMedia ? maxFullH
+              : fullsize        ? width * 9 / 16
+                                : 90
 
         state: fullsize ? "fullsize" : "compact"
         states: [
@@ -502,9 +560,143 @@ Rectangle {
             ThemedMonitor {
                 anchors.fill: parent
                 anchors.margins: 1
+                visible: !root.isCroppableMedia
                 item: root.selectedItem
                 pageIndex: AppState.previewSubIndex
                 muted: true
+            }
+
+            // ── Crop-and-commit surface (image / PDF) ───────────────────
+            // The operator drags a rectangle here and presses Enter to
+            // commit the cropped section live. PDF page navigation is
+            // driven by the prev/next buttons below — not by this component.
+            CroppableMediaPreview {
+                id: cropper
+                anchors.fill: parent
+                anchors.margins: 1
+                visible: root.isCroppableMedia
+                item:    root.isCroppableMedia ? root.selectedItem : null
+                pageIndex: AppState.previewSubIndex
+
+                // Claim preview keyboard ownership the instant the operator
+                // touches the cropper. Without this the window-level Enter
+                // shortcut (Main.qml) routes by AppState.activeFocusPanel —
+                // which would still say "library"/"schedule" — and Enter
+                // would commit through the non-crop-aware goLive() path,
+                // silently dropping the crop.
+                onInteracted: AppState.setActiveFocus("preview")
+
+                onCommitRequested: {
+                    if (!root.selectedItem) return
+                    AppState.setActiveFocus("preview")
+                    // Crop-aware goLive overload. raise=false matches the
+                    // existing preview-card double-click / Enter contract:
+                    // the projector window only raises via explicit TopBar
+                    // Go-Live or schedule double-click.
+                    ProjectionService.goLiveWithCrop(root.selectedItem,
+                                                      AppState.previewSubIndex,
+                                                      cropper.cropRect)
+                    // Mirror the schedule/live bookkeeping the regular
+                    // goLive path does so LivePanel + ScheduleService agree.
+                    AppState.liveScheduleIndex = AppState.libraryPreviewItem !== null
+                                                     ? -1
+                                                     : AppState.selectedScheduleIndex
+                    AppState.liveSubIndex      = AppState.previewSubIndex
+                    AppState.libraryLiveActive = (AppState.libraryPreviewItem !== null)
+                    AppState.isClear           = false
+                }
+            }
+
+            // Faint commit-hint chrome — only while a crop is drawn.
+            Rectangle {
+                visible: root.isCroppableMedia && cropper.cropActive
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: Theme.space.sm
+                anchors.rightMargin: Theme.space.sm
+                color: Qt.rgba(0, 0, 0, 0.65)
+                border.color: Theme.color.brandHover
+                border.width: 1
+                radius: 0
+                width: hintText.implicitWidth + Theme.space.md * 2
+                height: hintText.implicitHeight + Theme.space.xs * 2
+
+                Text {
+                    id: hintText
+                    anchors.centerIn: parent
+                    text: qsTr("Press Enter to send selection")
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    font.weight: Theme.font.weightSemiBold
+                }
+            }
+
+            // ── PDF page navigation ─────────────────────────────────────
+            // Two buttons + a page indicator, overlaid bottom-centre of the
+            // cropper. Replaces wheel-scroll navigation, which read as
+            // unintuitive. Each button also claims preview keyboard focus so
+            // a subsequent Enter commits through the crop-aware path.
+            Rectangle {
+                id: pdfPageNav
+                visible: root.isPdfMedia && root.selectedItem !== null
+                         && root.selectedItem.pageCount > 1
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Theme.space.md
+                width:  navRow.implicitWidth  + Theme.space.md * 2
+                height: navRow.implicitHeight + Theme.space.xs * 2
+                color: Qt.rgba(0, 0, 0, 0.72)
+                border.color: Theme.color.borderStrong
+                border.width: 1
+                radius: 0
+
+                readonly property int _total:
+                    (root.selectedItem && root.selectedItem.pageCount > 0)
+                        ? root.selectedItem.pageCount : 1
+
+                // Absorb clicks on the bar's padding so they don't fall
+                // through to the cropper underneath and start a crop drag.
+                // Declared before navRow so the IconButtons stay on top.
+                MouseArea { anchors.fill: parent }
+
+                Row {
+                    id: navRow
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
+
+                    IconButton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        iconName: "chevron-left"
+                        iconSize: Theme.icon.sm
+                        enabled: AppState.previewSubIndex > 0
+                        onClicked: {
+                            AppState.setActiveFocus("preview")
+                            AppState.previewSubIndex =
+                                Math.max(AppState.previewSubIndex - 1, 0)
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: (AppState.previewSubIndex + 1) + " / " + pdfPageNav._total
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                        font.weight: Theme.font.weightMedium
+                    }
+                    IconButton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        iconName: "chevron-right"
+                        iconSize: Theme.icon.sm
+                        enabled: AppState.previewSubIndex < pdfPageNav._total - 1
+                        onClicked: {
+                            AppState.setActiveFocus("preview")
+                            AppState.previewSubIndex =
+                                Math.min(AppState.previewSubIndex + 1,
+                                         pdfPageNav._total - 1)
+                        }
+                    }
+                }
             }
         }
     }

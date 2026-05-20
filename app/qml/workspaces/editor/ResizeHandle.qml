@@ -54,6 +54,7 @@ Rectangle {
         anchors.margins: -4   // generous click target on a 10px handle
         cursorShape: handle._cursors[handle.handleIndex]
         property bool _resizing: false
+        property bool _resized:  false   // a real resize happened this press
         property real _startX: 0
         property real _startY: 0
         property var  _start0: ({ x: 0, y: 0, width: 0, height: 0 })
@@ -71,10 +72,13 @@ Rectangle {
                 height: handle.parentNode._style.height || 0
             }
             _resizing = true
-            handle.parentNode.workspace.saveToHistory()
+            _resized  = false
+            // No saveToHistory here — a press-without-drag must not
+            // create an undo step. Snapshot on release, only if resized.
         }
         onPositionChanged: function(m) {
             if (!_resizing || !pressed) return
+            _resized = true
             const p = mapToItem(handle.parentNode.parent, m.x, m.y)
             const stageW = handle.parentNode.stageW
             const stageH = handle.parentNode.stageH
@@ -116,6 +120,10 @@ Rectangle {
             wt.setNodeStyle(id, "width",  nw)
             wt.setNodeStyle(id, "height", nh)
         }
-        onReleased: _resizing = false
+        onReleased: {
+            if (_resizing && _resized) handle.parentNode.workspace.saveToHistory()
+            _resizing = false
+            _resized  = false
+        }
     }
 }

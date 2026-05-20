@@ -5,6 +5,14 @@ import QtQuick
 Item {
     id: root
 
+    // Right-pane background — same `bgContent` as ScriptureTab / SongsTab
+    // so the tab area reads consistently across the library.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.color.bgContent
+        z: -1
+    }
+
     EmptyState {
         anchors.fill: parent
         iconName: "book"

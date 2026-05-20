@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QRectF>
 #include <QString>
 #include <QVariantMap>
 
@@ -46,6 +47,16 @@ class ProjectionService : public QObject
     Q_PROPERTY(QString        logoBgPath   READ logoBgPath   NOTIFY logoBgPathChanged)
     Q_PROPERTY(QString        logoBgKind   READ logoBgKind   NOTIFY logoBgKindChanged)
 
+    // Normalized crop rectangle applied to image / PDF live content. Values
+    // in 0..1 with origin top-left. {0,0,1,1} = full frame (the default; what
+    // text-based items always carry). Set as part of goLive() — see the
+    // overload below — so the projection scene reads a snapshot, not the
+    // operator's live preview drag. Per the edit-then-commit model
+    // (ARCHITECTURE.md §3 / ProjectionService doc comment), once goLive
+    // bakes the crop in, the audience output cannot move until the next
+    // explicit commit.
+    Q_PROPERTY(QRectF         cropRect     READ cropRect     NOTIFY stateChanged)
+
 public:
     explicit ProjectionService(QObject* parent = nullptr);
     ~ProjectionService() override;
@@ -58,9 +69,22 @@ public:
     bool           showLogo()     const { return m_showLogo; }
     QString        logoBgPath()   const { return m_logoBgPath; }
     QString        logoBgKind()   const { return m_logoBgKind; }
+    QRectF         cropRect()     const { return m_cropRect; }
 
     // Snapshot `item` (deep copy) and set pageIndex. Clears isClear.
+    // The two-arg form preserves backwards-compat for text-based callers
+    // (songs / scriptures), which always project full-frame and have no
+    // meaningful crop concept. Internally delegates to the three-arg form
+    // with cropRect = {0,0,1,1}.
     Q_INVOKABLE void goLive(QVariantMap item, int page);
+
+    // Crop-aware overload — image / PDF callers pass the operator's staged
+    // crop rectangle (in 0..1 normalized space). PreviewPanel routes Enter
+    // through here; songs/scriptures continue to use the two-arg form so
+    // their cropRect resets to full-frame on commit (and `currentItem.kind`
+    // disambiguation in ProjectionScene means a stale crop from a prior
+    // media item couldn't leak onto a text-based render anyway).
+    Q_INVOKABLE void goLiveWithCrop(QVariantMap item, int page, QRectF cropRect);
 
     Q_INVOKABLE void clear();              // shows background only (no content)
     Q_INVOKABLE void setPage(int i);
@@ -83,12 +107,13 @@ signals:
 
 private:
     QVariantMap    m_currentItem;
-    QString        m_contentKind;     // "" | "song" | "scripture" | "image" | "video"
+    QString        m_contentKind;     // "" | "song" | "scripture" | "image" | "video" | "pdf"
     int            m_pageIndex   = 0;
     bool           m_isClear     = false;
     bool           m_showLogo    = false;
     QString        m_logoBgPath;
     QString        m_logoBgKind;     // "" | "image" | "video"
+    QRectF         m_cropRect    = QRectF(0, 0, 1, 1);   // normalized; full-frame default
 
     struct KvImpl;
     std::unique_ptr<KvImpl> m_kv;

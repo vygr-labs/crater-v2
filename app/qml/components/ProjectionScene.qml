@@ -41,13 +41,37 @@ Item {
     readonly property bool   _isClear : ProjectionService.isClear
     readonly property bool   _showLogo: ProjectionService.showLogo
 
-    // True when the live item is itself a picture or movie (vs a
+    // True when the live item is itself a picture, movie, or PDF (vs a
     // song/scripture/presentation whose theme may have a media background).
     // For these, the entire stage = the media — no theme nodes overlay,
     // no no-theme fallback. The themed Repeater is gated off below.
-    readonly property bool   _isMediaItem:
-        _item && (_kind === "image" || _kind === "video")
-              && (_item.mediaPath || "").length > 0
+    //
+    // PDFs join image/video here because conceptually they're the same
+    // class: the document IS the stage. Where they differ is only in how
+    // the bytes get to the screen — `pdfLayer` rasterizes through the
+    // PdfPageImageProvider, image/video through MediaMonitor. Both inherit
+    // the same crop semantics from ProjectionService.cropRect.
+    readonly property bool   _isMediaItem: {
+        if (!_item) return false
+        if (_kind === "image" || _kind === "video") {
+            return (_item.mediaPath || "").length > 0
+        }
+        if (_kind === "pdf") {
+            return (_item.mediaId || 0) > 0
+        }
+        return false
+    }
+
+    // Snapshot of the crop rectangle baked at goLive time (see
+    // ProjectionService::goLiveWithCrop). Reads as a Qt rect with values
+    // in 0..1 normalized space. Songs / scriptures always carry the
+    // identity {0,0,1,1} because their goLive() overload resets it; only
+    // image / PDF items carry a meaningful operator-authored crop. The
+    // image branch uses fillMode + sourceClipRect; the PDF branch passes
+    // the rect into the image-provider URL so pdfium re-rasterizes the
+    // sub-region at canvas DPI (no digital zoom — see the design note in
+    // MediaService::renderPdfPage).
+    readonly property rect _cropRect: ProjectionService.cropRect
 
     // Theme resolution — bumps on default changes, theme adds/removes, the
     // outputMode toggle, and per-output theme writes. AppState.resolveItemTheme
@@ -192,15 +216,94 @@ Item {
                 MediaMonitor {
                     id: mediaItemMonitor
                     anchors.fill: parent
-                    visible: scene._isMediaItem
+                    visible: scene._isMediaItem && (scene._kind === "image" || scene._kind === "video")
                     mediaKind: visible ? scene._kind : ""
                     mediaPath: visible ? (scene._item.mediaPath || "") : ""
                     muted:    scene.outputKind !== "primary"
                                 || !OutputService.projectionOpen
-                    // Audience expectations: see the whole frame,
-                    // letterboxed if needed. Operator can crop in v1.1 per
-                    // media item if we add a fit-mode property.
+                    // For uncropped image/video the existing PreserveAspectFit
+                    // is what the operator expects: see the whole source,
+                    // letterboxed if needed. Below, the cropApplier lifts a
+                    // sub-region into the full stage when the operator has
+                    // staged a crop in Preview and committed via Enter.
                     crop: false
+                    // Hide when a non-default crop is set on an image —
+                    // the cropApplier below takes over (it crops at the
+                    // QML layer rather than re-encoding the source).
+                    opacity: (scene._kind === "image"
+                              && scene._cropRect !== Qt.rect(0, 0, 1, 1)) ? 0 : 1
+                }
+
+                // ── Image crop applier ────────────────────────────────
+                // For image items with a non-identity crop, render an
+                // Image that pulls only the cropped sub-region into the
+                // full stage. Image's sourceClipRect (Qt 6.6+) lets us
+                // crop in source-pixel space — combined with fillMode:
+                // PreserveAspectFit on a stage-shaped rectangle, the
+                // cropped region fills 1920×1080 while keeping its own
+                // aspect (any aspect mismatch letterboxes inside the
+                // stage rather than stretching).
+                Image {
+                    id: imageCropApplier
+                    anchors.fill: parent
+                    visible: scene._isMediaItem
+                             && scene._kind === "image"
+                             && scene._cropRect !== Qt.rect(0, 0, 1, 1)
+                    source: visible ? "file:///" + (scene._item.mediaPath || "") : ""
+                    asynchronous: false   // already loaded by mediaItemMonitor; the cache hits
+                    cache: true
+                    fillMode: Image.PreserveAspectFit
+                    // sourceClipRect is in source-image pixel coordinates.
+                    // We have a normalized crop, so multiply by sourceSize
+                    // once the image reports it. Until sourceSize is known,
+                    // pass a zero rect (Image treats as "no clip").
+                    sourceClipRect: {
+                        if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
+                            return Qt.rect(0, 0, 0, 0)
+                        }
+                        const c = scene._cropRect
+                        return Qt.rect(c.x * sourceSize.width,
+                                       c.y * sourceSize.height,
+                                       c.width  * sourceSize.width,
+                                       c.height * sourceSize.height)
+                    }
+                }
+
+                // ── PDF page renderer ─────────────────────────────────
+                // Routes through the image://pdfpage provider so the
+                // requested page (and crop) is rasterized at the stage's
+                // sourceSize — i.e. canvas resolution (1920×1080 default).
+                // sourceClipRect would also work here, but pdfium can
+                // re-rasterize at a higher effective DPI when given the
+                // clip in the provider URL (see MediaService::renderPdfPage),
+                // so we crop at the rasterizer rather than at the QML
+                // scenegraph layer. Crisper text inside the crop.
+                Image {
+                    id: pdfPageImage
+                    anchors.fill: parent
+                    visible: scene._isMediaItem && scene._kind === "pdf"
+                    asynchronous: true
+                    cache: true
+                    // sourceSize tells the provider what target pixel
+                    // dimensions to rasterize at. Bind to the stage size
+                    // (canvas-native) so NDI gets full-res frames and
+                    // operator monitors get scaled-down via Image's own
+                    // texture filtering.
+                    sourceSize.width:  stage.width
+                    sourceSize.height: stage.height
+                    source: {
+                        if (!visible || !scene._item) return ""
+                        const id   = Number(scene._item.mediaId || 0)
+                        const page = Math.max(0, scene._page)
+                        const c    = scene._cropRect
+                        return "image://pdfpage/" + id
+                             + "?page=" + page
+                             + "&cx="   + c.x
+                             + "&cy="   + c.y
+                             + "&cw="   + c.width
+                             + "&ch="   + c.height
+                    }
+                    fillMode: Image.PreserveAspectFit
                 }
 
                 Repeater {
@@ -211,6 +314,7 @@ Item {
                     // sibling above is the only content.
                     model: scene._isMediaItem ? [] : scene._sortedNodes
                     delegate: Item {
+                        id: nodeWrap
                         readonly property var _style: modelData.style || ({})
                         x:        stage.width  * ((_style.x      || 0) / 100)
                         y:        stage.height * ((_style.y      || 0) / 100)
@@ -218,6 +322,22 @@ Item {
                         height:   stage.height * ((_style.height || 0) / 100)
                         opacity:  _style.opacity !== undefined ? _style.opacity : 1
                         rotation: _style.rotation || 0
+
+                        // Skew — same center-origin matrix as the editor's
+                        // NodeDelegate, so a skewed node renders identically
+                        // in the editor canvas and on the live projection.
+                        transform: Matrix4x4 {
+                            readonly property real _sx: (nodeWrap._style.skewX || 0) * Math.PI / 180
+                            readonly property real _sy: (nodeWrap._style.skewY || 0) * Math.PI / 180
+                            readonly property real _tx: Math.tan(_sx)
+                            readonly property real _ty: Math.tan(_sy)
+                            readonly property real _cx: nodeWrap.width  / 2
+                            readonly property real _cy: nodeWrap.height / 2
+                            matrix: Qt.matrix4x4(1,   _tx, 0, -_tx * _cy,
+                                                 _ty, 1,   0, -_ty * _cx,
+                                                 0,   0,   1, 0,
+                                                 0,   0,   0, 1)
+                        }
 
                         // Per-node "clear fader" — drops to 0 only when the
                         // node is a TEXT node AND the projection is cleared.

@@ -505,6 +505,16 @@ Rectangle {
                 muted: OutputService.projectionOpen
                 isClear: AppState.isClear
                 showLogo: AppState.showLogo
+                // Mirror the audience's crop. The user instruction was
+                // explicit: "Live Pane should only contain the section
+                // being displayed." ProjectionService.cropRect is the
+                // committed snapshot from the most recent goLive — image
+                // and PDF live items render at that crop here, while
+                // songs/scriptures get the identity rect their goLive()
+                // overload resets to. No crop UI ever appears in Live
+                // because LivePanel doesn't host CroppableMediaPreview;
+                // only the rendered output reflects the operator's commit.
+                cropRect: ProjectionService.cropRect
             }
 
             // Mirror the projection's logo overlay at mini-monitor scale —
