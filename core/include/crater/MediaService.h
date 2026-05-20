@@ -92,10 +92,15 @@ public:
 
     // Render a single PDF page (optionally cropped to a normalized sub-region)
     // into a QImage sized to `targetSize`. `cropRect` is in 0..1 coordinates
-    // with origin top-left; pass {0,0,1,1} for full-page. The clip is applied
-    // at the rasterizer level via QPdfDocumentRenderOptions::setScaledClipRect
-    // so text inside the crop is re-rasterized at the higher effective DPI
-    // (never digital-zoomed from a pre-rendered bitmap).
+    // with origin top-left; pass {0,0,1,1} for full-page. A sub-crop renders
+    // the full page upscaled by 1/crop-fraction and copies out the sub-rect,
+    // so text inside the crop stays crisp (never digital-zoomed from a
+    // pre-rendered bitmap). See renderPdfPageBlocking for why
+    // QPdfDocumentRenderOptions::setScaledClipRect is deliberately not used.
+    //
+    // The underlying QPdfDocument is cached per worker thread, so repeat
+    // renders of the same file (page changes, re-crops, the live + projection
+    // passes) skip re-parsing it — see PdfDocumentCache in MediaService.cpp.
     //
     // Async per §3 — even a single-page render at 1920×1080 can hit 30–100 ms
     // on the target HW floor (Intel HD 4000). Caller obtains the result via
@@ -105,6 +110,14 @@ public:
                                   int     pageIndex,
                                   QSize   targetSize,
                                   QRectF  cropRect = QRectF(0, 0, 1, 1));
+
+    // Trigger pdfium's one-time global initialization off the main thread.
+    // pdfium lazily loads its library and sets up its font subsystem on the
+    // first QPdfDocument operation of the process — a multi-second cold
+    // start otherwise paid on the operator's first PDF view. Call once at
+    // startup. No-op when the library holds no PDF to warm with (in which
+    // case there is nothing for the operator to view yet either).
+    Q_INVOKABLE void prewarmPdf();
 
     // Maximum size of a single import in bytes. Configurable so tests / power
     // users can adjust; defaults to 4 GiB per §5.1.

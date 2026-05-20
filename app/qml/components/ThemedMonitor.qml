@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Window
 import Crater
 
 // Themed mini-monitor — renders a schedule item through the resolved
@@ -218,12 +217,19 @@ Item {
         visible: root._isPdf && !root.showLogo
         asynchronous: true
         cache: true
-        // Bind sourceSize to the monitor's pixel size so we don't ask
-        // pdfium for 4K when we only need ~280px wide.
-        sourceSize.width:
-            parent.width  > 0 ? Math.ceil(parent.width  * Screen.devicePixelRatio) : 512
-        sourceSize.height:
-            parent.height > 0 ? Math.ceil(parent.height * Screen.devicePixelRatio) : 288
+        // Hold the current live page painted while the next page/crop
+        // rasterizes — without this the monitor flashes black on every
+        // Go Live and page change while the worker render is in flight.
+        retainWhileLoading: true
+        // Fixed render target — deliberately NOT bound to the card's
+        // (animating) pixel size. The live monitor card grows via a
+        // NumberAnimation on Go Live (LivePanel monitorWrap Behavior); a
+        // size-tracking sourceSize re-requested a fresh pdfium render on
+        // every animation frame, flooding the worker pool so the real
+        // page took seconds to surface. A stable target = exactly one
+        // render; the Image scales it to the card via its own filtering.
+        sourceSize.width:  1280
+        sourceSize.height: 720
         source: {
             if (!visible || !root._hasItem) return ""
             const id   = Number(root.item.mediaId || 0)

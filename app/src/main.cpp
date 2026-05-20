@@ -328,6 +328,11 @@ int main(int argc, char* argv[])
                      });
     videoThumbnailer.ensureForAllVideos();
 
+    // Warm up pdfium on a worker thread now so the operator's first PDF
+    // view doesn't pay its multi-second one-time global init. No-op when
+    // the library has no PDF — see MediaService::prewarmPdf.
+    mediaService.prewarmPdf();
+
     // WorkingTheme is per-instance (one per open editor), not a singleton —
     // each invocation of the theme editor creates a fresh one in QML.
     qmlRegisterType<crater::WorkingTheme>("Crater", 1, 0, "WorkingTheme");

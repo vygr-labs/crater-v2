@@ -12,10 +12,12 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QPdfDocument>
 #include <QUrl>
 #include <QtConcurrent>
 
+#include <memory>
 #include <optional>
 
 namespace crater {
@@ -188,11 +190,81 @@ struct MediaService::Impl
     }
 };
 
-// Render one PDF page on the calling thread. Constructs a fresh
-// QPdfDocument — see renderPdfPage for why we don't cache: QPdfDocument is
-// a QObject and a cache would hand one across threadpool threads, which is
-// undefined behavior in Qt's object model. Returns a null QImage (and logs)
-// on any failure so callers can fall back cleanly.
+// Per-thread cache of opened QPdfDocuments, keyed by file path.
+//
+// renderPdfPageBlocking runs on QThreadPool workers. Before this cache it
+// built a fresh QPdfDocument — and therefore re-parsed the whole file — on
+// every render: every page change, every re-crop, and the separate live +
+// projection passes a Go Live fires. That reparse, not the rasterization,
+// dominated PDF latency.
+//
+// The cache is thread_local, so each worker owns its own QPdfDocument
+// instances and one is never touched from a thread other than the one
+// that created it — QPdfDocument is a QObject and cross-thread use is
+// undefined behavior (ARCHITECTURE.md §3). QThreadPool reuses a small
+// fixed set of threads, so the cache warms within the first few renders
+// and stays warm for the rest of the session.
+//
+// An entry records the file's size + mtime; an in-place replacement of the
+// file invalidates it. Crater is live-projection software — showing a
+// stale page to the audience is a real failure, and the guard is one stat
+// call. Bounded to kPdfCacheCap most-recently-used documents so browsing a
+// large library (every media tile renders page 0) can't grow it unbounded.
+class PdfDocumentCache
+{
+public:
+    // Returns a loaded document for `path`, or nullptr if it can't be
+    // opened. Owned by the cache; use synchronously, never retain.
+    QPdfDocument* acquire(const QString& path)
+    {
+        const QFileInfo fi(path);
+        const qint64 size  = fi.size();
+        const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
+
+        if (auto it = m_entries.find(path); it != m_entries.end()) {
+            if (it->size == size && it->mtime == mtime) {
+                touch(path);
+                return it->doc.get();
+            }
+            m_order.removeAll(path);          // file changed on disk — drop
+            m_entries.erase(it);
+        }
+
+        auto doc = std::make_shared<QPdfDocument>();
+        if (doc->load(path) != QPdfDocument::Error::None) {
+            return nullptr;
+        }
+        QPdfDocument* raw = doc.get();
+        m_entries.insert(path, Entry{ doc, size, mtime });
+        m_order.append(path);
+        while (m_order.size() > kPdfCacheCap) {
+            m_entries.remove(m_order.takeFirst());
+        }
+        return raw;
+    }
+
+private:
+    // shared_ptr (not unique_ptr) only because QHash's value type must be
+    // copyable; ownership is still effectively unique to the cache.
+    struct Entry {
+        std::shared_ptr<QPdfDocument> doc;
+        qint64 size  = 0;
+        qint64 mtime = 0;
+    };
+
+    void touch(const QString& path)
+    {
+        m_order.removeAll(path);
+        m_order.append(path);                 // most-recently-used at the back
+    }
+
+    static constexpr int  kPdfCacheCap = 8;
+    QHash<QString, Entry>  m_entries;
+    QStringList            m_order;           // LRU order; front = oldest
+};
+
+// Render one PDF page on the calling thread. Returns a null QImage (and
+// logs) on any failure so callers can fall back cleanly.
 static QImage renderPdfPageBlocking(const QString& path,
                                     int            pageIndex,
                                     QSize          targetSize,
@@ -204,15 +276,16 @@ static QImage renderPdfPageBlocking(const QString& path,
         return {};
     }
 
-    QPdfDocument doc;
-    const auto loadErr = doc.load(path);
-    if (loadErr != QPdfDocument::Error::None) {
-        qWarning().noquote() << "renderPdfPage: load failed for" << path
-                             << "err=" << static_cast<int>(loadErr);
+    // Per-thread document cache — see PdfDocumentCache. The first render of
+    // a given PDF on a thread parses the file; later renders reuse it.
+    thread_local PdfDocumentCache docCache;
+    QPdfDocument* doc = docCache.acquire(path);
+    if (!doc) {
+        qWarning().noquote() << "renderPdfPage: load failed for" << path;
         return {};
     }
 
-    const int pageCount = doc.pageCount();
+    const int pageCount = doc->pageCount();
     if (pageCount <= 0 || pageIndex < 0 || pageIndex >= pageCount) {
         qWarning().noquote() << "renderPdfPage: page" << pageIndex
                              << "out of range (count=" << pageCount << ")";
@@ -236,7 +309,7 @@ static QImage renderPdfPageBlocking(const QString& path,
     // requested target to the page's true aspect first; the returned QImage
     // then carries correct proportions and every QML Image element that
     // shows it (all use PreserveAspectFit) displays it undistorted.
-    QSizeF ptSize = doc.pagePointSize(pageIndex);
+    QSizeF ptSize = doc->pagePointSize(pageIndex);
     if (ptSize.width() <= 0 || ptSize.height() <= 0) {
         ptSize = QSizeF(targetSize);
     }
@@ -264,7 +337,7 @@ static QImage renderPdfPageBlocking(const QString& path,
                    qRound(renderSize.height() * scaleUp));
     fullSize = fullSize.expandedTo(QSize(1, 1));
 
-    const QImage full = doc.render(pageIndex, fullSize);
+    const QImage full = doc->render(pageIndex, fullSize);
 
     QImage img;
     QRect clipPx;
@@ -600,9 +673,9 @@ QFuture<QImage> MediaService::renderPdfPage(qint64  mediaId,
     // Capture the path off the DB row up-front (sync, sub-ms). The render
     // body then runs entirely on the threadpool without touching the
     // service's sqlite3 handle — keeps the connection mainthread-only per
-    // the ARCHITECTURE.md §3 threading rule. A fresh QPdfDocument is built
-    // inside the lambda (see renderPdfPageBlocking) so a document is never
-    // shared across threadpool threads.
+    // the ARCHITECTURE.md §3 threading rule. renderPdfPageBlocking keeps a
+    // thread_local QPdfDocument cache, so a document is reused across
+    // renders on the same worker but never shared between threads.
     const MediaItem item = byId(mediaId);
     const QString   path  = (item.type == QStringLiteral("pdf")) ? item.path
                                                                  : QString{};
@@ -614,6 +687,32 @@ QFuture<QImage> MediaService::renderPdfPage(qint64  mediaId,
     return QtConcurrent::run([path, pageIndex, targetSize, cropRect]() -> QImage {
         return renderPdfPageBlocking(path, pageIndex, targetSize, cropRect);
     });
+}
+
+void MediaService::prewarmPdf()
+{
+    // Find any PDF row and render its first page on a worker thread. The
+    // point is the side effect: the first QPdfDocument operation of the
+    // process triggers pdfium's one-time global init (library load + font
+    // subsystem) — several seconds of cold-start otherwise paid on the
+    // operator's first real PDF view. Doing it here moves that cost to
+    // launch, off the main thread. As a bonus the worker's thread_local
+    // cache keeps this document warm.
+    qint64 pdfId = 0;
+    for (const MediaItem& m : allMedia()) {
+        if (m.type == QStringLiteral("pdf")) { pdfId = m.id; break; }
+    }
+    if (pdfId <= 0) {
+        qInfo() << "MediaService: no PDF in library — skipping pdfium prewarm";
+        return;
+    }
+
+    qInfo().noquote() << "MediaService: prewarming pdfium via media id" << pdfId;
+    // Fire-and-forget. The QFuture is intentionally discarded — a
+    // QtConcurrent::run task is queued the instant renderPdfPage() returns
+    // and runs to completion whether or not the handle is retained. The
+    // small target keeps the warm-up render cheap; the pixels are dropped.
+    renderPdfPage(pdfId, 0, QSize(256, 256), QRectF(0, 0, 1, 1));
 }
 
 }  // namespace crater

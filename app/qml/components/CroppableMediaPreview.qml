@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Window
 import Crater
 
 // Interactive crop-and-commit surface for image / PDF media items.
@@ -107,6 +106,10 @@ Item {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         cache: true
+        // Hold the current page painted while the next one rasterizes — a
+        // PDF page render runs on a worker thread, so without this the
+        // cropper flashes black on every page change and PDF switch.
+        retainWhileLoading: true
         source: {
             if (!root.item) return ""
             const k = root.item.kind || ""
@@ -122,10 +125,13 @@ Item {
             }
             return ""
         }
-        sourceSize.width:
-            root.width  > 0 ? Math.ceil(root.width  * Screen.devicePixelRatio) : 1920
-        sourceSize.height:
-            root.height > 0 ? Math.ceil(root.height * Screen.devicePixelRatio) : 1080
+        // Fixed render target — deliberately NOT bound to the cropper's
+        // (animating) size. The host monitorWrap animates its width/height
+        // when a PDF is selected (PreviewPanel monitorWrap Behavior); a
+        // size-tracking sourceSize re-requested a render on every animation
+        // frame and flooded the worker pool. A stable target = one render.
+        sourceSize.width:  1920
+        sourceSize.height: 1080
     }
 
     // ── Painted-content rectangle ───────────────────────────────────────
@@ -344,6 +350,49 @@ Item {
         }
 
         onReleased: { mode = "idle"; activeCorner = -1 }
+    }
+
+    // ── First-render loading indicator ──────────────────────────────────
+    // A PDF's first render is slow: pdfium cold-starts on the first call
+    // of the session, and every render reopens the document from disk
+    // (renderPdfPageBlocking builds a fresh QPdfDocument — the thread-
+    // safety choice from ARCHITECTURE §3). retainWhileLoading covers
+    // page-to-page swaps by holding the previous frame, but a cold open
+    // has no previous frame, so without this the operator faces a black
+    // void for several seconds. Gated on `paintedHeight < 1` so it shows
+    // only on cold load — page swaps keep the retained frame painted and
+    // never trigger the spinner.
+    Item {
+        id: loadingOverlay
+        anchors.fill: parent
+        visible: root.item !== null
+                 && sourceImage.status === Image.Loading
+                 && sourceImage.paintedHeight < 1
+
+        Column {
+            anchors.centerIn: parent
+            spacing: Theme.space.sm
+
+            AppIcon {
+                anchors.horizontalCenter: parent.horizontalCenter
+                name: "loader"
+                size: Theme.icon.lg
+                color: Theme.color.textTertiary
+                RotationAnimator on rotation {
+                    running: loadingOverlay.visible
+                    from: 0; to: 360
+                    duration: 900
+                    loops: Animation.Infinite
+                }
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: qsTr("Rendering page…")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+            }
+        }
     }
 
     // ── Keyboard refinement ─────────────────────────────────────────────

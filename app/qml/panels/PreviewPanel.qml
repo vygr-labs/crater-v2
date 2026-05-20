@@ -41,19 +41,20 @@ Rectangle {
         })
     }
 
-    // Crop-and-commit kinds. Image and PDF both use the cropper; video
-    // stays out (cropping a playing clip means per-frame re-rasterize, and
-    // operator intent there is "watch + send", not "frame + send").
+    // Crop-and-commit kinds. Only PDF uses the cropper for now — image
+    // crop is deferred to a later version, so images fall back to the
+    // plain ThemedMonitor display path with no crop rectangle and no
+    // commit hint. Video stays out entirely (cropping a playing clip
+    // means per-frame re-rasterize, and operator intent there is "watch +
+    // send", not "frame + send").
     //
-    // The two are sized differently in the panel: a PDF page is a dense
-    // document that needs room to read while drawing a crop, so it gets the
-    // full body area. An image is already legible at thumbnail scale, so it
-    // keeps the established compact 16:9 monitor card.
+    // A PDF page is a dense document that needs room to read while drawing
+    // a crop, so it gets the full body area.
     readonly property bool isPdfMedia:
         selectedItem !== null && selectedItem.kind === "pdf"
     readonly property bool isImageMedia:
         selectedItem !== null && selectedItem.kind === "image"
-    readonly property bool isCroppableMedia: isPdfMedia || isImageMedia
+    readonly property bool isCroppableMedia: isPdfMedia
 
     // ── Header ──────────────────────────────────────────────────────────
     Item {
@@ -566,7 +567,7 @@ Rectangle {
                 muted: true
             }
 
-            // ── Crop-and-commit surface (image / PDF) ───────────────────
+            // ── Crop-and-commit surface (PDF) ───────────────────────────
             // The operator drags a rectangle here and presses Enter to
             // commit the cropped section live. PDF page navigation is
             // driven by the prev/next buttons below — not by this component.

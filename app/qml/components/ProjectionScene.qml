@@ -284,6 +284,12 @@ Item {
                     visible: scene._isMediaItem && scene._kind === "pdf"
                     asynchronous: true
                     cache: true
+                    // Keep the page currently on the projection output
+                    // painted while the next page/crop rasterizes. Without
+                    // this the audience sees a blank frame for the full
+                    // pdfium render on every page change and every Go Live
+                    // re-crop — the worker render is async per ARCHITECTURE §3.
+                    retainWhileLoading: true
                     // sourceSize tells the provider what target pixel
                     // dimensions to rasterize at. Bind to the stage size
                     // (canvas-native) so NDI gets full-res frames and

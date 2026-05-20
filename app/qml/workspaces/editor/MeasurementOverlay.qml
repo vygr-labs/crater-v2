@@ -28,10 +28,33 @@ Item {
     readonly property color _measure: "#ff4d6d"
 
     // ── Source + target nodes ───────────────────────────────────────────
-    readonly property var _sel: (workspace && workspace.selectedNodeId)
-        ? workspace.workingTheme.node(workspace.selectedNodeId) : null
-    readonly property var _tgt: (workspace && workspace.hoveredNodeId)
-        ? workspace.workingTheme.node(workspace.hoveredNodeId) : null
+    // workingTheme.node(id) returns a value SNAPSHOT, not a live handle.
+    // Bind only to the id and the snapshot freezes at whatever geometry
+    // the node had when the id last changed — so dragging a node (which
+    // fires nodeStyleChanged, not an id change) leaves the overlay
+    // measuring its pre-drag position. _tick is bumped on every
+    // WorkingTheme mutation and read inside the _sel / _tgt bindings, so
+    // they re-fetch fresh geometry. Same pattern PropertiesPanel
+    // (_refreshTick) and NodeDelegate use — node() is snapshot-based, so
+    // every QML reader must subscribe to the mutation signals.
+    property int _tick: 0
+    Connections {
+        target: workspace ? workspace.workingTheme : null
+        function onNodeStyleChanged(id, field) { overlay._tick++ }
+        function onNodeDataChanged(id, field)  { overlay._tick++ }
+        function onNodesChanged()              { overlay._tick++ }
+    }
+
+    readonly property var _sel: {
+        _tick   // dependency — re-fetch on any node mutation
+        return (workspace && workspace.selectedNodeId)
+            ? workspace.workingTheme.node(workspace.selectedNodeId) : null
+    }
+    readonly property var _tgt: {
+        _tick
+        return (workspace && workspace.hoveredNodeId)
+            ? workspace.workingTheme.node(workspace.hoveredNodeId) : null
+    }
 
     visible: !!workspace && workspace.measureAlt
           && !!_sel && !!_tgt
@@ -49,19 +72,18 @@ Item {
     function _pxY(pct) { return Math.round(pct / 100 * canvasH) }
 
     // ── Measurement segments ────────────────────────────────────────────
-    // The display depends on how the selected node S and the hovered
-    // node T sit relative to each other:
+    //   • Separated on an axis  → draw the GAP between the nearest edges.
+    //     Separated on both axes → a horizontal + a vertical gap line.
+    //   • Overlapping on both axes (nested) → draw the four edge insets.
     //
-    //   • Separated on an axis  → draw the GAP between their nearest
-    //     edges on that axis. Separated on BOTH axes (diagonally apart)
-    //     → an L: a horizontal gap segment + a vertical one, meeting at
-    //     S's nearest corner — "the gap to the nearest corner."
-    //   • Overlapping on both axes (nested / intersecting) → draw the
-    //     four edge insets — the padding between matching edges.
+    // Cross-axis placement for the nested insets uses the centre of the
+    // OVERLAP band — for nested boxes that is the inner box's centre, so
+    // the inset lines run through the inner node regardless of which box
+    // is the selected one.
     //
     // Segment shape: { horiz, a, b, pos, label } — a line from `a` to `b`
-    // along its axis, offset to `pos` on the cross axis. All values in
-    // stage pixels except `label` (canvas pixels).
+    // along its axis, offset to `pos` on the cross axis. Stage pixels
+    // except `label` (canvas pixels).
     readonly property var _segments: {
         if (!visible) return []
 
@@ -76,7 +98,6 @@ Item {
         const PY = function(p) { return stageH * p / 100 }
 
         // Axis gaps (percent). 0 ⇒ the rects overlap on that axis.
-        // xa/xb, ya/yb capture the gap span's start/end edge.
         let xGap = 0, xa = 0, xb = 0
         if (sR < tL)      { xGap = tL - sR; xa = sR; xb = tL }
         else if (tR < sL) { xGap = sL - tR; xa = tR; xb = sL }
@@ -89,9 +110,6 @@ Item {
         if (xGap > 0 || yGap > 0) {
             // ── Separated: gap segment(s) ──
             if (xGap > 0) {
-                // Horizontal segment's Y: aligned to S's near edge when
-                // also Y-separated (the L corner); centered in the shared
-                // Y band when the rects overlap vertically.
                 const yPos = (yGap > 0) ? (sB < tT ? sB : sT)
                                         : (Math.max(sT, tT) + Math.min(sB, tB)) / 2
                 out.push({ horiz: true, a: PX(xa), b: PX(xb), pos: PY(yPos),
@@ -105,9 +123,11 @@ Item {
             }
         } else {
             // ── Overlapping / nested: four edge insets ──
-            // Magnitudes — the line position already conveys which side.
-            const cy = PY((sT + sB) / 2)
-            const cx = PX((sL + sR) / 2)
+            // Lines run through the overlap band's centre — i.e. the
+            // inner box's centre — so they stay attached to the inner
+            // node even when the outer box is the selected one.
+            const cy = PY((Math.max(sT, tT) + Math.min(sB, tB)) / 2)
+            const cx = PX((Math.max(sL, tL) + Math.min(sR, tR)) / 2)
             out.push({ horiz: true,  a: PX(tL), b: PX(sL), pos: cy,
                        label: _pxX(Math.abs(sL - tL)) })
             out.push({ horiz: true,  a: PX(sR), b: PX(tR), pos: cy,
@@ -118,6 +138,22 @@ Item {
                        label: _pxY(Math.abs(tB - sB)) })
         }
         return out
+    }
+
+    // Hovered node's box outline. The selected node already shows its
+    // (cyan) selection chrome; the hovered node has none — so the inset
+    // measurements appeared to span to nothing. Drawing the hovered box
+    // makes the four insets visibly connect two rectangles, so a nested
+    // overlap reads as "padding between these boxes" rather than a
+    // mysterious set of numbers.
+    Rectangle {
+        x:      stageW * ((overlay._t.x || 0) / 100)
+        y:      stageH * ((overlay._t.y || 0) / 100)
+        width:  stageW * ((overlay._t.width  || 0) / 100)
+        height: stageH * ((overlay._t.height || 0) / 100)
+        color: "transparent"
+        border.color: overlay._measure
+        border.width: 1
     }
 
     Repeater {
