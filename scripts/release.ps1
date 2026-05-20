@@ -214,6 +214,23 @@ $QmlDir = Join-Path $QtRoot 'app\qml'
     (Join-Path $AppStage 'crater.exe')
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed (exit $LASTEXITCODE)" }
 
+# ── Stage data files ───────────────────────────────────────────────────────
+# The Bible database is NOT embedded in crater.exe (77 MB — too large for a
+# Qt resource; see ElectronDataImporter.h). The app's first-run importer
+# looks for it at <exe>/legacy/bibles.sqlite. windeployqt knows nothing about
+# it, so it must be staged explicitly here — before both the ZIP and the
+# installer steps, since each packages everything under $AppStage. Without
+# this, a clean install has no scripture data at all.
+Write-Step 'Staging Bible database'
+$BibleDbSource = Join-Path $QtRoot '..\electron\src\assets\default\databases\bibles.sqlite'
+if (-not (Test-Path $BibleDbSource)) {
+    throw "bibles.sqlite not found at $BibleDbSource — refusing to package an installer with no scripture data."
+}
+$LegacyStage = Join-Path $AppStage 'legacy'
+New-Item -ItemType Directory -Force -Path $LegacyStage | Out-Null
+Copy-Item $BibleDbSource (Join-Path $LegacyStage 'bibles.sqlite')
+Write-Done "bibles.sqlite staged to $LegacyStage"
+
 # ── VC++ redist ────────────────────────────────────────────────────────────
 if (-not $SkipInstaller) {
     if (-not (Test-Path $VcRedistPath)) {

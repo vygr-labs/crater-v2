@@ -130,12 +130,19 @@ Rectangle {
             onClicked: AppState.clearLive()
         }
 
-        // Go Live — the console's primary action. Inlined rather than the
-        // shared PrimaryButton: that atom is a solid-accent fill reused
-        // across dialogs and empty states, and Go Live wants a one-off
-        // pale-cyan tonal surface. Same reasoning as the settings chip
-        // above — a bespoke topbar control gets a bespoke definition rather
-        // than bending a widely-shared atom.
+        // Go Live / End Live — the console's primary action. Inlined rather
+        // than the shared PrimaryButton: that atom is a solid-accent fill
+        // reused across dialogs and empty states, and this control wants a
+        // one-off pale-cyan tonal surface plus a second, outlined-red "End
+        // Live" face. Same reasoning as the settings chip above — a bespoke
+        // topbar control gets a bespoke definition rather than bending a
+        // widely-shared atom.
+        //
+        // Two faces, driven by OutputService.projectionOpen (the authoritative
+        // "is the audience window up?" signal — see ProjectionWindow.qml):
+        //   • projection closed → "Go Live": pale-cyan filled commit button.
+        //   • projection open   → "End Live": transparent fill, red outline,
+        //                          red label; clicking lowers the projector.
         Rectangle {
             id: goLiveBtn
             anchors.verticalCenter: parent.verticalCenter
@@ -143,18 +150,40 @@ Rectangle {
             width: goLiveRow.implicitWidth + Theme.space.xl * 2
             radius: 0   // squared — app-wide button shape (see PrimaryButton)
 
-            // Enabled when something is queued in Preview — either a schedule
-            // selection or a library item the operator is staging.
-            enabled: AppState.selectedScheduleIndex >= 0
+            // True once the audience projection window is actually up — the
+            // button then flips to its "End Live" face. Kept as one control
+            // (not two) so it holds a stable slot in the right cluster and
+            // the operator's "the live button lives here" muscle memory
+            // survives both states.
+            readonly property bool ending: OutputService.projectionOpen
+
+            // Go Live needs something staged in Preview — a schedule selection
+            // or a library item the operator is staging. End Live is always
+            // actionable: the operator must be able to drop the projector
+            // regardless of what (if anything) is currently staged.
+            enabled: ending
+                  || AppState.selectedScheduleIndex >= 0
                   || AppState.libraryPreviewItem !== null
 
-            // Pale-cyan tonal surface. Hover lifts toward white, press sinks
-            // a shade; disabled darkens flat and leans on `opacity` below.
-            color: !enabled               ? Qt.darker("#BCE4E8", 1.6)
-                 : goLiveMa.pressed       ? "#A2D6DB"
-                 : goLiveMa.containsMouse ? "#D2EFF1"
-                                          : "#BCE4E8"
+            // Two surfaces. Go Live: pale-cyan tonal fill — hover lifts toward
+            // white, press sinks a shade, disabled darkens flat and leans on
+            // `opacity`. End Live: transparent at rest, with a faint red wash
+            // on hover/press so the outlined button still feels pressable
+            // (rgba == Theme.color.live at low alpha — same idiom as LivePanel).
+            color: ending
+                 ? (goLiveMa.pressed       ? Qt.rgba(177/255, 54/255, 52/255, 0.20)
+                  : goLiveMa.containsMouse ? Qt.rgba(177/255, 54/255, 52/255, 0.12)
+                                           : "transparent")
+                 : (!enabled               ? Qt.darker("#DCEAEB", 1.6)
+                  : goLiveMa.pressed       ? "#C6DCDD"
+                  : goLiveMa.containsMouse ? "#ECF3F4"
+                                           : "#DCEAEB")
             opacity: enabled ? 1.0 : 0.55
+
+            // Red outline only on the End Live face; Go Live's filled surface
+            // carries its own edge, so its border stays 0-width (invisible).
+            border.width: ending ? 1 : 0
+            border.color: Theme.color.live
 
             Behavior on color   { ColorAnimation  { duration: Theme.motion.instant } }
             Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
@@ -166,16 +195,22 @@ Rectangle {
 
                 AppIcon {
                     anchors.verticalCenter: parent.verticalCenter
-                    name: "play"
-                    // Deep cyan (brandPressed) on the pale fill — ~5.5:1,
-                    // comfortably past the AA text-contrast floor.
-                    color: Theme.color.brandPressed
+                    // `x` doubles as the app's "kill the output" glyph (it's
+                    // the LivePanel "Clear output" icon), so it reads cleanly
+                    // on End Live; `play` is the Go Live "start" symbol.
+                    name: goLiveBtn.ending ? "x" : "play"
+                    // Go Live: deep cyan (brandPressed) on the pale fill —
+                    // ~6:1, comfortably past the AA contrast floor. End Live:
+                    // live red, matching the outline.
+                    color: goLiveBtn.ending ? Theme.color.live
+                                            : Theme.color.brandPressed
                     size: Theme.icon.sm
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Go Live")
-                    color: Theme.color.brandPressed
+                    text: goLiveBtn.ending ? qsTr("End Live") : qsTr("Go Live")
+                    color: goLiveBtn.ending ? Theme.color.live
+                                            : Theme.color.brandPressed
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize
                     font.weight: Theme.font.weightSemiBold
@@ -189,7 +224,13 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: goLiveBtn.enabled ? Qt.PointingHandCursor
                                                : Qt.ArrowCursor
-                onClicked: AppState.goLive()
+                // Go Live raises the projector; End Live lowers it. Both route
+                // through AppState so `projectorVisible` stays the single
+                // source of truth (see AppState.goLive / endLive).
+                onClicked: {
+                    if (goLiveBtn.ending) AppState.endLive()
+                    else                  AppState.goLive()
+                }
             }
         }
     }
