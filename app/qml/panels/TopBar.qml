@@ -130,16 +130,67 @@ Rectangle {
             onClicked: AppState.clearLive()
         }
 
-        PrimaryButton {
+        // Go Live — the console's primary action. Inlined rather than the
+        // shared PrimaryButton: that atom is a solid-accent fill reused
+        // across dialogs and empty states, and Go Live wants a one-off
+        // pale-cyan tonal surface. Same reasoning as the settings chip
+        // above — a bespoke topbar control gets a bespoke definition rather
+        // than bending a widely-shared atom.
+        Rectangle {
+            id: goLiveBtn
             anchors.verticalCenter: parent.verticalCenter
-            variant: "brand"
-            iconName: "play"
-            text: qsTr("Go Live")
+            height: 36
+            width: goLiveRow.implicitWidth + Theme.space.xl * 2
+            radius: 0   // squared — app-wide button shape (see PrimaryButton)
+
             // Enabled when something is queued in Preview — either a schedule
             // selection or a library item the operator is staging.
             enabled: AppState.selectedScheduleIndex >= 0
                   || AppState.libraryPreviewItem !== null
-            onClicked: AppState.goLive()
+
+            // Pale-cyan tonal surface. Hover lifts toward white, press sinks
+            // a shade; disabled darkens flat and leans on `opacity` below.
+            color: !enabled               ? Qt.darker("#BCE4E8", 1.6)
+                 : goLiveMa.pressed       ? "#A2D6DB"
+                 : goLiveMa.containsMouse ? "#D2EFF1"
+                                          : "#BCE4E8"
+            opacity: enabled ? 1.0 : 0.55
+
+            Behavior on color   { ColorAnimation  { duration: Theme.motion.instant } }
+            Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
+
+            Row {
+                id: goLiveRow
+                anchors.centerIn: parent
+                spacing: Theme.space.sm
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "play"
+                    // Deep cyan (brandPressed) on the pale fill — ~5.5:1,
+                    // comfortably past the AA text-contrast floor.
+                    color: Theme.color.brandPressed
+                    size: Theme.icon.sm
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Go Live")
+                    color: Theme.color.brandPressed
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
+                    font.weight: Theme.font.weightSemiBold
+                    font.letterSpacing: 0.3
+                }
+            }
+
+            MouseArea {
+                id: goLiveMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: goLiveBtn.enabled ? Qt.PointingHandCursor
+                                               : Qt.ArrowCursor
+                onClicked: AppState.goLive()
+            }
         }
     }
 }

@@ -10,7 +10,21 @@ import QtQuick.Layouts
 StackLayout {
     id: root
 
-    currentIndex: AppState.activeTab
+    // Fixed slot order of the five Loader children below — this never
+    // changes, not even when the Strong's tab is hidden. The operator's
+    // current tab is identified by KEY via AppState.tabKeys[activeTab];
+    // _slotKeys maps that key back to its StackLayout slot.
+    //
+    // Binding currentIndex straight to AppState.activeTab would be wrong:
+    // when "Show Strong's tab" is off, AppState.tabKeys has only 4 entries,
+    // so activeTab counts 0..3 over {songs, scripture, media, themes} — but
+    // these children still number 5 with strongs at slot 2. Indexing by the
+    // raw activeTab would then render Strong's for "media" and Media for
+    // "themes". Resolving through the key keeps the tab strip and the
+    // content panel in agreement.
+    readonly property var _slotKeys: ["songs", "scripture", "strongs", "media", "themes"]
+
+    currentIndex: Math.max(0, _slotKeys.indexOf(AppState.tabKeys[AppState.activeTab]))
 
     // ── Focus claim for empty-space clicks ──────────────────────────────
     // Covers the "clicked inside the library area but not on any row"
@@ -27,39 +41,42 @@ StackLayout {
         onPressedChanged: if (pressed) AppState.setActiveFocus("library")
     }
 
+    // AppState.viewedTabs holds the KEYS of visited tabs (see AppState.qml) —
+    // each Loader stays active once its own key has been seen. Keying off the
+    // string rather than a slot index is what survives a Strong's show/hide.
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
-        active: AppState.viewedTabs.indexOf(0) !== -1
+        active: AppState.viewedTabs.indexOf("songs") !== -1
         sourceComponent: songsComp
     }
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
-        active: AppState.viewedTabs.indexOf(1) !== -1
+        active: AppState.viewedTabs.indexOf("scripture") !== -1
         sourceComponent: scriptureComp
     }
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
-        active: AppState.viewedTabs.indexOf(2) !== -1
+        active: AppState.viewedTabs.indexOf("strongs") !== -1
         sourceComponent: strongsComp
     }
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
-        active: AppState.viewedTabs.indexOf(3) !== -1
+        active: AppState.viewedTabs.indexOf("media") !== -1
         sourceComponent: mediaComp
     }
     Loader {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
-        active: AppState.viewedTabs.indexOf(4) !== -1
+        active: AppState.viewedTabs.indexOf("themes") !== -1
         sourceComponent: themesComp
     }
 

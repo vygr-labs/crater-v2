@@ -16,6 +16,7 @@
 #include <QTextStream>
 #include <QtQml>
 
+#include "BrowserCastService.h"  // BrowserCast (removable feature)
 #include "FileDialogService.h"
 #include "MediaPlaybackService.h"
 #include "NdiRenderer.h"
@@ -303,6 +304,10 @@ int main(int argc, char* argv[])
     // service — the Songs tab's import dialog drives it through signals. It
     // holds no state between runs, so one instance serves every import.
     crater::EasyWorshipImporter easyWorshipImporter;
+    // BrowserCast (removable feature) — serves the live projection to a TV's
+    // web browser over the LAN. Reads projectionService to choose MJPEG vs
+    // native-video delivery; its capture source item is wired in Main.qml.
+    crater::BrowserCastService browserCastService(&projectionService);
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -322,6 +327,9 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
     qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "BrowserCastService",    &browserCastService);  // BrowserCast (removable feature)
+    // BrowserCast (removable feature) — the LAN server is started on demand
+    // by the operator toggle in Settings > Remote Control, not at launch.
 
     // After every successful import, backfill thumbs for the new videos.
     // The ensureForAllVideos() walk is cheap when nothing is missing, so we

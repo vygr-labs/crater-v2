@@ -312,34 +312,56 @@ Item {
         property bool   shiftHeld: false
 
         // Hit zones in priority order: 4 corners, then 4 edges, then the
-        // interior (move), then bare page (draw). Corners are tested first
-        // so the shared tolerance box at each vertex resolves to a corner
-        // resize rather than an edge one. Edges are grabbable along their
-        // entire span — not just at the midpoint bar — so framing a crop
-        // never turns into hunting for a 6px grip.
+        // interior (move), then bare page (draw). Edges are grabbable along
+        // their entire span — not just at the midpoint bar — so framing a
+        // crop never turns into hunting for a 6px grip.
+        //
+        // Corner vs. edge near a vertex: a corner's tolerance box overlaps
+        // ~8px of both adjoining edges. A press a few px in from a corner
+        // but flush along one edge used to read as a corner resize and snap
+        // to the aspect lock — the operator drags a side and the rectangle
+        // jumps to 16:9. A corner is now claimed only for a genuinely
+        // DIAGONAL press (near the vertex on both axes AND balanced between
+        // them); a press committed to one edge is imbalanced, falls through,
+        // and is matched to the NEAREST edge line — which resizes free-form.
         function _hitTest(pt) {
             const x = root._pxX(), y = root._pxY()
             const w = root._pxW(), h = root._pxH()
             const tol = 8
-            const corners = [
-                Qt.point(x, y), Qt.point(x + w, y),
-                Qt.point(x + w, y + h), Qt.point(x, y + h)
-            ]
-            for (let i = 0; i < 4; ++i) {
-                if (Math.abs(pt.x - corners[i].x) <= tol
-                 && Math.abs(pt.y - corners[i].y) <= tol) {
-                    activeHandle = i
-                    return "resize"
-                }
+
+            // Perpendicular offset from each of the four edge lines.
+            const dTop    = Math.abs(pt.y - y)
+            const dBottom = Math.abs(pt.y - (y + h))
+            const dLeft   = Math.abs(pt.x - x)
+            const dRight  = Math.abs(pt.x - (x + w))
+
+            // A corner grab is diagonal: within tol of the vertex on both
+            // axes, and roughly balanced between them (|dx - dy| <= 3). A
+            // press flush along an edge is imbalanced (one offset near zero,
+            // the other larger) — it fails the third test and drops to the
+            // edge matching below, so a side drag never aspect-snaps.
+            function _isCorner(dx, dy) {
+                return dx <= tol && dy <= tol && Math.abs(dx - dy) <= 3
             }
-            // Edges: 4 top · 5 right · 6 bottom · 7 left. The onSpan checks
-            // keep the hit within the edge's run (with tol slack each end).
+            if (_isCorner(dLeft,  dTop))    { activeHandle = 0; return "resize" }
+            if (_isCorner(dRight, dTop))    { activeHandle = 1; return "resize" }
+            if (_isCorner(dRight, dBottom)) { activeHandle = 2; return "resize" }
+            if (_isCorner(dLeft,  dBottom)) { activeHandle = 3; return "resize" }
+
+            // Edges: 4 top · 5 right · 6 bottom · 7 left. onSpan keeps the
+            // hit within the edge's run (tol slack each end). Among the
+            // sides in range, pick the one whose line the press sits
+            // closest to — not the first match — so a press flush on one
+            // side near a corner isn't stolen by the adjacent side.
             const onSpanX = pt.x >= x - tol && pt.x <= x + w + tol
             const onSpanY = pt.y >= y - tol && pt.y <= y + h + tol
-            if (onSpanX && Math.abs(pt.y - y)       <= tol) { activeHandle = 4; return "resize" }
-            if (onSpanY && Math.abs(pt.x - (x + w)) <= tol) { activeHandle = 5; return "resize" }
-            if (onSpanX && Math.abs(pt.y - (y + h)) <= tol) { activeHandle = 6; return "resize" }
-            if (onSpanY && Math.abs(pt.x - x)       <= tol) { activeHandle = 7; return "resize" }
+            let edge = -1, best = tol + 1
+            if (onSpanX && dTop    < best) { best = dTop;    edge = 4 }
+            if (onSpanY && dRight  < best) { best = dRight;  edge = 5 }
+            if (onSpanX && dBottom < best) { best = dBottom; edge = 6 }
+            if (onSpanY && dLeft   < best) { best = dLeft;   edge = 7 }
+            if (edge !== -1) { activeHandle = edge; return "resize" }
+
             if (pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h) {
                 return "move"
             }

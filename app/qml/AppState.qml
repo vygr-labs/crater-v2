@@ -31,7 +31,11 @@ QtObject {
     readonly property int tabCount: tabKeys.length
 
     property int activeTab: 0
-    property var viewedTabs: [0]   // tabs that have been visited (keeps Loaders alive)
+    // Keys of tabs visited this session — LibraryContent keeps a tab's Loader
+    // alive once its key appears here. Stored as keys, NOT indices: a tab's
+    // index shifts when the Strong's tab is shown/hidden, so an index is not
+    // stable identity across that toggle — a key is.
+    property var viewedTabs: ["songs"]
 
     // Internal helper called by Main.qml's Connections when Strong's
     // visibility flips. Strong's lives canonically at index 2 — hiding
@@ -51,8 +55,9 @@ QtObject {
     function setActiveTab(i) {
         if (i < 0 || i >= tabCount) return
         if (activeTab === i) return
-        if (viewedTabs.indexOf(i) === -1) {
-            viewedTabs = viewedTabs.concat([i])
+        const key = tabKeys[i]
+        if (viewedTabs.indexOf(key) === -1) {
+            viewedTabs = viewedTabs.concat([key])
         }
         activeTab = i
     }

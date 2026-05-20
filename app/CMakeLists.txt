@@ -23,6 +23,10 @@ qt_add_executable(crater
     # of Qt6::Quick — and crater-core stays Quick-free per ARCHITECTURE.md §1.
     src/PdfPageImageProvider.cpp
     src/PdfPageImageProvider.h
+    # BrowserCast (removable feature) — serves the projection to a TV's web
+    # browser. Self-contained; see app/src/BrowserCastService.h for removal.
+    src/BrowserCastService.cpp
+    src/BrowserCastService.h
 )
 
 # Windows .exe icon. The .rc file lives in qt/packaging/ alongside the
@@ -215,6 +219,10 @@ target_link_libraries(crater
         # them. NdiRenderer needs QRhi for its headless render target
         # and async texture readback.
         Qt6::GuiPrivate
+        # BrowserCast (removable feature): QTcpServer / QTcpSocket for the
+        # TV-browser server. Qt6Network.dll is already deployed (see the
+        # POST_BUILD copy below) — this only adds the compile/link surface.
+        Qt6::Network
         Crater::Core
 )
 

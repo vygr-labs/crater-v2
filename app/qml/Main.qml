@@ -77,6 +77,10 @@ ApplicationWindow {
         AppState.showLogo = SettingsService.showLogoByDefault
         ProjectionService.setLogoVisible(AppState.showLogo)
         root._updateNdiSource()
+        // BrowserCast (removable feature) — capture the same canvas-native
+        // projection Item the NDI sender uses, so the TV browser mirrors the
+        // primary audience output.
+        BrowserCastService.setSourceItem(projectionWindow.renderItem)
     }
 
     // ── NDI source plumbing ────────────────────────────────────────────
@@ -422,8 +426,13 @@ ApplicationWindow {
         //     whenever the operator wants. Future hooks (recording,
         //     stage monitor) would OR-in here the same way.
         visibleToOperator: AppState.projectorVisible
-        keepRendering:     NdiService.sending
-                        && SettingsService.outputMode === "single"
+        // BrowserCast (removable feature) adds the `|| BrowserCastService.active`
+        // term: while a TV browser is pulling the MJPEG stream the scene graph
+        // must keep rendering offscreen so grabToImage() has fresh frames —
+        // the same reason NDI keeps it alive.
+        keepRendering:     (NdiService.sending
+                         && SettingsService.outputMode === "single")
+                        || BrowserCastService.active
     }
 
     // ── Dedicated NDI render canvas (dual output mode only) ─────────────

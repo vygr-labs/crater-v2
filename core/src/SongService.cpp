@@ -358,6 +358,14 @@ Song SongService::fetchSong(qint64 id)
         meta.bind(1, id);
         if (!meta.step()) return s;
         s = m_impl->readSongRow(meta);
+        // Close the cursor now that the row is copied out. A SELECT left in
+        // the SQLITE_ROW state keeps an implicit read transaction open on this
+        // connection — and under WAL that pins a database snapshot, so every
+        // later query here (allSongs(), search()) would keep reading a stale
+        // view. Concretely: rows the EasyWorship importer commits on its own
+        // connection would stay invisible until the app restarts. reset()
+        // ends the read transaction; the next query opens a fresh snapshot.
+        meta.reset();
 
         auto& secs = m_impl->selectSectionsForSong;
         secs.reset();
@@ -508,6 +516,10 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
             qWarning().noquote() << "SongService::update(): song" << id << "does not exist";
             return false;
         }
+        // Probe done — close its cursor so it doesn't leave a read
+        // transaction dangling on the connection (same WAL snapshot-pinning
+        // hazard documented in fetchSong()).
+        existsStmt.reset();
 
         db::Transaction tx(m_impl->conn);
         const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();

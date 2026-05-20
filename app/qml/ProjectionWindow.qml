@@ -93,23 +93,32 @@ Window {
             : (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
     title: qsTr("Crater Projection")
 
-    // Geometry. In operator-visible mode: 480×270 windowed thumbnail
-    // anchored to the bottom-right of the target screen. In offscreen
-    // capture mode: full 1920×1080 (so NDI receivers get canvas-resolution
-    // frames) parked way off the virtual desktop. FullScreen visibility
-    // overrides these, so unconditional defaults are safe.
-    width:  _offscreen ? 1920 : 480
-    height: _offscreen ? 1080 : 270
-    x: _offscreen
-        ? -32000
-        : (_targetScreen
-            ? _targetScreen.virtualX + _targetScreen.width  - width  - 24
-            : 100)
-    y: _offscreen
-        ? -32000
-        : (_targetScreen
-            ? _targetScreen.virtualY + _targetScreen.height - height - 24
-            : 100)
+    // Geometry — three cases, matching the visibility states above:
+    //   • offscreen capture → full 1920×1080 (canvas-resolution NDI
+    //     frames) parked way off the virtual desktop.
+    //   • windowed, operator-visible → 480×270 thumbnail anchored to the
+    //     bottom-right of the target screen.
+    //   • fullscreen, operator-visible → the target screen's full
+    //     geometry. Window.FullScreen visibility alone is NOT enough —
+    //     these are live bindings and the _offscreen term re-fires them
+    //     the instant the operator goes live, so a fixed 480×270 actively
+    //     fights the fullscreen state. The binding must AGREE with it.
+    width: _offscreen ? 1920
+         : _windowed  ? 480
+         : (_targetScreen ? _targetScreen.width : 1920)
+    height: _offscreen ? 1080
+          : _windowed  ? 270
+          : (_targetScreen ? _targetScreen.height : 1080)
+    x: _offscreen ? -32000
+     : !_windowed ? (_targetScreen ? _targetScreen.virtualX : 0)
+     : (_targetScreen
+         ? _targetScreen.virtualX + _targetScreen.width  - width  - 24
+         : 100)
+    y: _offscreen ? -32000
+     : !_windowed ? (_targetScreen ? _targetScreen.virtualY : 0)
+     : (_targetScreen
+         ? _targetScreen.virtualY + _targetScreen.height - height - 24
+         : 100)
 
     // Background color = first container's color, falling back to black.
     // Painted BEFORE the canvas stage so anything outside the letterbox
