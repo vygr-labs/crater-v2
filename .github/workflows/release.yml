@@ -34,9 +34,9 @@ jobs:
         id: meta
         shell: pwsh
         run: |
-          $cmake = Get-Content qt/CMakeLists.txt -Raw
+          $cmake = Get-Content CMakeLists.txt -Raw
           if ($cmake -notmatch 'project\(Crater\s+VERSION\s+([\d.]+)') {
-              throw "Could not parse Crater version from qt/CMakeLists.txt"
+              throw "Could not parse Crater version from CMakeLists.txt"
           }
           $cmakeVersion = $Matches[1]
 
@@ -51,11 +51,11 @@ jobs:
           $version = if ($tag) { $tag.TrimStart('v') } else { $cmakeVersion }
 
           # If a tag was supplied, require it to match the cmake version.
-          # Forces the dev to bump qt/CMakeLists.txt before tagging — the
+          # Forces the dev to bump CMakeLists.txt before tagging — the
           # binary, ZIP, and installer would otherwise carry mismatched
           # versions.
           if ($tag -and ($version -ne $cmakeVersion)) {
-              throw "Tag '$tag' (version '$version') does not match qt/CMakeLists.txt version '$cmakeVersion'. Bump CMakeLists or retag."
+              throw "Tag '$tag' (version '$version') does not match CMakeLists.txt version '$cmakeVersion'. Bump CMakeLists or retag."
           }
 
           "tag=$tag"           >> $env:GITHUB_OUTPUT
@@ -70,7 +70,12 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtmultimedia qtwebsockets'
+          # Add-on modules required by find_package() in CMakeLists.txt:
+          #   qtmultimedia → Qt6::Multimedia   qtpdf → Qt6::Pdf
+          #   qtwebsockets → Qt6::WebSockets
+          # Core/Gui/Qml/Quick/QuickControls2/Sql/Test/Widgets ship in the
+          # qtbase + qtdeclarative essentials install-qt-action installs by default.
+          modules: 'qtmultimedia qtpdf qtwebsockets'
           cache: true
 
       - name: Install Inno Setup
@@ -81,22 +86,22 @@ jobs:
         shell: pwsh
         run: |
           # install-qt-action exposes the kit root via QT_ROOT_DIR.
-          .\qt\scripts\release.ps1 `
+          .\scripts\release.ps1 `
             -QtDir $env:QT_ROOT_DIR `
             -VersionOverride '${{ steps.meta.outputs.version }}' `
             -Clean
 
       - name: List artifacts
         shell: pwsh
-        run: Get-ChildItem qt\dist -File | Format-Table Name, @{n='Size (MB)';e={[math]::Round($_.Length/1MB,1)}}
+        run: Get-ChildItem dist -File | Format-Table Name, @{n='Size (MB)';e={[math]::Round($_.Length/1MB,1)}}
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: crater-windows-${{ steps.meta.outputs.version }}
           path: |
-            qt/dist/Crater-*-win64.zip
-            qt/dist/Crater-Setup-*.exe
+            dist/Crater-*-win64.zip
+            dist/Crater-Setup-*.exe
           if-no-files-found: error
           retention-days: 14
 
@@ -110,5 +115,5 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            qt/dist/Crater-*-win64.zip
-            qt/dist/Crater-Setup-*.exe
+            dist/Crater-*-win64.zip
+            dist/Crater-Setup-*.exe
