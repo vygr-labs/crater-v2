@@ -155,6 +155,20 @@ Item {
                     stageH: stage.height
                 }
             }
+
+            // Measurement overlay — draws Alt+hover spacing between the
+            // selected node and the hovered node. Above the nodes so the
+            // lines/labels aren't occluded; enabled:false so it never
+            // intercepts pointer events meant for the delegates below.
+            MeasurementOverlay {
+                anchors.fill: parent
+                z: 1000
+                workspace: root.workspace
+                stageW:  stage.width
+                stageH:  stage.height
+                canvasW: root._canvas.width
+                canvasH: root._canvas.height
+            }
         }
     }
 }

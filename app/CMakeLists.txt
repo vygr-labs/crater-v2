@@ -111,6 +111,7 @@ qt_add_qml_module(crater
         qml/workspaces/editor/ResizeHandle.qml
         qml/workspaces/editor/RotateHandle.qml
         qml/workspaces/editor/SkewHandle.qml
+        qml/workspaces/editor/MeasurementOverlay.qml
         qml/workspaces/editor/LayersPanel.qml
         qml/workspaces/editor/PropertiesPanel.qml
         qml/workspaces/editor/AccordionSection.qml

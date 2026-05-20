@@ -586,6 +586,13 @@ Rectangle {
                 // silently dropping the crop.
                 onInteracted: AppState.setActiveFocus("preview")
 
+                // Mirror the live crop rectangle into AppState so the
+                // button-driven go-live paths (TopBar Go Live, schedule
+                // double-click, Ctrl+L) can apply the same crop the
+                // operator sees — not just the Enter path.
+                onCropChanged: AppState.previewCropRect = cropper.cropRect
+                Component.onCompleted: AppState.previewCropRect = cropper.cropRect
+
                 onCommitRequested: {
                     if (!root.selectedItem) return
                     AppState.setActiveFocus("preview")

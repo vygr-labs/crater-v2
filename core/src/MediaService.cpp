@@ -13,7 +13,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QPdfDocument>
-#include <QPdfDocumentRenderOptions>
 #include <QUrl>
 #include <QtConcurrent>
 
@@ -244,29 +243,48 @@ static QImage renderPdfPageBlocking(const QString& path,
     QSize renderSize = ptSize.scaled(QSizeF(targetSize), Qt::KeepAspectRatio).toSize();
     renderSize = renderSize.expandedTo(QSize(1, 1));
 
+    // Crop strategy: render the FULL page, then QImage::copy the sub-rect.
+    // We deliberately do NOT use QPdfDocumentRenderOptions::setScaledClipRect
+    // — it clips a page scaled to scaledSize(), and without a matching
+    // scaledSize() pdfium returns an empty image (this was the blank-on-
+    // crop bug). render(page, size) is the only PDF render call that's
+    // proven to work here, so every path goes through it.
+    //
+    // To keep cropped text crisp: a sub-crop renders the full page UPSCALED
+    // by 1/crop-fraction, so the copied region still lands near the caller's
+    // requested resolution instead of being a low-res slice. Capped at 6×
+    // so a tiny crop can't request an enormous raster.
+    qreal scaleUp = 1.0;
+    if (!fullPage) {
+        const qreal minDim = qMax(qreal(0.04),
+                                  qMin(clip.width(), clip.height()));
+        scaleUp = qBound(1.0, 1.0 / minDim, 6.0);
+    }
+    QSize fullSize(qRound(renderSize.width()  * scaleUp),
+                   qRound(renderSize.height() * scaleUp));
+    fullSize = fullSize.expandedTo(QSize(1, 1));
+
+    const QImage full = doc.render(pageIndex, fullSize);
+
     QImage img;
-    if (fullPage) {
-        // Full page — render straight to the aspect-fitted size. No
-        // scaledClipRect: an "identity" clip equal to the whole target
-        // changes how render() interprets its size args, and a clean
-        // two-arg render() removes that variable entirely.
-        img = doc.render(pageIndex, renderSize);
+    QRect clipPx;
+    if (fullPage || full.isNull()) {
+        img = full;
     } else {
-        // Sub-region — scale the page to renderSize (page aspect) then clip
-        // to the pixel rect, so text inside the crop rasterizes at the
-        // higher effective DPI rather than upscaling a pre-rendered bitmap.
-        QPdfDocumentRenderOptions opts;
-        const QRect clipPx(qRound(clip.x()      * renderSize.width()),
-                           qRound(clip.y()      * renderSize.height()),
-                           qRound(clip.width()  * renderSize.width()),
-                           qRound(clip.height() * renderSize.height()));
-        opts.setScaledClipRect(clipPx);
-        img = doc.render(pageIndex, renderSize, opts);
+        clipPx = QRect(qRound(clip.x()      * full.width()),
+                       qRound(clip.y()      * full.height()),
+                       qRound(clip.width()  * full.width()),
+                       qRound(clip.height() * full.height()));
+        clipPx = clipPx.intersected(QRect(QPoint(0, 0), full.size()));
+        img = clipPx.isEmpty() ? full : full.copy(clipPx);
     }
 
-    qInfo().noquote() << "renderPdfPage: page=" << pageIndex
+    qInfo().noquote() << "[pdf] render — page=" << pageIndex
                       << "target=" << targetSize << "renderSize=" << renderSize
-                      << "fullPage=" << fullPage
+                      << "fullPage=" << fullPage << "clip=" << clip
+                      << "scaleUp=" << scaleUp << "fullSize=" << fullSize
+                      << "fullRender=" << full.size() << "fullNull=" << full.isNull()
+                      << "clipPx=" << clipPx
                       << "-> image=" << img.size() << "null=" << img.isNull();
     return img;
 }

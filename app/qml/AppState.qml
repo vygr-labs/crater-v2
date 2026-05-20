@@ -77,6 +77,13 @@ QtObject {
     property int  liveScheduleIndex:     -1   // what's on Live pane (-1 = nothing)
     property int  previewSubIndex:        0   // page within selected item shown in Preview
     property int  liveSubIndex:           0   // page within live item shown in Live
+
+    // Operator's staged crop for the previewed image / PDF, in normalized
+    // 0..1 coordinates. PreviewPanel mirrors the CroppableMediaPreview's
+    // rectangle into this so EVERY go-live entry point — Enter, the TopBar
+    // Go Live button, schedule double-click, Ctrl+L — can apply the same
+    // crop. Defaults to full-frame; text kinds ignore it entirely.
+    property rect previewCropRect: Qt.rect(0, 0, 1, 1)
     property bool showLogo:           false   // Logo button toggled on/off
     property bool isClear:            false   // display cleared (overrides live content)
 
@@ -117,6 +124,21 @@ QtObject {
         libraryPreviewItem = null
     }
 
+    // Route a go-live through the crop-aware overload for image / PDF items
+    // so a staged crop (previewCropRect, mirrored from the Preview cropper)
+    // survives EVERY entry point — Enter, the TopBar Go Live button,
+    // schedule double-click, Ctrl+L. Text kinds use the plain overload,
+    // which resets the crop to full-frame (correct — they have no crop
+    // concept, and the reset stops a stale media crop from leaking onto a
+    // text render).
+    function _projectItemLive(item, page) {
+        if (item && (item.kind === "image" || item.kind === "pdf")) {
+            ProjectionService.goLiveWithCrop(item, page, previewCropRect)
+        } else {
+            ProjectionService.goLive(item, page)
+        }
+    }
+
     function pushLibraryLive(item, page) {
         if (!item) return
         // `page` is optional and defaults to 0 for the original "library
@@ -134,7 +156,7 @@ QtObject {
         // Theme is resolved reactively by ProjectionWindow.qml — it reads
         // the item's themeId override and ThemeService.defaultFor(kind),
         // so default changes update the live render without re-Go-Live.
-        ProjectionService.goLive(item, page)
+        _projectItemLive(item, page)
     }
 
     function selectScheduleItem(i) {
@@ -279,7 +301,9 @@ QtObject {
         libraryLiveActive  = false   // schedule is driving live now
 
         // Theme resolution moved into ProjectionWindow — see pushLibraryLive.
-        ProjectionService.goLive(item, previewSubIndex)
+        // Crop-aware: a PDF/image staged with a crop keeps it when the
+        // operator hits the Go Live button rather than Enter.
+        _projectItemLive(item, previewSubIndex)
         if (raise) projectorVisible = true
     }
 
@@ -301,7 +325,11 @@ QtObject {
         if (isClear) {
             const item = ProjectionService.currentItem
             if (item && Object.keys(item).length > 0) {
-                ProjectionService.goLive(item, liveSubIndex)
+                // Re-stage with the LIVE crop intact (ProjectionService
+                // already holds it). The plain goLive() would reset it to
+                // full-frame, so a cropped PDF would "uncrop" on unclear.
+                ProjectionService.goLiveWithCrop(item, liveSubIndex,
+                                                 ProjectionService.cropRect)
             }
             isClear = false
         } else {

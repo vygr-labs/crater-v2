@@ -100,6 +100,20 @@ Item {
         acceptedButtons: Qt.RightButton
         enabled: !root._hidden
         z: 1
+        // Hover tracking for the measurement overlay lives HERE, not on
+        // dragMa: RightClickArea sets hoverEnabled:true and sits above
+        // dragMa (z:1 vs 0), so it is the node's topmost hover-eligible
+        // MouseArea — the only one that actually receives hover events.
+        // onExited guards against clobbering a newer hovered node when
+        // exit/enter of two adjacent nodes interleave.
+        onEntered: workspace.hoveredNodeId = root.nodeId
+        onExited:  if (workspace.hoveredNodeId === root.nodeId)
+                       workspace.hoveredNodeId = ""
+        onPositionChanged: function(mouse) {
+            // Sample Alt from each hover-move so the overlay tracks the
+            // modifier without a separate key handler.
+            workspace.measureAlt = !!(mouse.modifiers & Qt.AltModifier)
+        }
         onRightClicked: workspace.selectedNodeId = root.nodeId
         menuItems: [
             { label: qsTr("Duplicate"), iconName: "copy", kbd: "Ctrl+D",

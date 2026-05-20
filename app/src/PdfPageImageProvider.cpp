@@ -2,6 +2,7 @@
 
 #include "crater/MediaService.h"
 
+#include <QDebug>
 #include <QFutureWatcher>
 #include <QQuickTextureFactory>
 #include <QUrl>
@@ -28,6 +29,9 @@ public:
                     m_image = m_watcher->future().resultCount() > 0
                                   ? m_watcher->result()
                                   : QImage{};
+                    qInfo().noquote()
+                        << "[pdf provider] response finished — image="
+                        << m_image.size() << "null=" << m_image.isNull();
                     emit finished();
                 });
         m_watcher->setFuture(future);
@@ -114,7 +118,17 @@ QQuickImageResponse* PdfPageImageProvider::requestImageResponse(
         target = QSize(1920, 1080);
     }
 
+    qInfo().noquote()
+        << "[pdf provider] request id=\"" << id << "\""
+        << "requestedSize=" << requestedSize << "target=" << target
+        << "| parsed valid=" << req.valid
+        << "mediaId=" << req.mediaId << "page=" << req.page
+        << "crop=" << req.cropRect;
+
     if (!req.valid || !m_mediaService) {
+        qWarning().noquote()
+            << "[pdf provider] returning null image — valid=" << req.valid
+            << "mediaService=" << (m_mediaService != nullptr);
         // Return a response that immediately resolves to a null image so
         // QML's Image cleanly enters the "errored" state rather than
         // hanging on a never-finished watcher. We synthesize via a trivial

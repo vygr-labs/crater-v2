@@ -37,6 +37,13 @@ Rectangle {
     }
     property string themeName: ""
     property string selectedNodeId: ""
+    // Hover + Alt state for the Figma-style measurement overlay. Transient
+    // UI state (like selectedNodeId) — never persisted, never in history.
+    // hoveredNodeId: node currently under the cursor. measureAlt: Alt held,
+    // sampled from hover-move events. The overlay shows only when a node
+    // is selected AND a *different* node is hovered AND Alt is down.
+    property string hoveredNodeId: ""
+    property bool   measureAlt:    false
     property real   zoom: 1.0
     // Gates keyboard shortcuts (Ctrl+Z/Y, Delete, arrow-nudge, …): when a
     // text-editing widget has focus the user is typing, so those keys must
