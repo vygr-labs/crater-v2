@@ -1,0 +1,114 @@
+name: Release (Qt / Windows)
+
+# Trigger paths:
+#   1. Push a tag like `v0.6.0` → builds, packages, and publishes a draft
+#      release with the same name.
+#   2. Manual run via the Actions tab → builds + uploads as workflow
+#      artifacts; only publishes a draft release if `version_tag` is given.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag to draft a release as (e.g. v0.6.0). Leave blank for build-only.'
+        required: false
+        type: string
+
+permissions:
+  contents: write   # required by softprops/action-gh-release to create the draft
+
+jobs:
+  build:
+    name: Build, package, draft release
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version + tag
+        id: meta
+        shell: pwsh
+        run: |
+          $cmake = Get-Content qt/CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(Crater\s+VERSION\s+([\d.]+)') {
+              throw "Could not parse Crater version from qt/CMakeLists.txt"
+          }
+          $cmakeVersion = $Matches[1]
+
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+              $tag = $env:GITHUB_REF_NAME
+          } elseif ('${{ inputs.version_tag }}') {
+              $tag = '${{ inputs.version_tag }}'
+          } else {
+              $tag = ''
+          }
+
+          $version = if ($tag) { $tag.TrimStart('v') } else { $cmakeVersion }
+
+          # If a tag was supplied, require it to match the cmake version.
+          # Forces the dev to bump qt/CMakeLists.txt before tagging — the
+          # binary, ZIP, and installer would otherwise carry mismatched
+          # versions.
+          if ($tag -and ($version -ne $cmakeVersion)) {
+              throw "Tag '$tag' (version '$version') does not match qt/CMakeLists.txt version '$cmakeVersion'. Bump CMakeLists or retag."
+          }
+
+          "tag=$tag"           >> $env:GITHUB_OUTPUT
+          "version=$version"   >> $env:GITHUB_OUTPUT
+          "publish=$([bool]$tag)".ToLower() >> $env:GITHUB_OUTPUT
+          Write-Host "tag=$tag version=$version publish=$([bool]$tag)"
+
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtmultimedia qtwebsockets'
+          cache: true
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Run release script
+        shell: pwsh
+        run: |
+          # install-qt-action exposes the kit root via QT_ROOT_DIR.
+          .\qt\scripts\release.ps1 `
+            -QtDir $env:QT_ROOT_DIR `
+            -VersionOverride '${{ steps.meta.outputs.version }}' `
+            -Clean
+
+      - name: List artifacts
+        shell: pwsh
+        run: Get-ChildItem qt\dist -File | Format-Table Name, @{n='Size (MB)';e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crater-windows-${{ steps.meta.outputs.version }}
+          path: |
+            qt/dist/Crater-*-win64.zip
+            qt/dist/Crater-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish draft GitHub release
+        if: steps.meta.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Crater ${{ steps.meta.outputs.tag }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            qt/dist/Crater-*-win64.zip
+            qt/dist/Crater-Setup-*.exe
