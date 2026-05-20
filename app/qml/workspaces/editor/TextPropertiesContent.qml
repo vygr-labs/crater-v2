@@ -13,6 +13,17 @@ Column {
     function _setStyle(f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v); workspace.saveToHistory() }
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
 
+    // Live / commit pair for continuous inputs (numeric / slider). live
+    // writes the canonical model directly (no history snapshot); commit
+    // snapshots history once. Discrete inputs (SegmentedControl alignment,
+    // checkbox autoResize, Combobox font family, TextEdit custom text)
+    // keep using _setStyle / _setData since they're single-shot committed
+    // actions, not interim — one click = one undo step.
+    function _liveStyle  (f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v) }
+    function _commitStyle(f, v) { workspace.saveToHistory() }
+    function _liveData   (f, v) { workspace.workingTheme.setNodeData (node.id, f, v) }
+    function _commitData (f, v) { workspace.saveToHistory() }
+
     // System font enumeration cached at first construction. Qt.fontFamilies()
     // is ~50 ms on Windows; binding the Combobox to a fresh call on every
     // open would cost the user a noticeable beat. Read once, reuse forever.
@@ -81,7 +92,8 @@ Column {
                     label: qsTr("Size"); suffix: "px"
                     min: 8; max: 400; step: 1
                     value: (node && node.style && node.style.fontPixelSize) || 48
-                    onCommit: function(v) { root._setStyle("fontPixelSize", Math.round(v)) }
+                    onLive:   function(v) { root._liveStyle("fontPixelSize", Math.round(v)) }
+                    onCommit: function(v) { root._commitStyle("fontPixelSize", Math.round(v)) }
                 }
                 NumericInput {
                     width: (parent.width - 6) / 2
@@ -89,7 +101,8 @@ Column {
                     label: qsTr("Weight"); step: 100
                     min: 100; max: 900
                     value: (node && node.style && node.style.fontWeight) || 500
-                    onCommit: function(v) { root._setStyle("fontWeight", Math.round(v / 100) * 100) }
+                    onLive:   function(v) { root._liveStyle("fontWeight", Math.round(v / 100) * 100) }
+                    onCommit: function(v) { root._commitStyle("fontWeight", Math.round(v / 100) * 100) }
                 }
             }
 
@@ -99,7 +112,8 @@ Column {
                 label: qsTr("Line")
                 value: (node && node.style && node.style.lineHeightMultiplier) || 1.25
                 min: 0.5; max: 3.0; step: 0.05
-                onCommit: function(v) { root._setStyle("lineHeightMultiplier", v) }
+                onLive:   function(v) { root._liveStyle("lineHeightMultiplier", v) }
+                onCommit: function(v) { root._commitStyle("lineHeightMultiplier", v) }
             }
             SimpleSlider {
                 anchors.left: parent.left
@@ -107,7 +121,8 @@ Column {
                 label: qsTr("Letter")
                 value: (node && node.style && node.style.letterSpacing) || 0
                 min: -2; max: 10; step: 0.1
-                onCommit: function(v) { root._setStyle("letterSpacing", v) }
+                onLive:   function(v) { root._liveStyle("letterSpacing", v) }
+                onCommit: function(v) { root._commitStyle("letterSpacing", v) }
             }
         }
     }
@@ -279,7 +294,8 @@ Column {
                     opacity: enabled ? 1 : 0.45
                     min: 8; max: 400; step: 1
                     value: (node && node.data && node.data.maxFontSize) || 220
-                    onCommit: function(v) { root._setData("maxFontSize", Math.round(v)) }
+                    onLive:   function(v) { root._liveData("maxFontSize", Math.round(v)) }
+                    onCommit: function(v) { root._commitData("maxFontSize", Math.round(v)) }
                 }
             }
         }

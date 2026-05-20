@@ -531,6 +531,11 @@ Item {
             height: 40
 
             readonly property bool _selected: list.currentIndex === index
+            // True while the library pane owns keyboard focus. When the
+            // operator clicks into Schedule / Preview / Live, this flips
+            // false and the selected-row wash mutes to neutral gray so
+            // the eye knows which pane the arrow keys will move next.
+            readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
 
             // Edge-to-edge background. Selected wash sits at brandSubtle
             // (#0E2528, deep cyan) — the calm cyan-presence tier where
@@ -541,7 +546,9 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: 0
-                color: verseRow._selected ? Theme.color.brandSubtle
+                color: verseRow._selected
+                       ? (verseRow._paneFocused ? Theme.color.brandSubtle
+                                                : Theme.color.selectionUnfocused)
                      : verseMa.containsMouse ? Theme.color.rowHoverBrand
                                              : "transparent"
             }

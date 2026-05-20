@@ -87,6 +87,21 @@ QtObject {
         readonly property color brandPressed:  "#135E64"   // darker on press
         readonly property color brandSubtle:   "#0E2528"   // deep cyan wash — selected-row tint
         readonly property color brandInk:      "#0a1f25"   // dark ink on solid-brand button
+        // Selection wash for a row that's selected in a pane whose pane
+        // doesn't currently own keyboard focus. Pure neutral gray (= `raised`
+        // below) so the eye instantly reads "this row is selected but the
+        // keys aren't pointed here." macOS Finder / Logic / Ableton
+        // convention. Bound at row sites via gating like:
+        //   color: _selected ? (_paneFocused ? brandSubtle : selectionUnfocused) : ...
+        readonly property color selectionUnfocused: "#27272a"   // == raised
+        // Channel-mute tokens — Preview gold and Live red desaturated for
+        // when their panel doesn't currently own focus. Keep a hint of
+        // channel identity (warm-tinted gray vs cool-tinted gray) so the
+        // operator can still tell at a glance which channel a card belongs
+        // to, but drop saturation enough that the brand color isn't
+        // shouting from an unfocused panel.
+        readonly property color previewMuted:  "#5a5345"   // desat warm gold-gray
+        readonly property color liveMuted:     "#5a3a3a"   // desat maroon-gray
         // brand at 18% alpha — the row-hover wash for library lists. RGB
         // updated to match the new deeper center. Alpha unchanged at 18%
         // (down from 30% in the Radix-green era — cyan reads heavier so

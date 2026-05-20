@@ -271,8 +271,16 @@ Rectangle {
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
 
+                // Click DELIBERATELY does NOT call setActiveFocus("schedule").
+                // The operator typically clicks a schedule row to load it into
+                // the Preview pane while their keyboard focus is still in the
+                // Library (arrowing through scripture or songs); claiming focus
+                // on click would steal the arrow keys mid-navigation. The row
+                // still becomes the primary-selected item — it just shows in
+                // the focus-muted gray wash, signalling "selected, but arrows
+                // aren't pointing here." Operators move keyboard focus to
+                // schedule by other means (future: Tab-cycle, explicit hotkey).
                 onClicked: function(button, modifiers) {
-                    AppState.setActiveFocus("schedule")
                     if (modifiers & Qt.ControlModifier) {
                         AppState.toggleScheduleSelection(index)
                     } else if (modifiers & Qt.ShiftModifier) {
@@ -297,10 +305,22 @@ Rectangle {
                         }
                     }
                 }
+                // Double-click also keeps focus where it was. Going live is a
+                // committed projection action — the operator's keyboard
+                // ownership shouldn't be a side effect of it.
+                //
+                // goLive(false) pushes the item to the live channel without
+                // raising the projection window. Raising the audience-facing
+                // window from a schedule double-click was a surprise — the
+                // operator may be staging items during a rehearsal or
+                // between songs, and yanking the projector up mid-stage is
+                // disruptive. The explicit "Go Live" button in the TopBar
+                // is the single committed entry point for raising the
+                // window; schedule double-click is now a "stage to live"
+                // shortcut that respects the current projector visibility.
                 onDoubleClicked: {
-                    AppState.setActiveFocus("schedule")
                     AppState.selectScheduleItem(index)
-                    AppState.goLive()
+                    AppState.goLive(false)
                 }
                 onRightClicked: function(mouseX, mouseY) {
                     // If the right-clicked row isn't part of the current

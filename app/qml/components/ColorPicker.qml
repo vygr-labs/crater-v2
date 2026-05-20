@@ -5,10 +5,18 @@ import Crater
 // Built without QtQuick.Dialogs (project rule). The SV square is painted
 // on a Canvas — repaints only when the hue changes, so dragging the SV
 // pointer is cheap (no canvas redraw, only the marker moves).
+//
+// Layout: tight stack — SV/hue row, alpha row (with checkerboard so the
+// transparent end of the gradient is actually visible), hex row, recent
+// swatches row. Total height is sized to fit content + bottom padding;
+// no dead space below the controls that would let clicks fall through
+// to the popover-backing surface. A root-level absorber MouseArea
+// catches any residual gap presses so nothing leaks through to the
+// theme-editor canvas behind the popover.
 Rectangle {
     id: root
     width: 240
-    height: 320
+    height: column.implicitHeight + Theme.space.md * 2
     // Squared per brand language. Wrapped by ColorPickerPopover's chrome,
     // which carries the shadow + outer border; this inner Rectangle reads
     // as the picker surface itself.
@@ -67,24 +75,48 @@ Rectangle {
     onValueChanged:        if (!_suppressUpdate) _syncFromValue()
     onHueChanged:   svCanvas.requestPaint()
 
-    Column {
+    // ── Click absorber ───────────────────────────────────────────────
+    // Declared FIRST so it sits beneath the interactive controls in
+    // Qt's hit-testing stack — the SV/hue/alpha/hex MouseAreas (declared
+    // later, drawn on top) receive events first; anything that falls
+    // through hits this. Without it, presses in the picker's interior
+    // gaps (between sections, around the recent-swatches row) pass
+    // through the popover to whatever's behind it (typically the theme
+    // editor canvas), where they deselect nodes or start canvas drags.
+    MouseArea {
         anchors.fill: parent
-        anchors.margins: Theme.space.md
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        onPressed: function(m) { m.accepted = true }
+        onWheel:   function(w) { w.accepted = true }
+    }
+
+    Column {
+        id: column
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.leftMargin:  Theme.space.md
+        anchors.rightMargin: Theme.space.md
+        anchors.topMargin:   Theme.space.md
         spacing: Theme.space.sm
 
-        // SV square (200 × 160)
+        // ── SV square + hue strip ────────────────────────────────────
         Item {
             width: parent.width
             height: 140
+
             Canvas {
                 id: svCanvas
-                width: parent.width - 24
-                height: parent.height
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: hueStrip.left
+                anchors.rightMargin: 8
                 renderStrategy: Canvas.Cooperative
                 onPaint: {
                     const ctx = getContext("2d")
-                    // Horizontal: hue at full V/S along x; vertical fades to black.
-                    // Bake into a single fill so we don't pay for two gradients.
+                    // Horizontal: white→hue at full V/S. Vertical: fade to black.
                     const grad = ctx.createLinearGradient(0, 0, width, 0)
                     grad.addColorStop(0, "#ffffff")
                     grad.addColorStop(1, Qt.hsva(root.hue, 1, 1, 1))
@@ -96,13 +128,29 @@ Rectangle {
                     ctx.fillStyle = fade
                     ctx.fillRect(0, 0, width, height)
                 }
-                // Marker
-                Rectangle {
-                    width: 10; height: 10; radius: 5
-                    color: "transparent"
-                    border.color: "#ffffff"; border.width: 2
-                    x: svCanvas.width * root.sat - 5
-                    y: svCanvas.height * (1 - root.val) - 5
+                // Marker — double-ring (black outer + white inner) so it
+                // stays visible on any background, light or dark. Larger
+                // than the old 10px single-ring so it's an obvious
+                // crosshair instead of a faint dot.
+                Item {
+                    width: 14; height: 14
+                    x: svCanvas.width  * root.sat - 7
+                    y: svCanvas.height * (1 - root.val) - 7
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: "transparent"
+                        border.color: "#000000"
+                        border.width: 3
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        radius: width / 2
+                        color: "transparent"
+                        border.color: "#ffffff"
+                        border.width: 2
+                    }
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -115,6 +163,7 @@ Rectangle {
                     }
                 }
             }
+
             // Hue strip
             Rectangle {
                 id: hueStrip
@@ -132,11 +181,16 @@ Rectangle {
                     GradientStop { position: 0.83; color: "#ff00ff" }
                     GradientStop { position: 1.00; color: "#ff0000" }
                 }
-                Rectangle {
+                // Indicator — black bar with white center stripe; wider
+                // than the strip so it reads as a hard marker rather
+                // than a glowing line.
+                Item {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width + 6; height: 3
-                    y: parent.height * root.hue - 1
-                    color: "#ffffff"; radius: 0
+                    width: parent.width + 8
+                    height: 5
+                    y: parent.height * root.hue - 2
+                    Rectangle { anchors.fill: parent; color: "#000000"; radius: 0 }
+                    Rectangle { anchors.fill: parent; anchors.margins: 1; color: "#ffffff"; radius: 0 }
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -149,85 +203,163 @@ Rectangle {
             }
         }
 
-        // Alpha strip + hex input
+        // ── Alpha slider ─────────────────────────────────────────────
+        // Full-width bar with a checkerboard backing so the transparent
+        // end of the gradient is visually obvious as "see-through" — not
+        // mistaken for the picker's own bg color. The checker is painted
+        // on a Canvas as 6px tiles, then the alpha gradient draws on top.
         Item {
+            id: alphaRow
             width: parent.width
-            height: 28
+            height: 20
+
+            Canvas {
+                id: alphaChecker
+                anchors.fill: parent
+                renderStrategy: Canvas.Cooperative
+                onPaint: {
+                    const ctx = getContext("2d")
+                    const tile = 6
+                    const cols = Math.ceil(width / tile)
+                    const rows = Math.ceil(height / tile)
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            ctx.fillStyle = ((r + c) % 2 === 0) ? "#3f3f46" : "#a1a1aa"
+                            ctx.fillRect(c * tile, r * tile, tile, tile)
+                        }
+                    }
+                }
+            }
+            // Color gradient — transparent→opaque current color. Sits on
+            // top of the checker so the low-alpha end reveals it.
             Rectangle {
-                id: alphaStrip
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 110
-                height: 16
-                radius: 0
+                anchors.fill: parent
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: Qt.hsva(root.hue, root.sat, root.val, 0) }
                     GradientStop { position: 1.0; color: Qt.hsva(root.hue, root.sat, root.val, 1) }
                 }
-                Rectangle {
-                    width: 3; height: parent.height + 6
-                    y: -3
-                    x: parent.width * root.alpha - 1
-                    color: "#ffffff"; radius: 0
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    onPressed: _set(mouseX); onPositionChanged: if (pressed) _set(mouseX)
-                    function _set(x) {
-                        root.alpha = Math.max(0, Math.min(1, x / alphaStrip.width))
-                        root._emit()
-                    }
+            }
+            // Indicator — same double-stripe treatment as the hue marker
+            // so the picker's two sliders read as siblings.
+            Item {
+                width: 5
+                height: parent.height + 6
+                y: -3
+                x: parent.width * root.alpha - 2
+                Rectangle { anchors.fill: parent; color: "#000000"; radius: 0 }
+                Rectangle { anchors.fill: parent; anchors.margins: 1; color: "#ffffff"; radius: 0 }
+            }
+            MouseArea {
+                anchors.fill: parent
+                onPressed: _set(mouseX); onPositionChanged: if (pressed) _set(mouseX)
+                function _set(x) {
+                    root.alpha = Math.max(0, Math.min(1, x / alphaRow.width))
+                    root._emit()
                 }
             }
-            Rectangle {
-                anchors.right: parent.right
+        }
+
+        // ── Hex input ────────────────────────────────────────────────
+        // Full-width, properly sized, with a leading "HEX" label inside
+        // the box. Reads as a labeled field instead of an anonymous text
+        // entry sharing a row with a slider.
+        Rectangle {
+            width: parent.width
+            height: 32
+            radius: 0
+            color: Theme.color.canvas
+            border.color: hexInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
+            border.width: 1
+
+            Text {
+                id: hexLabel
+                anchors.left: parent.left
+                anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                width: 100; height: 26
-                radius: 0
-                color: Theme.color.canvas
-                border.color: hexInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
-                border.width: 1
-                TextInput {
-                    id: hexInput
-                    anchors.fill: parent
-                    anchors.leftMargin: 6
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    text: root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
-                    selectByMouse: true
-                    onEditingFinished: {
-                        const c = Qt.color(text)
-                        if (c && c.toString() !== "") {
-                            root.value = text
-                            root._syncFromValue()
-                            root._emit()
-                        }
+                text: qsTr("HEX")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                font.weight: Theme.font.weightSemiBold
+                font.letterSpacing: 1.0
+            }
+            TextInput {
+                id: hexInput
+                anchors.left: hexLabel.right
+                anchors.leftMargin: 8
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                verticalAlignment: TextInput.AlignVCenter
+                color: Theme.color.textPrimary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.bodySize
+                text: root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
+                selectByMouse: true
+                onEditingFinished: {
+                    const c = Qt.color(text)
+                    if (c && c.toString() !== "") {
+                        root.value = text
+                        root._syncFromValue()
+                        root._emit()
                     }
                 }
             }
         }
 
-        // Recent swatches
-        Row {
+        // ── Recent swatches ──────────────────────────────────────────
+        // Always render the label + 8 slots. Empty slots show as faint
+        // outlined squares so the section reads as "this is where recent
+        // colors will land" rather than disappearing when the operator
+        // hasn't picked anything yet. Once they pick a color it lands in
+        // slot 0 (filled), the rest stay outlines until they fill up.
+        Item { width: 1; height: 4 }   // micro-spacer
+
+        Text {
+            text: qsTr("RECENT")
+            color: Theme.color.textTertiary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.microSize
+            font.weight: Theme.font.weightSemiBold
+            font.letterSpacing: 1.2
+        }
+
+        Item {
+            id: swatchRow
             width: parent.width
-            spacing: 4
-            Repeater {
-                model: AppState.recentColors
-                delegate: Rectangle {
-                    width: 22; height: 22; radius: 0
-                    color: modelData
-                    border.color: Theme.color.borderStrong
-                    border.width: 1
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.value = modelData
-                            root._syncFromValue()
-                            root._emit()
+            height: 24
+            // Each cell width = (rowWidth - 7 gaps) / 8. Floor for safety
+            // so the last cell doesn't overflow at sub-pixel widths.
+            readonly property real _cellW: Math.floor((width - 7 * 4) / 8)
+
+            Row {
+                anchors.fill: parent
+                spacing: 4
+                Repeater {
+                    model: 8
+                    delegate: Rectangle {
+                        width: swatchRow._cellW
+                        height: swatchRow.height
+                        radius: 0
+                        readonly property string _color: {
+                            const list = AppState.recentColors || []
+                            return index < list.length ? list[index] : ""
+                        }
+                        color: _color || "transparent"
+                        border.color: _color ? Theme.color.borderStrong
+                                              : Theme.color.borderSubtle
+                        border.width: 1
+
+                        MouseArea {
+                            anchors.fill: parent
+                            visible: parent._color.length > 0
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.value = parent._color
+                                root._syncFromValue()
+                                root._emit()
+                            }
                         }
                     }
                 }

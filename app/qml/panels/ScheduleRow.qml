@@ -36,6 +36,12 @@ Item {
     readonly property color _kindColor: Theme.scheduleColor(kind)
     readonly property string _kindIcon: Theme.scheduleKindIcon(kind)
 
+    // True while the schedule pane owns keyboard focus. When the operator
+    // clicks into Library / Preview / Live, this flips false and the
+    // selected-row wash + 3px left rail mute to neutral so the eye knows
+    // which pane the arrow keys will move next.
+    readonly property bool _paneFocused: AppState.activeFocusPanel === "schedule"
+
     // Clicks pass through modifiers so the host can route Ctrl+/Shift+ to
     // multi-select helpers without each row knowing about the selection model.
     signal clicked(int mouseButton, int keyboardModifiers)
@@ -66,32 +72,43 @@ Item {
         opacity: root.isDragging ? 0.92 : 1.0
         Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
 
-        // Background wash. Three distinct states:
-        //   primary-selected (focused)  → opaque brandSubtle (deep wash)
-        //   selected (non-primary)      → brandSubtle at 0.55 (medium wash)
-        //   hover                       → rowHoverBrand at 0.30 (light wash)
-        //   default                     → transparent
-        // Using shade contrast (subtle vs brand) keeps selected and hover
-        // visually distinct even though both involve brand colors.
+        // Background wash. Four distinct states, modulated by pane focus:
+        //   primary-selected + pane focused    → opaque brandSubtle (deep wash)
+        //   primary-selected + pane unfocused  → selectionUnfocused (neutral gray)
+        //   selected + pane focused (non-primary) → brandSubtle at 0.55 (medium wash)
+        //   selected + pane unfocused           → selectionUnfocused at 0.55
+        //   hover                               → rowHoverBrand
+        //   default                             → transparent
+        // The brandSubtle RGB was updated from the legacy Radix-green values
+        // (#173c13 = rgb 23,60,19) to the new cyan brand (#0E2528 = rgb
+        // 14,37,40) — the prior hardcoded rgba on the medium-wash branch
+        // was a stale-green leak that the brand-block swap missed.
         Rectangle {
             anchors.fill: parent
-            color: root.isPrimarySelected ? Theme.color.brandSubtle
-                 : root.isSelected        ? Qt.rgba(23/255, 60/255, 19/255, 0.55)
+            color: root.isPrimarySelected
+                   ? (root._paneFocused ? Theme.color.brandSubtle
+                                        : Theme.color.selectionUnfocused)
+                 : root.isSelected
+                   ? (root._paneFocused ? Qt.rgba(14/255, 37/255, 40/255, 0.55)
+                                        : Qt.rgba(39/255, 39/255, 42/255, 0.55))
                  : ma.containsMouse       ? Theme.color.rowHoverBrand
                                           : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
         }
 
         // 3px brand-colored left edge for any member of the selection set.
-        // Electron uses defaultPalette.400 (a lighter brand) — Qt.lighter on
-        // the brand gives us the equivalent without adding a new token.
+        // When the schedule pane is unfocused, the rail mutes to a neutral
+        // borderStrong gray — the selection cue still reads (you can see
+        // the rail) but it no longer carries brand presence, matching the
+        // muted bg wash.
         Rectangle {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: 3
             visible: root.isSelected
-            color: Qt.lighter(Theme.color.brand, 1.6)
+            color: root._paneFocused ? Qt.lighter(Theme.color.brand, 1.6)
+                                     : Theme.color.borderStrong
         }
 
         // ── Drag handle column ───────────────────────────────────────────
@@ -158,18 +175,23 @@ Item {
         }
 
         // ── Kind icon ────────────────────────────────────────────────────
-        // Small kind-tinted glyph (music / book / image / video / …). Brighter
-        // when the row is focused/selected so it reads as "active item".
+        // Small kind-tinted glyph (music / book / image / video / …) that
+        // sits at a single muted tone regardless of selection state. The
+        // earlier ladder (lighter when primary-selected, base when in the
+        // multi-select set, darker otherwise) made the icon double as a
+        // selection cue, but the bg wash + left rail + title weight
+        // already carry that signal — the icon brightening on click read
+        // as visual chatter. Keeping it at the darker baseline always
+        // leaves the icon as a pure "kind tag" that doesn't shift under
+        // the operator while they're working.
         AppIcon {
             id: kindIcon
             anchors.left: handle.right
             anchors.verticalCenter: parent.verticalCenter
             name: root._kindIcon
             size: Theme.icon.md
-            color: root.isPrimarySelected ? Qt.lighter(root._kindColor, 1.25)
-                 : root.isSelected        ? root._kindColor
-                                          : Qt.darker(root._kindColor, 1.15)
-            opacity: root.isPrimarySelected || root.isSelected ? 1.0 : 0.85
+            color: Qt.darker(root._kindColor, 1.15)
+            opacity: 0.85
         }
 
         // ── Title ────────────────────────────────────────────────────────

@@ -534,10 +534,12 @@ Item {
             selectByMouse: true
             clip: true
             // Highlight color for the auto-selected stage segment in
-            // controlled mode — brand-tinted so it reads as "active edit
-            // target" instead of standard OS selection blue.
-            selectionColor:     Theme.color.brandSubtle
-            selectedTextColor:  Theme.color.textPrimary
+            // controlled mode — bright brandHover (the mark-color cyan)
+            // so the selection visibly pops against the input. Paired
+            // with brandInk text so the dark-on-cyan contrast lands
+            // comfortably (~9.8:1, AAA).
+            selectionColor:     Theme.color.brandHover
+            selectedTextColor:  Theme.color.brandInk
 
             // Text source depends on input mode:
             //   controlled scripture → derived from _ctrl* state

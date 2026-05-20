@@ -10,10 +10,13 @@ Item {
     implicitHeight: col.implicitHeight + Theme.space.md * 2
     implicitWidth: parent ? parent.width : 320
 
-    function _set(field, value) {
-        workspace.workingTheme.setNodeStyle(node.id, field, value)
-    }
-    function _commit() { workspace.saveToHistory() }
+    // Live: write canonical model directly — no history snapshot. The
+    // model's nodeStyleChanged signal drives the canvas update (same path
+    // existing edits already use). Commit: snapshot history only — live
+    // already wrote the value. Result: per-keystroke canvas updates, one
+    // undo step per editing session.
+    function _liveStyle  (field, v) { workspace.workingTheme.setNodeStyle(node.id, field, v) }
+    function _commitStyle(field, v) { workspace.saveToHistory() }
 
     Column {
         id: col
@@ -34,7 +37,8 @@ Item {
                 label: "X"; suffix: "%"
                 min: 0; max: 100; step: 0.1
                 value: (node && node.style && node.style.x) || 0
-                onCommit: function(v) { root._set("x", v); root._commit() }
+                onLive:   function(v) { root._liveStyle("x", v) }
+                onCommit: function(v) { root._commitStyle("x", v) }
             }
             NumericInput {
                 width: (parent.width - 6) / 2
@@ -42,7 +46,8 @@ Item {
                 label: "Y"; suffix: "%"
                 min: 0; max: 100; step: 0.1
                 value: (node && node.style && node.style.y) || 0
-                onCommit: function(v) { root._set("y", v); root._commit() }
+                onLive:   function(v) { root._liveStyle("y", v) }
+                onCommit: function(v) { root._commitStyle("y", v) }
             }
         }
         Row {
@@ -55,7 +60,8 @@ Item {
                 label: "W"; suffix: "%"
                 min: 1; max: 100; step: 0.1
                 value: (node && node.style && node.style.width) || 0
-                onCommit: function(v) { root._set("width", v); root._commit() }
+                onLive:   function(v) { root._liveStyle("width", v) }
+                onCommit: function(v) { root._commitStyle("width", v) }
             }
             NumericInput {
                 width: (parent.width - 6) / 2
@@ -63,7 +69,8 @@ Item {
                 label: "H"; suffix: "%"
                 min: 1; max: 100; step: 0.1
                 value: (node && node.style && node.style.height) || 0
-                onCommit: function(v) { root._set("height", v); root._commit() }
+                onLive:   function(v) { root._liveStyle("height", v) }
+                onCommit: function(v) { root._commitStyle("height", v) }
             }
         }
         Row {
@@ -75,7 +82,8 @@ Item {
                 workspace: root.workspace
                 label: "Z"; step: 1
                 value: (node && node.style && node.style.z) || 0
-                onCommit: function(v) { root._set("z", Math.round(v)); root._commit() }
+                onLive:   function(v) { root._liveStyle("z", Math.round(v)) }
+                onCommit: function(v) { root._commitStyle("z", Math.round(v)) }
             }
             NumericInput {
                 width: (parent.width - 6) / 2
@@ -83,7 +91,8 @@ Item {
                 label: "Rot"; suffix: "°"
                 min: -360; max: 360; step: 1
                 value: (node && node.style && node.style.rotation) || 0
-                onCommit: function(v) { root._set("rotation", v); root._commit() }
+                onLive:   function(v) { root._liveStyle("rotation", v) }
+                onCommit: function(v) { root._commitStyle("rotation", v) }
             }
         }
         SimpleSlider {
@@ -92,7 +101,8 @@ Item {
             label: qsTr("Opacity")
             value: node && node.style && node.style.opacity !== undefined ? node.style.opacity : 1.0
             min: 0; max: 1; step: 0.01
-            onCommit: function(v) { root._set("opacity", v); root._commit() }
+            onLive:   function(v) { root._liveStyle("opacity", v) }
+            onCommit: function(v) { root._commitStyle("opacity", v) }
         }
     }
 }

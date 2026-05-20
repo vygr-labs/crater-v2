@@ -186,6 +186,15 @@ Rectangle {
 
                 readonly property bool   isActive: AppState.liveSubIndex === index
                 readonly property bool   isHover:  pageMa.containsMouse
+                // True while the Live pane owns keyboard focus. When focus
+                // moves to Schedule / Library / Preview, the crimson chrome
+                // on the active card mutes — bg drops to neutral, border
+                // drops to liveMuted desat-maroon. The channel identity
+                // persists as a faint warm tint without shouting from an
+                // unfocused pane. The "● LIVE" pill in the panel header is
+                // NOT gated by this property — it lives in the header and
+                // continues to read regardless of pane focus.
+                readonly property bool   _paneFocused: AppState.activeFocusPanel === "live"
                 readonly property string headLabel: (modelData && modelData.label && String(modelData.label).length > 0)
                                                     ? String(modelData.label)
                                                     : ""
@@ -203,17 +212,17 @@ Rectangle {
                 width:  pagesList.width
                 height: bodyArea.y + bodyArea.height + 1
 
-                color: isActive ? Theme.color.liveSubtle
-                                : isHover  ? Theme.color.overlay
-                                           : Theme.color.raised
-                border.color: isActive ? Theme.color.live
-                                       : isHover  ? Qt.rgba(177/255, 54/255, 52/255, 0.22)
-                                                  : "transparent"
+                color: isActive && _paneFocused ? Theme.color.liveSubtle
+                                                : isHover  ? Theme.color.overlay
+                                                           : Theme.color.raised
+                border.color: isActive
+                              ? (_paneFocused ? Theme.color.live
+                                              : Theme.color.liveMuted)
+                            : isHover  ? Qt.rgba(177/255, 54/255, 52/255, 0.22)
+                                       : "transparent"
                 border.width: 1
 
-                Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
-                Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
-
+                                
                 // ── Index column (left rail) ────────────────────────────
                 Rectangle {
                     id: indexCol
@@ -225,11 +234,10 @@ Rectangle {
                     anchors.bottomMargin: 1
                     width: 32
 
-                    color: card.isActive ? "#4d1918"
-                                         : card.isHover  ? "#22222a"
-                                                         : "#1c1c20"
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
+                    color: card.isActive && card._paneFocused ? "#4d1918"
+                                                              : card.isHover  ? "#22222a"
+                                                                              : "#1c1c20"
+                    
                     Text {
                         anchors.centerIn: parent
                         text: (index + 1).toString()
@@ -249,8 +257,7 @@ Rectangle {
                         font.family:    Theme.font.monoFamily
                         font.pixelSize: Theme.font.bodySize
                         font.weight:    Theme.font.weightSemiBold
-                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                    }
+                                            }
                 }
 
                 // ── Vertical demarcator ─────────────────────────────────
@@ -265,9 +272,10 @@ Rectangle {
                     anchors.topMargin:    1
                     anchors.bottomMargin: 1
                     width: 1
-                    color: card.isActive ? Qt.rgba(177/255, 54/255, 52/255, 0.30) : Theme.color.borderSubtle
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                }
+                    color: card.isActive && card._paneFocused
+                           ? Qt.rgba(177/255, 54/255, 52/255, 0.30)
+                           : Theme.color.borderSubtle
+                                    }
 
                 // ── Header band ─────────────────────────────────────────
                 // Collapses to zero height when there's no label/translation.
@@ -281,11 +289,10 @@ Rectangle {
                     anchors.rightMargin: 1
                     anchors.topMargin:   1
 
-                    color: card.isActive ? "#4d1918"
-                                         : card.isHover  ? "#22222a"
-                                                         : "#1c1c20"
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-
+                    color: card.isActive && card._paneFocused ? "#4d1918"
+                                                              : card.isHover  ? "#22222a"
+                                                                              : "#1c1c20"
+                    
                     Text {
                         anchors.fill: parent
                         anchors.leftMargin:  Theme.space.sm
@@ -301,8 +308,7 @@ Rectangle {
                         font.weight:    Theme.font.weightSemiBold
                         font.letterSpacing: 1.2
                         elide: Text.ElideRight
-                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                    }
+                                            }
                 }
 
                 // 1px horizontal divider — hides along with the header.
@@ -314,9 +320,10 @@ Rectangle {
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
                     anchors.rightMargin: 1
-                    color: card.isActive ? Qt.rgba(177/255, 54/255, 52/255, 0.30) : Theme.color.borderSubtle
-                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                }
+                    color: card.isActive && card._paneFocused
+                           ? Qt.rgba(177/255, 54/255, 52/255, 0.30)
+                           : Theme.color.borderSubtle
+                                    }
 
                 // ── Body ────────────────────────────────────────────────
                 Item {
@@ -469,7 +476,7 @@ Rectangle {
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.radius.md
+            radius: 0
             color: "#000000"
             border.color: root.isLive ? Theme.color.live : Theme.color.borderStrong
             border.width: 1.5
@@ -480,7 +487,7 @@ Rectangle {
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1.5
-                radius: parent.radius - 1
+                radius: 0
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "#0d0d12" }
                     GradientStop { position: 1.0; color: "#050508" }

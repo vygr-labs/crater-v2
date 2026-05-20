@@ -551,6 +551,10 @@ Item {
             height: 36
 
             readonly property bool _selected: list.currentIndex === index
+            // True while the library pane owns keyboard focus. When focus
+            // moves to Schedule / Preview / Live, the selected row wash
+            // mutes to neutral gray (matches ScriptureTab convention).
+            readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
             // True when *this row's song* is the one currently on the projector.
             // currentItem is a QVariantMap; its songId field is only present
             // when contentKind === "song", so guarding on contentKind keeps the
@@ -562,17 +566,26 @@ Item {
                 && ProjectionService.currentItem
                 && ProjectionService.currentItem.songId === modelData.id
 
-            // Edge-to-edge background — no border, no radius. Mirrors the
-            // electron song row: full-width band, gray.800 selected wash, and
-            // a brand-tinted hover (electron's `bg=${defaultPalette}.900/30`,
-            // i.e. brand.900 at 30% opacity layered over canvas).
+            // Edge-to-edge background — no border, no radius. Selected wash
+            // is brand-tinted (deep cyan) when library focused, neutral gray
+            // when not — matches ScriptureTab convention so all library tabs
+            // share the same focus-mute semantics. Hover wash is the same
+            // brand-rgba regardless of focus (transient state, doesn't need
+            // to mute).
             Rectangle {
                 anchors.fill: parent
                 radius: 0
-                color: songRow._selected ? Theme.color.raised
+                color: songRow._selected
+                       ? (songRow._paneFocused ? Theme.color.brandSubtle
+                                               : Theme.color.selectionUnfocused)
                      : rowMa.containsMouse ? Theme.color.rowHoverBrand
                                            : "transparent"
-                Behavior on color { ColorAnimation { duration: 150 } }
+                // No Behavior on color — same reason ScriptureTab's row
+                // dropped its 150ms ColorAnimation: rapid arrow-key
+                // navigation through dense library lists left a trail of
+                // mid-fade rows in different opacities at the same time,
+                // reading as a smear. Snap-to-color is the cleaner
+                // navigation feel.
             }
 
             AppIcon {

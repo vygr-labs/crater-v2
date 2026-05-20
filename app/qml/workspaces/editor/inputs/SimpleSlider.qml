@@ -4,9 +4,16 @@ import Crater
 // Minimal slider with optional value label on the right.
 //   SimpleSlider {
 //       label: "Opacity"
-//       value: node.style.opacity; min: 0; max: 1; step: 0.05
-//       onCommit: workspace.setNodeStyle(...)
+//       value: node.style.opacity
+//       min: 0; max: 1; step: 0.05
+//       onLive:   workspace.workingTheme.setNodeStyle(node.id, "opacity", v)   // no history
+//       onCommit: workspace.saveToHistory()                                    // history only
 //   }
+//
+// Live vs commit mirrors NumericInput: `live` fires per drag pixel
+// (canonical write, no history snapshot — model's signal drives the
+// canvas update). `commit` fires once on mouse release (history
+// snapshot only). One undo step per drag, not one per pixel.
 Item {
     id: root
     property string label: ""
@@ -15,6 +22,7 @@ Item {
     property real max: 1
     property real step: 0.01
 
+    signal live(real v)
     signal commit(real v)
 
     implicitWidth: parent ? parent.width : 280
@@ -73,13 +81,28 @@ Item {
             anchors.fill: parent
             anchors.margins: -6
             cursorShape: Qt.PointingHandCursor
-            onPressed: _set(mouseX)
+
+            property real _lastLive: 0
+            property bool _hasLive: false
+
+            onPressed: { _lastLive = root.value; _hasLive = false; _set(mouseX) }
             onPositionChanged: if (pressed) _set(mouseX)
+            onReleased: {
+                if (_hasLive) {
+                    root.commit(_lastLive)
+                    _hasLive = false
+                }
+            }
+
             function _set(px) {
                 const frac = Math.max(0, Math.min(1, px / track.width))
                 const raw  = root.min + frac * (root.max - root.min)
                 const snapped = Math.round(raw / root.step) * root.step
-                if (snapped !== root.value) root.commit(snapped)
+                if (snapped !== _lastLive) {
+                    _lastLive = snapped
+                    _hasLive = true
+                    root.live(snapped)
+                }
             }
         }
     }

@@ -621,7 +621,7 @@ QtObject {
     // → "schedule". Future panels (preview, live) will claim it the same way.
     //
     // Analogous to electron's FocusContext.currentPanel().
-    property string activeFocusPanel: "library"   // "library" | "schedule" | future: "preview" | "live"
+    property string activeFocusPanel: "library"   // "library" | "schedule" | "preview" | "live"
 
     function setActiveFocus(panel) {
         if (!panel || panel === activeFocusPanel) return

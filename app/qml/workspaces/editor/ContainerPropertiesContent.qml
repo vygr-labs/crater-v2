@@ -24,6 +24,15 @@ Column {
     function _setStyle(f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v); workspace.saveToHistory() }
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
 
+    // Live / commit pair — see TextPropertiesContent for rationale.
+    // Discrete inputs (ColorSwatchInput Fill, media picker) keep
+    // _setStyle/_setData; only continuous numeric/slider edits go through
+    // the live/commit split.
+    function _liveStyle  (f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v) }
+    function _commitStyle(f, v) { workspace.saveToHistory() }
+    function _liveData   (f, v) { workspace.workingTheme.setNodeData (node.id, f, v) }
+    function _commitData (f, v) { workspace.saveToHistory() }
+
     // Resolve the current media so visibility / preview bindings can read off
     // a single source. `_media` is null when no media is picked OR when the
     // referenced id was removed from the library; both cases collapse the
@@ -162,7 +171,8 @@ Column {
                 value: (node && node.data && node.data.bgOpacity !== undefined)
                     ? node.data.bgOpacity : 1.0
                 min: 0; max: 1; step: 0.05
-                onCommit: function(v) { root._setData("bgOpacity", v) }
+                onLive:   function(v) { root._liveData("bgOpacity", v) }
+                onCommit: function(v) { root._commitData("bgOpacity", v) }
             }
         }
     }
@@ -187,6 +197,10 @@ Column {
                 anchors.right: parent.right
                 workspace: root.workspace
                 label: qsTr("Radius"); suffix: "px"; min: 0; max: 200; step: 1
+                // Average of the four corner fields — handles legacy themes
+                // that stored asymmetric corners by surfacing what
+                // NodeRenderer would actually paint (Qt 6 Rectangle has a
+                // uniform radius).
                 value: {
                     if (!node || !node.style) return 0
                     const s = node.style
@@ -195,18 +209,21 @@ Column {
                           + (s.borderBottomLeftRadius  || 0)
                           + (s.borderBottomRightRadius || 0)) / 4
                 }
-                onCommit: function(v) {
+                // Live writes all four corner fields per keystroke — no
+                // history snapshots; the canvas re-renders via the same
+                // nodeStyleChanged signal every other edit uses. Commit
+                // takes one snapshot at the end of the editing session,
+                // so an undo step rolls back the whole radius change as
+                // a single unit instead of per-corner per-keystroke.
+                onLive: function(v) {
                     const r = Math.round(v)
                     const wt = workspace.workingTheme
-                    // Write all four corner fields so legacy per-corner values
-                    // converge to a clean uniform set, then snapshot once —
-                    // a single radius edit should produce a single undo step,
-                    // not four (one per corner). Each setNodeStyle is a no-op
-                    // when the value didn't change, so this is cheap.
                     wt.setNodeStyle(node.id, "borderTopLeftRadius",     r)
                     wt.setNodeStyle(node.id, "borderTopRightRadius",    r)
                     wt.setNodeStyle(node.id, "borderBottomLeftRadius",  r)
                     wt.setNodeStyle(node.id, "borderBottomRightRadius", r)
+                }
+                onCommit: function(v) {
                     workspace.saveToHistory()
                 }
             }

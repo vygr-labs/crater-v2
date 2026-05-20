@@ -363,7 +363,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: AppState.mediaBatchSelection.length > 1
                 width: 18; height: 18
-                radius: 3
+                radius: 0
                 color: clearBatchMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
@@ -387,7 +387,7 @@ Item {
             anchors.leftMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             width: 36; height: 22
-            radius: 4
+            radius: 0
             color: addMa.containsMouse ? Theme.color.overlay : "transparent"
             border.color: Theme.color.borderStrong
             border.width: 1
@@ -421,7 +421,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: batchDelRow.implicitWidth + Theme.space.sm * 2
                 height: 22
-                radius: 4
+                radius: 0
                 color: batchDelMa.containsMouse ? Theme.color.liveSubtle : "transparent"
 
                 Row {
@@ -461,7 +461,7 @@ Item {
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 22
-                radius: 4
+                radius: 0
                 color: gridViewMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
@@ -480,7 +480,7 @@ Item {
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 22
-                radius: 4
+                radius: 0
                 color: listViewMa.containsMouse ? Theme.color.overlay : "transparent"
                 AppIcon {
                     anchors.centerIn: parent
@@ -509,7 +509,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: colsRow.implicitWidth + Theme.space.sm * 2
                 height: 22
-                radius: 4
+                radius: 0
                 color: colsMa.containsMouse ? Theme.color.overlay : "transparent"
 
                 Row {
@@ -563,7 +563,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: sortRow.implicitWidth + Theme.space.sm * 2
                 height: 22
-                radius: 4
+                radius: 0
                 color: sortMa.containsMouse ? Theme.color.overlay : "transparent"
 
                 Row {
@@ -669,7 +669,7 @@ Item {
             anchors.margins: Theme.space.sm
             visible: dropZone.isOver
             z: 100
-            radius: Theme.radius.lg
+            radius: 0
             color: Qt.rgba(Theme.color.brand.r, Theme.color.brand.g, Theme.color.brand.b, 0.18)
             border.color: Theme.color.brand
             border.width: 2
@@ -754,6 +754,12 @@ Item {
 
                 readonly property bool _selected: grid.currentIndex === index
                 readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
+                // True while the library pane owns keyboard focus. When focus
+                // moves to Schedule / Preview / Live, the selected-tile border
+                // mutes to a neutral borderStrong. The _batch border stays
+                // vivid regardless of focus — multi-select is an explicit
+                // operator commitment that should always read.
+                readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
                 readonly property bool _live:
                     AppState.libraryLiveActive
                     && AppState.libraryPreviewItem
@@ -764,10 +770,19 @@ Item {
                     id: thumb
                     anchors.fill: parent
                     anchors.margins: 3
-                    radius: Theme.radius.sm
+                    radius: 0
                     color: "#0d0d12"
+                    // Border priority: batch (always vivid brand) > selected
+                    // (brand-pressed when pane focused, borderStrong when not)
+                    // > hover > none. The selected border was previously
+                    // `Theme.color.preview` (gold) — a vestige from when media
+                    // selection was visualised in the Preview channel's palette.
+                    // Re-pointed to brand so all library tabs share the same
+                    // selection identity, with focus-gating to match.
                     border.color: cell._batch ? Theme.color.brand
-                                : cell._selected ? Theme.color.preview
+                                : cell._selected
+                                  ? (cell._paneFocused ? Theme.color.brandPressed
+                                                       : Theme.color.borderStrong)
                                 : cellMa.containsMouse ? Theme.color.borderStrong
                                                        : "transparent"
                     border.width: 2
@@ -835,7 +850,7 @@ Item {
                         anchors.right: parent.right
                         anchors.margins: 4
                         width: 18; height: 18
-                        radius: 3
+                        radius: 0
                         color: "#000000bb"
                         AppIcon {
                             anchors.centerIn: parent
@@ -853,7 +868,7 @@ Item {
                         anchors.topMargin: 4
                         anchors.rightMargin: 26
                         width: 18; height: 18
-                        radius: 3
+                        radius: 0
                         color: Theme.color.success
                         AppIcon {
                             anchors.centerIn: parent
@@ -870,7 +885,7 @@ Item {
                         anchors.left: parent.left
                         anchors.margins: 4
                         width: 18; height: 18
-                        radius: 3
+                        radius: 0
                         color: cell._batch ? Theme.color.brand : "#000000bb"
                         border.color: cell._batch ? Theme.color.brand : "#ffffff44"
                         border.width: 1
@@ -895,7 +910,7 @@ Item {
                         anchors.margins: 4
                         width: liveLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
-                        radius: 3
+                        radius: 0
                         color: Theme.color.live
 
                         Text {
@@ -920,7 +935,7 @@ Item {
                         anchors.margins: 4
                         width: durLabel.implicitWidth + 8
                         height: 16
-                        radius: 3
+                        radius: 0
                         color: "#000000b8"
 
                         Text {
@@ -942,7 +957,7 @@ Item {
                         anchors.right: parent.right
                         anchors.margins: 2
                         height: 22
-                        radius: Theme.radius.sm
+                        radius: 0
                         color: "#000000aa"
 
                         Text {
@@ -1019,6 +1034,9 @@ Item {
 
                 readonly property bool _selected: listView.currentIndex === index
                 readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
+                // Same focus-gating as the grid cell — selected row mutes
+                // when library pane loses focus.
+                readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
                 readonly property bool _live:
                     AppState.libraryLiveActive
                     && AppState.libraryPreviewItem
@@ -1029,14 +1047,23 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: Theme.space.sm
                     anchors.rightMargin: Theme.space.sm
-                    radius: Theme.radius.md
+                    radius: 0
+                    // List row coloring: batch (always vivid) > selected (brand
+                    // when focused, neutral when not) > hover > transparent.
+                    // Previously selected used `previewSubtle` + `preview` (gold)
+                    // — re-pointed to brand family so all library tabs share
+                    // the same selection identity.
                     color: listRow._batch    ? Theme.color.brandSubtle
-                         : listRow._selected ? Theme.color.previewSubtle
+                         : listRow._selected
+                           ? (listRow._paneFocused ? Theme.color.brandSubtle
+                                                   : Theme.color.selectionUnfocused)
                          : rowMa.containsMouse ? Theme.color.elevated
                                                : "transparent"
-                    border.color: listRow._selected ? Theme.color.preview
-                                : listRow._batch    ? Theme.color.brand
-                                                    : "transparent"
+                    border.color: listRow._batch ? Theme.color.brand
+                                : listRow._selected
+                                  ? (listRow._paneFocused ? Theme.color.brandPressed
+                                                          : Theme.color.borderStrong)
+                                : "transparent"
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
                 }
@@ -1050,7 +1077,7 @@ Item {
                     anchors.leftMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16; height: 16
-                    radius: 3
+                    radius: 0
                     color: listRow._batch ? Theme.color.brand : "transparent"
                     border.color: listRow._batch ? Theme.color.brand : Theme.color.borderStrong
                     border.width: 1
@@ -1074,7 +1101,7 @@ Item {
                     anchors.leftMargin: rowCheckbox.visible ? Theme.space.sm : Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
                     width: 56; height: 32
-                    radius: Theme.radius.sm
+                    radius: 0
                     color: "#0d0d12"
                     clip: true
 
@@ -1166,7 +1193,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: rowLiveLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
-                        radius: 3
+                        radius: 0
                         color: Theme.color.live
                         Text {
                             id: rowLiveLabel
@@ -1182,7 +1209,7 @@ Item {
                         visible: rowMa.containsMouse && !modelData.isFavorite
                         anchors.verticalCenter: parent.verticalCenter
                         width: 18; height: 18
-                        radius: 3
+                        radius: 0
                         color: favMa.containsMouse ? Theme.color.overlay : "transparent"
                         AppIcon {
                             anchors.centerIn: parent
