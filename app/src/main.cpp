@@ -26,6 +26,7 @@
 
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
+#include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
 #include "crater/LyricsService.h"
 #include "crater/MediaService.h"
@@ -298,6 +299,10 @@ int main(int argc, char* argv[])
     // app target because it depends on QQuickTextDocument (Qt6::Quick),
     // which crater-core can't link per ARCHITECTURE.md §1.
     crater::RichTextHelper    richTextHelper;
+    // EasyWorship song-library importer. A one-shot operation object, not a
+    // service — the Songs tab's import dialog drives it through signals. It
+    // holds no state between runs, so one instance serves every import.
+    crater::EasyWorshipImporter easyWorshipImporter;
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -316,6 +321,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);
 
     // After every successful import, backfill thumbs for the new videos.
     // The ensureForAllVideos() walk is cheap when nothing is missing, so we
@@ -327,6 +333,16 @@ int main(int argc, char* argv[])
                          videoThumbnailer.ensureForAllVideos();
                      });
     videoThumbnailer.ensureForAllVideos();
+
+    // When an EasyWorship import finishes, refresh SongService so the Songs
+    // tab reflects the new songs immediately. The importer wrote songs.sqlite
+    // directly on a worker thread, bypassing SongService's in-memory cache —
+    // reload() drops that cache and emits allSongsChanged().
+    QObject::connect(&easyWorshipImporter, &crater::EasyWorshipImporter::completed,
+                     &songService,
+                     [&songService](int /*imported*/, int /*skipped*/) {
+                         songService.reload();
+                     });
 
     // Warm up pdfium on a worker thread now so the operator's first PDF
     // view doesn't pay its multi-second one-time global init. No-op when

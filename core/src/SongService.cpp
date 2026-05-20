@@ -321,6 +321,14 @@ void SongService::invalidateCache()
     emit allSongsChanged();
 }
 
+void SongService::reload()
+{
+    // The EasyWorship importer writes songs.sqlite on a worker thread,
+    // outside this service. Invalidating the cache here makes the next
+    // allSongs() re-query the DB so the imported rows become visible.
+    invalidateCache();
+}
+
 QList<Song> SongService::allSongs()
 {
     if (!m_impl) return {};

@@ -11,6 +11,11 @@ Rectangle {
     property string iconName: ""
     property string text: ""
 
+    // Opt-in override for the label/icon colour. Defaults to the variant's
+    // ink, so existing call sites are unaffected; consumers that need a
+    // specific contrast (e.g. white on the teal brand fill) can set it.
+    property color inkColor: _ink
+
     // `enabled` is inherited from Item — setting it false on the caller side
     // propagates to the MouseArea (no click) and we use it for visual styling.
 
@@ -60,13 +65,13 @@ Rectangle {
             visible: root.iconName.length > 0
             anchors.verticalCenter: parent.verticalCenter
             name: root.iconName
-            color: root._ink
+            color: root.inkColor
             size: Theme.icon.sm
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.text
-            color: root._ink
+            color: root.inkColor
             font.family: Theme.font.family
             font.pixelSize: Theme.font.bodySize
             font.weight: Theme.font.weightSemiBold

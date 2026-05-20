@@ -35,7 +35,11 @@ import Crater
 //
 // Mouse:
 //   • Drag inside the rectangle  → move it.
-//   • Drag a corner handle       → resize from that corner.
+//   • Drag a corner handle       → resize from that corner (aspect-locked
+//                                  to 16:9 unless Shift is held).
+//   • Drag an edge / edge handle → resize that one side, free-form. A
+//                                  single-axis drag IS the free-form case,
+//                                  so edge resizes ignore the aspect lock.
 //   • Drag on bare page          → draw a fresh rectangle.
 // PDF page navigation is NOT handled here — the host panel owns the page
 // buttons and drives `pageIndex`. This keeps the component page-source
@@ -247,20 +251,58 @@ Item {
         }
     }
 
+    // ── Edge handles ────────────────────────────────────────────────────
+    // 4 top · 5 right · 6 bottom · 7 left. Short bars centered on each
+    // side, kept visually lighter than the square corner grips so the
+    // corners still read as the primary handles. The whole edge is the
+    // hit zone (see _hitTest) — the bar is only an affordance hint.
+    Repeater {
+        model: 4
+        Rectangle {
+            readonly property int  edge: index + 4
+            readonly property bool horizontal: edge === 4 || edge === 6
+            width:  horizontal ? 18 : 6
+            height: horizontal ? 6  : 18
+            x: {
+                if (edge === 5) return root._pxX() + root._pxW() - width / 2
+                if (edge === 7) return root._pxX() - width / 2
+                return root._pxX() + root._pxW() / 2 - width / 2
+            }
+            y: {
+                if (edge === 4) return root._pxY() - height / 2
+                if (edge === 6) return root._pxY() + root._pxH() - height / 2
+                return root._pxY() + root._pxH() / 2 - height / 2
+            }
+            color: Theme.color.brandHover
+            border.color: "#ffffff"; border.width: 1
+        }
+    }
+
     // ── Drag interaction ────────────────────────────────────────────────
     MouseArea {
         id: dragArea
         anchors.fill: parent
         hoverEnabled: true   // so cursorShape tracks the hovered zone pre-click
         cursorShape: {
-            const m = _hitTest(Qt.point(mouseX, mouseY))
-            if (m === "resize") return Qt.SizeFDiagCursor
-            if (m === "move")   return Qt.SizeAllCursor
+            // While a drag is live the handle is fixed — reflect `mode`
+            // directly and skip re-hit-testing. Otherwise the pointer
+            // drifting off the grip mid-drag would reclassify activeHandle.
+            const m = (mode === "idle") ? _hitTest(Qt.point(mouseX, mouseY))
+                                        : mode
+            if (m === "resize") {
+                // 0/2 are the ╲ corners, 1/3 the ╱ corners, 4/6 the
+                // horizontal edges, 5/7 the vertical edges.
+                if (activeHandle === 0 || activeHandle === 2) return Qt.SizeFDiagCursor
+                if (activeHandle === 1 || activeHandle === 3) return Qt.SizeBDiagCursor
+                if (activeHandle === 4 || activeHandle === 6) return Qt.SizeVerCursor
+                return Qt.SizeHorCursor
+            }
+            if (m === "move") return Qt.SizeAllCursor
             return Qt.CrossCursor
         }
 
         property string mode: "idle"          // idle | draw | move | resize
-        property int    activeCorner: -1
+        property int    activeHandle: -1       // 0-3 corners TL/TR/BR/BL · 4-7 edges T/R/B/L
         property real   startMouseX: 0
         property real   startMouseY: 0
         property real   startNx: 0
@@ -269,20 +311,35 @@ Item {
         property real   startNh: 0
         property bool   shiftHeld: false
 
+        // Hit zones in priority order: 4 corners, then 4 edges, then the
+        // interior (move), then bare page (draw). Corners are tested first
+        // so the shared tolerance box at each vertex resolves to a corner
+        // resize rather than an edge one. Edges are grabbable along their
+        // entire span — not just at the midpoint bar — so framing a crop
+        // never turns into hunting for a 6px grip.
         function _hitTest(pt) {
             const x = root._pxX(), y = root._pxY()
             const w = root._pxW(), h = root._pxH()
+            const tol = 8
             const corners = [
                 Qt.point(x, y), Qt.point(x + w, y),
                 Qt.point(x + w, y + h), Qt.point(x, y + h)
             ]
             for (let i = 0; i < 4; ++i) {
-                if (Math.abs(pt.x - corners[i].x) <= 8
-                 && Math.abs(pt.y - corners[i].y) <= 8) {
-                    activeCorner = i
+                if (Math.abs(pt.x - corners[i].x) <= tol
+                 && Math.abs(pt.y - corners[i].y) <= tol) {
+                    activeHandle = i
                     return "resize"
                 }
             }
+            // Edges: 4 top · 5 right · 6 bottom · 7 left. The onSpan checks
+            // keep the hit within the edge's run (with tol slack each end).
+            const onSpanX = pt.x >= x - tol && pt.x <= x + w + tol
+            const onSpanY = pt.y >= y - tol && pt.y <= y + h + tol
+            if (onSpanX && Math.abs(pt.y - y)       <= tol) { activeHandle = 4; return "resize" }
+            if (onSpanY && Math.abs(pt.x - (x + w)) <= tol) { activeHandle = 5; return "resize" }
+            if (onSpanX && Math.abs(pt.y - (y + h)) <= tol) { activeHandle = 6; return "resize" }
+            if (onSpanY && Math.abs(pt.x - x)       <= tol) { activeHandle = 7; return "resize" }
             if (pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h) {
                 return "move"
             }
@@ -328,18 +385,27 @@ Item {
                 let ny = startNy * cr.height
                 let nw = startNw * cr.width
                 let nh = startNh * cr.height
-                if (activeCorner === 0)      { nx += dx; ny += dy; nw -= dx; nh -= dy }
-                else if (activeCorner === 1) {           ny += dy; nw += dx; nh -= dy }
-                else if (activeCorner === 2) {                     nw += dx; nh += dy }
-                else if (activeCorner === 3) { nx += dx;           nw -= dx; nh += dy }
-                if (!shiftHeld) {
+                // Corners (0-3) drive two sides at once; edges (4-7) drive
+                // exactly one, leaving the other three pinned.
+                if (activeHandle === 0)      { nx += dx; ny += dy; nw -= dx; nh -= dy }
+                else if (activeHandle === 1) {           ny += dy; nw += dx; nh -= dy }
+                else if (activeHandle === 2) {                     nw += dx; nh += dy }
+                else if (activeHandle === 3) { nx += dx;           nw -= dx; nh += dy }
+                else if (activeHandle === 4) {           ny += dy;           nh -= dy }
+                else if (activeHandle === 5) {                     nw += dx           }
+                else if (activeHandle === 6) {                               nh += dy }
+                else if (activeHandle === 7) { nx += dx;           nw -= dx           }
+                // Aspect lock is a CORNER-only behavior. An edge drag is
+                // single-axis by nature — that IS the free-form case the
+                // operator wants — so edges never snap, lock on or off.
+                if (!shiftHeld && activeHandle <= 3) {
                     const s = root._applyAspect(nw, nh)
-                    if (activeCorner === 0) {
+                    if (activeHandle === 0) {
                         nx = (startNx * cr.width)  + (startNw * cr.width)  - s.width
                         ny = (startNy * cr.height) + (startNh * cr.height) - s.height
-                    } else if (activeCorner === 1) {
+                    } else if (activeHandle === 1) {
                         ny = (startNy * cr.height) + (startNh * cr.height) - s.height
-                    } else if (activeCorner === 3) {
+                    } else if (activeHandle === 3) {
                         nx = (startNx * cr.width)  + (startNw * cr.width)  - s.width
                     }
                     nw = s.width; nh = s.height
@@ -349,7 +415,7 @@ Item {
             }
         }
 
-        onReleased: { mode = "idle"; activeCorner = -1 }
+        onReleased: { mode = "idle"; activeHandle = -1 }
     }
 
     // ── First-render loading indicator ──────────────────────────────────

@@ -132,7 +132,7 @@ Rectangle {
 
         PrimaryButton {
             anchors.verticalCenter: parent.verticalCenter
-            variant: "live"
+            variant: "brand"
             iconName: "play"
             text: qsTr("Go Live")
             // Enabled when something is queued in Preview — either a schedule

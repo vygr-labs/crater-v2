@@ -20,6 +20,10 @@ add_library(crater-core STATIC
     src/import/CanonicalBibleBooks.cpp
     src/import/ElectronDataImporter.cpp
 
+    # EasyWorship song-library import — RTF lyric extraction + the importer.
+    src/import/Rtf.cpp
+    src/import/EasyWorshipImporter.cpp
+
     # Public bootstrap entry point — runs migrations on all DBs.
     src/Bootstrap.cpp
 
@@ -49,6 +53,7 @@ add_library(crater-core STATIC
     include/crater/ProjectionService.h
     include/crater/SettingsService.h
     include/crater/ElectronDataImporter.h
+    include/crater/EasyWorshipImporter.h
     include/crater/WorkingTheme.h
     include/crater/value/Translation.h
     include/crater/value/Book.h

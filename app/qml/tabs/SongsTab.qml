@@ -260,6 +260,31 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
+            // Import from EasyWorship — opens the import dialog.
+            Rectangle {
+                id: importBtn
+                width: 28; height: 22
+                radius: 0
+                color: importMa.containsMouse ? Theme.color.raised : "transparent"
+                Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: "download"
+                    color: importMa.containsMouse ? Theme.color.textPrimary : Theme.color.textSecondary
+                    size: Theme.icon.sm
+                    Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+                }
+
+                MouseArea {
+                    id: importMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: AppState.openModal("import", {})
+                }
+            }
+
             // + (new song)
             Rectangle {
                 id: addBtn

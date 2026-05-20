@@ -73,7 +73,9 @@ Rectangle {
             AppIcon {
                 anchors.verticalCenter: parent.verticalCenter
                 name: "eye"
-                color: Theme.color.preview
+                // Neutral — the champagne channel tint stays on the page
+                // cards below, not the panel header icon.
+                color: Theme.color.textSecondary
                 size: Theme.icon.md
             }
             Text {

@@ -74,6 +74,11 @@ public:
     // Drops and rebuilds songs_fts from songs + song_sections.
     Q_INVOKABLE QFuture<void> rebuildFtsIndex();
 
+    // Re-reads the library after an external writer (e.g. the EasyWorship
+    // importer) has modified songs.sqlite directly. Drops the cached
+    // allSongs() result and emits allSongsChanged() so QML bindings refresh.
+    Q_INVOKABLE void reload();
+
 signals:
     void allSongsChanged();
 
