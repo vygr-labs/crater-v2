@@ -25,7 +25,7 @@ ModalShell {
             anchors.left: parent.left
             anchors.right: parent.right
             height: 40
-            radius: Theme.radius.md
+            radius: 0
             color: Theme.color.canvas
             border.color: input.activeFocus ? Theme.color.brand : Theme.color.borderStrong
             border.width: 1

@@ -83,6 +83,30 @@ ApplicationWindow {
         BrowserCastService.setSourceItem(projectionWindow.renderItem)
     }
 
+    // ── Shutdown ────────────────────────────────────────────────────────
+    // Closing the operator console quits Crater — there is no headless
+    // mode, the console IS the app. But the projection window is a second
+    // OS-level QQuickWindow, and Qt's quitOnLastWindowClosed only fires
+    // when the last *visible* window closes. If projection is live on the
+    // audience screen (or parked offscreen for an NDI broadcast — see
+    // ProjectionWindow.qml's keepRendering state) when the console closes,
+    // that window stays visible, the process keeps running, and the
+    // operator is left with a projection no console can drive.
+    //
+    // endLive() lowers the projector the clean way — it flips
+    // AppState.projectorVisible, which drives ProjectionWindow to
+    // Window.Hidden and fires OutputService.notifyProjectionClosed().
+    // Qt.quit() then tears down every remaining window unconditionally;
+    // this is what covers the keepRendering case, where endLive() alone
+    // would leave the projection window alive offscreen (visibility
+    // Window.Windowed) and still blocking the quit. Qt.quit() bypasses
+    // ProjectionWindow's own onClosing close-rejection because it destroys
+    // windows directly rather than routing an OS close event through them.
+    onClosing: function() {
+        AppState.endLive()
+        Qt.quit()
+    }
+
     // ── NDI source plumbing ────────────────────────────────────────────
     // Selects which window+item pair NDI grabs frames from based on the
     // current output mode:

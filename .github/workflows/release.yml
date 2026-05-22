@@ -77,6 +77,11 @@ jobs:
           # qtbase + qtdeclarative essentials install-qt-action installs by default.
           modules: 'qtmultimedia qtpdf qtwebsockets'
           cache: true
+          # Pin aqtinstall to the official Qt server. Community mirrors lag
+          # behind for the first few weeks after a point release, and aqt
+          # otherwise picks one at random — a stale mirror 404s on the
+          # Updates.xml metadata and the install fails before it ever builds.
+          extra: '--base https://download.qt.io/'
 
       - name: Install Inno Setup
         shell: pwsh

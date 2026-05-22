@@ -109,7 +109,7 @@ Rectangle {
             Rectangle {
                 width: 280
                 height: 30
-                radius: Theme.radius.md
+                radius: 0
                 color: Theme.color.canvas
                 border.color: nameInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 1

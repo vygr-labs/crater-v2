@@ -1,6 +1,6 @@
 import QtQuick
 
-// Top chrome — left cluster (Schedule dropdown, settings gear, Import)
+// Top chrome — left cluster (Schedule dropdown, settings gear)
 // and right cluster (Logo, Clear, Go Live). Each button calls into
 // AppState; the heavy modal/popover rendering happens in ModalLayer.
 Rectangle {
@@ -70,15 +70,6 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: AppState.openModal("settings", {})
             }
-        }
-
-        Item { width: Theme.space.md; height: 1 }
-
-        PillButton {
-            anchors.verticalCenter: parent.verticalCenter
-            iconName: "arrow-up-right"
-            text: qsTr("Import")
-            onClicked: AppState.openModal("import", {})
         }
     }
 
