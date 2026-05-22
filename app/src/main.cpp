@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 
 #include <cstdio>
@@ -16,8 +17,19 @@
 #include <QTextStream>
 #include <QtQml>
 
+#ifdef Q_OS_WIN
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 #include "BrowserCastService.h"  // BrowserCast (removable feature)
 #include "FileDialogService.h"
+#include "LogReportService.h"
 #include "MediaPlaybackService.h"
 #include "NdiRenderer.h"
 #include "NdiService.h"
@@ -117,6 +129,33 @@ QString initLogging()
     return path;
 }
 
+// Milliseconds the process spent in the OS loader BEFORE main() ran —
+// mapping crater.exe and every linked DLL (Qt Quick, Multimedia, Network,
+// the FFmpeg set, the NDI runtime…), running C++ static initializers, and
+// any antivirus on-access scan. On a cold disk cache — or when the working
+// directory sits inside a OneDrive-synced folder — this phase routinely
+// dwarfs every in-process startup cost, yet no other log line can see it.
+// Computed from the Win32 process creation time; returns -1 off Windows.
+qint64 loaderMsBeforeMain()
+{
+#ifdef Q_OS_WIN
+    FILETIME created {}, exited {}, kernelT {}, userT {};
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernelT, &userT)) {
+        ULARGE_INTEGER c {};
+        c.LowPart  = created.dwLowDateTime;
+        c.HighPart = created.dwHighDateTime;
+        FILETIME nowFt {};
+        GetSystemTimeAsFileTime(&nowFt);
+        ULARGE_INTEGER n {};
+        n.LowPart  = nowFt.dwLowDateTime;
+        n.HighPart = nowFt.dwHighDateTime;
+        // FILETIME ticks are 100 ns; /10000 converts to milliseconds.
+        return static_cast<qint64>((n.QuadPart - c.QuadPart) / 10000);
+    }
+#endif
+    return -1;
+}
+
 // Establish the application-wide default font with a real fallback chain.
 // QML's `font` value type only exposes `family` (not `families`), so we
 // install fallbacks here at the QFont level. Anything that doesn't override
@@ -175,6 +214,12 @@ void registerBodyFont()
 
 int main(int argc, char* argv[])
 {
+    // Wall clock from the first instruction of main(). Every "[startup]"
+    // marker below logs elapsed() against this, so a single launch's log
+    // reads top-to-bottom as a cost breakdown of the startup pipeline.
+    QElapsedTimer startupClock;
+    startupClock.start();
+
     // Early bootstrap trace — writes to a fixed file beside the exe BEFORE
     // any Qt code runs. If the main log is empty but this file exists, the
     // exe loaded fine and the crash is inside Qt initialization. If even
@@ -222,6 +267,20 @@ int main(int argc, char* argv[])
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";
     qInfo().noquote() << "Log file:" << logPath;
 
+    // ─── Startup cost breakdown ─────────────────────────────────────────
+    // The pre-main() figure is the OS loader cost — see loaderMsBeforeMain().
+    // It is invisible to every other measurement we have, and on a cold
+    // launch it is typically the largest single slice of perceived startup.
+    {
+        const qint64 preMain = loaderMsBeforeMain();
+        if (preMain >= 0) {
+            qInfo().noquote() << "[startup] OS loader + static init before main():"
+                              << preMain << "ms";
+        }
+    }
+    qInfo().noquote() << "[startup] Qt init + logging ready: +"
+                      << startupClock.elapsed() << "ms";
+
     // Order: register the font face on QFontDatabase first so the default
     // QFont we build next can pick it up immediately.
     registerBodyFont();
@@ -238,6 +297,8 @@ int main(int argc, char* argv[])
         qCritical().noquote() << "Migration failed:" << e.what();
         return -1;
     }
+    qInfo().noquote() << "[startup] schema migrations done: +"
+                      << startupClock.elapsed() << "ms";
 
     // ─── Stage 2: one-time data import ──────────────────────────────────
     // First launch: copy bible verses from electron's bundled DB into our
@@ -281,6 +342,10 @@ int main(int argc, char* argv[])
     // that. Source window is wired from Main.qml's Component.onCompleted.
     crater::NdiService        ndiService;
     crater::FileDialogService fileDialogService;
+    // LogReportService uploads crater.log to voyagerlabs.tech on an explicit
+    // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §10. It
+    // takes the path main.cpp logs to so it reports the exact file in use.
+    crater::LogReportService  logReportService(logPath);
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
     // the on-disk layout. Must come after mediaService is constructed.
@@ -308,6 +373,8 @@ int main(int argc, char* argv[])
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
     crater::BrowserCastService browserCastService(&projectionService);
+    qInfo().noquote() << "[startup] crater-core services constructed: +"
+                      << startupClock.elapsed() << "ms";
 
     // ─── Stage 4: register as QML singletons ────────────────────────────
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
@@ -322,6 +389,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
@@ -355,7 +423,17 @@ int main(int argc, char* argv[])
     // Warm up pdfium on a worker thread now so the operator's first PDF
     // view doesn't pay its multi-second one-time global init. No-op when
     // the library has no PDF — see MediaService::prewarmPdf.
+    //
+    // The before/after elapsed bracket measures only what prewarmPdf()
+    // costs the MAIN thread (queuing a QtConcurrent::run task). pdfium's
+    // actual cold init runs on the worker and is deliberately NOT counted
+    // here — if this delta isn't tiny, the warm-up isn't as off-thread as
+    // the design assumes, and that's the bug to chase.
+    const qint64 beforePrewarm = startupClock.elapsed();
     mediaService.prewarmPdf();
+    qInfo().noquote() << "[startup] pdfium prewarm dispatched (main-thread cost"
+                      << (startupClock.elapsed() - beforePrewarm) << "ms): +"
+                      << startupClock.elapsed() << "ms";
 
     // WorkingTheme is per-instance (one per open editor), not a singleton —
     // each invocation of the theme editor creates a fresh one in QML.
@@ -390,6 +468,8 @@ int main(int argc, char* argv[])
 
     qInfo() << "Loading QML from module Crater / Main";
     engine.loadFromModule("Crater", "Main");
+    qInfo().noquote() << "[startup] QML loaded, main window realized: +"
+                      << startupClock.elapsed() << "ms";
 
     // ─── Stage 6: wire the headless NDI renderer ────────────────────────
     // Must come AFTER loadFromModule — the renderer shares the engine to
@@ -403,6 +483,8 @@ int main(int argc, char* argv[])
     // gated by NdiService.
     crater::NdiRenderer ndiRenderer(&engine);
     ndiService.setRenderer(&ndiRenderer);
+    qInfo().noquote() << "[startup] NDI renderer ready, entering event loop: +"
+                      << startupClock.elapsed() << "ms";
 
     return app.exec();
 }

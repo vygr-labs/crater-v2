@@ -16,7 +16,8 @@ ModalShell {
         { id: "scripture",     label: qsTr("Scripture"),      iconName: "book-open" },
         { id: "song",          label: qsTr("Song"),           iconName: "music" },
         { id: "remoteControl", label: qsTr("Remote Control"), iconName: "tv" },
-        { id: "ndi",           label: qsTr("NDI"),            iconName: "radio" }
+        { id: "ndi",           label: qsTr("NDI"),            iconName: "radio" },
+        { id: "diagnostics",   label: qsTr("Diagnostics"),    iconName: "info" }
     ]
 
     Item {
@@ -87,6 +88,7 @@ ModalShell {
                         case "song":          return songComp
                         case "remoteControl": return remoteComp
                         case "ndi":           return ndiComp
+                        case "diagnostics":   return diagnosticsComp
                     }
                     return appearanceComp
                 }
@@ -135,4 +137,5 @@ ModalShell {
     Component { id: songComp;       SongSection          { } }
     Component { id: remoteComp;     RemoteControlSection { } }
     Component { id: ndiComp;        NdiSection           { } }
+    Component { id: diagnosticsComp; DiagnosticsSection   { } }
 }

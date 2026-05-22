@@ -58,12 +58,13 @@ Rectangle {
                 ]
             }
             case "scripture": {
-                // One sidebar row per installed translation. Code is uppercased
-                // ("KJV"), id is lowercased to match AppState.activeLibraryGroup convention.
-                //
-                // Rows render as plain text labels (no icon, no count) so the
-                // sidebar reads as a flat translation index, matching the
-                // electron experience ("AMPC", "ASV", "CEV"…).
+                // One entry per installed translation, each rendered as a
+                // VersionCard in the scripture tab's version grid (see the
+                // ScrollView body below). Code is uppercased ("KJV") for
+                // display; id is lowercased to match the
+                // AppState.activeLibraryGroup convention. iconName/count stay
+                // at no-op values — the card reads only id + label, but
+                // keeping the shape uniform lets every tab share `groups`.
                 let r = []
                 const tl = BibleService.translations()
                 for (let i = 0; i < tl.length; i++) {
@@ -126,11 +127,13 @@ Rectangle {
         anchors.rightMargin: Theme.space.lg
     }
 
-    // Scroll container for the group rows. With ~14 Bible translations the
-    // list overflows the sidebar height on any reasonable window size, so the
-    // rows must scroll. Songs/Themes are short today but the same container
-    // future-proofs them at zero cost. The ScrollBar is interactive so a
-    // trackpad gesture works too.
+    // Scroll container for the sidebar group list. Scripture renders its
+    // versions as a compact card grid (versionGrid); every other tab keeps
+    // the 1-per-row accordion. The grid usually fits ~14 translations
+    // without scrolling, but the container stays so a short window — or a
+    // larger installed-translation set — still scrolls. Songs/Themes are
+    // short today and ride the same container at zero cost. The ScrollBar
+    // is interactive so a trackpad gesture works too.
     ScrollView {
         id: groupScroll
         anchors.top: searchBar.bottom
@@ -145,69 +148,126 @@ Rectangle {
         ScrollBar.vertical.policy: ScrollBar.AsNeeded
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-        ColumnLayout {
+        // One content child so ScrollView has a single, unambiguous item to
+        // size its scroll extent to. It hosts both layouts; only the one for
+        // the current tab is populated (the other's Repeater model is left
+        // empty) and implicitHeight tracks whichever is live.
+        Item {
+            id: groupContent
             width: groupScroll.availableWidth
-            spacing: Theme.space.xs
 
-            Repeater {
-                model: root.groups
-                delegate: ColumnLayout {
-                    // Parent row + optional indented sub-rows. Today subgroups
-                    // are always [] in production data (CollectionService is
-                    // deferred), so this collapses visually to a plain row —
-                    // the accordion structure ships ready for collections.
-                    id: groupBlock
-                    Layout.fillWidth: true
-                    spacing: 0
+            readonly property bool isScripture: root.currentTabKey === "scripture"
 
-                    // Coerce to strict bool — `modelData.subgroups && …` returns
-                    // `undefined` when subgroups is missing (instead of false),
-                    // which QML's `bool` property type rejects with thousands
-                    // of "Unable to assign [undefined] to bool" warnings.
-                    readonly property bool hasSubs: !!(modelData.subgroups && modelData.subgroups.length > 0)
-                    readonly property bool isExpanded: !!root.expandedGroups[modelData.id]
+            implicitHeight: isScripture
+                          ? versionGrid.implicitHeight + Theme.space.sm
+                          : accordion.implicitHeight
 
-                    LibraryRow {
-                        Layout.fillWidth: true
-                        iconName: modelData.iconName
-                        label:    modelData.label
-                        count:    modelData.count
-                        active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
-                        bgRadius: 0
-                        onClicked: {
-                            // Parents with subgroups also toggle their expansion
-                            // on click so the operator can drill into collections
-                            // without a separate chevron target.
-                            if (groupBlock.hasSubs) root.toggleExpanded(modelData.id)
-                            if (root.currentTabKey === "media") {
-                                AppState.setMediaGroup(modelData.id)
-                            } else {
-                                AppState.setLibraryGroup(root.currentTabKey, modelData.id)
-                            }
-                        }
+            // ── Scripture: Bible-version card grid ──────────────────────
+            // Codes are short ("KJV", "NASB2020"), so a compact 4-column
+            // card grid shows several versions per row where the old
+            // full-width rows showed one. Selecting routes through
+            // AppState.setLibraryGroup and double-click fires
+            // requestPushLiveInTranslation — the exact wiring the rows had.
+            Grid {
+                id: versionGrid
+                visible: groupContent.isScripture
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Theme.space.sm
+                anchors.rightMargin: Theme.space.sm
+                columnSpacing: Theme.space.xs
+                rowSpacing: Theme.space.xs
+
+                // Fixed 4-up grid. The sidebar is a constant fraction of
+                // the window width, so 4 columns stay proportional as the
+                // window resizes; cellWidth below distributes the row.
+                columns: 4
+                readonly property real cellWidth:
+                    Math.max(0, Math.floor((width - columnSpacing * (columns - 1)) / columns))
+
+                Repeater {
+                    // Emptied for non-scripture tabs so no cards are built
+                    // while the accordion is the visible layout.
+                    model: groupContent.isScripture ? root.groups : []
+                    delegate: VersionCard {
+                        width: versionGrid.cellWidth
+                        height: 36
+                        label: modelData.label
+                        active: AppState.activeLibraryGroup["scripture"] === modelData.id
+                        onClicked: AppState.setLibraryGroup("scripture", modelData.id)
                         onDoubleClicked: {
-                            if (root.currentTabKey === "scripture") {
-                                AppState.setLibraryGroup("scripture", modelData.id)
-                                AppState.requestPushLiveInTranslation(modelData.label)
-                            }
+                            // Switch translation, then ask ScriptureTab to
+                            // push the focused verse Live in it — only that
+                            // tab knows which verse the operator has focused.
+                            AppState.setLibraryGroup("scripture", modelData.id)
+                            AppState.requestPushLiveInTranslation(modelData.label)
                         }
                     }
+                }
+            }
 
-                    // Indented sub-rows for collections (when present + parent
-                    // expanded). Each sub-row is a child LibraryRow with indent.
-                    Repeater {
-                        model: groupBlock.hasSubs && groupBlock.isExpanded
-                             ? modelData.subgroups : []
-                        delegate: LibraryRow {
+            // ── Songs / Strong's / Media / Themes: 1-per-row accordion ──
+            ColumnLayout {
+                id: accordion
+                visible: !groupContent.isScripture
+                width: groupScroll.availableWidth
+                spacing: Theme.space.xs
+
+                Repeater {
+                    model: groupContent.isScripture ? [] : root.groups
+                    delegate: ColumnLayout {
+                        // Parent row + optional indented sub-rows. Today subgroups
+                        // are always [] in production data (CollectionService is
+                        // deferred), so this collapses visually to a plain row —
+                        // the accordion structure ships ready for collections.
+                        id: groupBlock
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        // Coerce to strict bool — `modelData.subgroups && …` returns
+                        // `undefined` when subgroups is missing (instead of false),
+                        // which QML's `bool` property type rejects with thousands
+                        // of "Unable to assign [undefined] to bool" warnings.
+                        readonly property bool hasSubs: !!(modelData.subgroups && modelData.subgroups.length > 0)
+                        readonly property bool isExpanded: !!root.expandedGroups[modelData.id]
+
+                        LibraryRow {
                             Layout.fillWidth: true
-                            indent: Theme.space.md
-                            iconName: modelData.iconName || ""
-                            label:    modelData.label || ""
-                            count:    modelData.count || 0
-                            // Sub-row "active" key follows the modelData.id —
-                            // CollectionService will provide unique ids.
+                            iconName: modelData.iconName
+                            label:    modelData.label
+                            count:    modelData.count
                             active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
-                            onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                            bgRadius: 0
+                            onClicked: {
+                                // Parents with subgroups also toggle their expansion
+                                // on click so the operator can drill into collections
+                                // without a separate chevron target.
+                                if (groupBlock.hasSubs) root.toggleExpanded(modelData.id)
+                                if (root.currentTabKey === "media") {
+                                    AppState.setMediaGroup(modelData.id)
+                                } else {
+                                    AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                                }
+                            }
+                        }
+
+                        // Indented sub-rows for collections (when present + parent
+                        // expanded). Each sub-row is a child LibraryRow with indent.
+                        Repeater {
+                            model: groupBlock.hasSubs && groupBlock.isExpanded
+                                 ? modelData.subgroups : []
+                            delegate: LibraryRow {
+                                Layout.fillWidth: true
+                                indent: Theme.space.md
+                                iconName: modelData.iconName || ""
+                                label:    modelData.label || ""
+                                count:    modelData.count || 0
+                                // Sub-row "active" key follows the modelData.id —
+                                // CollectionService will provide unique ids.
+                                active:   AppState.activeLibraryGroup[root.currentTabKey] === modelData.id
+                                onClicked: AppState.setLibraryGroup(root.currentTabKey, modelData.id)
+                            }
                         }
                     }
                 }

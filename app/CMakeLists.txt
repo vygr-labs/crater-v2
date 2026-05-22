@@ -6,6 +6,8 @@ qt_add_executable(crater
     src/main.cpp
     src/FileDialogService.cpp
     src/FileDialogService.h
+    src/LogReportService.cpp
+    src/LogReportService.h
     src/VideoThumbnailer.cpp
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp
@@ -136,6 +138,7 @@ qt_add_qml_module(crater
         qml/panels/LibrarySidebar.qml
         qml/panels/LibraryContent.qml
         qml/panels/LibraryRow.qml
+        qml/panels/VersionCard.qml
         qml/panels/ScheduleRow.qml
 
         # ── Library tab content (lazy-loaded) ─────────────────────────
@@ -162,6 +165,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/SongSection.qml
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
+        qml/dialogs/settings/DiagnosticsSection.qml
 )
 
 # Bundle the Lucide icon font and Funnel Sans body font as Qt resources

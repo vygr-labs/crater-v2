@@ -82,6 +82,19 @@ jobs:
           # otherwise picks one at random — a stale mirror 404s on the
           # Updates.xml metadata and the install fails before it ever builds.
           extra: '--base https://download.qt.io/'
+          # aqtinstall 3.3.0 (latest on PyPI, June 2025) is what the default
+          # aqtversion '==3.3.*' resolves to. It predates Qt 6.11 and assumes
+          # the old repository layout, looking for version metadata at
+          #   .../desktop/qt6_6111/qt6_6111/Updates.xml
+          # Qt 6.11+ moved that file into a per-architecture subfolder:
+          #   .../desktop/qt6_6111/qt6_6111_msvc2022_64/Updates.xml
+          # so the install dies with "Failed to locate XML data for Qt
+          # version '6.11.1'" before any build step runs. aqtinstall PR #1000
+          # ("Support Qt 6.11+ for Windows x64") fixes the path logic but is
+          # not in any PyPI release yet, so we install aqt from that merged
+          # commit. Drop this back to a plain aqtversion pin once aqtinstall
+          # publishes a release newer than 3.3.0.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
 
       - name: Install Inno Setup
         shell: pwsh
