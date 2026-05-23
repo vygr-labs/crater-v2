@@ -1,0 +1,126 @@
+name: Build Windows (reusable)
+
+# Reusable build for the Windows platform. Called by release.yml (the
+# orchestrator). Not callable directly — there is no workflow_dispatch
+# trigger here on purpose. Use the parent Release workflow.
+#
+# Contract:
+#   inputs.version  -- semver (no leading 'v') used to name artifacts and
+#                      pinned into CMakeLists.txt's VERSION before building
+#                      so the binary itself reports the same version that
+#                      the ZIP / installer filenames advertise.
+#
+# Output: a single workflow artifact `crater-windows-<version>` containing
+#   the portable ZIP and the Inno Setup installer. The orchestrator picks
+#   it up via actions/download-artifact and attaches both files to the GH
+#   release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Semver to build (no leading v)'
+        type: string
+        required: true
+
+jobs:
+  build:
+    name: Build, package
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pin CMakeLists.txt to v${{ inputs.version }}
+        # Bake the orchestrator-chosen version into CMakeLists.txt on the
+        # runner *before* configure, so the binary's reported version
+        # matches the artifact name. This change is local to the runner;
+        # the orchestrator's publish job makes the identical edit on main
+        # after both build jobs succeed, then commits + tags it.
+        shell: pwsh
+        env:
+          NEW_VERSION: ${{ inputs.version }}
+        run: |
+          $content = Get-Content CMakeLists.txt -Raw
+          $updated = $content -replace '(project\(Crater\s+VERSION\s+)\d+\.\d+\.\d+', "`${1}$env:NEW_VERSION"
+          if ($content -eq $updated) { throw "CMakeLists.txt VERSION not replaced" }
+          Set-Content -Path CMakeLists.txt -Value $updated -NoNewline
+          Write-Host ">>> CMakeLists.txt pinned to $env:NEW_VERSION"
+
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.1'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtmultimedia qtpdf qtwebsockets'
+          cache: true
+          extra: '--base https://download.qt.io/'
+          # aqtinstall 3.3.0 (latest on PyPI) predates Qt 6.11's
+          # per-architecture Updates.xml layout. PR #1000 fixes it; pin
+          # the merged commit until a 3.4+ release ships.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Cache vc_redist.x64.exe
+        uses: actions/cache@v4
+        with:
+          path: packaging/vc_redist.x64.exe
+          key: vc-redist-x64-v17-${{ runner.os }}
+
+      - name: Cache bibles.sqlite
+        uses: actions/cache@v4
+        with:
+          # See release.ps1 for the resolution order. Same key as the macOS
+          # build workflow's cache so the data-revision tag (v1) and the
+          # SHA-256 inside release.ps1 stay in lockstep across platforms.
+          path: packaging/bibles.sqlite
+          key: bibles-sqlite-data-v1-${{ runner.os }}
+
+      - name: Set up MSVC environment
+        # Ninja generator invokes cl.exe directly with no MSBuild; without
+        # this, CMake's compiler probe fails (or picks up MinGW from PATH).
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up sccache
+        # Compiler cache: short-circuits cl.exe when preprocessed input +
+        # flags match a prior compile. Honored only by Ninja/Makefile
+        # generators (the VS generator silently ignores
+        # CMAKE_<LANG>_COMPILER_LAUNCHER). Backend is GHA Cache, no creds.
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Run release script
+        shell: pwsh
+        env:
+          CMAKE_C_COMPILER_LAUNCHER:   sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        run: |
+          .\scripts\release.ps1 `
+            -QtDir $env:QT_ROOT_DIR `
+            -VersionOverride '${{ inputs.version }}' `
+            -Clean
+
+      - name: sccache stats
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
+
+      - name: List artifacts
+        shell: pwsh
+        run: Get-ChildItem dist -File | Format-Table Name, @{n='Size (MB)';e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crater-windows-${{ inputs.version }}
+          path: |
+            dist/Crater-*-win64.zip
+            dist/Crater-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,114 @@
+name: Build macOS (reusable)
+
+# Reusable build for the macOS platform. Called by release.yml (the
+# orchestrator). Not callable directly — there is no workflow_dispatch
+# trigger here on purpose. Use the parent Release workflow.
+#
+# Contract:
+#   inputs.version  -- semver (no leading 'v') used to name artifacts and
+#                      pinned into CMakeLists.txt's VERSION before building
+#                      so the binary itself reports the same version the
+#                      ZIP / DMG filenames advertise.
+#
+# Output: a single workflow artifact `crater-macos-<version>` containing
+#   the portable ZIP of crater.app and the DMG installer. The orchestrator
+#   picks it up via actions/download-artifact and attaches both to the
+#   GitHub release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Semver to build (no leading v)'
+        type: string
+        required: true
+
+jobs:
+  build:
+    name: Build, package
+    # macos-14 = Apple Silicon (M1). Qt's clang_64 kit is universal so the
+    # produced .app runs on Intel too.
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pin CMakeLists.txt to v${{ inputs.version }}
+        # Local-only edit: bake the orchestrator-chosen version into the
+        # source before configure so the binary's reported version matches
+        # the artifact name. Same edit is committed to main by the
+        # orchestrator's publish job after both builds succeed.
+        # Python because portable multi-line regex replace in BSD sed is
+        # genuinely painful and python3 ships on every macOS runner.
+        shell: bash
+        env:
+          NEW_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path('CMakeLists.txt')
+          text = p.read_text()
+          new = re.sub(
+              r'(project\(Crater\s+VERSION\s+)\d+\.\d+\.\d+',
+              r'\g<1>' + os.environ['NEW_VERSION'],
+              text, count=1)
+          if new == text:
+              raise SystemExit('CMakeLists.txt VERSION not replaced')
+          p.write_text(new)
+          PY
+          echo ">>> CMakeLists.txt pinned to $NEW_VERSION"
+
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.1'
+          host: 'mac'
+          target: 'desktop'
+          # Universal kit — produces a .app that runs on both arm64 and x64.
+          arch: 'clang_64'
+          modules: 'qtmultimedia qtpdf qtwebsockets'
+          cache: true
+          extra: '--base https://download.qt.io/'
+          # Same aqt pin as the Windows job; see comment there.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+
+      - name: Cache bibles.sqlite
+        uses: actions/cache@v4
+        with:
+          path: packaging/bibles.sqlite
+          key: bibles-sqlite-data-v1-${{ runner.os }}
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Run release script
+        shell: bash
+        env:
+          CMAKE_C_COMPILER_LAUNCHER:   sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        run: |
+          bash ./scripts/release.sh \
+            --qt-dir "$QT_ROOT_DIR" \
+            --version '${{ inputs.version }}' \
+            --clean
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats
+
+      - name: List artifacts
+        shell: bash
+        run: ls -lh dist/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crater-macos-${{ inputs.version }}
+          path: |
+            dist/Crater-*-macos.zip
+            dist/Crater-*-macos.dmg
+          if-no-files-found: error
+          retention-days: 14

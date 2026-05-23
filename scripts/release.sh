@@ -159,8 +159,17 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         step "Reusing existing cache in $BUILD_DIR"
         cmake -S "$QT_ROOT" -B "$BUILD_DIR"
     else
+        # CMAKE_OSX_ARCHITECTURES="arm64;x86_64" produces a universal Mach-O
+        # binary that runs natively on both Apple Silicon and Intel. Each
+        # translation unit is compiled twice (clang spawns one cc1 per arch
+        # and `lipo`s the outputs into a fat object), so build wall-clock
+        # is roughly 2x. The Qt frameworks shipped with the `clang_64` kit
+        # are already universal, so this is the only knob we need.
+        # Without this, on a macos-14 (Apple Silicon) runner CMake defaults
+        # to arm64-only and the artifact won't open on Intel Macs.
         cmake -S "$QT_ROOT" -B "$BUILD_DIR" \
-            -G 'Ninja Multi-Config'
+            -G 'Ninja Multi-Config' \
+            -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64'
     fi
     step "Building $CONFIGURATION"
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel

@@ -1,194 +1,187 @@
-name: Release (Qt / Windows)
+name: Release
 
-# Trigger paths:
-#   1. Push a tag like `v0.6.0` → builds, packages, and publishes a draft
-#      release with the same name.
-#   2. Manual run via the Actions tab → builds + uploads as workflow
-#      artifacts; only publishes a draft release if `version_tag` is given.
+# One-click release driver. Click "Run workflow", choose patch / minor /
+# major, and:
+#   1. Compute the next version from the latest `v*` git tag.
+#   2. Build Windows + macOS in parallel with that version baked in.
+#   3. Only if BOTH builds succeed: commit the CMakeLists.txt bump, tag,
+#      push, and create a draft GitHub release with all artifacts attached.
+#
+# Failure modes do NOT touch main or create a tag. The "increment only on
+# success" guarantee falls out of the job graph: the `publish` job needs
+# both build jobs to pass.
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
-      version_tag:
-        description: 'Tag to draft a release as (e.g. v0.6.0). Leave blank for build-only.'
-        required: false
-        type: string
+      bump:
+        description: 'Which semver part to bump'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+concurrency:
+  # Serialize releases. Two simultaneous runs would race on the
+  # CMakeLists.txt bump and the tag push; the second would always lose.
+  # `cancel-in-progress: false` means the second click queues behind the
+  # first instead of clobbering it.
+  group: release
+  cancel-in-progress: false
 
 permissions:
-  contents: write   # required by softprops/action-gh-release to create the draft
+  contents: write   # required to push the bump commit + tag and create the release
 
 jobs:
-  build:
-    name: Build, package, draft release
-    runs-on: windows-latest
-    timeout-minutes: 45
-
+  version:
+    name: Compute next version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag:     ${{ steps.compute.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 brings the full tag history. Default depth-1
+          # would leave `git tag --list` empty and force the seed fallback
+          # on every run.
+          fetch-depth: 0
 
-      - name: Resolve version + tag
-        id: meta
-        shell: pwsh
+      - name: Compute next version
+        id: compute
+        shell: bash
+        # Bumping rules:
+        #   - Find highest existing `v*` tag by semver-aware sort.
+        #   - Bump per the `bump` input (patch / minor / major).
+        #   - If no tags exist yet, seed from CMakeLists.txt's VERSION so
+        #     the first release ever can be cut without a manual tag.
+        # Pre-release tags (`v0.6.0-rc1`) sort lower than `v0.6.0` and
+        # would never be picked as the latest stable, which is what we want.
         run: |
-          $cmake = Get-Content CMakeLists.txt -Raw
-          if ($cmake -notmatch 'project\(Crater\s+VERSION\s+([\d.]+)') {
-              throw "Could not parse Crater version from CMakeLists.txt"
-          }
-          $cmakeVersion = $Matches[1]
+          latest_tag=$(git tag --list 'v*' | sort -V | tail -n1 || true)
+          if [[ -n "$latest_tag" ]]; then
+              base="${latest_tag#v}"
+              echo "Latest tag: $latest_tag (base $base)"
+          else
+              base=$(tr '\n' ' ' < CMakeLists.txt | sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p')
+              if [[ -z "$base" ]]; then
+                  echo "No tags and could not parse CMakeLists.txt VERSION; cannot seed." >&2
+                  exit 1
+              fi
+              echo "No existing tags; seeding from CMakeLists.txt = $base"
+          fi
+          IFS='.' read -r major minor patch <<< "$base"
+          case '${{ inputs.bump }}' in
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+          esac
+          version="$major.$minor.$patch"
+          tag="v$version"
+          # Defensive: refuse if the computed tag already exists. Catches
+          # the case where someone manually tagged ahead of CI; the bump
+          # input is then wrong for the next release and we should stop
+          # before clobbering anything.
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "Computed tag $tag already exists. Pick a different bump." >&2
+              exit 1
+          fi
+          {
+              echo "version=$version"
+              echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+          echo ">>> next version: $version (tag $tag)"
 
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-              $tag = $env:GITHUB_REF_NAME
-          } elseif ('${{ inputs.version_tag }}') {
-              $tag = '${{ inputs.version_tag }}'
-          } else {
-              $tag = ''
-          }
+  build-windows:
+    name: Build Windows
+    needs: version
+    uses: ./.github/workflows/release-build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
 
-          $version = if ($tag) { $tag.TrimStart('v') } else { $cmakeVersion }
+  build-macos:
+    name: Build macOS
+    needs: version
+    uses: ./.github/workflows/release-build-macos.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
 
-          # If a tag was supplied, require it to match the cmake version.
-          # Forces the dev to bump CMakeLists.txt before tagging — the
-          # binary, ZIP, and installer would otherwise carry mismatched
-          # versions.
-          if ($tag -and ($version -ne $cmakeVersion)) {
-              throw "Tag '$tag' (version '$version') does not match CMakeLists.txt version '$cmakeVersion'. Bump CMakeLists or retag."
-          }
-
-          "tag=$tag"           >> $env:GITHUB_OUTPUT
-          "version=$version"   >> $env:GITHUB_OUTPUT
-          "publish=$([bool]$tag)".ToLower() >> $env:GITHUB_OUTPUT
-          Write-Host "tag=$tag version=$version publish=$([bool]$tag)"
-
-      - name: Install Qt 6.11
-        uses: jurplel/install-qt-action@v4
+  publish:
+    name: Bump, tag, draft release
+    needs: [version, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          version: '6.11.1'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2022_64'
-          # Add-on modules required by find_package() in CMakeLists.txt:
-          #   qtmultimedia → Qt6::Multimedia   qtpdf → Qt6::Pdf
-          #   qtwebsockets → Qt6::WebSockets
-          # Core/Gui/Qml/Quick/QuickControls2/Sql/Test/Widgets ship in the
-          # qtbase + qtdeclarative essentials install-qt-action installs by default.
-          modules: 'qtmultimedia qtpdf qtwebsockets'
-          cache: true
-          # Pin aqtinstall to the official Qt server. Community mirrors lag
-          # behind for the first few weeks after a point release, and aqt
-          # otherwise picks one at random — a stale mirror 404s on the
-          # Updates.xml metadata and the install fails before it ever builds.
-          extra: '--base https://download.qt.io/'
-          # aqtinstall 3.3.0 (latest on PyPI, June 2025) is what the default
-          # aqtversion '==3.3.*' resolves to. It predates Qt 6.11 and assumes
-          # the old repository layout, looking for version metadata at
-          #   .../desktop/qt6_6111/qt6_6111/Updates.xml
-          # Qt 6.11+ moved that file into a per-architecture subfolder:
-          #   .../desktop/qt6_6111/qt6_6111_msvc2022_64/Updates.xml
-          # so the install dies with "Failed to locate XML data for Qt
-          # version '6.11.1'" before any build step runs. aqtinstall PR #1000
-          # ("Support Qt 6.11+ for Windows x64") fixes the path logic but is
-          # not in any PyPI release yet, so we install aqt from that merged
-          # commit. Drop this back to a plain aqtversion pin once aqtinstall
-          # publishes a release newer than 3.3.0.
-          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+          # Need history so the push isn't rejected as non-fast-forward in
+          # the (rare but real) race where someone landed a commit on main
+          # between this run starting and the publish job firing.
+          fetch-depth: 0
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress -y
-
-      - name: Cache vc_redist.x64.exe
-        uses: actions/cache@v4
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
         with:
-          # release.ps1 downloads vc_redist.x64.exe from
-          # aka.ms/vs/17/release/vc_redist.x64.exe and bundles it into the
-          # Inno Setup installer. The file is ~14 MB and rev'd only when a
-          # new VC++ 17.x runtime ships, so caching by major-runtime version
-          # is enough; it skips the download on every subsequent run.
-          path: packaging/vc_redist.x64.exe
-          key: vc-redist-x64-v17-${{ runner.os }}
+          # No `name:` filter -> downloads every artifact produced in this
+          # run, placing each under artifacts/<artifact-name>/. The release
+          # step globs across `**/` to pick up Win + Mac files together.
+          path: artifacts
 
-      - name: Cache bibles.sqlite
-        uses: actions/cache@v4
-        with:
-          # 74 MB SQLite database fetched once from the data-v1 release asset
-          # by release.ps1. Cache key includes a data-revision tag so bumping
-          # the Bible DB requires uploading a new release asset and bumping
-          # this key (and the SHA-256 in release.ps1) in lockstep.
-          path: packaging/bibles.sqlite
-          key: bibles-sqlite-data-v1-${{ runner.os }}
-
-      - name: Set up MSVC environment
-        # Loads cl.exe, link.exe, INCLUDE, LIB, LIBPATH into the runner env
-        # (same machinery as VS's "Developer Command Prompt"). Required
-        # because release.ps1 configures CMake with the Ninja generator,
-        # which invokes cl.exe directly with no MSBuild involvement. Without
-        # this, CMake's compiler probe either fails or picks up gcc/MinGW
-        # from the runner's PATH.
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Set up sccache
-        # Compiler cache: sccache hashes the preprocessed source + flags
-        # and stores the resulting .obj keyed by that hash. On the next run,
-        # identical inputs short-circuit cl.exe entirely (cache hit) so the
-        # workflow only recompiles what actually changed. The action also
-        # sets SCCACHE_GHA_ENABLED=true so the cache backend is GitHub
-        # Actions Cache (no extra credentials needed).
-        #
-        # Note: this only takes effect because we use Ninja in release.ps1.
-        # The Visual Studio generator silently ignores
-        # CMAKE_<LANG>_COMPILER_LAUNCHER, so compiler caching with MSBuild
-        # is effectively impossible.
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Run release script
-        shell: pwsh
+      - name: Bump CMakeLists.txt
+        # Identical edit to the one each build job made locally — we redo
+        # it here on a fresh checkout so the commit captures only this
+        # single change. Doing it via python avoids the BSD/GNU sed
+        # multi-line replace mess.
+        shell: bash
         env:
-          # Tell CMake to prefix every cl.exe invocation with sccache.
-          # Honored only by Ninja/Makefile generators (see sccache step).
-          CMAKE_C_COMPILER_LAUNCHER:   sccache
-          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+          NEW_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          # install-qt-action exposes the kit root via QT_ROOT_DIR.
-          .\scripts\release.ps1 `
-            -QtDir $env:QT_ROOT_DIR `
-            -VersionOverride '${{ steps.meta.outputs.version }}' `
-            -Clean
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path('CMakeLists.txt')
+          text = p.read_text()
+          new = re.sub(
+              r'(project\(Crater\s+VERSION\s+)\d+\.\d+\.\d+',
+              r'\g<1>' + os.environ['NEW_VERSION'],
+              text, count=1)
+          if new == text:
+              raise SystemExit('CMakeLists.txt VERSION not replaced')
+          p.write_text(new)
+          PY
 
-      - name: sccache stats
-        # Cache hit/miss rate per run -- shows up directly in the log so we
-        # can see whether the cache is doing useful work. `if: always()`
-        # keeps the stats line visible even when the build step failed.
-        if: always()
-        shell: pwsh
-        run: sccache --show-stats
+      - name: Commit, tag, push
+        env:
+          TAG:     ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        # Identity: the GitHub-blessed bot account. Using a personal
+        # account would require a PAT in secrets; the bot identity works
+        # with the default GITHUB_TOKEN.
+        # The annotated tag (`-a`) means `git describe` returns the tag
+        # name on the commit; a lightweight tag would silently degrade to
+        # the SHA. softprops/action-gh-release tolerates either, but the
+        # rest of the toolchain (and `git log --decorate`) is cleaner with
+        # annotated tags.
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CMakeLists.txt
+          git commit -m "release $TAG"
+          git tag -a "$TAG" -m "Crater $TAG"
+          git push origin HEAD:main
+          git push origin "$TAG"
 
-      - name: List artifacts
-        shell: pwsh
-        run: Get-ChildItem dist -File | Format-Table Name, @{n='Size (MB)';e={[math]::Round($_.Length/1MB,1)}}
-
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: crater-windows-${{ steps.meta.outputs.version }}
-          path: |
-            dist/Crater-*-win64.zip
-            dist/Crater-Setup-*.exe
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Publish draft GitHub release
-        if: steps.meta.outputs.publish == 'true'
+      - name: Create draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: Crater ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Crater ${{ needs.version.outputs.tag }}
+          # Draft so the human can eyeball the four artifacts before users
+          # see them. Switch to `draft: false` to ship straight to public.
           draft: true
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            dist/Crater-*-win64.zip
-            dist/Crater-Setup-*.exe
+            artifacts/**/Crater-*-win64.zip
+            artifacts/**/Crater-Setup-*.exe
+            artifacts/**/Crater-*-macos.zip
+            artifacts/**/Crater-*-macos.dmg
