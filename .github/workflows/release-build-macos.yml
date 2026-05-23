@@ -100,56 +100,62 @@ jobs:
           path: packaging/bibles.sqlite
           key: bibles-sqlite-data-v1-${{ runner.os }}
 
-      - name: Synthesize Qt6GuiPrivate CMake config
-        # Qt < 6.10 binary distributions ship the private headers
-        # (rhi/qrhi.h, etc.) inside `<qt>/include/QtGui/<ver>/QtGui/` but
-        # do NOT ship `lib/cmake/Qt6GuiPrivate/Qt6GuiPrivateConfig.cmake`,
-        # so `find_package(Qt6 ... GuiPrivate)` fails at configure even
-        # though every required source file is on disk. Qt 6.11 fixed this
-        # by bundling the config — but Qt 6.11 also raised the macOS floor
-        # to 14 (Sonoma), which excludes Monterey users.
-        # We synthesize a minimal Qt6GuiPrivate config pointing at the
-        # private include dirs that already exist in this install. Drop
-        # this step once Qt LTS branches backport the config bundling.
+      - name: Download qtbase source for private headers
+        # The Qt 6.8 LTS binary install ships QtGui.framework's compiled
+        # symbols (including QRhi) but NOT the private headers that
+        # declare them. NdiRenderer needs `<rhi/qrhi.h>` to compile.
+        # qtbase is the only Qt 6.8 submodule we need source for, and
+        # it IS distributed via download.qt.io (unlike qtpdf, which is
+        # absent from that channel — see commit history for the
+        # full-source-build attempts that hit that wall).
+        # We download just qtbase source (~150 MB), use it for headers,
+        # and link against the binary library. ABI matches by
+        # construction because both halves are Qt 6.8.2.
         shell: bash
         run: |
-          # Locate qrhi.h authoritatively via find — Qt's internal directory
-          # layout varies by version, so deriving paths from the version
-          # number is brittle. find tells us where the header actually lives.
-          QRHI_PATH=$(find "$QT_ROOT_DIR/include" -path '*/QtGui/*/QtGui/rhi/qrhi.h' 2>/dev/null | head -1)
-          if [[ -z "$QRHI_PATH" ]]; then
-              echo "ERROR: rhi/qrhi.h is NOT shipped by this Qt install." >&2
-              echo "Searched under: $QT_ROOT_DIR/include" >&2
-              echo "Any 'rhi' subdirectories present:" >&2
-              find "$QT_ROOT_DIR/include" -type d -name rhi 2>&1 | head -10 >&2 || echo "  (none)" >&2
+          QT_VER='6.8.2'
+          SRC_TARBALL="qtbase-everywhere-src-${QT_VER}.tar.xz"
+          SRC_URL="https://download.qt.io/archive/qt/${QT_VER%.*}/${QT_VER}/submodules/${SRC_TARBALL}"
+          echo "Downloading $SRC_URL"
+          curl -fSL --retry 3 -o "$RUNNER_TEMP/${SRC_TARBALL}" "$SRC_URL"
+          mkdir -p "$RUNNER_TEMP/qt-src"
+          tar -xf "$RUNNER_TEMP/${SRC_TARBALL}" -C "$RUNNER_TEMP/qt-src"
+          QT_SRC_DIR="$RUNNER_TEMP/qt-src/qtbase-everywhere-src-${QT_VER}"
+          if [[ ! -f "$QT_SRC_DIR/src/gui/rhi/qrhi.h" ]]; then
+              echo "ERROR: qrhi.h missing from qtbase source tarball" >&2
+              ls "$QT_SRC_DIR/src/gui" 2>&1 | head -20 >&2
               exit 1
           fi
-          # QRHI_PATH e.g. .../include/QtGui/6.8.2/QtGui/rhi/qrhi.h
-          # Private include is the QtGui/<ver>/QtGui parent.
-          PRIVATE_INC_QTGUI=$(dirname "$(dirname "$QRHI_PATH")")     # .../QtGui/6.8.2/QtGui
-          PRIVATE_INC_VER=$(dirname "$PRIVATE_INC_QTGUI")             # .../QtGui/6.8.2
-          # Derive version from the path so we have it for the config file.
-          QT_GUI_VERSION=$(basename "$PRIVATE_INC_VER")
-          echo "Detected Qt Gui version: $QT_GUI_VERSION"
-          echo "Found qrhi.h at:         $QRHI_PATH"
-          echo "Private include dir:     $PRIVATE_INC_QTGUI"
+          echo "QT_PRIV_SRC_DIR=$QT_SRC_DIR" >> "$GITHUB_ENV"
+          echo ">>> qtbase source extracted: $QT_SRC_DIR"
+          echo ">>> qrhi.h confirmed at:    $QT_SRC_DIR/src/gui/rhi/qrhi.h"
+
+      - name: Synthesize Qt6GuiPrivate CMake config (source headers)
+        # Wire Qt6::GuiPrivate to the source-tree private headers we
+        # just extracted. The binary QtGui.framework provides the
+        # linkable QRhi symbols; the source tarball provides the
+        # declarations. Same Qt 6.8.2 version on both sides = ABI match.
+        # Drop this step once Qt's binary distribution starts bundling
+        # private headers (Qt 6.11 already does, but its macOS floor
+        # is 14 which excludes our Monterey users).
+        shell: bash
+        run: |
           PRIV_DIR="$QT_ROOT_DIR/lib/cmake/Qt6GuiPrivate"
           mkdir -p "$PRIV_DIR"
-          # The config file references _qt6_root which Qt6Config.cmake sets
-          # to the install prefix before recursing into component configs.
           cat > "$PRIV_DIR/Qt6GuiPrivateConfig.cmake" <<EOF
-          set(Qt6GuiPrivate_VERSION "$QT_GUI_VERSION")
+          set(Qt6GuiPrivate_VERSION "6.8.2")
           set(Qt6GuiPrivate_FOUND TRUE)
           if(NOT TARGET Qt6::GuiPrivate)
               add_library(Qt6::GuiPrivate INTERFACE IMPORTED)
+              # Source-tree layout: qtbase/src/gui/{,rhi/}
               set_target_properties(Qt6::GuiPrivate PROPERTIES
-                  INTERFACE_INCLUDE_DIRECTORIES "\${_qt6_root}/include/QtGui/$QT_GUI_VERSION/QtGui;\${_qt6_root}/include/QtGui/$QT_GUI_VERSION"
+                  INTERFACE_INCLUDE_DIRECTORIES "$QT_PRIV_SRC_DIR/src/gui;$QT_PRIV_SRC_DIR/src/gui/rhi"
                   INTERFACE_LINK_LIBRARIES "Qt6::Gui"
               )
           endif()
           EOF
           cat > "$PRIV_DIR/Qt6GuiPrivateConfigVersion.cmake" <<EOF
-          set(PACKAGE_VERSION "$QT_GUI_VERSION")
+          set(PACKAGE_VERSION "6.8.2")
           set(PACKAGE_VERSION_COMPATIBLE TRUE)
           set(PACKAGE_VERSION_EXACT TRUE)
           EOF
