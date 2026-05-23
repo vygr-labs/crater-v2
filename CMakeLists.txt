@@ -29,6 +29,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Qml
     Quick
     QuickControls2
+    QuickEffects   # MultiEffect — drop shadow / blur via the QtQuick.Effects QML module
     Sql
     Multimedia
     Pdf             # PDF rasterization via pdfium — used by MediaService + PdfPageImageProvider
