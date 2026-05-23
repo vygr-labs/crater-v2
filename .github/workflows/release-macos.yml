@@ -40,7 +40,10 @@ jobs:
         # CMakeLists.txt before tagging — otherwise the binary, ZIP, and DMG
         # would carry mismatched versions.
         run: |
-          cmake_version=$(sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt | head -n1)
+          # `tr '\n' ' '` flattens the file so the multi-line
+          # `project(Crater\n    VERSION 0.6.0 ...)` declaration matches a
+          # single-line regex. Line-oriented sed would miss this.
+          cmake_version=$(tr '\n' ' ' < CMakeLists.txt | sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p')
           if [[ -z "$cmake_version" ]]; then
               echo "Could not parse Crater version from CMakeLists.txt" >&2
               exit 1

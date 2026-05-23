@@ -121,8 +121,12 @@ EOF
 }
 
 # ── Version ────────────────────────────────────────────────────────────────
-CMAKE_VERSION=$(sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' \
-    "$QT_ROOT/CMakeLists.txt" | head -n1)
+# `tr '\n' ' '` flattens the file so the multi-line
+# `project(Crater\n    VERSION 0.6.0 ...)` declaration matches a single-line
+# regex. Line-oriented sed would only see `project(Crater` and `VERSION 0.6.0`
+# as separate inputs and miss the cross-line match.
+CMAKE_VERSION=$(tr '\n' ' ' < "$QT_ROOT/CMakeLists.txt" \
+    | sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p')
 if [[ -z "$CMAKE_VERSION" ]]; then
     echo "Could not parse 'project(Crater VERSION ...)' from CMakeLists.txt" >&2
     exit 1
