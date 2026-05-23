@@ -160,10 +160,24 @@ if (-not $SkipBuild) {
     Write-Step "Configuring CMake (Qt at $QtDir)"
     $env:CMAKE_PREFIX_PATH = $QtDir
 
-    # On a fresh configure we pin the Visual Studio multi-config generator —
-    # gives us reliable `--config Release` semantics and matches the layout
-    # qt/app/CMakeLists.txt's post-build deploy steps were tuned against.
-    # On reconfigure we omit -G/-A: CMake refuses to switch generators on an
+    # On a fresh configure we pin the Ninja Multi-Config generator.
+    #   - Compiler-launcher caching (sccache / ccache) only works with the
+    #     Ninja or Makefile generators. The Visual Studio generator
+    #     silently ignores CMAKE_<LANG>_COMPILER_LAUNCHER, so MSBuild-based
+    #     builds cannot use sccache at all. On CI that is the difference
+    #     between a full cold-build on every push and a sub-minute warm
+    #     rebuild driven entirely by cache hits.
+    #   - Multi-Config keeps `cmake --build --config Release` semantics, so
+    #     the rest of this script and qt/app/CMakeLists.txt's per-config
+    #     RUNTIME_OUTPUT_DIRECTORY_<CONFIG> pins behave identically to the
+    #     previous Visual-Studio-generator setup.
+    #   - cl.exe is set explicitly so CMake does not accidentally auto-pick
+    #     gcc/MinGW if either is on PATH (GitHub windows runners ship
+    #     MinGW; some dev machines have it too).
+    # Prereq: the surrounding env must have cl.exe plus INCLUDE/LIB exported.
+    # CI does this via ilammy/msvc-dev-cmd; locally, dot-source dev-shell.ps1
+    # before invoking this script.
+    # On reconfigure we omit -G: CMake refuses to switch generators on an
     # existing cache, and silently reusing whatever the cache picked is the
     # right behavior if a user manually configured this tree differently.
     $cacheExists = Test-Path (Join-Path $BuildDir 'CMakeCache.txt')
@@ -171,7 +185,10 @@ if (-not $SkipBuild) {
         Write-Step "Reusing existing cache in $BuildDir"
         & cmake -S $QtRoot -B $BuildDir
     } else {
-        & cmake -S $QtRoot -B $BuildDir -G 'Visual Studio 17 2022' -A x64
+        & cmake -S $QtRoot -B $BuildDir `
+            -G 'Ninja Multi-Config' `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl
     }
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
 

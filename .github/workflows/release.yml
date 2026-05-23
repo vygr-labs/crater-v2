@@ -100,14 +100,61 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
+      - name: Cache vc_redist.x64.exe
+        uses: actions/cache@v4
+        with:
+          # release.ps1 downloads vc_redist.x64.exe from
+          # aka.ms/vs/17/release/vc_redist.x64.exe and bundles it into the
+          # Inno Setup installer. The file is ~14 MB and rev'd only when a
+          # new VC++ 17.x runtime ships, so caching by major-runtime version
+          # is enough; it skips the download on every subsequent run.
+          path: packaging/vc_redist.x64.exe
+          key: vc-redist-x64-v17-${{ runner.os }}
+
+      - name: Set up MSVC environment
+        # Loads cl.exe, link.exe, INCLUDE, LIB, LIBPATH into the runner env
+        # (same machinery as VS's "Developer Command Prompt"). Required
+        # because release.ps1 configures CMake with the Ninja generator,
+        # which invokes cl.exe directly with no MSBuild involvement. Without
+        # this, CMake's compiler probe either fails or picks up gcc/MinGW
+        # from the runner's PATH.
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up sccache
+        # Compiler cache: sccache hashes the preprocessed source + flags
+        # and stores the resulting .obj keyed by that hash. On the next run,
+        # identical inputs short-circuit cl.exe entirely (cache hit) so the
+        # workflow only recompiles what actually changed. The action also
+        # sets SCCACHE_GHA_ENABLED=true so the cache backend is GitHub
+        # Actions Cache (no extra credentials needed).
+        #
+        # Note: this only takes effect because we use Ninja in release.ps1.
+        # The Visual Studio generator silently ignores
+        # CMAKE_<LANG>_COMPILER_LAUNCHER, so compiler caching with MSBuild
+        # is effectively impossible.
+        uses: mozilla-actions/sccache-action@v0.0.10
+
       - name: Run release script
         shell: pwsh
+        env:
+          # Tell CMake to prefix every cl.exe invocation with sccache.
+          # Honored only by Ninja/Makefile generators (see sccache step).
+          CMAKE_C_COMPILER_LAUNCHER:   sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
         run: |
           # install-qt-action exposes the kit root via QT_ROOT_DIR.
           .\scripts\release.ps1 `
             -QtDir $env:QT_ROOT_DIR `
             -VersionOverride '${{ steps.meta.outputs.version }}' `
             -Clean
+
+      - name: sccache stats
+        # Cache hit/miss rate per run -- shows up directly in the log so we
+        # can see whether the cache is doing useful work. `if: always()`
+        # keeps the stats line visible even when the build step failed.
+        if: always()
+        shell: pwsh
+        run: sccache --show-stats
 
       - name: List artifacts
         shell: pwsh

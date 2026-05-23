@@ -72,8 +72,15 @@ ModalShell {
         }
 
         // ── Content panel ───────────────────────────────────────────────
+        // topMargin pads the loaded section's content below the modal
+        // header divider, uniformly for every section — those opening with
+        // a section header and those opening with a banner alike. Note: the
+        // section files each also set an `anchors.topMargin` on their
+        // ColumnLayout, but that one is a no-op (no `anchors.top` is set for
+        // it to apply to), so this is the margin that actually takes effect.
         Item {
             anchors.top: parent.top
+            anchors.topMargin: Theme.space.xxl
             anchors.bottom: footer.top
             anchors.left: sidebar.right
             anchors.right: parent.right
