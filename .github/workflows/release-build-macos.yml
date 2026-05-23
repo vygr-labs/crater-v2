@@ -76,7 +76,7 @@ jobs:
       - name: Install Qt 6.11
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.11.1'
+          version: '6.5.3'
           host: 'mac'
           target: 'desktop'
           # Universal kit — produces a .app that runs on both arm64 and x64.
@@ -84,8 +84,6 @@ jobs:
           modules: 'qtmultimedia qtpdf qtwebsockets'
           cache: true
           extra: '--base https://download.qt.io/'
-          # Same aqt pin as the Windows job; see comment there.
-          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
 
       - name: Cache bibles.sqlite
         uses: actions/cache@v4

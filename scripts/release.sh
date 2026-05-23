@@ -167,9 +167,11 @@ if [[ $SKIP_BUILD -eq 0 ]]; then
         # are already universal, so this is the only knob we need.
         # Without this, on a macos-14 (Apple Silicon) runner CMake defaults
         # to arm64-only and the artifact won't open on Intel Macs.
+        # Pin deployment target to macOS 11 (Big Sur) so Qt 6.5 LTS binaries load on Monterey 12.
         cmake -S "$QT_ROOT" -B "$BUILD_DIR" \
             -G 'Ninja Multi-Config' \
-            -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64'
+            -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
     fi
     step "Building $CONFIGURATION"
     cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel

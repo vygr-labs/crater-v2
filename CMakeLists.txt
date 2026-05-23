@@ -21,7 +21,7 @@ endif()
 # Target: Qt 6.11+. We track the latest Qt to stay on the newest QML
 # compiler (qmlsc) and RHI improvements — meaningful perf gains on the
 # weak hardware Crater targets (Intel HD 4000 / 4 GB RAM).
-find_package(Qt6 6.11 REQUIRED COMPONENTS
+find_package(Qt6 6.5 REQUIRED COMPONENTS
     Core
     Concurrent      # QtConcurrent::run for worker-thread import + FTS rebuild
     Gui
@@ -38,7 +38,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Widgets         # QApplication + QFileDialog (used by FileDialogService for native pickers)
 )
 
-qt_standard_project_setup(REQUIRES 6.11)
+qt_standard_project_setup(REQUIRES 6.5)
 
 add_subdirectory(core)
 add_subdirectory(app)
