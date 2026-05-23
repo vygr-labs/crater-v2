@@ -127,6 +127,142 @@ Column {
         }
     }
 
+    // ── Shadow ────────────────────────────────────────────────────────
+    AccordionSection {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: qsTr("Shadow")
+        Column {
+            id: shadowColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Theme.space.md
+            anchors.topMargin: Theme.space.sm
+            spacing: 6
+
+            // `textShadowColor` being a non-empty string is the schema's
+            // "shadow on" sentinel — the renderer keys layer.enabled off the
+            // same check, so this stays in sync. Toggling off clears the
+            // color (X/Y/blur are left in place so re-toggling restores
+            // whatever tuning the operator had).
+            readonly property bool _on: {
+                if (!node || !node.style) return false
+                const c = node.style.textShadowColor
+                return typeof c === "string" && c.length > 0
+            }
+
+            // Toggle row. Mirrors the Auto-fit checkbox styling in the
+            // Content section so the editor reads as one component family.
+            Item {
+                id: shadowToggle
+                anchors.left: parent.left
+                width: 140
+                height: 32
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        radius: 0
+                        color: shadowColumn._on ? Theme.color.brand : Theme.color.canvas
+                        border.color: shadowColumn._on ? Theme.color.brand : Theme.color.borderStrong
+                        border.width: 1
+                        Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: shadowColumn._on
+                            name: "check"; size: Theme.icon.sm
+                            color: Theme.color.brandInk
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Drop shadow")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    // Toggle on: seed sensible defaults so the shadow reads
+                    // as enabled the moment it's switched on, before the
+                    // operator touches any input. Default blur of 8 px lands
+                    // soft enough to read as a shadow rather than a duplicate
+                    // text overlay. Toggle off: clear the color sentinel.
+                    onClicked: {
+                        if (shadowColumn._on) {
+                            root._setStyle("textShadowColor", "")
+                        } else {
+                            const wt = workspace.workingTheme
+                            wt.setNodeStyle(node.id, "textShadowColor", "#000000")
+                            if (!(node && node.style && node.style.textShadowBlur))
+                                wt.setNodeStyle(node.id, "textShadowBlur", 8)
+                            workspace.saveToHistory()
+                        }
+                    }
+                }
+            }
+
+            // X / Y offsets, blur, and color — dimmed and disabled when
+            // shadow is off so the inputs stay visible (preserving the
+            // operator's mental model of what's there to tune) without
+            // suggesting they'd do anything in the off state.
+            Row {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 6
+                opacity: shadowColumn._on ? 1 : 0.45
+                enabled: shadowColumn._on
+                NumericInput {
+                    width: (parent.width - 6) / 2
+                    workspace: root.workspace
+                    label: qsTr("X"); suffix: "px"
+                    min: -50; max: 50; step: 1
+                    value: (node && node.style && node.style.textShadowOffsetX) || 0
+                    onLive:   function(v) { root._liveStyle("textShadowOffsetX", Math.round(v)) }
+                    onCommit: function(v) { root._commitStyle("textShadowOffsetX", Math.round(v)) }
+                }
+                NumericInput {
+                    width: (parent.width - 6) / 2
+                    workspace: root.workspace
+                    label: qsTr("Y"); suffix: "px"
+                    min: -50; max: 50; step: 1
+                    value: (node && node.style && node.style.textShadowOffsetY) || 0
+                    onLive:   function(v) { root._liveStyle("textShadowOffsetY", Math.round(v)) }
+                    onCommit: function(v) { root._commitStyle("textShadowOffsetY", Math.round(v)) }
+                }
+            }
+
+            SimpleSlider {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                label: qsTr("Blur")
+                min: 0; max: 50; step: 1
+                value: (node && node.style && node.style.textShadowBlur) || 0
+                opacity: shadowColumn._on ? 1 : 0.45
+                enabled: shadowColumn._on
+                onLive:   function(v) { root._liveStyle("textShadowBlur", Math.round(v)) }
+                onCommit: function(v) { root._commitStyle("textShadowBlur", Math.round(v)) }
+            }
+
+            ColorSwatchInput {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 32
+                label: qsTr("Color")
+                opacity: shadowColumn._on ? 1 : 0.45
+                enabled: shadowColumn._on
+                value: (node && node.style && node.style.textShadowColor) || "#000000"
+                onColorPicked: function(c) { root._setStyle("textShadowColor", c) }
+            }
+        }
+    }
+
     // ── Alignment ─────────────────────────────────────────────────────
     AccordionSection {
         anchors.left: parent.left

@@ -1,0 +1,158 @@
+name: Release (Qt / macOS)
+
+# Sibling of release.yml. Same triggers (tag push or manual run), same
+# version/tag handshake, same Bible-DB cache key, different toolchain.
+# Produces Crater-X.Y.Z-macos.zip and Crater-X.Y.Z-macos.dmg.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag to draft a release as (e.g. v0.6.0). Leave blank for build-only.'
+        required: false
+        type: string
+
+permissions:
+  contents: write   # action-gh-release uploads to the same draft as the Windows job
+
+jobs:
+  build:
+    name: Build, package, draft release (macOS)
+    # macos-14 is the GHA Apple Silicon runner (M1). Faster + cheaper than
+    # macos-13 (Intel), and Qt's `clang_64` kit is a universal binary so we
+    # can build here and still produce a .app that runs on Intel Macs.
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version + tag
+        id: meta
+        shell: bash
+        # Mirror of the Windows job's PowerShell version-resolve block.
+        # Same rule: a pushed tag wins; tag MUST match the cmake VERSION or
+        # the build fails before any compile happens. Forces the dev to bump
+        # CMakeLists.txt before tagging — otherwise the binary, ZIP, and DMG
+        # would carry mismatched versions.
+        run: |
+          cmake_version=$(sed -nE 's/.*project\(Crater[[:space:]]+VERSION[[:space:]]+([0-9.]+).*/\1/p' CMakeLists.txt | head -n1)
+          if [[ -z "$cmake_version" ]]; then
+              echo "Could not parse Crater version from CMakeLists.txt" >&2
+              exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+              tag="$GITHUB_REF_NAME"
+          elif [[ -n "${{ inputs.version_tag }}" ]]; then
+              tag="${{ inputs.version_tag }}"
+          else
+              tag=''
+          fi
+          if [[ -n "$tag" ]]; then
+              version="${tag#v}"
+          else
+              version="$cmake_version"
+          fi
+          if [[ -n "$tag" && "$version" != "$cmake_version" ]]; then
+              echo "Tag '$tag' (version '$version') does not match CMakeLists.txt version '$cmake_version'. Bump CMakeLists or retag." >&2
+              exit 1
+          fi
+          publish=$([[ -n "$tag" ]] && echo true || echo false)
+          {
+              echo "tag=$tag"
+              echo "version=$version"
+              echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag=$tag version=$version publish=$publish"
+
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.1'
+          host: 'mac'
+          target: 'desktop'
+          # Single universal kit on macOS — produces a .app that runs on
+          # both Apple Silicon and Intel.
+          arch: 'clang_64'
+          modules: 'qtmultimedia qtpdf qtwebsockets'
+          cache: true
+          extra: '--base https://download.qt.io/'
+          # Same aqt pin as the Windows job: aqtinstall 3.3.0 (the latest
+          # PyPI release as of mid-2025) predates Qt 6.11 and assumes the
+          # old per-version Updates.xml layout. PR #1000 in aqtinstall
+          # fixed the path resolution; we install from the merged commit
+          # until a 3.4+ release lands on PyPI.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+
+      - name: Cache bibles.sqlite
+        uses: actions/cache@v4
+        with:
+          # Identical to the Windows job: same data tag (data-v1), same
+          # SHA-256 pinned in release.sh. The cache key is OS-scoped so
+          # macOS and Windows have independent caches even though the
+          # bytes happen to be the same — keeps cache invalidation simple
+          # if either platform ever needs OS-specific data.
+          path: packaging/bibles.sqlite
+          key: bibles-sqlite-data-v1-${{ runner.os }}
+
+      - name: Set up sccache
+        # Compiler cache: identical role to the Windows job. release.sh
+        # configures CMake with Ninja Multi-Config, the only generator
+        # that honors CMAKE_<LANG>_COMPILER_LAUNCHER; without that, sccache
+        # would be ignored. SCCACHE_GHA_ENABLED=true is set by the action,
+        # so the cache backend is GitHub Actions Cache (no extra secrets).
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Run release script
+        shell: bash
+        env:
+          CMAKE_C_COMPILER_LAUNCHER:   sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        # `bash ./scripts/release.sh ...` rather than relying on the
+        # script's executable bit — works regardless of whether
+        # `git update-index --chmod=+x` was run on the checked-in file.
+        run: |
+          bash ./scripts/release.sh \
+            --qt-dir "$QT_ROOT_DIR" \
+            --version '${{ steps.meta.outputs.version }}' \
+            --clean
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats
+
+      - name: List artifacts
+        shell: bash
+        run: ls -lh dist/
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crater-macos-${{ steps.meta.outputs.version }}
+          path: |
+            dist/Crater-*-macos.zip
+            dist/Crater-*-macos.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish draft GitHub release
+        if: steps.meta.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          # Append to the same draft release the Windows job creates.
+          # action-gh-release reuses an existing draft when one matches
+          # the tag, so the macOS artifacts land on the same release page
+          # alongside the Windows ZIP + installer.
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Crater ${{ steps.meta.outputs.tag }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Crater-*-macos.zip
+            dist/Crater-*-macos.dmg

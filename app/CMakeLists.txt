@@ -207,6 +207,11 @@ target_link_libraries(crater
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
+        # Qt6::QuickEffects ships MultiEffect — Qt's built-in drop-shadow /
+        # blur effect (Qt 6.5+). Used by NodeRenderer.qml for text-node
+        # drop shadows via the `layer.effect` attached property; backdrop
+        # blur on container nodes will reuse the same module.
+        Qt6::QuickEffects
         # Qt6::Widgets is required for QFileDialog (the native file picker
         # used by FileDialogService). It does not pull QtQuick.Dialogs into
         # the QML runtime — that's a separate, forbidden module.
@@ -288,6 +293,17 @@ if(WIN32)
             "$<TARGET_FILE_DIR:Qt6::Core>/../qml/QtMultimedia"
             "$<TARGET_FILE_DIR:crater>/qml/QtMultimedia"
         COMMENT "Copying QtMultimedia QML module to <exe>/qml/QtMultimedia"
+        VERBATIM)
+
+    # QtQuick.Effects QML module — same deployment trick we use for
+    # QtMultimedia. MultiEffect (powering text-node drop shadows in
+    # NodeRenderer.qml) is loaded via `import QtQuick.Effects`, which
+    # Qt's qmlimportscanner can miss on build-tree exes.
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_FILE_DIR:Qt6::Core>/../qml/QtQuick/Effects"
+            "$<TARGET_FILE_DIR:crater>/qml/QtQuick/Effects"
+        COMMENT "Copying QtQuick.Effects QML module to <exe>/qml/QtQuick/Effects"
         VERBATIM)
 endif()
 

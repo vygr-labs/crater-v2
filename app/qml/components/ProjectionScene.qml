@@ -121,16 +121,49 @@ Item {
     // own fades. We build a compound tag and skip when only the
     // non-trigger axes moved.
     //
-    // Using item.id as the identity key means re-Go-Live of the same
-    // schedule item won't reanimate even if the operator clicked it twice;
-    // that matches operator intent ("nothing changed; don't flicker").
     // Pages and crop and kind move the tag too so verse advances and
     // crop commits both transition.
     property string _lastTag: ""
 
+    // Schedule items don't carry a uniform `id` field — they're keyed by
+    // kind-specific natural identifiers (songId, scriptureRef object,
+    // mediaPath, mediaId). Reading a hypothetical `item.id` always returns
+    // undefined and collapses every item to the same identity, which would
+    // debounce real item swaps as "nothing changed". This helper builds a
+    // kind-aware identity that actually distinguishes items.
+    //
+    // Reference: AppState.qml documents the canonical item shape — kind +
+    // title + subtitle + pages + (songId | scriptureRef | mediaPath |
+    // mediaId) + themeId.
+    function _itemIdentity(item, kind) {
+        if (!item) return ""
+        switch (kind) {
+            case "song":
+                return "song:" + (item.songId || 0)
+            case "scripture": {
+                const r = item.scriptureRef
+                if (!r) return "scripture:" + (item.title || "")
+                return "scripture:"
+                     + (r.translationCode || "") + ":"
+                     + (r.book || "")            + ":"
+                     + (r.chapter || 0)          + ":"
+                     + (r.verseStart || 0)       + "-"
+                     + (r.verseEnd || 0)
+            }
+            case "image":
+            case "video":
+                return kind + ":" + (item.mediaPath || "")
+            case "pdf":
+                return "pdf:" + (item.mediaId || 0)
+        }
+        return kind + ":" + (item.title || "")
+    }
+
     function _buildTag(item, kind, page, crop) {
-        const id = (item && item.id !== undefined) ? item.id : 0
-        return [id, kind, page, crop.x, crop.y, crop.width, crop.height].join("|")
+        return _itemIdentity(item, kind)
+             + "|" + kind
+             + "|" + page
+             + "|" + crop.x + "," + crop.y + "," + crop.width + "," + crop.height
     }
 
     function _promoteLayers() {
