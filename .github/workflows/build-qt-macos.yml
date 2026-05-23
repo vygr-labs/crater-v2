@@ -1,0 +1,140 @@
+name: Build Qt 6.8.2 for macOS Monterey
+
+# One-shot build of Qt 6.8.2 LTS from source. Produces a universal
+# (arm64 + x86_64) binary targeting macOS 12+ (Monterey and up),
+# including private headers (rhi/qrhi.h) that aqtinstall's binary
+# install strips on Qt 6.8 LTS.
+#
+# Why we need this: Crater's NdiRenderer relies on Qt6::GuiPrivate
+# (QRhi). Qt 6.11 binary installs include private headers but raise
+# the macOS floor to 14 (Sonoma). Qt 6.8 LTS still targets macOS 12
+# but its binary install strips private headers. The only way to get
+# both is to build from source.
+#
+# Output: a release at tag `qt-6.8.2-monterey` with the install dir
+# packed as a .tar.xz. Crater's release-build-macos.yml will be
+# updated to curl this tarball instead of using install-qt-action.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to create the release
+
+jobs:
+  build:
+    name: Build Qt 6.8.2
+    runs-on: macos-14
+    timeout-minutes: 180
+
+    env:
+      QT_VERSION: '6.8.2'
+      QT_INSTALL: ${{ github.workspace }}/qt-installed
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+
+    steps:
+      - name: Install build deps
+        # ninja is what the configure-time generator wants. Everything
+        # else (cmake, clang, perl, python) ships on macos-14 by default.
+        run: brew install ninja
+
+      - name: Disk space (pre-build)
+        # Useful diagnostic if the build later runs out of room. The
+        # macos-14 runner has ~14 GiB free after the standard image;
+        # a full Qt build needs ~10 GiB peak. Tight but workable with
+        # the submodule whitelist below.
+        run: df -h /
+
+      - name: Download qt-everywhere source
+        # ~800 MB compressed. Single download covers every submodule
+        # we might want to enable; we whitelist the ones we actually
+        # need at configure time via QT_BUILD_SUBMODULES.
+        run: |
+          curl -fSL --retry 3 -o qt-everywhere.tar.xz \
+            "https://download.qt.io/archive/qt/${QT_VERSION%.*}/${QT_VERSION}/single/qt-everywhere-src-${QT_VERSION}.tar.xz"
+          tar -xf qt-everywhere.tar.xz
+          rm qt-everywhere.tar.xz
+
+      - name: Configure Qt
+        # Universal binary + deployment target 12.0 = artifact loads
+        # on every macOS from Monterey forward, on both Intel and
+        # Apple Silicon. Submodule whitelist matches what Crater links
+        # against today (Core/Gui/Network/Sql/Widgets are inside
+        # qtbase; qml/quick come from qtdeclarative; shader plugins
+        # come from qtshadertools; etc.). qttools provides macdeployqt.
+        run: |
+          cd qt-everywhere-src-${QT_VERSION}
+          cmake -G Ninja -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX="$QT_INSTALL" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+              -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64' \
+              -DQT_BUILD_SUBMODULES='qtbase;qtdeclarative;qtshadertools;qtsvg;qtimageformats;qtmultimedia;qtpdf;qtwebsockets;qttools' \
+              -DQT_BUILD_TESTS=OFF \
+              -DQT_BUILD_EXAMPLES=OFF \
+              -DBUILD_SHARED_LIBS=ON
+
+      - name: Build Qt
+        # The big one. ~60-90 minutes on macos-14 (M1, 3-core
+        # provisioning). The `--parallel` honors GHA's job-level
+        # NPROC env so we use all available cores.
+        run: |
+          cd qt-everywhere-src-${QT_VERSION}
+          cmake --build build --parallel
+
+      - name: Install Qt
+        run: |
+          cd qt-everywhere-src-${QT_VERSION}
+          cmake --install build
+
+      - name: Disk space (post-build)
+        run: df -h /
+
+      - name: Sanity-check the install
+        # Fast fail if the build mysteriously omitted what we need.
+        # `Qt6GuiPrivateConfig.cmake` is the missing-from-aqt file that
+        # started this whole odyssey — if our source build doesn't
+        # produce it, we have a fundamentally broken install before we
+        # even try consuming it from Crater.
+        run: |
+          test -f "$QT_INSTALL/bin/macdeployqt" || { echo "macdeployqt missing"; exit 1; }
+          test -f "$QT_INSTALL/lib/cmake/Qt6Gui/Qt6GuiConfig.cmake" || { echo "Qt6Gui CMake config missing"; exit 1; }
+          test -f "$QT_INSTALL/lib/cmake/Qt6GuiPrivate/Qt6GuiPrivateConfig.cmake" || { echo "Qt6GuiPrivate CMake config missing (this is the whole point of this workflow)"; exit 1; }
+          find "$QT_INSTALL/include/QtGui" -name 'qrhi.h' | head -3
+          echo ">>> Install looks healthy"
+
+      - name: Pack tarball
+        # xz -9 max compression. The install is ~3-4 GiB raw;
+        # compresses to ~400-600 MiB.
+        run: |
+          cd "$(dirname "$QT_INSTALL")"
+          tar -cJf qt-6.8.2-macos-monterey.tar.xz "$(basename "$QT_INSTALL")"
+          ls -lh qt-6.8.2-macos-monterey.tar.xz
+
+      - name: Upload as workflow artifact (90-day fallback)
+        # Belt-and-suspenders: artifact AND release. If the release
+        # step ever fails (e.g. tag collision after a re-run), the
+        # artifact provides a working download path.
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-6.8.2-macos-monterey
+          path: ${{ github.workspace }}/qt-6.8.2-macos-monterey.tar.xz
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload as release asset (durable URL)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: qt-6.8.2-monterey
+          name: Qt 6.8.2 prebuilt for macOS Monterey
+          body: |
+            Qt 6.8.2 LTS, built from source on macos-14 CI.
+
+            **Target**: macOS 12+ (Monterey and up)
+            **Arch**: universal (arm64 + x86_64)
+            **Includes**: private headers (rhi/qrhi.h etc.) and Qt6*PrivateConfig.cmake
+            **Submodules**: qtbase, qtdeclarative, qtshadertools, qtsvg, qtimageformats, qtmultimedia, qtpdf, qtwebsockets, qttools
+
+            Crater's macOS release workflow downloads this tarball instead of using install-qt-action, because Qt's binary distribution for 6.8 omits private headers (needed for NdiRenderer's QRhi pipeline) and Qt 6.10+ binaries target macOS 14+.
+          draft: false
+          files: ${{ github.workspace }}/qt-6.8.2-macos-monterey.tar.xz
