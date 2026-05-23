@@ -59,15 +59,19 @@ jobs:
           # orchestrator. Clone shallow at the release tag.
           git clone --depth=1 --branch "v${QT_VERSION}" --no-tags \
               https://github.com/qt/qt5.git .
-          # Init only the submodules we'll build. qtpdf is recursive
-          # because it owns its own PDFium third-party submodule.
-          git submodule update --init --depth=1 --no-fetch \
-              qtbase qtdeclarative qtshadertools qtsvg qtimageformats \
-              qtmultimedia qtwebsockets qttools 2>&1 || \
+          # Init only the submodules we'll build, shallowly.
           git submodule update --init --depth=1 \
               qtbase qtdeclarative qtshadertools qtsvg qtimageformats \
               qtmultimedia qtwebsockets qttools
-          git submodule update --init --recursive --depth=1 qtpdf
+          # qtpdf is NOT a submodule of qt5.git -- Qt extracted it to a
+          # standalone repo because of PDFium licensing. Clone it
+          # directly at the matching tag and drop it into the qt5 tree
+          # as a sibling of qtbase; the meta CMakeLists picks it up as
+          # if it were a submodule. --recurse + --shallow brings in
+          # qtpdf's own PDFium submodule shallowly.
+          git clone --depth=1 --branch "v${QT_VERSION}" --no-tags \
+              --recurse-submodules --shallow-submodules \
+              https://github.com/qt/qtpdf.git qtpdf
           ls -d qt* | head -20
 
       - name: Configure Qt
