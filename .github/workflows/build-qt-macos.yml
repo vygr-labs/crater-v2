@@ -45,40 +45,30 @@ jobs:
         # the submodule whitelist below.
         run: df -h /
 
-      - name: Download qt-everywhere source
-        # ~800 MB compressed. Single download covers MOST submodules,
-        # but Qt 6.8 ships some heavier modules (qtpdf with PDFium,
-        # qtwebengine with Chromium) as separate tarballs to keep this
-        # download manageable. We whitelist what we need at configure
-        # time via QT_BUILD_SUBMODULES and augment missing ones below.
+      - name: Clone Qt source via git meta-repo
+        # The qt-everywhere tarball doesn't include qtpdf (PDFium
+        # licensing) and Qt's submodule tarball URLs are inconsistent.
+        # The git meta-repo (qt5.git) tracks every submodule at the
+        # right ref and is the canonical source per Qt's own build docs.
+        # --depth=1 + --no-tags on both clone and submodule update keep
+        # the network + disk footprint reasonable (~2 GiB total).
         run: |
-          curl -fSL --retry 3 -o qt-everywhere.tar.xz \
-            "https://download.qt.io/archive/qt/${QT_VERSION%.*}/${QT_VERSION}/single/qt-everywhere-src-${QT_VERSION}.tar.xz"
-          tar -xf qt-everywhere.tar.xz
-          rm qt-everywhere.tar.xz
-
-      - name: Augment missing submodules
-        # qtpdf in particular is not bundled in the qt-everywhere tarball
-        # (PDFium licensing). Download any submodule we need that's
-        # missing from the meta-tarball and graft it in. Configure's
-        # QT_BUILD_SUBMODULES picks it up like a native member.
-        run: |
+          mkdir qt-everywhere-src-${QT_VERSION}
           cd qt-everywhere-src-${QT_VERSION}
-          BASE_URL="https://download.qt.io/archive/qt/${QT_VERSION%.*}/${QT_VERSION}/submodules"
-          # Defensive list: anything we whitelist for build that *might*
-          # not be in the qt-everywhere tarball. Only downloads if absent.
-          for mod in qtpdf qtmultimedia qtwebsockets; do
-              if [[ ! -d "$mod" ]]; then
-                  echo ">>> Submodule $mod not in qt-everywhere tarball; fetching separately..."
-                  curl -fSL --retry 3 -o "${mod}.tar.xz" "${BASE_URL}/${mod}-everywhere-src-${QT_VERSION}.tar.xz"
-                  tar -xf "${mod}.tar.xz"
-                  mv "${mod}-everywhere-src-${QT_VERSION}" "$mod"
-                  rm "${mod}.tar.xz"
-                  echo "    grafted into qt-everywhere-src-${QT_VERSION}/$mod"
-              else
-                  echo "    $mod already present"
-              fi
-          done
+          # qt5 is a meta-repo of .gitmodules + a CMakeLists.txt
+          # orchestrator. Clone shallow at the release tag.
+          git clone --depth=1 --branch "v${QT_VERSION}" --no-tags \
+              https://github.com/qt/qt5.git .
+          # Init only the submodules we'll build. qtpdf is recursive
+          # because it owns its own PDFium third-party submodule.
+          git submodule update --init --depth=1 --no-fetch \
+              qtbase qtdeclarative qtshadertools qtsvg qtimageformats \
+              qtmultimedia qtwebsockets qttools 2>&1 || \
+          git submodule update --init --depth=1 \
+              qtbase qtdeclarative qtshadertools qtsvg qtimageformats \
+              qtmultimedia qtwebsockets qttools
+          git submodule update --init --recursive --depth=1 qtpdf
+          ls -d qt* | head -20
 
       - name: Configure Qt
         # Universal binary + deployment target 12.0 = artifact loads
