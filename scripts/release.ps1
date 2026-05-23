@@ -188,7 +188,9 @@ if (-not $SkipBuild) {
         & cmake -S $QtRoot -B $BuildDir `
             -G 'Ninja Multi-Config' `
             -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_CXX_COMPILER=cl
+            -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded `
+            -DCMAKE_POLICY_DEFAULT_CMP0141=NEW
     }
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
 
