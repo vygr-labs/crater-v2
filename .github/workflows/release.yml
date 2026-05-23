@@ -111,6 +111,16 @@ jobs:
           path: packaging/vc_redist.x64.exe
           key: vc-redist-x64-v17-${{ runner.os }}
 
+      - name: Cache bibles.sqlite
+        uses: actions/cache@v4
+        with:
+          # 74 MB SQLite database fetched once from the data-v1 release asset
+          # by release.ps1. Cache key includes a data-revision tag so bumping
+          # the Bible DB requires uploading a new release asset and bumping
+          # this key (and the SHA-256 in release.ps1) in lockstep.
+          path: packaging/bibles.sqlite
+          key: bibles-sqlite-data-v1-${{ runner.os }}
+
       - name: Set up MSVC environment
         # Loads cl.exe, link.exe, INCLUDE, LIB, LIBPATH into the runner env
         # (same machinery as VS's "Developer Command Prompt"). Required

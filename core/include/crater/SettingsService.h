@@ -49,6 +49,23 @@ private:
     Q_PROPERTY(int     themeIdForPrimary  READ themeIdForPrimary  WRITE setThemeIdForPrimary  NOTIFY themeIdForPrimaryChanged)
     Q_PROPERTY(int     themeIdForNdi      READ themeIdForNdi      WRITE setThemeIdForNdi      NOTIFY themeIdForNdiChanged)
     Q_PROPERTY(int     themeIdForStage    READ themeIdForStage    WRITE setThemeIdForStage    NOTIFY themeIdForStageChanged)
+    // Per-output content transitions. Style ∈ { "cut", "crossfade",
+    // "fadeBlack" }; duration in ms (clamped 0..1500). ProjectionScene reads
+    // these via outputKind to pick its animation when ProjectionService
+    // emits an item / page / crop change. Defaults are crossfade @ 280 ms
+    // for every output — preserves the historical _transMs behavior so
+    // upgrading the app doesn't visibly change anything until the operator
+    // touches the new controls. reduceMotion (existing global) coerces the
+    // effective style to "cut" regardless of these slots; it's an
+    // accessibility override, not a per-output preference. Setters normalize
+    // unknown style strings to "crossfade" and clamp duration into range
+    // so QML writes can't put the rendering in an undefined state.
+    Q_PROPERTY(QString transitionStyleForPrimary       READ transitionStyleForPrimary       WRITE setTransitionStyleForPrimary       NOTIFY transitionStyleForPrimaryChanged)
+    Q_PROPERTY(QString transitionStyleForNdi           READ transitionStyleForNdi           WRITE setTransitionStyleForNdi           NOTIFY transitionStyleForNdiChanged)
+    Q_PROPERTY(QString transitionStyleForStage         READ transitionStyleForStage         WRITE setTransitionStyleForStage         NOTIFY transitionStyleForStageChanged)
+    Q_PROPERTY(int     transitionDurationMsForPrimary  READ transitionDurationMsForPrimary  WRITE setTransitionDurationMsForPrimary  NOTIFY transitionDurationMsForPrimaryChanged)
+    Q_PROPERTY(int     transitionDurationMsForNdi      READ transitionDurationMsForNdi      WRITE setTransitionDurationMsForNdi      NOTIFY transitionDurationMsForNdiChanged)
+    Q_PROPERTY(int     transitionDurationMsForStage    READ transitionDurationMsForStage    WRITE setTransitionDurationMsForStage    NOTIFY transitionDurationMsForStageChanged)
     // Render-pipeline mode. "single" (default): NDI grabs frames from the
     // projection window's scene graph, so NDI inherits the projection's
     // theme and the projection window must stay alive (parked offscreen)
@@ -88,6 +105,12 @@ public:
     int     themeIdForPrimary() const;
     int     themeIdForNdi() const;
     int     themeIdForStage() const;
+    QString transitionStyleForPrimary() const;
+    QString transitionStyleForNdi() const;
+    QString transitionStyleForStage() const;
+    int     transitionDurationMsForPrimary() const;
+    int     transitionDurationMsForNdi() const;
+    int     transitionDurationMsForStage() const;
     QString outputMode() const;
     bool    useHeadlessNdi() const;
     bool    showVerseNumbers() const;
@@ -104,6 +127,12 @@ public:
     void setThemeIdForPrimary(int id);
     void setThemeIdForNdi(int id);
     void setThemeIdForStage(int id);
+    void setTransitionStyleForPrimary(const QString& style);
+    void setTransitionStyleForNdi(const QString& style);
+    void setTransitionStyleForStage(const QString& style);
+    void setTransitionDurationMsForPrimary(int ms);
+    void setTransitionDurationMsForNdi(int ms);
+    void setTransitionDurationMsForStage(int ms);
     void setOutputMode(const QString& mode);
     void setUseHeadlessNdi(bool v);
     void setShowVerseNumbers(bool v);
@@ -121,6 +150,12 @@ signals:
     void themeIdForPrimaryChanged();
     void themeIdForNdiChanged();
     void themeIdForStageChanged();
+    void transitionStyleForPrimaryChanged();
+    void transitionStyleForNdiChanged();
+    void transitionStyleForStageChanged();
+    void transitionDurationMsForPrimaryChanged();
+    void transitionDurationMsForNdiChanged();
+    void transitionDurationMsForStageChanged();
     void outputModeChanged();
     void useHeadlessNdiChanged();
     void showVerseNumbersChanged();

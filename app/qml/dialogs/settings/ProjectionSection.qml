@@ -103,6 +103,162 @@ Item {
                 }
             }
 
+            // ── TRANSITIONS ──────────────────────────────────────────────
+            // Per-output transition between live items + between pages of the
+            // same item. Style and duration are independently settable for
+            // Primary and (in dual output mode) NDI — matching the per-output
+            // theme pin pattern. SettingsService.reduceMotion remains the
+            // global override; when on, every output collapses to "cut"
+            // regardless of these picks.
+            SettingsSectionHeader { title: qsTr("Transitions") }
+
+            // ── Primary output: style ────────────────────────────────────
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Primary output style"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("How the audience screen moves between items"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
+                    // Map canonical token → display label. Anything unknown
+                    // collapses to Crossfade so the picker never shows
+                    // empty after a registry hand-edit.
+                    value: {
+                        switch (SettingsService.transitionStyleForPrimary) {
+                            case "cut":       return qsTr("Cut")
+                            case "fadeBlack": return qsTr("Fade through black")
+                            default:          return qsTr("Crossfade")
+                        }
+                    }
+                    onValueSelected: function(v) {
+                        if (v === qsTr("Cut"))                  SettingsService.transitionStyleForPrimary = "cut"
+                        else if (v === qsTr("Fade through black")) SettingsService.transitionStyleForPrimary = "fadeBlack"
+                        else                                    SettingsService.transitionStyleForPrimary = "crossfade"
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // ── Primary output: duration ─────────────────────────────────
+            // Named presets rather than a numeric input: operators pick
+            // "feel" not arithmetic, and the SettingsService setter clamps
+            // to 0..1500 so any future hand-edit can't escape sanity.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Primary output duration"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("How long each transition takes"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: [qsTr("Instant"),
+                              qsTr("Fast (150 ms)"),
+                              qsTr("Normal (280 ms)"),
+                              qsTr("Slow (500 ms)"),
+                              qsTr("Very slow (1000 ms)")]
+                    value: {
+                        const ms = SettingsService.transitionDurationMsForPrimary
+                        if (ms <= 0)    return qsTr("Instant")
+                        if (ms <= 150)  return qsTr("Fast (150 ms)")
+                        if (ms <= 280)  return qsTr("Normal (280 ms)")
+                        if (ms <= 500)  return qsTr("Slow (500 ms)")
+                        return qsTr("Very slow (1000 ms)")
+                    }
+                    onValueSelected: function(v) {
+                        if (v === qsTr("Instant"))                 SettingsService.transitionDurationMsForPrimary = 0
+                        else if (v === qsTr("Fast (150 ms)"))      SettingsService.transitionDurationMsForPrimary = 150
+                        else if (v === qsTr("Normal (280 ms)"))    SettingsService.transitionDurationMsForPrimary = 280
+                        else if (v === qsTr("Slow (500 ms)"))      SettingsService.transitionDurationMsForPrimary = 500
+                        else                                       SettingsService.transitionDurationMsForPrimary = 1000
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // ── NDI output: style (visible only in dual output mode) ────
+            // Single mode means NDI grabs frames from the projection
+            // window's scene — there is no separate NDI scene to apply a
+            // distinct transition to, so the controls would be lying. Hide
+            // entirely in single mode; the QtQuick.Layouts column collapses
+            // the hidden Items automatically.
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 56
+                visible: SettingsService.outputMode === "dual"
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("NDI output style"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Independent transition for the NDI broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
+                    value: {
+                        switch (SettingsService.transitionStyleForNdi) {
+                            case "cut":       return qsTr("Cut")
+                            case "fadeBlack": return qsTr("Fade through black")
+                            default:          return qsTr("Crossfade")
+                        }
+                    }
+                    onValueSelected: function(v) {
+                        if (v === qsTr("Cut"))                  SettingsService.transitionStyleForNdi = "cut"
+                        else if (v === qsTr("Fade through black")) SettingsService.transitionStyleForNdi = "fadeBlack"
+                        else                                    SettingsService.transitionStyleForNdi = "crossfade"
+                    }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Theme.color.borderSubtle
+                visible: SettingsService.outputMode === "dual"
+            }
+
+            // ── NDI output: duration (visible only in dual output mode) ─
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 56
+                visible: SettingsService.outputMode === "dual"
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("NDI output duration"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("How long the NDI transition takes"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: [qsTr("Instant"),
+                              qsTr("Fast (150 ms)"),
+                              qsTr("Normal (280 ms)"),
+                              qsTr("Slow (500 ms)"),
+                              qsTr("Very slow (1000 ms)")]
+                    value: {
+                        const ms = SettingsService.transitionDurationMsForNdi
+                        if (ms <= 0)    return qsTr("Instant")
+                        if (ms <= 150)  return qsTr("Fast (150 ms)")
+                        if (ms <= 280)  return qsTr("Normal (280 ms)")
+                        if (ms <= 500)  return qsTr("Slow (500 ms)")
+                        return qsTr("Very slow (1000 ms)")
+                    }
+                    onValueSelected: function(v) {
+                        if (v === qsTr("Instant"))                 SettingsService.transitionDurationMsForNdi = 0
+                        else if (v === qsTr("Fast (150 ms)"))      SettingsService.transitionDurationMsForNdi = 150
+                        else if (v === qsTr("Normal (280 ms)"))    SettingsService.transitionDurationMsForNdi = 280
+                        else if (v === qsTr("Slow (500 ms)"))      SettingsService.transitionDurationMsForNdi = 500
+                        else                                       SettingsService.transitionDurationMsForNdi = 1000
+                    }
+                }
+            }
+
             // ── MULTIPLE OUTPUTS (preview) ───────────────────────────────
             SettingsSectionHeader { title: qsTr("Multiple Outputs") }
 

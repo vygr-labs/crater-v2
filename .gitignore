@@ -37,3 +37,4 @@ Thumbs.db
 # Release packaging output (qt/scripts/release.ps1)
 dist/
 packaging/vc_redist.x64.exe
+packaging/bibles.sqlite

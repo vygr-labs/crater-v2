@@ -3,87 +3,89 @@ import Crater
 
 // Reusable projection scene — the canvas-native render surface shared by
 // ProjectionWindow (audience display) and NdiCanvas (NDI broadcast in dual
-// output mode). Reads from ProjectionService for content, resolves theme
-// via AppState.resolveItemTheme(item, outputKind), letterboxes the canvas
-// into the parent, and exposes the inner `stage` Item via `renderItem`
-// so external consumers (NDI grabber today; future recording / multi-
-// output sinks) can pull canvas-resolution frames regardless of how the
-// scene is letterboxed into its host window.
+// output mode). Drives a two-layer transition between the previous and
+// current live content, with the style (cut / crossfade / fade-through-
+// black) and duration resolved per output via SettingsService.
 //
-// outputKind selects which per-output theme override the scene honors:
-//   "primary" → SettingsService.themeIdForPrimary (always-on)
-//   "ndi"     → SettingsService.themeIdForNdi when outputMode==="dual",
-//               otherwise falls back to themeIdForPrimary (so a single-
-//               mode NDI scene matches what the projection window shows)
+// outputKind selects which per-output settings the scene honors:
+//   "primary" → transitionStyleForPrimary + transitionDurationMsForPrimary
+//   "ndi"     → transitionStyleForNdi     + transitionDurationMsForNdi
+//                (when outputMode==="dual"; in single mode NDI inherits
+//                primary's scene wholesale, so these prefs aren't reached)
 //   "stage"   → reserved for v1.1 multi-output stage monitor
 //
 // The same component instantiates in both consumer windows; only the
 // outputKind property differs. That keeps the rendering source-of-truth
-// singular even as the two outputs can render different themes.
+// singular even as the two outputs can independently set their own theme
+// pin AND their own transition feel — e.g. operator can have Primary
+// crossfade slowly for the audience and NDI cut instantly for stream
+// production.
+//
+// Why two layers (current + previous) rather than snapshot-and-fade: a
+// snapshot of the outgoing video freezes mid-fade, which looks worse than
+// a hard cut for any item where motion matters. Keeping the outgoing
+// content live (just fading its opacity) lets video → image / image →
+// video / video → video crossfades stay in motion through the transition.
+//
+// SettingsService.reduceMotion is an accessibility override: when true,
+// every output collapses to "cut" with 0 ms regardless of the per-output
+// pins. Mirrors the standard prefers-reduced-motion semantic.
 Item {
     id: scene
 
     property string outputKind: "primary"
 
-    // Mirrors original ProjectionWindow value — operator-facing transition
-    // speed for go-live / page-change / logo fades.
-    readonly property int _transMs: 280
-
-    // Canvas-native render surface. NDI's grabber points at this so it
-    // gets canvas-resolution pixels (1920×1080 by default) regardless of
-    // how big the host window happens to be.
+    // Exposes the canvas-native render Item — NDI's grabber and any future
+    // capture consumer points at this so they get full-resolution frames
+    // regardless of how the scene is letterboxed into its host window.
     property alias renderItem: stage
 
-    // ── Reactive bindings to ProjectionService ──────────────────────────
-    readonly property var    _item    : ProjectionService.currentItem
-    readonly property string _kind    : ProjectionService.contentKind
-    readonly property int    _page    : ProjectionService.pageIndex
-    readonly property bool   _isClear : ProjectionService.isClear
+    // ── Per-output transition resolution ────────────────────────────────
+    // Reads style + duration from SettingsService based on this scene's
+    // outputKind. reduceMotion overrides both to "cut" / 0 ms.
+    readonly property string _outStyle: {
+        switch (outputKind) {
+            case "ndi":   return SettingsService.transitionStyleForNdi
+            case "stage": return SettingsService.transitionStyleForStage
+            default:      return SettingsService.transitionStyleForPrimary
+        }
+    }
+    readonly property int _outMs: {
+        switch (outputKind) {
+            case "ndi":   return SettingsService.transitionDurationMsForNdi
+            case "stage": return SettingsService.transitionDurationMsForStage
+            default:      return SettingsService.transitionDurationMsForPrimary
+        }
+    }
+    readonly property string _style: SettingsService.reduceMotion ? "cut" : _outStyle
+    readonly property int    _ms:    SettingsService.reduceMotion ? 0     : _outMs
+
+    // Duration used by passive (non-transition) fades inside the scene —
+    // logo show/hide AND the per-text-node clear fade. "cut" coerces to 0
+    // so picking that style genuinely makes the whole projection feel
+    // instant; any fade style inherits the per-output content duration so
+    // the scene feels coherent end to end.
+    readonly property int _passiveMs: _style === "cut" ? 0 : _ms
+
+    // ── Live state mirrors ──────────────────────────────────────────────
+    // Bound to ProjectionService Q_PROPERTYs; the transition controller
+    // reads these when promoting layers but the layers themselves do NOT
+    // bind to them directly (the scene is the single mediator that copies
+    // values into the current layer with each animation kickoff).
+    readonly property var    _liveItem: ProjectionService.currentItem
+    readonly property string _liveKind: ProjectionService.contentKind
+    readonly property int    _livePage: ProjectionService.pageIndex
+    readonly property rect   _liveCrop: ProjectionService.cropRect
     readonly property bool   _showLogo: ProjectionService.showLogo
+    readonly property bool   _isClear:  ProjectionService.isClear
 
-    // True when the live item is itself a picture, movie, or PDF (vs a
-    // song/scripture/presentation whose theme may have a media background).
-    // For these, the entire stage = the media — no theme nodes overlay,
-    // no no-theme fallback. The themed Repeater is gated off below.
-    //
-    // PDFs join image/video here because conceptually they're the same
-    // class: the document IS the stage. Where they differ is only in how
-    // the bytes get to the screen — `pdfLayer` rasterizes through the
-    // PdfPageImageProvider, image/video through MediaMonitor. Both inherit
-    // the same crop semantics from ProjectionService.cropRect.
-    readonly property bool   _isMediaItem: {
-        if (!_item) return false
-        if (_kind === "image" || _kind === "video") {
-            return (_item.mediaPath || "").length > 0
-        }
-        if (_kind === "pdf") {
-            return (_item.mediaId || 0) > 0
-        }
-        return false
-    }
-
-    // Snapshot of the crop rectangle baked at goLive time (see
-    // ProjectionService::goLiveWithCrop). Reads as a Qt rect with values
-    // in 0..1 normalized space. Songs / scriptures always carry the
-    // identity {0,0,1,1} because their goLive() overload resets it; only
-    // image / PDF items carry a meaningful operator-authored crop. The
-    // image branch uses fillMode + sourceClipRect; the PDF branch passes
-    // the rect into the image-provider URL so pdfium re-rasterizes the
-    // sub-region at canvas DPI (no digital zoom — see the design note in
-    // MediaService::renderPdfPage).
-    readonly property rect _cropRect: ProjectionService.cropRect
-
-    // Theme resolution — bumps on default changes, theme adds/removes, the
-    // outputMode toggle, and per-output theme writes. AppState.resolveItemTheme
-    // is invoked with this scene's outputKind so dual-mode NDI sees its own
-    // pinned theme while the primary projection sees its own — without either
-    // side requiring a re-Go-Live.
+    // ── Theme-revision dependency forwarded to the layers ──────────────
+    // Each layer's `theme` is reactive on this counter; we bump it for any
+    // external signal that could change resolved themes (defaults, theme
+    // edits, per-output pins). Forwarded to both layers in lock-step so a
+    // theme edit during a transition takes effect on the new content as
+    // soon as the bump propagates — no stale theme on the incoming layer.
     property int _themeRevision: 0
-    readonly property var _theme: {
-        _themeRevision
-        return AppState.resolveItemTheme(_item, outputKind)
-    }
-
     Connections {
         target: ThemeService
         function onDefaultsChanged()  { scene._themeRevision++ }
@@ -91,58 +93,152 @@ Item {
     }
     Connections {
         target: SettingsService
-        // Each of these can flip which slot resolveItemTheme picks; bump
-        // the revision so both ProjectionScene instances re-resolve in lock-
-        // step when the operator changes any per-output assignment.
         function onOutputModeChanged()         { scene._themeRevision++ }
         function onThemeIdForPrimaryChanged()  { scene._themeRevision++ }
         function onThemeIdForNdiChanged()      { scene._themeRevision++ }
         function onThemeIdForStageChanged()    { scene._themeRevision++ }
     }
 
-    readonly property var _tokens : _theme && _theme.tokens ? _theme.tokens : ({})
-    readonly property var _canvas : _tokens.canvas || ({ width: 1920, height: 1080 })
-    readonly property var _nodes  : _tokens.nodes  || []
-
-    // ── Content resolution ──────────────────────────────────────────────
-    // Live current page text — what the operator sent live. Text nodes with
-    // linkage=scriptureText or linkage=lyric show this.
-    readonly property string _pageText: {
-        if (!_item) return ""
-        const pages = _item.pages
-        if (!pages || pages.length === 0) return ""
-        const idx = Math.min(_page, pages.length - 1)
-        const p = pages[idx]
-        return (p && p.content) || ""
-    }
-    // Reference label (e.g. "John 3:16") for scripture items.
-    readonly property string _refText: {
-        if (!_item) return ""
-        return _item.title || _item.reference || ""
-    }
-
-    function resolveText(node) {
-        if (!node || node.kind !== "text") return ""
-        const data = node.data || {}
-        switch (data.linkage) {
-            case "scriptureRef":  return _refText
-            case "scriptureText": return _pageText
-            case "lyric":         return _pageText
-            case "custom":        return data.text || ""
+    // ── Canvas size ─────────────────────────────────────────────────────
+    // Tracks the CURRENT layer's theme canvas — never the previous one.
+    // If the new item has a different canvas size, the letterbox snaps to
+    // the new size and the outgoing layer renders into it (it'll be
+    // squished/stretched during the brief fade, but it's at opacity → 0
+    // either way so the visual impact is negligible). Tracking the
+    // current layer matches "transitions describe the destination" UX.
+    readonly property var _canvas: {
+        if (currentLayer && currentLayer.theme && currentLayer.theme.tokens
+            && currentLayer.theme.tokens.canvas) {
+            return currentLayer.theme.tokens.canvas
         }
-        return data.text || ""
+        return { width: 1920, height: 1080 }
     }
 
-    // Pre-sort nodes by z so render order matches layer order. Recomputes
-    // when _nodes changes — cheap for ≤50 nodes.
-    readonly property var _sortedNodes: {
-        const arr = _nodes.slice()
-        arr.sort((a, b) => ((a.style && a.style.z) || 0) - ((b.style && b.style.z) || 0))
-        return arr
+    // ── Transition controller ──────────────────────────────────────────
+    // ProjectionService.stateChanged() fires for many reasons (goLive,
+    // clear, page change, logo toggle, …). Only item/kind/page/crop
+    // changes should kick a transition — logo / clear toggles have their
+    // own fades. We build a compound tag and skip when only the
+    // non-trigger axes moved.
+    //
+    // Using item.id as the identity key means re-Go-Live of the same
+    // schedule item won't reanimate even if the operator clicked it twice;
+    // that matches operator intent ("nothing changed; don't flicker").
+    // Pages and crop and kind move the tag too so verse advances and
+    // crop commits both transition.
+    property string _lastTag: ""
+
+    function _buildTag(item, kind, page, crop) {
+        const id = (item && item.id !== undefined) ? item.id : 0
+        return [id, kind, page, crop.x, crop.y, crop.width, crop.height].join("|")
     }
 
-    // ── Letterbox: the *visible* canvas container ───────────────────────
-    // Scaled to fit the host while preserving the canvas aspect ratio.
+    function _promoteLayers() {
+        const newTag = scene._buildTag(scene._liveItem, scene._liveKind,
+                                       scene._livePage, scene._liveCrop)
+        if (newTag === scene._lastTag) return
+        scene._lastTag = newTag
+
+        // Stop any in-flight animations so opacities aren't being driven
+        // by a stale animation while a new one starts. If the operator
+        // hits PageDown three times in 200 ms each press cleanly takes
+        // over from the previous fade rather than queueing.
+        transitionParallel.stop()
+        transitionSequence.stop()
+
+        // Snapshot the old "current" content into "previous". This is the
+        // moment that breaks the layer's bindings from the live state —
+        // both layers now hold imperative snapshots; only the scene mutates
+        // them on the next transition.
+        previousLayer.layerItem    = currentLayer.layerItem
+        previousLayer.layerKind    = currentLayer.layerKind
+        previousLayer.layerPage    = currentLayer.layerPage
+        previousLayer.layerCrop    = currentLayer.layerCrop
+        previousLayer.audioEnabled = false
+
+        // Promote new live state into the current layer.
+        currentLayer.layerItem    = scene._liveItem
+        currentLayer.layerKind    = scene._liveKind
+        currentLayer.layerPage    = scene._livePage
+        currentLayer.layerCrop    = scene._liveCrop
+        currentLayer.audioEnabled = true
+
+        // Pick the animation. With cut OR 0 ms duration, hard-set opacities
+        // and skip the animation entirely — that avoids a 1-frame mid-value
+        // flicker that a 0-duration NumberAnimation can produce on some
+        // QRhi backends.
+        if (scene._style === "cut" || scene._ms <= 0) {
+            previousLayer.opacity = 0
+            currentLayer.opacity  = 1
+        } else {
+            // Reset opacities to their start values BEFORE restart() so the
+            // animation interpolates from a known state regardless of where
+            // the previous (interrupted) animation left them.
+            previousLayer.opacity = 1
+            currentLayer.opacity  = 0
+            if (scene._style === "fadeBlack") {
+                transitionSequence.restart()
+            } else {
+                transitionParallel.restart()
+            }
+        }
+    }
+
+    Connections {
+        target: ProjectionService
+        function onStateChanged() { scene._promoteLayers() }
+    }
+
+    Component.onCompleted: {
+        // Establish baseline tag without animating. If projection already
+        // has live content at scene-construction time (e.g. scene re-opens
+        // mid-service), the existing item shows immediately — no spurious
+        // fade-in from nothing.
+        scene._lastTag = scene._buildTag(scene._liveItem, scene._liveKind,
+                                         scene._livePage, scene._liveCrop)
+        currentLayer.layerItem    = scene._liveItem
+        currentLayer.layerKind    = scene._liveKind
+        currentLayer.layerPage    = scene._livePage
+        currentLayer.layerCrop    = scene._liveCrop
+        currentLayer.audioEnabled = true
+        currentLayer.opacity      = 1
+        previousLayer.opacity     = 0
+    }
+
+    // ── Animations ──────────────────────────────────────────────────────
+    // Targeted by name (target/property) rather than `on opacity` Behaviors
+    // because the controller needs explicit start/stop control and a single
+    // animation that can be reused across many transitions.
+    ParallelAnimation {
+        id: transitionParallel
+        NumberAnimation {
+            target: previousLayer; property: "opacity"; to: 0
+            duration: scene._ms; easing.type: Easing.InOutCubic
+        }
+        NumberAnimation {
+            target: currentLayer; property: "opacity"; to: 1
+            duration: scene._ms; easing.type: Easing.InOutCubic
+        }
+    }
+    // Fade-through-black: outgoing finishes its fade BEFORE incoming
+    // starts. Each phase gets half the total duration so the overall
+    // transition still matches _ms (so the operator's mental model —
+    // "duration is how long the whole thing takes" — holds across styles).
+    // Math.max(1, …) avoids a 0-duration phase when _ms is very small.
+    SequentialAnimation {
+        id: transitionSequence
+        NumberAnimation {
+            target: previousLayer; property: "opacity"; to: 0
+            duration: Math.max(1, scene._ms / 2); easing.type: Easing.InOutCubic
+        }
+        NumberAnimation {
+            target: currentLayer; property: "opacity"; to: 1
+            duration: Math.max(1, scene._ms / 2); easing.type: Easing.InOutCubic
+        }
+    }
+
+    // ── Letterbox: the visible canvas container ─────────────────────────
+    // Scales to fit the host while preserving the canvas aspect ratio.
     // For NdiCanvas (host sized 1920×1080) this collapses to a 1:1 scale;
     // for ProjectionWindow it shrinks the canvas into whatever windowed
     // thumbnail / fullscreen geometry is in play.
@@ -155,16 +251,14 @@ Item {
         height: scene._canvas.height * _scale
         clip: true
 
-        // ── Stage: the *canvas-native* render surface ───────────────────
+        // ── Stage: the canvas-native render surface ─────────────────────
         // Always sized to theme canvas dimensions (typically 1920×1080).
-        // `scale: letterbox._scale` shrinks/grows the visual rendering to
+        // scale: letterbox._scale shrinks/grows the visual rendering to
         // fit the letterbox without changing the logical size — children
-        // inside continue to position themselves at canvas-native pixel
+        // continue to position themselves at canvas-native pixel
         // coordinates via percent-of-stage.{width,height}. grabToImage on
         // this Item returns canvas-native pixels regardless of how large
-        // the actual display window is — that's the key decoupling: NDI
-        // gets full-res frames even when the operator's monitor is showing
-        // a 480×270 windowed preview.
+        // the actual display window is.
         Item {
             id: stage
             width:  scene._canvas.width
@@ -172,214 +266,54 @@ Item {
             transformOrigin: Item.TopLeft
             scale: letterbox._scale
 
-            // Content layer — fades on logo show/hide. `isClear` no longer
-            // hides the whole stage; instead it hides only *text* nodes
-            // (handled per-delegate below) so the theme background and any
-            // non-text nodes remain visible. Logo overlay drives a full
-            // content-layer fade because the logo is meant to replace the
-            // entire scene visually.
+            // ── Content layers ───────────────────────────────────────────
+            // Wrapped in contentLayer so the logo toggle fades the entire
+            // content stack as a single unit — preserving the pre-extraction
+            // behavior where toggling the logo dimmed everything beneath it,
+            // not just the active node graph.
             Item {
                 id: contentLayer
                 anchors.fill: parent
                 opacity: scene._showLogo ? 0 : 1
                 Behavior on opacity {
                     NumberAnimation {
-                        duration: scene._transMs
+                        duration: scene._passiveMs
                         easing.type: Easing.InOutCubic
                     }
                 }
 
-                // ── Media-item branch ────────────────────────────────
-                // Renders when the live item is itself an image/video file.
-                // Sits inside `stage` at canvas-native size — NDI's frame
-                // grabber points at `stage`, so this is automatically part
-                // of the captured frame. Inside `contentLayer`, so a logo
-                // overlay still fades the media out via the contentLayer
-                // opacity transition.
-                //
-                // `isClear` is not applied here: the current clear semantic
-                // is "hide text nodes only; backgrounds and decorative
-                // content remain visible" (matches the per-delegate text
-                // gate below). A media item is by definition non-text, so
-                // clearing leaves it visible.
-                //
-                // Audio routing: only the primary (audience-facing) scene
-                // unmutes, and only while the projection window is actually
-                // visible to the operator. The NDI scene leaves audio
-                // muted — NDI carries its own audio channel at the SDK
-                // layer; we don't want this player double-driving the
-                // system audio bus. The shared MediaPlaybackService takes
-                // the OR of all subscribers' wantsAudio, so muting here is
-                // a real "this surface doesn't want audio" vote and the
-                // Preview / Live mini-monitor votes still govern audio
-                // when the projection is parked.
-                MediaMonitor {
-                    id: mediaItemMonitor
+                // Both layers are full-stage; opacity is driven imperatively
+                // by the transition controller. previousLayer renders below
+                // currentLayer in QML z-order (declaration order); for
+                // crossfade that's irrelevant, but for fadeBlack the
+                // order means the previous layer is on top as it fades to
+                // 0 (so the brief black moment is naturally produced by
+                // both being at 0).
+                ProjectionContentLayer {
+                    id: previousLayer
                     anchors.fill: parent
-                    visible: scene._isMediaItem && (scene._kind === "image" || scene._kind === "video")
-                    mediaKind: visible ? scene._kind : ""
-                    mediaPath: visible ? (scene._item.mediaPath || "") : ""
-                    muted:    scene.outputKind !== "primary"
-                                || !OutputService.projectionOpen
-                    // For uncropped image/video the existing PreserveAspectFit
-                    // is what the operator expects: see the whole source,
-                    // letterboxed if needed. Below, the cropApplier lifts a
-                    // sub-region into the full stage when the operator has
-                    // staged a crop in Preview and committed via Enter.
-                    crop: false
-                    // Hide when a non-default crop is set on an image —
-                    // the cropApplier below takes over (it crops at the
-                    // QML layer rather than re-encoding the source).
-                    opacity: (scene._kind === "image"
-                              && scene._cropRect !== Qt.rect(0, 0, 1, 1)) ? 0 : 1
+                    outputKind:    scene.outputKind
+                    themeRevision: scene._themeRevision
+                    passiveFadeMs: scene._passiveMs
+                    opacity:       0
                 }
-
-                // ── Image crop applier ────────────────────────────────
-                // For image items with a non-identity crop, render an
-                // Image that pulls only the cropped sub-region into the
-                // full stage. Image's sourceClipRect (Qt 6.6+) lets us
-                // crop in source-pixel space — combined with fillMode:
-                // PreserveAspectFit on a stage-shaped rectangle, the
-                // cropped region fills 1920×1080 while keeping its own
-                // aspect (any aspect mismatch letterboxes inside the
-                // stage rather than stretching).
-                Image {
-                    id: imageCropApplier
+                ProjectionContentLayer {
+                    id: currentLayer
                     anchors.fill: parent
-                    visible: scene._isMediaItem
-                             && scene._kind === "image"
-                             && scene._cropRect !== Qt.rect(0, 0, 1, 1)
-                    source: visible ? "file:///" + (scene._item.mediaPath || "") : ""
-                    asynchronous: false   // already loaded by mediaItemMonitor; the cache hits
-                    cache: true
-                    fillMode: Image.PreserveAspectFit
-                    // sourceClipRect is in source-image pixel coordinates.
-                    // We have a normalized crop, so multiply by sourceSize
-                    // once the image reports it. Until sourceSize is known,
-                    // pass a zero rect (Image treats as "no clip").
-                    sourceClipRect: {
-                        if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
-                            return Qt.rect(0, 0, 0, 0)
-                        }
-                        const c = scene._cropRect
-                        return Qt.rect(c.x * sourceSize.width,
-                                       c.y * sourceSize.height,
-                                       c.width  * sourceSize.width,
-                                       c.height * sourceSize.height)
-                    }
-                }
-
-                // ── PDF page renderer ─────────────────────────────────
-                // Routes through the image://pdfpage provider so the
-                // requested page (and crop) is rasterized at the stage's
-                // sourceSize — i.e. canvas resolution (1920×1080 default).
-                // sourceClipRect would also work here, but pdfium can
-                // re-rasterize at a higher effective DPI when given the
-                // clip in the provider URL (see MediaService::renderPdfPage),
-                // so we crop at the rasterizer rather than at the QML
-                // scenegraph layer. Crisper text inside the crop.
-                Image {
-                    id: pdfPageImage
-                    anchors.fill: parent
-                    visible: scene._isMediaItem && scene._kind === "pdf"
-                    asynchronous: true
-                    cache: true
-                    // Keep the page currently on the projection output
-                    // painted while the next page/crop rasterizes. Without
-                    // this the audience sees a blank frame for the full
-                    // pdfium render on every page change and every Go Live
-                    // re-crop — the worker render is async per ARCHITECTURE §3.
-                    retainWhileLoading: true
-                    // sourceSize tells the provider what target pixel
-                    // dimensions to rasterize at. Bind to the stage size
-                    // (canvas-native) so NDI gets full-res frames and
-                    // operator monitors get scaled-down via Image's own
-                    // texture filtering.
-                    sourceSize.width:  stage.width
-                    sourceSize.height: stage.height
-                    source: {
-                        if (!visible || !scene._item) return ""
-                        const id   = Number(scene._item.mediaId || 0)
-                        const page = Math.max(0, scene._page)
-                        const c    = scene._cropRect
-                        return "image://pdfpage/" + id
-                             + "?page=" + page
-                             + "&cx="   + c.x
-                             + "&cy="   + c.y
-                             + "&cw="   + c.width
-                             + "&ch="   + c.height
-                    }
-                    fillMode: Image.PreserveAspectFit
-                }
-
-                Repeater {
-                    // For media items the stage = the media; theme nodes
-                    // (which may still resolve through the per-output
-                    // override path) would render *on top of* the video.
-                    // Force the model empty in that case — the MediaMonitor
-                    // sibling above is the only content.
-                    model: scene._isMediaItem ? [] : scene._sortedNodes
-                    delegate: Item {
-                        id: nodeWrap
-                        readonly property var _style: modelData.style || ({})
-                        x:        stage.width  * ((_style.x      || 0) / 100)
-                        y:        stage.height * ((_style.y      || 0) / 100)
-                        width:    stage.width  * ((_style.width  || 0) / 100)
-                        height:   stage.height * ((_style.height || 0) / 100)
-                        opacity:  _style.opacity !== undefined ? _style.opacity : 1
-                        rotation: _style.rotation || 0
-
-                        // Skew — same center-origin matrix as the editor's
-                        // NodeDelegate, so a skewed node renders identically
-                        // in the editor canvas and on the live projection.
-                        transform: Matrix4x4 {
-                            readonly property real _sx: (nodeWrap._style.skewX || 0) * Math.PI / 180
-                            readonly property real _sy: (nodeWrap._style.skewY || 0) * Math.PI / 180
-                            readonly property real _tx: Math.tan(_sx)
-                            readonly property real _ty: Math.tan(_sy)
-                            readonly property real _cx: nodeWrap.width  / 2
-                            readonly property real _cy: nodeWrap.height / 2
-                            matrix: Qt.matrix4x4(1,   _tx, 0, -_tx * _cy,
-                                                 _ty, 1,   0, -_ty * _cx,
-                                                 0,   0,   1, 0,
-                                                 0,   0,   0, 1)
-                        }
-
-                        // Per-node "clear fader" — drops to 0 only when the
-                        // node is a TEXT node AND the projection is cleared.
-                        // Non-text nodes (image backgrounds, containers,
-                        // decorative shapes) keep their parent opacity and
-                        // remain visible. Separated from the outer Item's
-                        // opacity so theme-editor edits to `style.opacity`
-                        // continue to snap (no Behavior there), while the
-                        // clear fade is animated here.
-                        Item {
-                            anchors.fill: parent
-                            opacity: (scene._isClear && modelData.kind === "text") ? 0 : 1
-                            Behavior on opacity {
-                                NumberAnimation {
-                                    duration: scene._transMs
-                                    easing.type: Easing.InOutCubic
-                                }
-                            }
-
-                            NodeRenderer {
-                                anchors.fill: parent
-                                node: modelData
-                                resolvedText: scene.resolveText(modelData)
-                            }
-                        }
-                    }
+                    outputKind:    scene.outputKind
+                    themeRevision: scene._themeRevision
+                    passiveFadeMs: scene._passiveMs
+                    opacity:       1
                 }
             }
 
             // ── No-theme fallback ───────────────────────────────────────
-            // Shown when a song/scripture goes live but the operator hasn't
-            // set a default theme for that kind and no built-in matches.
-            // Without this, the projection would be silently black —
-            // confusing during a service. Mirrors Electron's NoThemeError.
-            // Text-bearing kinds only — image/video items don't render
-            // through the theme path.
+            // Reads from the CURRENT layer's resolved theme — during a
+            // transition the message describes the destination, not the
+            // outgoing one. Without this, the projection would be silently
+            // black when an operator goes live on a song/scripture before
+            // setting a default theme for that kind. Mirrors Electron's
+            // NoThemeError.
             Text {
                 id: noThemeText
                 anchors.centerIn: parent
@@ -387,9 +321,9 @@ Item {
                 width: parent.width - 80
                 visible: !scene._isClear
                       && !scene._showLogo
-                      && (scene._kind === "song" || scene._kind === "scripture")
-                      && (!scene._theme || (scene._theme.id || 0) === 0)
-                text: qsTr("Default %1 theme has not been set").arg(scene._kind)
+                      && (currentLayer.layerKind === "song" || currentLayer.layerKind === "scripture")
+                      && (!currentLayer.theme || (currentLayer.theme.id || 0) === 0)
+                text: qsTr("Default %1 theme has not been set").arg(currentLayer.layerKind)
                            .toUpperCase()
                 color: "#ffffff"
                 horizontalAlignment: Text.AlignHCenter
@@ -399,13 +333,13 @@ Item {
                 font.weight: Theme.font.weightBold
             }
 
-            // Logo overlay — sits above the content layer when toggled on.
-            // LogoView renders the configured image OR video, or a "CRATER"
-            // fallback when no logo path has been chosen. `active` gates
-            // the video decoder; opacity drives the fade so the decoder
-            // doesn't bounce on every fade tick.
+            // ── Logo overlay ────────────────────────────────────────────
+            // Sits above the content stack. Its own opacity fade uses the
+            // scene's passive duration so a cut style makes the logo toggle
+            // instant too. active gates the video decoder; opacity drives
+            // the fade so the decoder doesn't bounce on every fade tick.
             //
-            // Logo visibility is independent of `isClear` — clearing only
+            // Logo visibility is independent of isClear — clearing only
             // hides text, so a logo toggled on stays visible through a
             // clear.
             LogoView {
@@ -413,10 +347,9 @@ Item {
                 anchors.fill: parent
                 active: scene._showLogo
                 opacity: scene._showLogo ? 1.0 : 0.0
-
                 Behavior on opacity {
                     NumberAnimation {
-                        duration: scene._transMs
+                        duration: scene._passiveMs
                         easing.type: Easing.InOutCubic
                     }
                 }

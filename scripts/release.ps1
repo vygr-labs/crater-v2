@@ -124,6 +124,18 @@ $IssFile      = Join-Path $PackagingDir 'crater.iss'
 $VcRedistPath = Join-Path $PackagingDir 'vc_redist.x64.exe'
 $VcRedistUrl  = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
 
+# Bible database: 74 MB SQLite blob too large to commit to git, too important
+# to omit (an installer without scripture data is a non-product). We fetch it
+# once from a fixed GitHub Release asset on this same repo and cache it under
+# packaging/ — the workflow's actions/cache step keys on the file path, so
+# subsequent CI runs skip the download entirely.
+# The local sibling path (../electron/...) is checked first as a courtesy to
+# the dev workflow on machines that still have the electron repo cloned.
+$BibleDbPath        = Join-Path $PackagingDir 'bibles.sqlite'
+$BibleDbLocalSource = Join-Path $QtRoot '..\electron\src\assets\default\databases\bibles.sqlite'
+$BibleDbUrl         = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v1/bibles.sqlite'
+$BibleDbSha256      = 'd86eed30ff7e28f213a06dcc7e6d7439ea3c851756f593a999b110247a7e044c'
+
 # ── Version ────────────────────────────────────────────────────────────────
 $cmakeLists = Get-Content (Join-Path $QtRoot 'CMakeLists.txt') -Raw
 if ($cmakeLists -notmatch 'project\(Crater\s+VERSION\s+([\d.]+)') {
@@ -241,13 +253,33 @@ if ($LASTEXITCODE -ne 0) { throw "windeployqt failed (exit $LASTEXITCODE)" }
 # installer steps, since each packages everything under $AppStage. Without
 # this, a clean install has no scripture data at all.
 Write-Step 'Staging Bible database'
-$BibleDbSource = Join-Path $QtRoot '..\electron\src\assets\default\databases\bibles.sqlite'
-if (-not (Test-Path $BibleDbSource)) {
-    throw "bibles.sqlite not found at $BibleDbSource - refusing to package an installer with no scripture data."
+# Resolution order:
+#   1. packaging/bibles.sqlite  -- the canonical CI-friendly location, cached
+#      between workflow runs by actions/cache (same pattern as vc_redist).
+#   2. ../electron/.../bibles.sqlite -- legacy dev-box layout where the
+#      Electron tree sits as a sibling of the Qt tree. Promotes it into
+#      packaging/ so subsequent runs don't depend on that layout.
+#   3. Download from the data-v1 GitHub Release asset and verify SHA-256.
+# All three converge on $BibleDbPath; staging copies from there.
+if (-not (Test-Path $BibleDbPath)) {
+    if (Test-Path $BibleDbLocalSource) {
+        Write-Step "Importing bibles.sqlite from sibling electron tree"
+        New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
+        Copy-Item $BibleDbLocalSource $BibleDbPath
+    } else {
+        Write-Step "Downloading bibles.sqlite from $BibleDbUrl"
+        New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
+        Invoke-WebRequest -Uri $BibleDbUrl -OutFile $BibleDbPath -UseBasicParsing
+    }
+}
+$actualSha = (Get-FileHash $BibleDbPath -Algorithm SHA256).Hash.ToLower()
+if ($actualSha -ne $BibleDbSha256) {
+    Remove-Item $BibleDbPath -Force
+    throw "bibles.sqlite SHA-256 mismatch. Expected $BibleDbSha256, got $actualSha. The cached/downloaded file has been removed; rerun to refetch."
 }
 $LegacyStage = Join-Path $AppStage 'legacy'
 New-Item -ItemType Directory -Force -Path $LegacyStage | Out-Null
-Copy-Item $BibleDbSource (Join-Path $LegacyStage 'bibles.sqlite')
+Copy-Item $BibleDbPath (Join-Path $LegacyStage 'bibles.sqlite')
 Write-Done "bibles.sqlite staged to $LegacyStage"
 
 # ── VC++ redist ────────────────────────────────────────────────────────────
