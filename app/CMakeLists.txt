@@ -207,10 +207,12 @@ target_link_libraries(crater
         Qt6::Quick
         Qt6::QuickControls2
         # Qt6::QuickEffects ships MultiEffect — Qt's built-in drop-shadow /
-        # blur effect (Qt 6.5+). Used by NodeRenderer.qml for text-node
-        # drop shadows via the `layer.effect` attached property; backdrop
-        # blur on container nodes will reuse the same module.
-        Qt6::QuickEffects
+        # blur effect. Public CMake target from Qt 6.9+; on Qt 6.8 LTS
+        # (used on macOS to keep deployment target ≤ 12 for Monterey)
+        # it lives inside qtdeclarative without a top-level config.
+        # The generator expression silently drops the link when the
+        # target is absent — visual effects degrade gracefully.
+        $<TARGET_NAME_IF_EXISTS:Qt6::QuickEffects>
         # Qt6::Widgets is required for QFileDialog (the native file picker
         # used by FileDialogService). It does not pull QtQuick.Dialogs into
         # the QML runtime — that's a separate, forbidden module.

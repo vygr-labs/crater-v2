@@ -29,7 +29,6 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     Qml
     Quick
     QuickControls2
-    QuickEffects   # MultiEffect — drop shadow / blur via the QtQuick.Effects QML module
     Sql
     Multimedia
     Pdf             # PDF rasterization via pdfium — used by MediaService + PdfPageImageProvider
@@ -37,6 +36,14 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     WebSockets
     Widgets         # QApplication + QFileDialog (used by FileDialogService for native pickers)
 )
+
+# QuickEffects only exists as a public CMake target from Qt 6.9+; on Qt
+# 6.8 LTS (which we use on macOS to keep the deployment target ≤ 12 for
+# Monterey users) it lives inside qtdeclarative without a top-level
+# config. Treat as optional and conditionally link in app/CMakeLists.txt
+# so the macOS Qt 6.8 path builds at all. On Qt 6.9+ both Windows and
+# macOS-on-future-Qt get full MultiEffect support.
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS QuickEffects)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
