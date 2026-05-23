@@ -84,6 +84,15 @@ jobs:
           modules: 'qtmultimedia qtpdf qtwebsockets'
           cache: true
           extra: '--base https://download.qt.io/'
+          # Pinned aqtinstall fork — the vanilla pypi aqt 3.3.x strips
+          # Qt6*PrivateConfig.cmake from binary installs, which makes
+          # `find_package(Qt6 ... GuiPrivate)` fail at configure. This
+          # fork's HEAD includes the fix that ships private CMake configs
+          # alongside the public ones. Required for NdiRenderer's
+          # `<rhi/qrhi.h>` include path on every Qt version we've tried
+          # (6.5, 6.8, 6.11). Drop this pin once aqtinstall ships a release
+          # with the private-archive fix.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
 
       - name: Cache bibles.sqlite
         uses: actions/cache@v4
