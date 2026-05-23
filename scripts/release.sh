@@ -212,6 +212,20 @@ step 'Running macdeployqt'
     -qmldir="$QT_ROOT/app/qml" \
     -always-overwrite
 
+# Strip Qt SQL driver plugins Crater doesn't use. The Qt 6.11 macOS kit
+# bundles ODBC / Postgres / Mimer drivers that reference Homebrew libs
+# (libiodbc, libpq, libmimerapi) which aren't on GHA runners — macdeployqt
+# logs ERROR while trying to rewrite their dylib paths, the bundle ends up
+# carrying broken plugins that would fail at runtime anyway, and only the
+# qsqlite driver (statically linked) is actually used by the app.
+# Removing them post-deployqt cleans the bundle and silences the noise.
+SQLDRIVERS_DIR="$APP_BUNDLE/Contents/PlugIns/sqldrivers"
+if [[ -d "$SQLDRIVERS_DIR" ]]; then
+    for unwanted in libqsqlodbc.dylib libqsqlpsql.dylib libqsqlmimer.dylib; do
+        rm -f "$SQLDRIVERS_DIR/$unwanted"
+    done
+fi
+
 # ── Stage Bible DB ─────────────────────────────────────────────────────────
 # Importer (core/src/import/ElectronDataImporter.cpp) walks up from the exe
 # looking for legacy/bibles.sqlite. On macOS the exe is at
@@ -292,12 +306,32 @@ if [[ $SKIP_DMG -eq 0 ]]; then
     trap 'rm -rf "$DMG_STAGE"' EXIT
     cp -R "$APP_BUNDLE" "$DMG_STAGE/"
     ln -s /Applications "$DMG_STAGE/Applications"
-    hdiutil create \
-        -volname "Crater $VERSION" \
-        -srcfolder "$DMG_STAGE" \
-        -ov \
-        -format UDZO \
-        "$DMG_PATH"
+    # Defensively detach any pre-existing volume with the same name —
+    # otherwise hdiutil errors out with "Resource busy" on the second run
+    # within the same shell session.
+    hdiutil detach "/Volumes/Crater $VERSION" -force >/dev/null 2>&1 || true
+    # Retry loop: hdiutil on GitHub Actions macOS runners intermittently
+    # fails with "Resource busy" — usually mdworker (Spotlight) or
+    # fseventsd briefly holding an fd in the staging tree. Backoff a few
+    # seconds and try again. Three attempts is enough in practice.
+    dmg_attempt=1
+    while true; do
+        if hdiutil create \
+            -volname "Crater $VERSION" \
+            -srcfolder "$DMG_STAGE" \
+            -ov \
+            -format UDZO \
+            "$DMG_PATH"; then
+            break
+        fi
+        if (( dmg_attempt >= 3 )); then
+            echo "hdiutil create failed after $dmg_attempt attempts" >&2
+            exit 1
+        fi
+        warn "hdiutil create failed (attempt $dmg_attempt); retrying in 5s..."
+        sleep 5
+        dmg_attempt=$((dmg_attempt + 1))
+    done
     done_msg "$DMG_PATH"
 fi
 

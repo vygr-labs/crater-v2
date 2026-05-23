@@ -22,6 +22,16 @@ on:
         description: 'Semver to build (no leading v)'
         type: string
         required: true
+  # workflow_dispatch makes the workflow appear in the Actions UI so it
+  # can be triggered individually for debugging — useful when a Windows-
+  # specific or macOS-specific issue means you don't want to re-run the
+  # full release orchestrator just to iterate on one platform.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for this debug build (e.g. 0.6.0-test)'
+        type: string
+        required: true
 
 jobs:
   build:
