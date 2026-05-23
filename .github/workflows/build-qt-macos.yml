@@ -64,14 +64,15 @@ jobs:
               qtbase qtdeclarative qtshadertools qtsvg qtimageformats \
               qtmultimedia qtwebsockets qttools
           # qtpdf is NOT a submodule of qt5.git -- Qt extracted it to a
-          # standalone repo because of PDFium licensing. Clone it
-          # directly at the matching tag and drop it into the qt5 tree
-          # as a sibling of qtbase; the meta CMakeLists picks it up as
-          # if it were a submodule. --recurse + --shallow brings in
-          # qtpdf's own PDFium submodule shallowly.
+          # standalone repo because of PDFium licensing. It's also NOT
+          # mirrored to github.com/qt/* (unlike every other Qt module),
+          # so we have to pull from Qt's primary anonymous git server
+          # at code.qt.io. Drop it into the qt5 tree as a sibling of
+          # qtbase; the meta CMakeLists picks it up like a submodule.
+          # --recurse + --shallow brings in qtpdf's own PDFium submodule.
           git clone --depth=1 --branch "v${QT_VERSION}" --no-tags \
               --recurse-submodules --shallow-submodules \
-              https://github.com/qt/qtpdf.git qtpdf
+              https://code.qt.io/qt/qtpdf.git qtpdf
           ls -d qt* | head -20
 
       - name: Configure Qt
