@@ -76,7 +76,7 @@ jobs:
       - name: Install Qt 6.11
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.5.3'
+          version: '6.8.2'
           host: 'mac'
           target: 'desktop'
           # Universal kit — produces a .app that runs on both arm64 and x64.
