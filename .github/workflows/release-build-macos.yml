@@ -113,15 +113,26 @@ jobs:
         # this step once Qt LTS branches backport the config bundling.
         shell: bash
         run: |
-          QT_GUI_VERSION_FILE="$QT_ROOT_DIR/lib/cmake/Qt6Gui/Qt6GuiConfigVersion.cmake"
-          if [[ ! -f "$QT_GUI_VERSION_FILE" ]]; then
-              echo "ERROR: Qt6Gui not installed at $QT_ROOT_DIR" >&2
+          # Locate qrhi.h authoritatively via find — Qt's internal directory
+          # layout varies by version, so deriving paths from the version
+          # number is brittle. find tells us where the header actually lives.
+          QRHI_PATH=$(find "$QT_ROOT_DIR/include" -path '*/QtGui/*/QtGui/rhi/qrhi.h' 2>/dev/null | head -1)
+          if [[ -z "$QRHI_PATH" ]]; then
+              echo "ERROR: rhi/qrhi.h is NOT shipped by this Qt install." >&2
+              echo "Searched under: $QT_ROOT_DIR/include" >&2
+              echo "Any 'rhi' subdirectories present:" >&2
+              find "$QT_ROOT_DIR/include" -type d -name rhi 2>&1 | head -10 >&2 || echo "  (none)" >&2
               exit 1
           fi
-          # Extract the public Qt6Gui version (X.Y.Z) — private include
-          # paths are versioned identically.
-          QT_GUI_VERSION=$(grep -E 'set\(PACKAGE_VERSION' "$QT_GUI_VERSION_FILE" | head -1 | sed -E 's/.*"([0-9.]+)".*/\1/')
+          # QRHI_PATH e.g. .../include/QtGui/6.8.2/QtGui/rhi/qrhi.h
+          # Private include is the QtGui/<ver>/QtGui parent.
+          PRIVATE_INC_QTGUI=$(dirname "$(dirname "$QRHI_PATH")")     # .../QtGui/6.8.2/QtGui
+          PRIVATE_INC_VER=$(dirname "$PRIVATE_INC_QTGUI")             # .../QtGui/6.8.2
+          # Derive version from the path so we have it for the config file.
+          QT_GUI_VERSION=$(basename "$PRIVATE_INC_VER")
           echo "Detected Qt Gui version: $QT_GUI_VERSION"
+          echo "Found qrhi.h at:         $QRHI_PATH"
+          echo "Private include dir:     $PRIVATE_INC_QTGUI"
           PRIV_DIR="$QT_ROOT_DIR/lib/cmake/Qt6GuiPrivate"
           mkdir -p "$PRIV_DIR"
           # The config file references _qt6_root which Qt6Config.cmake sets
@@ -143,10 +154,6 @@ jobs:
           set(PACKAGE_VERSION_EXACT TRUE)
           EOF
           echo ">>> Wrote $PRIV_DIR/Qt6GuiPrivateConfig.cmake"
-          echo ">>> Verifying private headers actually exist..."
-          ls "$QT_ROOT_DIR/include/QtGui/$QT_GUI_VERSION/QtGui/rhi/qrhi.h" 2>/dev/null \
-              && echo "    rhi/qrhi.h: OK" \
-              || { echo "ERROR: rhi/qrhi.h missing — Qt install is more broken than expected" >&2; exit 1; }
 
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.10
