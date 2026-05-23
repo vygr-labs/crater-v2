@@ -1,18 +1,18 @@
--- Removes the v1 built-in themes seeded by V001 ahead of a redesigned set
--- of defaults that will ship in a later migration. After this runs, the
--- themes table has no is_builtin = 1 rows; user-created themes
--- (is_builtin = 0) are untouched.
+-- Originally removed all is_builtin = 1 themes (the three Classic
+-- Dark / Stage Bold defaults seeded by V001) ahead of a planned
+-- replacement set of defaults that was never finished. With the
+-- replacement deferred indefinitely, removing the defaults left fresh
+-- installs with no themes at all, which broke first-run rendering.
 --
--- The kv entries `default_<kind>_theme_id` (set via ThemeService::
--- setDefaultFor) may reference one of the about-to-be-deleted built-ins.
--- Those entries are cleared first, while the referenced ids still
--- resolve — user-chosen defaults that point at custom themes stay intact
--- because the subquery only matches is_builtin = 1.
+-- This migration is now a no-op: the V001 built-in themes survive into
+-- v6+. The version-6 slot is preserved so any DB already migrated
+-- through this point doesn't trip the "DB ahead of code" guard, and a
+-- future migration (V007+) can introduce the redesigned defaults
+-- additively without destroying what V001 seeded.
+--
+-- For DBs that already ran the original deleting V006: the built-in
+-- themes are gone and cannot be recovered in place. Either wipe the
+-- DB to re-seed from V001, or ship a later migration that re-INSERTs
+-- the missing builtins.
 
-DELETE FROM kv
- WHERE key IN ('default_song_theme_id',
-               'default_scripture_theme_id',
-               'default_presentation_theme_id')
-   AND CAST(value AS INTEGER) IN (SELECT id FROM themes WHERE is_builtin = 1);
-
-DELETE FROM themes WHERE is_builtin = 1;
+-- intentionally empty
