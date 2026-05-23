@@ -46,14 +46,39 @@ jobs:
         run: df -h /
 
       - name: Download qt-everywhere source
-        # ~800 MB compressed. Single download covers every submodule
-        # we might want to enable; we whitelist the ones we actually
-        # need at configure time via QT_BUILD_SUBMODULES.
+        # ~800 MB compressed. Single download covers MOST submodules,
+        # but Qt 6.8 ships some heavier modules (qtpdf with PDFium,
+        # qtwebengine with Chromium) as separate tarballs to keep this
+        # download manageable. We whitelist what we need at configure
+        # time via QT_BUILD_SUBMODULES and augment missing ones below.
         run: |
           curl -fSL --retry 3 -o qt-everywhere.tar.xz \
             "https://download.qt.io/archive/qt/${QT_VERSION%.*}/${QT_VERSION}/single/qt-everywhere-src-${QT_VERSION}.tar.xz"
           tar -xf qt-everywhere.tar.xz
           rm qt-everywhere.tar.xz
+
+      - name: Augment missing submodules
+        # qtpdf in particular is not bundled in the qt-everywhere tarball
+        # (PDFium licensing). Download any submodule we need that's
+        # missing from the meta-tarball and graft it in. Configure's
+        # QT_BUILD_SUBMODULES picks it up like a native member.
+        run: |
+          cd qt-everywhere-src-${QT_VERSION}
+          BASE_URL="https://download.qt.io/archive/qt/${QT_VERSION%.*}/${QT_VERSION}/submodules"
+          # Defensive list: anything we whitelist for build that *might*
+          # not be in the qt-everywhere tarball. Only downloads if absent.
+          for mod in qtpdf qtmultimedia qtwebsockets; do
+              if [[ ! -d "$mod" ]]; then
+                  echo ">>> Submodule $mod not in qt-everywhere tarball; fetching separately..."
+                  curl -fSL --retry 3 -o "${mod}.tar.xz" "${BASE_URL}/${mod}-everywhere-src-${QT_VERSION}.tar.xz"
+                  tar -xf "${mod}.tar.xz"
+                  mv "${mod}-everywhere-src-${QT_VERSION}" "$mod"
+                  rm "${mod}.tar.xz"
+                  echo "    grafted into qt-everywhere-src-${QT_VERSION}/$mod"
+              else
+                  echo "    $mod already present"
+              fi
+          done
 
       - name: Configure Qt
         # Universal binary + deployment target 12.0 = artifact loads
