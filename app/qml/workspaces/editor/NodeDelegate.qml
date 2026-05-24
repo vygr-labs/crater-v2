@@ -238,24 +238,28 @@ Item {
         }
     }
 
-    // 8 resize handles. Rendered only when selected — the locked check
-    // disables interaction within each handle individually so we keep the
-    // visual affordance even on locked nodes (operator sees it's selected).
-    Repeater {
-        model: root._selected ? 8 : 0
-        delegate: ResizeHandle {
-            handleIndex: index
-            parentNode: root
-        }
-    }
-
-    // Rotate + skew handles. Instantiated through a Repeater (model 0/1)
-    // rather than a Loader: Repeater reparents its delegate to the
-    // Repeater's OWN parent (this NodeDelegate), so the handle's
-    // `anchors.* = parentNode.*` resolve correctly. A Loader keeps its
-    // loaded item parented to the Loader itself — anchoring to the
-    // grandparent NodeDelegate silently fails and the handle collapses
-    // to (0,0). Same pattern the 8 ResizeHandles above use.
+    // Rotate + skew handles. Declared BEFORE the 8 resize handles so the
+    // resize handles end up later in child order and therefore win hover
+    // and press at the node edge. Both decorative handles size their
+    // MouseArea with `anchors.margins: -4` for a fat click target, and
+    // both anchor 4 px off the node (`bottomMargin: 4` / `rightMargin: 4`).
+    // The negative margin and the gap exactly cancel, so each MouseArea
+    // reaches right up to the node edge — the T resize handle's MouseArea
+    // (centered on `parentNode.top`) is half-covered by RotateHandle's,
+    // and L is half-covered by SkewHandle's. With this ordering the
+    // resize MouseAreas sit on top of those overlap zones and the user
+    // gets resize cursors / resize drags on the visible resize dots.
+    // The rotate/skew grips and connecting sticks live ~20 px from the
+    // node edge — well outside the overlap zone — so they still receive
+    // events on their own visible targets.
+    //
+    // Instantiated through a Repeater (model 0/1) rather than a Loader:
+    // Repeater reparents its delegate to the Repeater's OWN parent (this
+    // NodeDelegate), so the handle's `anchors.* = parentNode.*` resolve
+    // correctly. A Loader keeps its loaded item parented to the Loader
+    // itself — anchoring to the grandparent NodeDelegate silently fails
+    // and the handle collapses to (0,0). Same pattern the 8 ResizeHandles
+    // below use.
     Repeater {
         model: root._selected ? 1 : 0
         delegate: RotateHandle { parentNode: root }
@@ -263,5 +267,18 @@ Item {
     Repeater {
         model: root._selected ? 1 : 0
         delegate: SkewHandle { parentNode: root }
+    }
+
+    // 8 resize handles. Declared AFTER rotate/skew so the resize handles
+    // sit on top at the node edges — see the rotate/skew comment above.
+    // Drawn only when selected; the locked check disables interaction
+    // within each handle individually so the affordance stays visible on
+    // locked nodes (operator sees it's selected).
+    Repeater {
+        model: root._selected ? 8 : 0
+        delegate: ResizeHandle {
+            handleIndex: index
+            parentNode: root
+        }
     }
 }

@@ -92,6 +92,7 @@ qt_add_qml_module(crater
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/ProjectionScene.qml
+        qml/components/LiveContent.qml
         qml/components/NodeRenderer.qml
         qml/components/CroppableMediaPreview.qml
         qml/components/MediaBackgroundLoader.qml

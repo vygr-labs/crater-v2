@@ -49,6 +49,23 @@ private:
     Q_PROPERTY(int     themeIdForPrimary  READ themeIdForPrimary  WRITE setThemeIdForPrimary  NOTIFY themeIdForPrimaryChanged)
     Q_PROPERTY(int     themeIdForNdi      READ themeIdForNdi      WRITE setThemeIdForNdi      NOTIFY themeIdForNdiChanged)
     Q_PROPERTY(int     themeIdForStage    READ themeIdForStage    WRITE setThemeIdForStage    NOTIFY themeIdForStageChanged)
+    // Per-output go-live transition. transitionFor* is the *kind* of
+    // animation between projection states — "cut" (instant snap, zero
+    // duration) or "fade" (opacity crossfade between the outgoing and
+    // incoming content layers). transitionMsFor* is the duration in
+    // milliseconds for "fade" (ignored when kind is "cut"). ProjectionScene
+    // resolves the active pair from its outputKind, so the audience-facing
+    // projection and the NDI broadcast can crossfade differently — e.g.
+    // operator wants a softer 500ms fade on stream while the audience
+    // screen stays at a tight 200ms cut-style swap. reduceMotion (above)
+    // collapses every output's effective duration to 0 regardless of its
+    // own setting; that's the accessibility lever.
+    Q_PROPERTY(QString transitionForPrimary    READ transitionForPrimary    WRITE setTransitionForPrimary    NOTIFY transitionForPrimaryChanged)
+    Q_PROPERTY(QString transitionForNdi        READ transitionForNdi        WRITE setTransitionForNdi        NOTIFY transitionForNdiChanged)
+    Q_PROPERTY(QString transitionForStage      READ transitionForStage      WRITE setTransitionForStage      NOTIFY transitionForStageChanged)
+    Q_PROPERTY(int     transitionMsForPrimary  READ transitionMsForPrimary  WRITE setTransitionMsForPrimary  NOTIFY transitionMsForPrimaryChanged)
+    Q_PROPERTY(int     transitionMsForNdi      READ transitionMsForNdi      WRITE setTransitionMsForNdi      NOTIFY transitionMsForNdiChanged)
+    Q_PROPERTY(int     transitionMsForStage    READ transitionMsForStage    WRITE setTransitionMsForStage    NOTIFY transitionMsForStageChanged)
     // Render-pipeline mode. "single" (default): NDI grabs frames from the
     // projection window's scene graph, so NDI inherits the projection's
     // theme and the projection window must stay alive (parked offscreen)
@@ -88,6 +105,12 @@ public:
     int     themeIdForPrimary() const;
     int     themeIdForNdi() const;
     int     themeIdForStage() const;
+    QString transitionForPrimary() const;
+    QString transitionForNdi() const;
+    QString transitionForStage() const;
+    int     transitionMsForPrimary() const;
+    int     transitionMsForNdi() const;
+    int     transitionMsForStage() const;
     QString outputMode() const;
     bool    useHeadlessNdi() const;
     bool    showVerseNumbers() const;
@@ -104,6 +127,12 @@ public:
     void setThemeIdForPrimary(int id);
     void setThemeIdForNdi(int id);
     void setThemeIdForStage(int id);
+    void setTransitionForPrimary(const QString& kind);
+    void setTransitionForNdi(const QString& kind);
+    void setTransitionForStage(const QString& kind);
+    void setTransitionMsForPrimary(int ms);
+    void setTransitionMsForNdi(int ms);
+    void setTransitionMsForStage(int ms);
     void setOutputMode(const QString& mode);
     void setUseHeadlessNdi(bool v);
     void setShowVerseNumbers(bool v);
@@ -121,6 +150,12 @@ signals:
     void themeIdForPrimaryChanged();
     void themeIdForNdiChanged();
     void themeIdForStageChanged();
+    void transitionForPrimaryChanged();
+    void transitionForNdiChanged();
+    void transitionForStageChanged();
+    void transitionMsForPrimaryChanged();
+    void transitionMsForNdiChanged();
+    void transitionMsForStageChanged();
     void outputModeChanged();
     void useHeadlessNdiChanged();
     void showVerseNumbersChanged();

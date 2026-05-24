@@ -2,6 +2,8 @@
 
 #include <QSettings>
 
+#include <algorithm>
+
 namespace crater {
 
 struct SettingsService::Impl
@@ -28,6 +30,20 @@ struct SettingsService::Impl
     int     themeIdForPrimary = 0;
     int     themeIdForNdi     = 0;
     int     themeIdForStage   = 0;
+    // Per-output transition kind. "fade" by default — matches the prior
+    // hardcoded 280 ms InOutCubic crossfade that this setting generalises.
+    // "cut" is the only other accepted value today; future kinds (slide,
+    // zoom) would extend the validator without breaking the persisted shape.
+    QString transitionForPrimary   = QStringLiteral("fade");
+    QString transitionForNdi       = QStringLiteral("fade");
+    QString transitionForStage     = QStringLiteral("fade");
+    // Per-output transition duration. 280 ms matches the prior
+    // ProjectionScene._transMs constant, so existing installations see no
+    // behaviour change until the operator edits the slider. Clamped to
+    // [0, 2000] in the setter — anything longer feels broken on stage.
+    int     transitionMsForPrimary = 280;
+    int     transitionMsForNdi     = 280;
+    int     transitionMsForStage   = 280;
     // Render-pipeline mode — see header. "single" is the lower-cost default
     // (NDI mirrors projection); "dual" enables independent NDI scene + theme.
     QString outputMode       = QStringLiteral("single");
@@ -52,6 +68,12 @@ struct SettingsService::Impl
     static constexpr const char* kThemeForPrimary  = "Settings/themeIdForPrimary";
     static constexpr const char* kThemeForNdi      = "Settings/themeIdForNdi";
     static constexpr const char* kThemeForStage    = "Settings/themeIdForStage";
+    static constexpr const char* kTransForPrimary  = "Settings/transitionForPrimary";
+    static constexpr const char* kTransForNdi      = "Settings/transitionForNdi";
+    static constexpr const char* kTransForStage    = "Settings/transitionForStage";
+    static constexpr const char* kTransMsForPrimary= "Settings/transitionMsForPrimary";
+    static constexpr const char* kTransMsForNdi    = "Settings/transitionMsForNdi";
+    static constexpr const char* kTransMsForStage  = "Settings/transitionMsForStage";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
@@ -74,6 +96,30 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->themeIdForPrimary = s.value(QString::fromLatin1(Impl::kThemeForPrimary), m_impl->themeIdForPrimary).toInt();
     m_impl->themeIdForNdi     = s.value(QString::fromLatin1(Impl::kThemeForNdi),     m_impl->themeIdForNdi).toInt();
     m_impl->themeIdForStage   = s.value(QString::fromLatin1(Impl::kThemeForStage),   m_impl->themeIdForStage).toInt();
+    // Validate transition-kind reads — an externally-edited registry hive
+    // could carry "slide" left over from a future build; collapse anything
+    // unknown to "fade" so the renderer's switch can rely on the contract.
+    auto sanitizeKind = [](const QString& v, const QString& def) {
+        return (v == QStringLiteral("cut") || v == QStringLiteral("fade")) ? v : def;
+    };
+    m_impl->transitionForPrimary = sanitizeKind(
+        s.value(QString::fromLatin1(Impl::kTransForPrimary), m_impl->transitionForPrimary).toString(),
+        m_impl->transitionForPrimary);
+    m_impl->transitionForNdi = sanitizeKind(
+        s.value(QString::fromLatin1(Impl::kTransForNdi), m_impl->transitionForNdi).toString(),
+        m_impl->transitionForNdi);
+    m_impl->transitionForStage = sanitizeKind(
+        s.value(QString::fromLatin1(Impl::kTransForStage), m_impl->transitionForStage).toString(),
+        m_impl->transitionForStage);
+    // Clamp duration reads to the same [0, 2000] window the setter enforces
+    // so a corrupted hive can't push a multi-second hang on first paint.
+    auto clampMs = [](int v) { return std::clamp(v, 0, 2000); };
+    m_impl->transitionMsForPrimary = clampMs(
+        s.value(QString::fromLatin1(Impl::kTransMsForPrimary), m_impl->transitionMsForPrimary).toInt());
+    m_impl->transitionMsForNdi = clampMs(
+        s.value(QString::fromLatin1(Impl::kTransMsForNdi), m_impl->transitionMsForNdi).toInt());
+    m_impl->transitionMsForStage = clampMs(
+        s.value(QString::fromLatin1(Impl::kTransMsForStage), m_impl->transitionMsForStage).toInt());
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
@@ -93,6 +139,12 @@ QString SettingsService::outputResolution() const  { return m_impl->outputResolu
 int     SettingsService::themeIdForPrimary() const { return m_impl->themeIdForPrimary; }
 int     SettingsService::themeIdForNdi() const     { return m_impl->themeIdForNdi; }
 int     SettingsService::themeIdForStage() const   { return m_impl->themeIdForStage; }
+QString SettingsService::transitionForPrimary() const   { return m_impl->transitionForPrimary; }
+QString SettingsService::transitionForNdi() const       { return m_impl->transitionForNdi; }
+QString SettingsService::transitionForStage() const     { return m_impl->transitionForStage; }
+int     SettingsService::transitionMsForPrimary() const { return m_impl->transitionMsForPrimary; }
+int     SettingsService::transitionMsForNdi() const     { return m_impl->transitionMsForNdi; }
+int     SettingsService::transitionMsForStage() const   { return m_impl->transitionMsForStage; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
@@ -196,6 +248,70 @@ void SettingsService::setOutputMode(const QString& mode)
     m_impl->outputMode = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputMode), normalized);
     emit outputModeChanged();
+}
+
+// Same shape across the three outputs — sanitize to the closed vocabulary
+// {"cut", "fade"} then write-through to QSettings. A free function would
+// avoid the repetition but the three signals are distinct and Qt's MOC
+// can't dispatch through a pointer-to-member here, so it's three setters.
+static QString normalizeTransitionKind(const QString& v)
+{
+    return (v == QStringLiteral("cut")) ? QStringLiteral("cut")
+                                        : QStringLiteral("fade");
+}
+
+void SettingsService::setTransitionForPrimary(const QString& kind)
+{
+    const QString n = normalizeTransitionKind(kind);
+    if (m_impl->transitionForPrimary == n) return;
+    m_impl->transitionForPrimary = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransForPrimary), n);
+    emit transitionForPrimaryChanged();
+}
+
+void SettingsService::setTransitionForNdi(const QString& kind)
+{
+    const QString n = normalizeTransitionKind(kind);
+    if (m_impl->transitionForNdi == n) return;
+    m_impl->transitionForNdi = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransForNdi), n);
+    emit transitionForNdiChanged();
+}
+
+void SettingsService::setTransitionForStage(const QString& kind)
+{
+    const QString n = normalizeTransitionKind(kind);
+    if (m_impl->transitionForStage == n) return;
+    m_impl->transitionForStage = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransForStage), n);
+    emit transitionForStageChanged();
+}
+
+void SettingsService::setTransitionMsForPrimary(int ms)
+{
+    const int n = std::clamp(ms, 0, 2000);
+    if (m_impl->transitionMsForPrimary == n) return;
+    m_impl->transitionMsForPrimary = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForPrimary), n);
+    emit transitionMsForPrimaryChanged();
+}
+
+void SettingsService::setTransitionMsForNdi(int ms)
+{
+    const int n = std::clamp(ms, 0, 2000);
+    if (m_impl->transitionMsForNdi == n) return;
+    m_impl->transitionMsForNdi = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForNdi), n);
+    emit transitionMsForNdiChanged();
+}
+
+void SettingsService::setTransitionMsForStage(int ms)
+{
+    const int n = std::clamp(ms, 0, 2000);
+    if (m_impl->transitionMsForStage == n) return;
+    m_impl->transitionMsForStage = n;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForStage), n);
+    emit transitionMsForStageChanged();
 }
 
 void SettingsService::setUseHeadlessNdi(bool v)
