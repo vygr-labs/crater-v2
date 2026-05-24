@@ -92,7 +92,6 @@ qt_add_qml_module(crater
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/ProjectionScene.qml
-        qml/components/ProjectionContentLayer.qml
         qml/components/NodeRenderer.qml
         qml/components/CroppableMediaPreview.qml
         qml/components/MediaBackgroundLoader.qml
@@ -207,13 +206,6 @@ target_link_libraries(crater
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
-        # Qt6::QuickEffects ships MultiEffect — Qt's built-in drop-shadow /
-        # blur effect. Public CMake target from Qt 6.9+; on Qt 6.8 LTS
-        # (used on macOS to keep deployment target ≤ 12 for Monterey)
-        # it lives inside qtdeclarative without a top-level config.
-        # The generator expression silently drops the link when the
-        # target is absent — visual effects degrade gracefully.
-        $<TARGET_NAME_IF_EXISTS:Qt6::QuickEffects>
         # Qt6::Widgets is required for QFileDialog (the native file picker
         # used by FileDialogService). It does not pull QtQuick.Dialogs into
         # the QML runtime — that's a separate, forbidden module.
@@ -295,17 +287,6 @@ if(WIN32)
             "$<TARGET_FILE_DIR:Qt6::Core>/../qml/QtMultimedia"
             "$<TARGET_FILE_DIR:crater>/qml/QtMultimedia"
         COMMENT "Copying QtMultimedia QML module to <exe>/qml/QtMultimedia"
-        VERBATIM)
-
-    # QtQuick.Effects QML module — same deployment trick we use for
-    # QtMultimedia. MultiEffect (powering text-node drop shadows in
-    # NodeRenderer.qml) is loaded via `import QtQuick.Effects`, which
-    # Qt's qmlimportscanner can miss on build-tree exes.
-    add_custom_command(TARGET crater POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "$<TARGET_FILE_DIR:Qt6::Core>/../qml/QtQuick/Effects"
-            "$<TARGET_FILE_DIR:crater>/qml/QtQuick/Effects"
-        COMMENT "Copying QtQuick.Effects QML module to <exe>/qml/QtQuick/Effects"
         VERBATIM)
 endif()
 

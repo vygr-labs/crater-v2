@@ -24,18 +24,6 @@ Rectangle {
     border.width: 1
     visible: !_isLocked
 
-    // z: 1 lifts the resize handles above the rotate / skew handles
-    // (which sit at default z: 0). Without this the top-center resize
-    // MouseArea loses the hit-test to RotateHandle in the 9-pixel band
-    // just above `parentNode.top` — RotateHandle's -4 click-target margin
-    // pulls its MouseArea bottom down to `parentNode.top + 0`, exactly
-    // where this handle's generous top margin reaches up to. Same story
-    // on the left edge between the left-center resize handle and
-    // SkewHandle. Resize is the primary interaction; the rotate/skew
-    // grip dots stay fully reachable from their own bodies above/beside
-    // the node, only the bottom 9 px of their hit area cedes priority.
-    z: 1
-
     // Position relative to parent (NodeDelegate). Each handle's CENTER sits
     // on the corner or edge midpoint — half the dot inside the selection
     // rectangle, half outside. That's the convention design tools (Figma,

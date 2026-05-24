@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import Crater
 
 // Renders a single theme node (Container or Text) into the rectangle it
@@ -258,33 +257,6 @@ Item {
                     wrapMode: Text.WordWrap
                     elide: Text.ElideNone
                     fontSizeMode: Text.FixedSize
-
-                    // Drop shadow — `textShadowColor` being a non-empty
-                    // string is the schema's "shadow on" sentinel. When
-                    // empty/absent, layer.enabled stays false so the Text
-                    // paints straight to the scene graph at zero cost. When
-                    // set, Qt renders the Text to an intermediate texture
-                    // and MultiEffect composites a blurred drop shadow
-                    // beneath it. autoPaddingEnabled (default true in
-                    // 6.5+) grows the texture so the blurred shadow halo
-                    // doesn't get clipped at the layer edges.
-                    //
-                    // shadowBlur is normalized 0..1 on MultiEffect, but
-                    // operators think in pixels — we expose 0..50 px in
-                    // the editor and divide here. The 0..50 px range is
-                    // generous: at 1080p canvas, 50 px is a very soft halo.
-                    layer.enabled:
-                        (textHost._style.textShadowColor || "") !== ""
-                    layer.effect: MultiEffect {
-                        shadowEnabled:          true
-                        shadowColor:            textHost._style.textShadowColor || "#000000"
-                        shadowHorizontalOffset: textHost._style.textShadowOffsetX || 0
-                        shadowVerticalOffset:   textHost._style.textShadowOffsetY || 0
-                        shadowBlur: Math.min(
-                            1.0,
-                            (textHost._style.textShadowBlur || 0) / 50.0)
-                        autoPaddingEnabled: true
-                    }
                 }
             }
         }

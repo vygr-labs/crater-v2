@@ -219,28 +219,6 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
         !inRange(style.value("letterSpacing").toDouble(), -2.0, 10.0))
         errs << QStringLiteral("nodes[%1].style.letterSpacing must be -2..10").arg(idx);
 
-    // Drop shadow — all four fields are optional. The renderer keys "is
-    // shadow active?" off textShadowColor being a non-empty string, so an
-    // empty string is the accepted sentinel for "shadow off" without the
-    // schema needing a separate toggle boolean.
-    if (style.contains("textShadowOffsetX") &&
-        (!isFiniteNumber(style.value("textShadowOffsetX")) ||
-         !inRange(style.value("textShadowOffsetX").toDouble(), -50.0, 50.0)))
-        errs << QStringLiteral("nodes[%1].style.textShadowOffsetX must be -50..50").arg(idx);
-    if (style.contains("textShadowOffsetY") &&
-        (!isFiniteNumber(style.value("textShadowOffsetY")) ||
-         !inRange(style.value("textShadowOffsetY").toDouble(), -50.0, 50.0)))
-        errs << QStringLiteral("nodes[%1].style.textShadowOffsetY must be -50..50").arg(idx);
-    if (style.contains("textShadowBlur") &&
-        (!isFiniteNumber(style.value("textShadowBlur")) ||
-         !inRange(style.value("textShadowBlur").toDouble(), 0.0, 50.0)))
-        errs << QStringLiteral("nodes[%1].style.textShadowBlur must be 0..50").arg(idx);
-    if (style.contains("textShadowColor")) {
-        const QString c = style.value("textShadowColor").toString();
-        if (!c.isEmpty() && !isHexColor(c))
-            errs << QStringLiteral("nodes[%1].style.textShadowColor must be a valid hex color or empty").arg(idx);
-    }
-
     static const QSet<QString> hAligns{ "left", "center", "right" };
     if (style.contains("textAlign") && !hAligns.contains(style.value("textAlign").toString()))
         errs << QStringLiteral("nodes[%1].style.textAlign must be left|center|right").arg(idx);
