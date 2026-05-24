@@ -18,10 +18,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Target: Qt 6.11+. We track the latest Qt to stay on the newest QML
-# compiler (qmlsc) and RHI improvements — meaningful perf gains on the
-# weak hardware Crater targets (Intel HD 4000 / 4 GB RAM).
-find_package(Qt6 6.11 REQUIRED COMPONENTS
+# Target: Qt 6.5+. Local dev tends to track latest Qt (currently 6.11)
+# for the newest qmlsc + RHI work, but the macOS Monterey CI path needs
+# Qt 6.8 LTS (Qt 6.11 raises macOS floor to 14 / Sonoma). Setting the
+# floor at 6.5 keeps both paths buildable; any 6.5+ install satisfies.
+find_package(Qt6 6.5 REQUIRED COMPONENTS
     Core
     Concurrent      # QtConcurrent::run for worker-thread import + FTS rebuild
     Gui
@@ -37,7 +38,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Widgets         # QApplication + QFileDialog (used by FileDialogService for native pickers)
 )
 
-qt_standard_project_setup(REQUIRES 6.11)
+qt_standard_project_setup(REQUIRES 6.5)
 
 add_subdirectory(core)
 add_subdirectory(app)
