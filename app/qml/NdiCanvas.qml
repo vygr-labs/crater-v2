@@ -56,5 +56,12 @@ Item {
         // outputKind="ndi" so resolveItemTheme honors themeIdForNdi when
         // the operator has pinned one — the whole point of dual output.
         outputKind: "ndi"
+        // Scene-level hint that mirrors NdiService.blank, so when the
+        // operator blanks the broadcast the scene graph also goes to
+        // alpha 0 (skips rasterizing the doomed pixels). The real
+        // bullet-proof blanking happens at the C++ frame-send boundary
+        // inside NdiService::captureFrame / onHeadlessFrame — this
+        // binding is the cooperative perf hint, not the mechanism.
+        opacity: NdiService.blank ? 0 : 1
     }
 }

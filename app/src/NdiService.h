@@ -52,6 +52,14 @@ class NdiService : public QObject
     // operable" guard.
     Q_PROPERTY(bool    available    READ available    NOTIFY availableChanged)
     Q_PROPERTY(bool    sending      READ sending      NOTIFY sendingChanged)
+    // Blank-the-broadcast flag — session-scoped, defaults false. When true,
+    // captureFrame() and onHeadlessFrame() zero the outgoing pixel buffer
+    // before handing it to NDI's send, regardless of which capture pipeline
+    // (legacy grabToImage / headless QRhi) is active and regardless of
+    // single/dual output mode. Intercepting at the send boundary makes this
+    // bullet-proof: every NDI source path funnels through one of those two
+    // methods. Scene-level QML opacity bindings would only catch a subset.
+    Q_PROPERTY(bool    blank        READ blank        WRITE setBlank NOTIFY blankChanged)
     Q_PROPERTY(QString streamName   READ streamName   WRITE setStreamName NOTIFY streamNameChanged)
     // Human-readable status. "NDI Tools not installed", "NDI runtime ready",
     // "Broadcasting as 'Crater Live'", etc. Surfaced verbatim in the
@@ -71,6 +79,8 @@ public:
 
     bool    available() const;
     bool    sending() const;
+    bool    blank() const;
+    void    setBlank(bool b);
     QString streamName() const;
     QString diagnostic() const;
     bool    onProgram() const;
@@ -112,6 +122,7 @@ public:
 signals:
     void availableChanged();
     void sendingChanged();
+    void blankChanged();
     void streamNameChanged();
     void diagnosticChanged();
     void onProgramChanged();

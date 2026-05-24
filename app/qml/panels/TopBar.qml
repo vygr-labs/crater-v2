@@ -1,13 +1,80 @@
 import QtQuick
 
-// Top chrome — left cluster (Schedule dropdown, settings gear)
-// and right cluster (Logo, Clear, Go Live). Each button calls into
-// AppState; the heavy modal/popover rendering happens in ModalLayer.
+// Top chrome — left cluster (Schedule dropdown, settings gear, NDI
+// blank chip, NDI overdue alert) and right cluster (Logo, Clear,
+// Go Live). Each button calls into AppState; the heavy modal/popover
+// rendering happens in ModalLayer.
 Rectangle {
     id: root
 
     height: Theme.size.topBarHeight
     color: Theme.color.elevated
+
+    // ── NDI "still on" reminder state ───────────────────────────────────
+    // Tracks how long the broadcast has been visible (NdiService.sending
+    // AND !NdiService.blank). The overdue chip below binds to this so the
+    // operator gets a passive nudge when an NDI image has been on screen
+    // long enough that it's probably forgotten rather than intentional.
+    //
+    // Threshold: 5 minutes. Most single-slide segments (song stanza,
+    // scripture, transition card) clear within that window. A sermon
+    // outline can absolutely sit longer than 5 min, in which case the
+    // chip becomes background and the operator ignores or clicks it.
+    // Tuned via the readonly property below — change here, not in a
+    // settings dialog (this is a one-knob deliberate nudge, not a
+    // configurable preference).
+    //
+    // The "now" timestamp is refreshed by a 10 s Timer rather than
+    // bound to Date.now() in the elapsed binding. Reason: a binding on
+    // Date.now() would only re-evaluate when an explicit dep changed —
+    // there's no way for the engine to know "the clock advanced". The
+    // Timer is the explicit dep; ticking it sets _nowMs and every
+    // binding that reads _nowMs re-runs. 10 s cadence is invisibly
+    // late for a 5 min threshold and saves ~30k Date.now() reads/min
+    // vs ticking every frame.
+    property double _ndiVisibleSinceMs: 0
+    property double _nowMs: Date.now()
+    readonly property int _ndiOverdueThresholdMs: 5 * 60 * 1000
+
+    readonly property bool _ndiOverdue:
+        _ndiVisibleSinceMs > 0
+        && (_nowMs - _ndiVisibleSinceMs) >= _ndiOverdueThresholdMs
+    readonly property int _ndiVisibleMinutes:
+        _ndiVisibleSinceMs > 0
+            ? Math.floor((_nowMs - _ndiVisibleSinceMs) / 60000)
+            : 0
+
+    // Imperative recompute on either of the two trigger inputs flipping.
+    // Captures the start-of-visibility timestamp once, then leaves it
+    // alone until visibility ends — that way the elapsed binding is
+    // monotonic and doesn't reset to 0 on every blank-change tick.
+    function _recomputeNdiSince() {
+        const visible = NdiService.sending && !NdiService.blank
+        if (visible && _ndiVisibleSinceMs === 0) {
+            _ndiVisibleSinceMs = Date.now()
+            _nowMs = _ndiVisibleSinceMs   // immediate sync, no 10 s wait
+        } else if (!visible) {
+            _ndiVisibleSinceMs = 0
+        }
+    }
+
+    Component.onCompleted: _recomputeNdiSince()
+
+    Connections {
+        target: NdiService
+        function onSendingChanged() { root._recomputeNdiSince() }
+        function onBlankChanged()   { root._recomputeNdiSince() }
+    }
+
+    Timer {
+        // Only runs while we're actually counting — stops the moment
+        // visibility ends so the topbar isn't burning a 10 s wakeup
+        // forever once NDI is off.
+        interval: 10 * 1000
+        repeat: true
+        running: root._ndiVisibleSinceMs > 0
+        onTriggered: root._nowMs = Date.now()
+    }
 
     // Bottom hairline
     Rectangle {
@@ -69,6 +136,113 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: AppState.openModal("settings", {})
+            }
+        }
+
+        // NDI blank / restore — explicit opacity-0 toggle for the broadcast
+        // scene. Lives next to Settings because both are "occasional output
+        // controls" with the same chip footprint. Matches settingsChip's
+        // chrome (34×34 square, borderStrong rest, overlay hover); active
+        // state lights up in live-red — same idiom as Clear in the right
+        // cluster, since both are "force-blank" gestures (Clear targets the
+        // projection content; this targets the NDI broadcast).
+        //
+        // Visible only when the NDI runtime is loaded — the existing NDI
+        // status pill in the right cluster uses the same gate, so the two
+        // appear and disappear together.
+        Rectangle {
+            id: ndiBlankChip
+            visible: NdiService.available
+            anchors.verticalCenter: parent.verticalCenter
+            height: 34
+            width:  34
+            color: NdiService.blank ? Theme.color.liveSubtle
+                 : ndiBlankMa.containsMouse  ? Theme.color.overlay
+                                              : "transparent"
+            border.color: NdiService.blank ? Theme.color.live
+                                           : Theme.color.borderStrong
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+            Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+
+            AppIcon {
+                anchors.centerIn: parent
+                // eye-off in the active (blanked) state, eye when visible —
+                // the icon describes the CURRENT state, not the next action,
+                // matching how the Clear chip's icon reads (eye-off when
+                // cleared, eye when showing). Operators learn one rule.
+                name: NdiService.blank ? "eye-off" : "eye"
+                color: NdiService.blank ? Theme.color.live
+                                        : Theme.color.textSecondary
+                size: Theme.icon.md
+            }
+            MouseArea {
+                id: ndiBlankMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: NdiService.blank = !NdiService.blank
+            }
+        }
+
+        // NDI overdue alert — appears when the broadcast has been visible
+        // (NdiService.sending AND !NdiService.blank) past
+        // _ndiOverdueThresholdMs. Reads as a red-tinted pill — same
+        // family as the LIVE indicator in LivePanel — and is itself
+        // clickable: a click sets NdiService.blank = true, which both
+        // dims the broadcast AND removes the alert as a side effect (the
+        // visibility binding tracks !blank). So the same control is both
+        // the warning and the remedy. The minute readout updates with
+        // the 10 s Timer's tick; operators don't need second precision
+        // for a "you've been on ≥ 5 min" reminder.
+        Rectangle {
+            id: ndiOverdueAlert
+            visible: root._ndiOverdue
+            anchors.verticalCenter: parent.verticalCenter
+            height: 28
+            width:  alertRow.implicitWidth + Theme.space.md * 2
+            radius: 0
+            color: Theme.color.liveSubtle
+            border.color: Theme.color.live
+            border.width: 1
+
+            // Subtle pulse to draw the eye without thrashing — the
+            // operator should notice the chip on first sweep, not have
+            // it disco-strobing in their peripheral vision through a
+            // whole sermon.
+            SequentialAnimation on opacity {
+                running: ndiOverdueAlert.visible
+                loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 0.6; duration: 1400; easing.type: Easing.InOutQuad }
+                NumberAnimation { from: 0.6; to: 1.0; duration: 1400; easing.type: Easing.InOutQuad }
+            }
+
+            Row {
+                id: alertRow
+                anchors.centerIn: parent
+                spacing: Theme.space.xs
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "alert-triangle"
+                    color: Theme.color.live
+                    size: Theme.icon.sm
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("NDI on %1 min — clear?").arg(root._ndiVisibleMinutes)
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    font.weight: Theme.font.weightMedium
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: NdiService.blank = true
             }
         }
     }

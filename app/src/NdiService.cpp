@@ -39,6 +39,7 @@ struct NdiService::Impl
     // Q_PROPERTY-backing state.
     bool    available  = false;
     bool    sending    = false;
+    bool    blank      = false;   // when true, captureFrame / onHeadlessFrame zero the outgoing buffer
     QString streamName = QStringLiteral("Crater Live");
     QString diagnostic;
     bool    onProgram  = false;
@@ -252,10 +253,22 @@ NdiService::~NdiService()
 
 bool    NdiService::available() const   { return m_impl->available; }
 bool    NdiService::sending() const     { return m_impl->sending; }
+bool    NdiService::blank() const       { return m_impl->blank; }
 QString NdiService::streamName() const  { return m_impl->streamName; }
 QString NdiService::diagnostic() const  { return m_impl->diagnostic; }
 bool    NdiService::onProgram() const   { return m_impl->onProgram; }
 bool    NdiService::onPreview() const   { return m_impl->onPreview; }
+
+void NdiService::setBlank(bool b)
+{
+    // Idempotent — no signal storm if the operator rapid-clicks the toggle.
+    // The pixel-zeroing in captureFrame / onHeadlessFrame is gated on this
+    // flag at frame-build time, so flipping it takes effect on the very
+    // next outgoing frame (within ~16-33 ms depending on path).
+    if (m_impl->blank == b) return;
+    m_impl->blank = b;
+    emit blankChanged();
+}
 
 void NdiService::setStreamName(const QString& name)
 {
@@ -487,6 +500,15 @@ void NdiService::captureFrame()
         QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
         dst = std::move(img);
 
+        // Blank intercept — operator toggled "Blank broadcast" in the
+        // TopBar. Zero the just-assigned buffer; the BGRA pixel layout
+        // becomes all-zero, which NDI sends as fully-transparent (alpha-
+        // respecting receivers) or solid black (alpha-stripping). The
+        // grab itself already happened — we eat that cost — but the
+        // outgoing frame is blank. We keep streaming at full cadence so
+        // receivers stay locked on the source instead of timing out.
+        if (m_impl->blank) dst.fill(Qt::transparent);
+
         NDIlib_video_frame_v2_t frame = {};
         frame.xres                  = dst.width();
         frame.yres                  = dst.height();
@@ -534,6 +556,12 @@ void NdiService::onHeadlessFrame(const QImage& image)
     if (dst.format() != QImage::Format_ARGB32) {
         dst = dst.convertToFormat(QImage::Format_ARGB32);
     }
+
+    // Blank intercept — same gate as the legacy captureFrame path. Mirror
+    // the comment there: cost of the headless render is already paid,
+    // but the outgoing pixels go transparent so the broadcast goes dark
+    // without breaking the stream.
+    if (m_impl->blank) dst.fill(Qt::transparent);
 
     NDIlib_video_frame_v2_t frame = {};
     frame.xres                  = dst.width();

@@ -57,6 +57,17 @@ constexpr int kPromoteWindow   = 60;
 // main app uses). `outputKind="ndi"` is the whole reason this scene exists
 // — it makes ProjectionScene resolve via SettingsService.themeIdForNdi in
 // dual mode.
+//
+// `opacity: NdiService.blank ? 0 : 1` is the cooperative perf hint for the
+// blank toggle — when the operator blanks the broadcast, the scene graph
+// drops to alpha 0 so the QRhi composer skips most of the rasterization
+// work. The actual frame-blanking happens unconditionally at the
+// NdiService::onHeadlessFrame intercept downstream, so this binding is
+// belt+suspenders, not the mechanism. If singletons aren't ready at
+// component creation time (the "Component is not ready" warning at
+// startup that has historically been an issue), the binding still
+// compiles fine — NdiService is a C++ singleton registered eagerly
+// before this engine instantiates any components.
 const char* const kSceneQml = R"(
 import QtQuick
 import Crater
@@ -64,6 +75,7 @@ ProjectionScene {
     outputKind: "ndi"
     width: 1920
     height: 1080
+    opacity: NdiService.blank ? 0 : 1
 }
 )";
 

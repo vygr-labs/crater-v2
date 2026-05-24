@@ -92,6 +92,13 @@ QtObject {
     property bool showLogo:           false   // Logo button toggled on/off
     property bool isClear:            false   // display cleared (overrides live content)
 
+    // NDI blank is now the C++ NdiService.blank property — intercepts at
+    // the frame-send boundary so the toggle works regardless of which
+    // capture pipeline is active (legacy grabToImage / headless QRhi) and
+    // regardless of single vs dual output mode. The earlier QML-side
+    // ndiOpacity property only reached one of those paths; consolidated
+    // here as a comment marker so future hackers don't reintroduce it.
+
     // Projection window visibility. Toggled true only by goLive(true) (the
     // explicit "Go Live" button, schedule double-click, and the schedule
     // context-menu's "Go Live"); reset to false only by endLive() (the
