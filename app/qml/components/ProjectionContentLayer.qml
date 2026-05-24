@@ -20,8 +20,16 @@ import Crater
 // "current" to "previous" is just a property copy rather than a binding
 // rewire. The scene owns the lifecycle; this component just renders what
 // it's told.
+// Root id is `root`, NOT `layer` — every Item has a built-in `layer`
+// attached property of type QQuickItemLayer (Qt's shader-effect opt-in).
+// Using `id: layer` here would silently work for top-level child bindings
+// (no scope nesting between binding and id) but get shadowed inside any
+// nested Item, where `layer` resolves to the inner Item's OWN attached
+// property — yielding `TypeError: Property 'X' of object QQuickItemLayer
+// is not a function` for the Repeater delegate's clear-fade NodeRenderer
+// binding `root.resolveText(modelData)`.
 Item {
-    id: layer
+    id: root
 
     // ── Required input properties (set by the containing scene) ─────────
     // layerItem mirrors ProjectionService.currentItem's shape — a deep-copy
@@ -135,23 +143,23 @@ Item {
     MediaMonitor {
         id: mediaItemMonitor
         anchors.fill: parent
-        visible: layer._isMediaItem && (layer.layerKind === "image" || layer.layerKind === "video")
-        mediaKind: visible ? layer.layerKind : ""
-        mediaPath: visible ? (layer.layerItem.mediaPath || "") : ""
+        visible: root._isMediaItem && (root.layerKind === "image" || root.layerKind === "video")
+        mediaKind: visible ? root.layerKind : ""
+        mediaPath: visible ? (root.layerItem.mediaPath || "") : ""
         // Audio routing: only when this layer is "current" AND its scene
         // is the primary AND the audience window is actually visible. The
         // outgoing layer always mutes (audioEnabled set false at transition
         // kickoff). Keeps the previous-layer video silent during the fade
         // so two videos never fight for the audio bus.
-        muted: !layer.audioEnabled
-               || layer.outputKind !== "primary"
+        muted: !root.audioEnabled
+               || root.outputKind !== "primary"
                || !OutputService.projectionOpen
         crop: false
         // Hide when an image carries a non-identity crop — the
         // imageCropApplier below takes over so the crop happens at the
         // QML layer (sourceClipRect) rather than re-encoding the source.
-        opacity: (layer.layerKind === "image"
-                  && layer.layerCrop !== Qt.rect(0, 0, 1, 1)) ? 0 : 1
+        opacity: (root.layerKind === "image"
+                  && root.layerCrop !== Qt.rect(0, 0, 1, 1)) ? 0 : 1
     }
 
     // ── Image crop applier ──────────────────────────────────────────────
@@ -164,10 +172,10 @@ Item {
     Image {
         id: imageCropApplier
         anchors.fill: parent
-        visible: layer._isMediaItem
-                 && layer.layerKind === "image"
-                 && layer.layerCrop !== Qt.rect(0, 0, 1, 1)
-        source: visible ? "file:///" + (layer.layerItem.mediaPath || "") : ""
+        visible: root._isMediaItem
+                 && root.layerKind === "image"
+                 && root.layerCrop !== Qt.rect(0, 0, 1, 1)
+        source: visible ? "file:///" + (root.layerItem.mediaPath || "") : ""
         // mediaItemMonitor has already pulled this URL, so the cache hits
         // synchronously here.
         asynchronous: false
@@ -177,7 +185,7 @@ Item {
             if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
                 return Qt.rect(0, 0, 0, 0)
             }
-            const c = layer.layerCrop
+            const c = root.layerCrop
             return Qt.rect(c.x * sourceSize.width,
                            c.y * sourceSize.height,
                            c.width  * sourceSize.width,
@@ -194,7 +202,7 @@ Item {
     Image {
         id: pdfPageImage
         anchors.fill: parent
-        visible: layer._isMediaItem && layer.layerKind === "pdf"
+        visible: root._isMediaItem && root.layerKind === "pdf"
         asynchronous: true
         cache: true
         // Keep the page currently on the projection output painted while
@@ -204,10 +212,10 @@ Item {
         sourceSize.width:  width
         sourceSize.height: height
         source: {
-            if (!visible || !layer.layerItem) return ""
-            const id   = Number(layer.layerItem.mediaId || 0)
-            const page = Math.max(0, layer.layerPage)
-            const c    = layer.layerCrop
+            if (!visible || !root.layerItem) return ""
+            const id   = Number(root.layerItem.mediaId || 0)
+            const page = Math.max(0, root.layerPage)
+            const c    = root.layerCrop
             return "image://pdfpage/" + id
                  + "?page=" + page
                  + "&cx="   + c.x
@@ -224,7 +232,7 @@ Item {
     // sized to its percent-of-stage rectangle, with skew handled by a
     // center-origin Matrix4x4 that matches the editor's NodeDelegate.
     Repeater {
-        model: layer._isMediaItem ? [] : layer._sortedNodes
+        model: root._isMediaItem ? [] : root._sortedNodes
         delegate: Item {
             id: nodeWrap
             readonly property var _style: modelData.style || ({})
@@ -260,7 +268,7 @@ Item {
                 opacity: (ProjectionService.isClear && modelData.kind === "text") ? 0 : 1
                 Behavior on opacity {
                     NumberAnimation {
-                        duration: layer.passiveFadeMs
+                        duration: root.passiveFadeMs
                         easing.type: Easing.InOutCubic
                     }
                 }
@@ -268,7 +276,7 @@ Item {
                 NodeRenderer {
                     anchors.fill: parent
                     node: modelData
-                    resolvedText: layer.resolveText(modelData)
+                    resolvedText: root.resolveText(modelData)
                 }
             }
         }

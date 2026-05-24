@@ -365,6 +365,16 @@ Rectangle {
                         // mirrors PreviewPanel. Subsequent Up/Down moves
                         // through the live page list.
                         AppState.setActiveFocus("live")
+                        // Push the page to the projection immediately.
+                        // The Live pane is a control surface, not a
+                        // preview — clicking a card is the operator
+                        // commanding "audience sees this now", not just
+                        // changing what the mini monitor renders. setPage
+                        // is a no-op when the page is already current,
+                        // and clears the m_isClear flag as a side effect
+                        // (correct: an explicit click implies "show",
+                        // overriding a previous Clear).
+                        ProjectionService.setPage(index)
                     }
                 }
             }
@@ -381,14 +391,23 @@ Rectangle {
         // about browsing stages, not anchoring on a single focal cue.
         Connections {
             target: AppState
+            // Arrow-key navigation in the Live pane is a control gesture,
+            // not a preview gesture — pressing Up/Down advances both the
+            // operator's local highlight AND the audience-facing page.
+            // Same rationale as the card-click handler (see pageMa above):
+            // the Live pane is a control surface. setPage is a no-op when
+            // the resolved index already matches, so clamp-at-bounds
+            // keypresses don't burn a re-render.
             function onLiveNavigateUp() {
                 if (root.pages.length === 0) return
                 AppState.liveSubIndex = Math.max(AppState.liveSubIndex - 1, 0)
+                ProjectionService.setPage(AppState.liveSubIndex)
             }
             function onLiveNavigateDown() {
                 if (root.pages.length === 0) return
                 AppState.liveSubIndex = Math.min(AppState.liveSubIndex + 1,
                                                  root.pages.length - 1)
+                ProjectionService.setPage(AppState.liveSubIndex)
             }
             function onLiveSubIndexChanged() {
                 // Fires on every liveSubIndex update — click, key,
