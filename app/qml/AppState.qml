@@ -618,6 +618,19 @@ QtObject {
         scriptureInputMode = mode
     }
 
+    // Last view mode the song editor was in. Re-opened editors should
+    // land in the operator's last choice rather than always defaulting to
+    // structured — a raw-mode user shouldn't have to flip the toggle on
+    // every song. Session-only (same pattern as scriptureInputMode); a
+    // SettingsService-backed persistent slot can replace this later
+    // without touching the editor wiring.
+    property string songEditorViewMode: "structured"   // "structured" | "raw"
+
+    function setSongEditorViewMode(mode) {
+        if (mode !== "structured" && mode !== "raw") return
+        songEditorViewMode = mode
+    }
+
     // ─── Media tab view state (transient UI choices only) ───────────────
     // The media library itself lives in crater::MediaService (see
     // ARCHITECTURE.md §1/§4/§9: file-backed data belongs in crater-core,

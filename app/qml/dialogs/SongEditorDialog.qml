@@ -161,6 +161,11 @@ ModalShell {
 
     // ── Lifecycle ───────────────────────────────────────────────────────
     Component.onCompleted: {
+        // Reopen in the operator's last-used view mode. A raw-mode user
+        // shouldn't be forced back to structured on every song open. Set
+        // this BEFORE _loadExisting / _initFresh so any view-mode-dependent
+        // staging in those paths sees the correct value.
+        _viewMode = AppState.songEditorViewMode
         if (_isEditMode) _loadExisting(_songId)
         else             _initFresh()
         titleInput.forceActiveFocus()
@@ -419,6 +424,9 @@ ModalShell {
             _commitRawText(_rawText)
             _viewMode = "structured"
         }
+        // Remember for the next dialog open. AppState slot is session-only;
+        // a SettingsService-backed persistent slot can replace it later.
+        AppState.setSongEditorViewMode(_viewMode)
     }
 
     // ── Save & close ────────────────────────────────────────────────────

@@ -846,9 +846,20 @@ Item {
                 // empty, we fall back to single-row focus on this row so
                 // there's always *something* selected (matches how the
                 // existing single-row model expects fluidIndex >= 0).
+                //
+                // Seeding subtlety: the FIRST ctrl+click of a session has
+                // no prior multi-set, only an anchor. We have to fold the
+                // anchor into the set before adding the new index — without
+                // that, moving the anchor to the new row would silently drop
+                // the previously-clicked row from the visual selection (it
+                // was never in `librarySelectedIndices`; it was the implicit
+                // single-row selection conveyed by `fluidIndex` alone).
                 function _toggleInSet() {
-                    const sel = (AppState.librarySelectedIndices[root.tabKey] || []).slice()
-                    const at  = sel.indexOf(index)
+                    let sel = (AppState.librarySelectedIndices[root.tabKey] || []).slice()
+                    if (sel.length === 0 && root.fluidIndex >= 0 && root.fluidIndex !== index) {
+                        sel.push(root.fluidIndex)
+                    }
+                    const at = sel.indexOf(index)
                     if (at >= 0) sel.splice(at, 1)
                     else         sel.push(index)
                     // Anchor moves to the most recently touched row, matching
