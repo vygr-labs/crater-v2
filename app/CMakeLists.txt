@@ -74,6 +74,7 @@ qt_add_qml_module(crater
         qml/controls/AppIcon.qml
         qml/controls/IconButton.qml
         qml/controls/Badge.qml
+        qml/controls/ElidedText.qml
         qml/controls/EmptyState.qml
         qml/controls/Monitor.qml
         qml/controls/PaneHeader.qml

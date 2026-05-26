@@ -277,11 +277,11 @@ Item {
                     anchors.rightMargin: Theme.space.md
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
-                    Text { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                           width: parent.width; elide: Text.ElideRight }
-                    Text { text: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
-                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                           width: parent.width; elide: Text.ElideRight }
+                    ElidedText { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                                 width: parent.width }
+                    ElidedText { text: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
+                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                                 width: parent.width }
                 }
                 ToggleSwitch {
                     id: dualToggle
@@ -305,11 +305,11 @@ Item {
                     anchors.rightMargin: Theme.space.md
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
-                    Text { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                           width: parent.width; elide: Text.ElideRight }
-                    Text { text: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
-                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                           width: parent.width; elide: Text.ElideRight }
+                    ElidedText { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                                 width: parent.width }
+                    ElidedText { text: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
+                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                                 width: parent.width }
                 }
                 ToggleSwitch {
                     id: headlessToggle

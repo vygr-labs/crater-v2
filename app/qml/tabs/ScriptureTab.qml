@@ -180,25 +180,150 @@ Item {
         }
     }
 
+    // Combined-item builder for multi-verse selections. Returns a single item
+    // whose one page contains every selected verse, numbered, separated by
+    // spaces — the "all on one slide" projection shape Q2 settled on. Title
+    // collapses contiguous runs within the same book+chapter ("John 3:14-17"),
+    // and falls back to a comma/semicolon list when the selection spans
+    // multiple chapters or has gaps ("John 3:14, 16; Rom 5:8").
+    //
+    // scriptureRef carries the FIRST verse's coords so schedule → scripture
+    // sync still has a single jump target. Schedule-row labels read the same
+    // title field, so a multi-verse row reads as "John 3:14-17 (KJV)".
+    function buildItemFromVerses(verses) {
+        if (!verses || verses.length === 0) return null
+        const usable = verses.filter(function(v) { return v && v.text && v.text.length > 0 })
+        if (usable.length === 0) return null
+        if (usable.length === 1) return buildItemFromVerse(usable[0])
+
+        const code = usable[0].translationCode || activeTranslation
+        const title = _formatVerseRangeTitle(usable) + " (" + code + ")"
+        // Numbered verses so the operator can read which verse is which on
+        // the slide. Two spaces between verses give the eye a parsing break
+        // without bloating the layout the way line breaks would on themes
+        // not designed for multi-verse content.
+        const combined = usable.map(function(v) {
+            return v.verse + " " + v.text
+        }).join("  ")
+
+        const first = usable[0]
+        const last  = usable[usable.length - 1]
+        return {
+            kind:     "scripture",
+            title:    title,
+            subtitle: "",
+            pages:    [{ label: _formatVerseRangeTitle(usable), content: combined }],
+            scriptureRef: {
+                translationCode: code,
+                book:            first.book,
+                chapter:         first.chapter,
+                verseStart:      first.verse,
+                verseEnd:        last.verse
+            }
+        }
+    }
+
+    // Compose a human reference string for a sorted verse array. Groups
+    // verses by (book, chapter) and collapses each group's contiguous runs
+    // into ranges. Numeric verse parsing tolerates the same shapes
+    // verseMatches handles (plain "12", range "1-2", subdivision "2a")
+    // by reading the leading integer.
+    function _formatVerseRangeTitle(verses) {
+        const groups = []        // [{book, chapter, verses:[int]}]
+        let current = null
+        for (let i = 0; i < verses.length; ++i) {
+            const v = verses[i]
+            const n = parseInt(String(v.verse), 10)
+            if (isNaN(n)) continue
+            if (!current || current.book !== v.book || current.chapter !== v.chapter) {
+                current = { book: v.book, chapter: v.chapter, verses: [] }
+                groups.push(current)
+            }
+            current.verses.push(n)
+        }
+        if (groups.length === 0) return ""
+        return groups.map(function(g) {
+            return g.book + " " + g.chapter + ":" + _collapseRanges(g.verses)
+        }).join("; ")
+    }
+
+    // [14,15,16,18] → "14-16, 18". Sorted-ascending precondition; the
+    // builder already filters to that order via librarySelectedIndices'
+    // sort guarantee in AppState.setLibrarySelected.
+    function _collapseRanges(nums) {
+        if (nums.length === 0) return ""
+        const out = []
+        let start = nums[0], prev = nums[0]
+        for (let i = 1; i < nums.length; ++i) {
+            const n = nums[i]
+            if (n === prev + 1) { prev = n; continue }
+            out.push(start === prev ? String(start) : (start + "-" + prev))
+            start = n; prev = n
+        }
+        out.push(start === prev ? String(start) : (start + "-" + prev))
+        return out.join(", ")
+    }
+
+    // Resolve the active set of verse indices: multi-selection if any, else
+    // the single fluid-anchor index (or empty if none). This single helper
+    // keeps the push / preview / schedule paths from each re-deriving the
+    // policy.
+    function _activeIndices() {
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        if (sel.length > 0) {
+            // Ensure the anchor is part of the active set even if the user
+            // ctrl-clicked it off — the anchor is what they last touched.
+            if (fluidIndex >= 0 && sel.indexOf(fluidIndex) < 0) {
+                return sel.concat([fluidIndex]).sort(function(a, b) { return a - b })
+            }
+            return sel
+        }
+        return fluidIndex >= 0 ? [fluidIndex] : []
+    }
+
+    function _activeVerses() {
+        const idxs = _activeIndices()
+        const out = []
+        for (let i = 0; i < idxs.length; ++i) {
+            const v = currentVerses[idxs[i]]
+            if (v) out.push(v)
+        }
+        return out
+    }
+
+    function _activeItem() {
+        const verses = _activeVerses()
+        if (verses.length === 0) return null
+        return verses.length === 1
+               ? buildItemFromVerse(verses[0])
+               : buildItemFromVerses(verses)
+    }
+
     function verseItemAt(idx) {
         if (idx < 0 || idx >= currentVerses.length) return null
         return buildItemFromVerse(currentVerses[idx])
     }
 
+    // Push the current ACTIVE set (multi if any, else the single row at idx).
+    // The idx argument is kept for the keyboard / parsedRef paths that target
+    // a specific row without disturbing multi-selection state.
     function pushPreviewFor(idx) {
         if (AppState.tabKeys[AppState.activeTab] !== tabKey) return
-        const item = verseItemAt(idx)
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
         if (item) AppState.pushLibraryPreview(item)
         else      AppState.clearLibraryPreview()
     }
 
     function pushLiveFor(idx) {
-        const item = verseItemAt(idx)
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
         if (item) AppState.pushLibraryLive(item)
     }
 
     function addToScheduleFor(idx) {
-        const item = verseItemAt(idx)
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
         if (item) AppState.addItemToSchedule(item)
     }
 
@@ -350,7 +475,11 @@ Item {
     }
 
     // Try to keep the same verse focused across translation changes.
+    // Multi-selection is dropped on translation switch — the indices point
+    // into the old corpus, and silently mapping coords across translations
+    // gets ambiguous fast for ranges that include subdivision verses ("2a").
     onActiveTranslationChanged: {
+        AppState.clearLibrarySelected(tabKey)
         if (!_focusedCoord) {
             AppState.setLibraryFluid(tabKey, 0)
             return
@@ -531,6 +660,18 @@ Item {
             height: 40
 
             readonly property bool _selected: list.currentIndex === index
+            // True if this row is part of a multi-selection (shift+click
+            // range, ctrl+click extra). The anchor row stays governed by
+            // _selected — this flag lights up the *other* rows in the
+            // selection so the operator sees the full active set.
+            readonly property bool _inMulti:
+                (AppState.librarySelectedIndices[root.tabKey] || []).indexOf(index) >= 0
+            // Visual-selection truth: anchor row OR any extra row in the
+            // multi-selection. Most chrome (icon tint, verse text color,
+            // version badge fill) should react to this, not raw _selected,
+            // so a 4-verse selection reads as one continuous highlighted
+            // block rather than three pale rows with one bright anchor.
+            readonly property bool _highlighted: _selected || _inMulti
             // True while the library pane owns keyboard focus. When the
             // operator clicks into Schedule / Preview / Live, this flips
             // false and the selected-row wash mutes to neutral gray so
@@ -540,13 +681,17 @@ Item {
             // Edge-to-edge background. Selected wash sits at brandSubtle
             // (#0E2528, deep cyan) — the calm cyan-presence tier where
             // selected rows read as "tinted dark" rather than "filled
-            // cyan." Paired with textTitle (gray.300) body text, this is
-            // the chosen gray-on-cyan polarity. No Behavior on color
-            // (removed earlier to fix the arrow-key navigation flash).
+            // cyan." Multi-selected (non-anchor) rows use the same wash so
+            // every member of the set reads as one continuous selection;
+            // the anchor is distinguished by the brighter brand-cyan version-
+            // badge chip below, not by row background. Paired with textTitle
+            // (gray.300) body text, this is the chosen gray-on-cyan polarity.
+            // No Behavior on color (removed earlier to fix the arrow-key
+            // navigation flash).
             Rectangle {
                 anchors.fill: parent
                 radius: 0
-                color: verseRow._selected
+                color: verseRow._highlighted
                        ? (verseRow._paneFocused ? Theme.color.brandSubtle
                                                 : Theme.color.selectionUnfocused)
                      : verseMa.containsMouse ? Theme.color.rowHoverBrand
@@ -562,9 +707,9 @@ Item {
                 // Selected: `textTitle` (gray.300) on the deep-cyan wash.
                 // Contrast ~11.6:1 (AAA easy) with the eye-comfort
                 // benefit of softer-than-white ink.
-                color: verseRow._selected ? Theme.color.textTitle : Theme.color.textTertiary
+                color: verseRow._highlighted ? Theme.color.textTitle : Theme.color.textTertiary
                 size: Theme.icon.lg
-                opacity: verseRow._selected ? 1.0 : 0.7
+                opacity: verseRow._highlighted ? 1.0 : 0.7
             }
 
             Text {
@@ -579,15 +724,15 @@ Item {
                 // tone with semiBold (600) weight bump. Bolder strokes +
                 // softer color = same perceived presence with less raw
                 // luminance, addressing the eye-strain from pure white.
-                color: verseRow._selected ? Theme.color.textTitle : "#d4d4d8"   // gray.300
+                color: verseRow._highlighted ? Theme.color.textTitle : "#d4d4d8"   // gray.300
                 font.family: Theme.font.family
                 // Scales with the operator's Font size setting via Theme.uiScale.
                 // The literal 17 is the baseline pixel size (slightly larger
                 // than Theme.font.bodySize so verse rows read more substantial
                 // than song-row titles).
                 font.pixelSize: Math.round(17 * Theme.uiScale)
-                font.weight: verseRow._selected ? Theme.font.weightSemiBold
-                                                : Theme.font.weightRegular
+                font.weight: verseRow._highlighted ? Theme.font.weightSemiBold
+                                                   : Theme.font.weightRegular
                 elide: Text.ElideRight
             }
 
@@ -601,8 +746,8 @@ Item {
                 // Selected: textSecondary (a1a1aa) — quieter than the
                 // verse text's textTitle, so the reference reads as
                 // secondary chrome against the deep-cyan wash.
-                color: verseRow._selected ? Theme.color.textSecondary
-                                          : Theme.color.textTertiary
+                color: verseRow._highlighted ? Theme.color.textSecondary
+                                             : Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Math.round(16 * Theme.uiScale)
                 font.weight: Theme.font.weightMedium
@@ -621,8 +766,8 @@ Item {
                 // The chip becomes the bright accent inside an otherwise
                 // dark row, matching how Logic / Pro Tools treat colored
                 // chips on dark surfaces. Unselected: flat gray.800 chip.
-                color: verseRow._selected ? Theme.color.brand
-                                          : Theme.color.raised
+                color: verseRow._highlighted ? Theme.color.brand
+                                             : Theme.color.raised
 
                 Text {
                     id: versionLabel
@@ -632,8 +777,8 @@ Item {
                     // badge text wants the maximum contrast budget; white
                     // on brand sits at ~7.9:1 (AAA) where any gray would
                     // start chipping into legibility headroom.
-                    color: verseRow._selected ? Theme.color.textPrimary
-                                              : Theme.color.textSecondary
+                    color: verseRow._highlighted ? Theme.color.textPrimary
+                                                 : Theme.color.textSecondary
                     font.family: Theme.font.monoFamily
                     font.pixelSize: Math.round(11 * Theme.uiScale)
                     font.weight: Theme.font.weightBold
@@ -658,8 +803,14 @@ Item {
                     { label: qsTr("Refresh"), iconName: "refresh-cw" }
                 ]
 
+                // Single-row focus path — used by plain clicks AND by
+                // right-clicks that land on rows outside the current
+                // selection (so the context menu acts on what was just
+                // visually pointed at, the way every desktop file manager
+                // works). Clears any prior multi-selection.
                 function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
+                    AppState.clearLibrarySelected(root.tabKey)
                     // Claim Up/Down/Enter for the library — operator just
                     // clicked a verse row, so subsequent arrow keys should
                     // walk the verse list rather than the preview/live
@@ -671,8 +822,63 @@ Item {
                     root.pushPreviewFor(index)
                     root._syncInputToVerse(index)
                 }
-                onLeftClicked:  _focus()
-                onRightClicked: _focus()
+
+                // Extend the selection from the current anchor up to this
+                // row, inclusive. Replaces any prior multi-selection (matches
+                // Finder / Explorer / VS Code shift-click semantics — a fresh
+                // shift+click is "select this range", not "merge with previous").
+                function _extendRange() {
+                    const anchor = root.fluidIndex
+                    if (anchor < 0) { _focus(); return }
+                    const lo = Math.min(anchor, index)
+                    const hi = Math.max(anchor, index)
+                    const range = []
+                    for (let i = lo; i <= hi; ++i) range.push(i)
+                    AppState.setLibrarySelected(root.tabKey, range)
+                    // Anchor stays put; only the set grows. Re-push preview
+                    // so the combined-verse content reflects the new set.
+                    AppState.setActiveFocus("library")
+                    root.pushPreviewFor(index)
+                }
+
+                // Toggle this row in/out of the multi-selection without
+                // disturbing the others. If toggling brings the set to
+                // empty, we fall back to single-row focus on this row so
+                // there's always *something* selected (matches how the
+                // existing single-row model expects fluidIndex >= 0).
+                function _toggleInSet() {
+                    const sel = (AppState.librarySelectedIndices[root.tabKey] || []).slice()
+                    const at  = sel.indexOf(index)
+                    if (at >= 0) sel.splice(at, 1)
+                    else         sel.push(index)
+                    // Anchor moves to the most recently touched row, matching
+                    // Finder behavior (next shift+click extends from here).
+                    AppState.setLibraryFluid(root.tabKey, index)
+                    AppState.setLibrarySelected(root.tabKey, sel)
+                    AppState.setActiveFocus("library")
+                    root.pushPreviewFor(index)
+                }
+
+                onLeftClicked: function(mouse) {
+                    if (mouse.modifiers & Qt.ShiftModifier) {
+                        _extendRange()
+                    } else if (mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
+                        _toggleInSet()
+                    } else {
+                        _focus()
+                    }
+                }
+                onRightClicked: function(mouse) {
+                    // If the operator right-clicks INSIDE the current
+                    // selection, keep the selection intact — the menu
+                    // should act on the whole set. Otherwise behave like a
+                    // plain click: clear the set and focus this single row.
+                    if (verseRow._inMulti || verseRow._selected) {
+                        AppState.setActiveFocus("library")
+                    } else {
+                        _focus()
+                    }
+                }
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
                     AppState.setActiveFocus("library")
@@ -689,6 +895,12 @@ Item {
         function onLibraryNavigateDown() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.currentVerses.length === 0) return
+            // Plain arrow nav clears the multi-selection — operator is
+            // moving the anchor, not extending the set. Shift+arrow as a
+            // "extend selection" gesture is a possible later add (would
+            // need TabSearchBar to forward modifier state through the
+            // navigate signals).
+            AppState.clearLibrarySelected(root.tabKey)
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.currentVerses.length - 1)
             AppState.setLibraryFluid(root.tabKey, next)
@@ -698,6 +910,7 @@ Item {
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.currentVerses.length === 0) return
+            AppState.clearLibrarySelected(root.tabKey)
             const next = Math.max(root.fluidIndex - 1, 0)
             AppState.setLibraryFluid(root.tabKey, next)
             root.pushPreviewFor(next)

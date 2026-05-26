@@ -487,18 +487,26 @@ Item {
                     anchors.margins: 8
                     spacing: 4
 
+                    // DEFAULT = the per-kind fallback theme that ships on
+                    // the primary monitor when nothing else is assigned.
+                    // Painted in live-red for the same reason PRIMARY is:
+                    // both badges describe "this is what the audience will
+                    // see by default," and the live-red family is the
+                    // codebase's universal "audience output" signal
+                    // (LivePanel, monitor live indicators, schedule live
+                    // glow). Different word, same idea, same color.
                     Rectangle {
                         visible: tileRoot._isActiveDefault
                         width: defaultLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
                         radius: 2
-                        color: Theme.color.brand
+                        color: Theme.color.live
 
                         Text {
                             id: defaultLabel
                             anchors.centerIn: parent
                             text: qsTr("DEFAULT")
-                            color: Theme.color.brandInk
+                            color: "#ffffff"
                             font.family: Theme.font.monoFamily
                             font.pixelSize: 11
                             font.weight: Theme.font.weightSemiBold

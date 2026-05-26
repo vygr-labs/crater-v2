@@ -477,6 +477,22 @@ QtObject {
         "themes":    -1
     })
 
+    // Per-tab multi-selection — additional row indices beyond the fluid anchor
+    // that are also "selected" for batch actions (push live, add to schedule).
+    // Empty array = no multi-selection; the fluid anchor alone is the implicit
+    // single selection. Always sorted ascending. Read alongside libraryFluidIndex,
+    // not as a replacement — tabs decide their own merge policy. Today only
+    // ScriptureTab consumes it (shift+click for ranges, ctrl/cmd+click for
+    // individual extras), but the slot is per-tab so other library tabs can
+    // opt in later without a schema bump.
+    property var librarySelectedIndices: ({
+        "songs":     [],
+        "scripture": [],
+        "strongs":   [],
+        "media":     [],
+        "themes":    []
+    })
+
     // Search-mode keyed per tab. Songs supports title/lyrics/author (filter
     // mode — drives the input placeholder + filter logic). Scripture supports
     // reference/search. Media supports title/search (in-row filter today).
@@ -532,6 +548,23 @@ QtObject {
         let copy = Object.assign({}, libraryFluidIndex)
         copy[tabKey] = idx
         libraryFluidIndex = copy
+    }
+
+    function setLibrarySelected(tabKey, indicesArray) {
+        let copy = Object.assign({}, librarySelectedIndices)
+        // Defensive copy + sort so callers can pass any iterable. Dedup via
+        // Set: shift+click ranges can overlap a prior ctrl+click and we don't
+        // want duplicate index entries to confuse downstream consumers.
+        const sorted = Array.from(new Set(indicesArray || []))
+                        .filter(function(i) { return Number.isInteger(i) && i >= 0 })
+                        .sort(function(a, b) { return a - b })
+        copy[tabKey] = sorted
+        librarySelectedIndices = copy
+    }
+
+    function clearLibrarySelected(tabKey) {
+        if ((librarySelectedIndices[tabKey] || []).length === 0) return
+        setLibrarySelected(tabKey, [])
     }
 
     function setLibrarySearchMode(tabKey, mode) {

@@ -540,23 +540,21 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
 
-                    Text {
+                    ElidedText {
                         text: qsTr("Manage fonts available to themes")
                         color: Theme.color.textPrimary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.bodySize
                         font.weight: Theme.font.weightMedium
                         width: parent.width
-                        elide: Text.ElideRight
                     }
-                    Text {
+                    ElidedText {
                         text: qsTr("Imported fonts are available in every theme's font picker "
                                    + "and can be bundled into exported themes.")
                         color: Theme.color.textTertiary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
                         width: parent.width
-                        elide: Text.ElideRight
                     }
                 }
 
@@ -663,16 +661,15 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
 
-                            Text {
+                            ElidedText {
                                 text: modelData.family
                                 color: Theme.color.textPrimary
                                 font.family: modelData.family
                                 font.pixelSize: Theme.font.bodySize + 2
                                 font.weight: Theme.font.weightMedium
                                 width: parent.width
-                                elide: Text.ElideRight
                             }
-                            Text {
+                            ElidedText {
                                 // 8-char hash prefix uniquely identifies a
                                 // row at our scale (hundreds of fonts at
                                 // most) without hogging the line with a
@@ -686,7 +683,6 @@ Item {
                                 font.family: Theme.font.monoFamily
                                 font.pixelSize: Theme.font.smallSize - 1
                                 width: parent.width
-                                elide: Text.ElideRight
                             }
                         }
 
