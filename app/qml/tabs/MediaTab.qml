@@ -217,16 +217,14 @@ Item {
     // the two views stay in lockstep when items are added or reordered.
     // `isLogo` comes from the calling delegate (each view computes it slightly
     // differently — grid via cell._logo, list via listRow._logo).
+    // Group order matches SongsTab and ScriptureTab: row-edit first
+    // (Rename / Duplicate), then projection (Add to Schedule / Push to
+    // Live / Set as Logo Background — Logo is a projection-configuration
+    // action, lives with the projection group), then organization
+    // (Favorites / Collection), then destructive (Delete) last where
+    // slip-clicks are least likely.
     function _mediaMenuItems(media, isLogo, idx) {
         return [
-            { label: qsTr("Push to Live"), iconName: "play",
-              action: function() { root.pushLiveFor(idx) } },
-            { label: qsTr("Add to Schedule"), iconName: "plus",
-              action: function() { root.addToScheduleFor(idx) } },
-            { separator: true },
-            { label: qsTr("Set as Logo Background"), iconName: "sparkles",
-              detail: isLogo ? "✓" : "",
-              action: function() { ProjectionService.setLogoBg(media.path, media.type) } },
             { label: qsTr("Rename"), iconName: "edit",
               action: function() {
                   AppState.openModal("naming", {
@@ -241,6 +239,14 @@ Item {
                   })
               } },
             { label: qsTr("Duplicate"), iconName: "copy" },
+            { separator: true },
+            { label: qsTr("Add to Schedule"), iconName: "plus",
+              action: function() { root.addToScheduleFor(idx) } },
+            { label: qsTr("Push to Live"), iconName: "play",
+              action: function() { root.pushLiveFor(idx) } },
+            { label: qsTr("Set as Logo Background"), iconName: "sparkles",
+              detail: isLogo ? "✓" : "",
+              action: function() { ProjectionService.setLogoBg(media.path, media.type) } },
             { separator: true },
             { label: media.isFavorite
                     ? qsTr("Remove from Favorites")
@@ -801,8 +807,25 @@ Item {
                 // vivid regardless of focus — multi-select is an explicit
                 // operator commitment that should always read.
                 readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
+                // LIVE compares against ProjectionService.currentItem — the
+                // canonical "what's on the projector right now" reference.
+                // The previous predicate read libraryPreviewItem, which is
+                // the *preview* slot and changes on every selection, so any
+                // selected tile inherited LIVE once any media had been
+                // pushed live in this session. libraryLiveActive still
+                // gates the badge so a media item driven from the schedule
+                // (where the live source isn't the library) doesn't claim
+                // a LIVE chip on the media tab.
                 readonly property bool _live:
                     AppState.libraryLiveActive
+                    && ProjectionService.currentItem
+                    && ProjectionService.currentItem.mediaId === modelData.id
+                // PREVIEW: this tile is the one currently shown in the
+                // Preview pane. Suppressed when _live is also true so the
+                // two badges never stack — LIVE outranks PREVIEW visually
+                // and semantically (live is the destination state).
+                readonly property bool _preview:
+                    !_live
                     && AppState.libraryPreviewItem
                     && AppState.libraryPreviewItem.mediaId === modelData.id
                 readonly property bool _logo:     root.isCurrentLogo(modelData.path)
@@ -980,21 +1003,35 @@ Item {
                         }
                     }
 
-                    // LIVE pill (bottom-left)
+                    // State pill (bottom-left). Renders as LIVE (live-red)
+                    // when this tile is what's currently on the projector,
+                    // PREVIEW (bright brand-cyan) when it's only staged in
+                    // the Preview pane. Mutually exclusive — see _preview's
+                    // !_live gate above. One Rectangle for both states
+                    // keeps the visual position stable as the operator
+                    // promotes preview → live.
+                    //
+                    // z:2 so the pill sits ABOVE the hover-title scrim
+                    // declared lower in this delegate — without it, the
+                    // scrim's title text was painting over the pill on
+                    // hover. id is exposed so the hover title's anchors
+                    // can stop at this pill's right edge.
                     Rectangle {
-                        visible: cell._live
+                        id: statePill
+                        visible: cell._live || cell._preview
+                        z: 2
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.margins: 4
-                        width: liveLabel.implicitWidth + Theme.space.sm * 2
+                        width: statePillLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
                         radius: 0
-                        color: Theme.color.live
+                        color: cell._live ? Theme.color.live : Theme.color.brand
 
                         Text {
-                            id: liveLabel
+                            id: statePillLabel
                             anchors.centerIn: parent
-                            text: qsTr("LIVE")
+                            text: cell._live ? qsTr("LIVE") : qsTr("PREVIEW")
                             color: "#ffffff"
                             font.family: Theme.font.family
                             font.pixelSize: 11
@@ -1006,8 +1043,12 @@ Item {
                     // Video duration badge (bottom-right). Only shown once
                     // VideoThumbnailer has probed the clip — until then
                     // durationMs is 0 and the badge stays hidden.
+                    // z:2 + id mirror the state pill so the hover-title
+                    // scrim never paints over the duration text.
                     Rectangle {
+                        id: durBadge
                         visible: modelData.type === "video" && modelData.durationMs > 0
+                        z: 2
                         anchors.bottom: parent.bottom
                         anchors.right: parent.right
                         anchors.margins: 4
@@ -1027,20 +1068,39 @@ Item {
                         }
                     }
 
-                    // Hover title gradient
+                    // Hover title scrim. Vertical gradient (transparent
+                    // top → opaque dark bottom) reads as a polished
+                    // photographic vignette rather than a flat band, and
+                    // the deeper bottom stop gives ~AAA contrast against
+                    // even bright video frames (water, snow, sky) that
+                    // used to wash out the previous flat "#000000aa".
+                    //
+                    // The title text gets a per-glyph 1 px black drop
+                    // shadow (Text.Raised + styleColor) so legibility
+                    // holds even at the transparent top of the scrim.
+                    // Same trick ThemesTab uses for the name chip over
+                    // theme tiles.
+                    //
+                    // anchors.left / right adapt to whichever pills are
+                    // present so the title can never overlap them —
+                    // statePill on the left, durBadge on the right.
                     Rectangle {
                         visible: cellMa.containsMouse
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.margins: 2
-                        height: 22
+                        height: 26
                         radius: 0
-                        color: "#000000aa"
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: "#00000000" }
+                            GradientStop { position: 0.45; color: "#00000080" }
+                            GradientStop { position: 1.0; color: "#000000e6" }
+                        }
 
                         Text {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
+                            anchors.left: statePill.visible ? statePill.right : parent.left
+                            anchors.right: durBadge.visible ? durBadge.left : parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.leftMargin: 6
                             anchors.rightMargin: 6
@@ -1048,7 +1108,10 @@ Item {
                             color: "#ffffff"
                             font.family: Theme.font.family
                             font.pixelSize: 12
+                            font.weight: Theme.font.weightMedium
                             elide: Text.ElideRight
+                            style: Text.Raised
+                            styleColor: "#000000"
                         }
                     }
                 }
@@ -1119,8 +1182,16 @@ Item {
                 // Same focus-gating as the grid cell — selected row mutes
                 // when library pane loses focus.
                 readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
+                // Same fix as the grid delegate — see the comment there.
+                // _live compares against ProjectionService.currentItem so
+                // the badge tracks the actual live item, not whichever
+                // tile is currently in the preview slot.
                 readonly property bool _live:
                     AppState.libraryLiveActive
+                    && ProjectionService.currentItem
+                    && ProjectionService.currentItem.mediaId === modelData.id
+                readonly property bool _preview:
+                    !_live
                     && AppState.libraryPreviewItem
                     && AppState.libraryPreviewItem.mediaId === modelData.id
                 readonly property bool _logo:     root.isCurrentLogo(modelData.path)
@@ -1294,17 +1365,22 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.space.xs
 
+                    // State pill — LIVE (live-red) or PREVIEW (brand-cyan).
+                    // Single Rectangle for both states so the row's right-
+                    // hand chrome stays positionally stable as preview →
+                    // live promotes. Mutually exclusive via _preview's
+                    // !_live gate.
                     Rectangle {
-                        visible: listRow._live
+                        visible: listRow._live || listRow._preview
                         anchors.verticalCenter: parent.verticalCenter
-                        width: rowLiveLabel.implicitWidth + Theme.space.sm * 2
+                        width: rowStateLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
                         radius: 0
-                        color: Theme.color.live
+                        color: listRow._live ? Theme.color.live : Theme.color.brand
                         Text {
-                            id: rowLiveLabel
+                            id: rowStateLabel
                             anchors.centerIn: parent
-                            text: qsTr("LIVE")
+                            text: listRow._live ? qsTr("LIVE") : qsTr("PREVIEW")
                             color: "#ffffff"
                             font.family: Theme.font.family
                             font.pixelSize: 11

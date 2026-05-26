@@ -657,7 +657,11 @@ Item {
         delegate: Item {
             id: verseRow
             width: list.width
-            height: 40
+            // 36 (was 40) — dropping the redundant per-row book icon
+            // freed enough horizontal weight that the row no longer needs
+            // 40 px to breathe. Density win on long passages: Psalm 119
+            // gains ~10 visible rows on a 1080p screen.
+            height: 36
 
             readonly property bool _selected: list.currentIndex === index
             // True if this row is part of a multi-selection (shift+click
@@ -698,24 +702,36 @@ Item {
                                              : "transparent"
             }
 
-            AppIcon {
-                id: bookIcon
+            // The per-row book icon used to live here. Removed because the
+            // list is type-homogeneous (every row is a verse) and the
+            // translation chip on the right already anchors row identity.
+            // The selected-row brand wash + the new left accent bar below
+            // do everything the icon was doing for focus indication.
+
+            // Left brand-accent bar — visible only when the row is the
+            // anchor or part of a multi-selection. 2 px flush to the row's
+            // left edge, brand-cyan. Replaces the icon's role as "this row
+            // is the focus" with a smaller, more deliberate UI affordance
+            // (pattern matches Mail / Things / Linear list anchors).
+            Rectangle {
                 anchors.left: parent.left
-                anchors.leftMargin: Theme.space.md
-                anchors.verticalCenter: parent.verticalCenter
-                name: "book-2"
-                // Selected: `textTitle` (gray.300) on the deep-cyan wash.
-                // Contrast ~11.6:1 (AAA easy) with the eye-comfort
-                // benefit of softer-than-white ink.
-                color: verseRow._highlighted ? Theme.color.textTitle : Theme.color.textTertiary
-                size: Theme.icon.lg
-                opacity: verseRow._highlighted ? 1.0 : 0.7
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 2
+                color: Theme.color.brand
+                visible: verseRow._highlighted
+                opacity: verseRow._paneFocused ? 1.0 : 0.5
             }
 
             Text {
                 id: verseText
-                anchors.left: bookIcon.right
-                anchors.leftMargin: Theme.space.md
+                // Anchored to the row's left edge with Theme.space.lg
+                // padding — slightly more generous than the old icon's
+                // leftMargin so the text breathes against the wash edge
+                // and (crucially) doesn't sit directly against the 2 px
+                // accent bar when a row is highlighted.
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.space.lg
                 anchors.right: refLabel.left
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
@@ -790,13 +806,21 @@ Item {
             RightClickArea {
                 id: verseMa
                 anchors.fill: parent
+                // Group order matches SongsTab and MediaTab: row-edit
+                // actions first (Mark Up — closest scripture analogue to
+                // Edit), then projection (Add to Schedule / Push to Live),
+                // then organization (Favorites / Collection), then utility
+                // (Refresh) last. Verses have no destructive action — they
+                // come from immutable Bible DBs — so the bottom slot stays
+                // safe rather than dangerous.
                 menuItems: [
-                    { label: qsTr("Push to Live"), iconName: "play",
-                      action: function() { root.pushLiveFor(index) } },
+                    { label: qsTr("Mark Up"),            iconName: "edit-3" },
+                    { separator: true },
                     { label: qsTr("Add to Schedule"), iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
+                    { label: qsTr("Push to Live"), iconName: "play",
+                      action: function() { root.pushLiveFor(index) } },
                     { separator: true },
-                    { label: qsTr("Mark Up"),            iconName: "edit-3" },
                     { label: qsTr("Add to Favorites"),   iconName: "heart" },
                     { label: qsTr("Add to Collection…"), iconName: "folder" },
                     { separator: true },

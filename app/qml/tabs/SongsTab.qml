@@ -613,52 +613,79 @@ Item {
                 // navigation feel.
             }
 
-            AppIcon {
-                id: leadIcon
+            // The redundant "music" lead icon was dropped — the tab itself
+            // already announces "this list is songs," so a glyph repeating
+            // it on every row was just chrome. The favorite affordance
+            // (previously folded into this same lead icon) moves to the
+            // right side as a heart, matching the MediaTab list pattern.
+            //
+            // Brand-accent bar on the left replaces the icon's other job
+            // ("this row is the focus") — same treatment ScriptureTab
+            // uses post-icon-removal so all library tabs share one
+            // selection-anchor language.
+            Rectangle {
                 anchors.left: parent.left
-                anchors.leftMargin: Theme.space.md
-                anchors.verticalCenter: parent.verticalCenter
-                name: modelData.isFavorite ? "heart" : "music"
-                color: modelData.isFavorite ? Theme.color.brand
-                     : songRow._selected   ? Theme.color.textTitle
-                                           : Theme.color.textTertiary
-                size: Theme.icon.lg
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 2
+                color: Theme.color.brand
+                visible: songRow._selected
+                opacity: songRow._paneFocused ? 1.0 : 0.5
             }
 
-            // LIVE pill — anchored right; visible only when this row is on
-            // the projector. Re-uses the broadcast `live` color so it reads
-            // the same as the global LIVE indicators elsewhere in the UI.
-            Rectangle {
-                id: livePill
-                visible: songRow._isLive
+            // Right-side cluster — favorite heart (when applicable) +
+            // LIVE pill (when applicable), in that reading order. Single
+            // Row keeps spacing consistent and lets the title's right
+            // edge anchor to the cluster's left.
+            Row {
+                id: rowRight
                 anchors.right: parent.right
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: liveText.implicitWidth + 10
-                implicitHeight: 14
-                radius: 0
-                color: Theme.color.live
+                spacing: Theme.space.xs
 
-                Text {
-                    id: liveText
-                    anchors.centerIn: parent
-                    text: "LIVE"
-                    color: Theme.color.brandInk
-                    font.family: Theme.font.monoFamily
-                    font.pixelSize: 11
-                    font.weight: Theme.font.weightBold
+                AppIcon {
+                    visible: modelData.isFavorite
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "heart"
+                    size: Theme.icon.sm
+                    color: Theme.color.brand
+                }
+
+                // LIVE pill — visible only when this row is on the
+                // projector. Re-uses the broadcast `live` color so it
+                // reads the same as the global LIVE indicators elsewhere.
+                Rectangle {
+                    id: livePill
+                    visible: songRow._isLive
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: liveText.implicitWidth + 10
+                    implicitHeight: 14
+                    radius: 0
+                    color: Theme.color.live
+
+                    Text {
+                        id: liveText
+                        anchors.centerIn: parent
+                        text: "LIVE"
+                        color: Theme.color.brandInk
+                        font.family: Theme.font.monoFamily
+                        font.pixelSize: 11
+                        font.weight: Theme.font.weightBold
+                    }
                 }
             }
 
             Column {
-                anchors.left: leadIcon.right
-                anchors.leftMargin: Theme.space.md
-                anchors.right: parent.right
-                // Give the title room when the LIVE pill is present; without
-                // the dynamic margin the elided "…" would sit under the pill.
-                anchors.rightMargin: livePill.visible
-                                   ? (livePill.width + Theme.space.md + Theme.space.sm)
-                                   : Theme.space.md
+                // Anchored to the row's left edge with Theme.space.lg
+                // padding — slightly more generous than the old icon's
+                // leftMargin so the title breathes against the wash edge
+                // and doesn't sit directly against the 2 px accent bar
+                // when a row is selected. Same pattern ScriptureTab uses.
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.space.lg
+                anchors.right: rowRight.left
+                anchors.rightMargin: Theme.space.sm
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
 
@@ -699,18 +726,25 @@ Item {
             RightClickArea {
                 id: rowMa
                 anchors.fill: parent
+                // Group order: row-edit actions first (Edit / Duplicate),
+                // then projection actions (Add to Schedule / Push to Live),
+                // then library-organization (Favorite / Collection), then
+                // destructive (Delete). Edit-first matches the most common
+                // right-click intent on a song row ("I want to change this
+                // song") and parks the destructive option at the bottom
+                // where slip-clicks are least likely.
                 menuItems: [
-                    { label: qsTr("Add to Schedule"), iconName: "plus",
-                      action: function() { root.addToScheduleFor(index) } },
-                    { label: qsTr("Push to Live"),    iconName: "play",
-                      action: function() { root.pushLiveFor(index) } },
-                    { separator: true },
                     { label: qsTr("Edit Song"), iconName: "edit", kbd: "E",
                       action: function() {
                           AppState.openModal("songEditor", { songId: modelData.id })
                       } },
                     { label: qsTr("Duplicate Song"), iconName: "copy",
                       action: function() { SongService.duplicate(modelData.id) } },
+                    { separator: true },
+                    { label: qsTr("Add to Schedule"), iconName: "plus",
+                      action: function() { root.addToScheduleFor(index) } },
+                    { label: qsTr("Push to Live"),    iconName: "play",
+                      action: function() { root.pushLiveFor(index) } },
                     { separator: true },
                     { label: modelData.isFavorite
                             ? qsTr("Remove from Favorites")

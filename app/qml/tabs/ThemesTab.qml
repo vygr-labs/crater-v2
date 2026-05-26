@@ -429,50 +429,34 @@ Item {
                     autoPlayVideos: false
                 }
 
-                // Theme name + kind glyph in the corner — translucent black
-                // backdrop so it stays readable over any theme background.
-                // Kind is rendered as the same icon the schedule sidebar
-                // uses for that kind (Theme.scheduleKindIcon) instead of a
-                // trailing " · scripture" string — the icon is fixed-width
-                // regardless of translation, doesn't compete with the
-                // theme's name for tile-corner real estate, and reuses
-                // vocabulary the operator already learned in the schedule.
+                // Theme name in the bottom-left — translucent black backdrop
+                // so it stays readable over any theme background. The kind
+                // glyph moved out of this chip and into the top-left badge
+                // row (see kindBadge below); leaving it here would duplicate
+                // the same signal in two corners.
                 Rectangle {
                     anchors.left: parent.left
                     anchors.bottom: parent.bottom
                     anchors.margins: 8
-                    width: kindRow.implicitWidth + Theme.space.md * 2
+                    width: nameLabel.implicitWidth + Theme.space.md * 2
                     height: 22
                     radius: 3
                     color: "#000000A0"
 
-                    Row {
-                        id: kindRow
+                    Text {
+                        id: nameLabel
                         anchors.centerIn: parent
-                        spacing: 6
-
-                        AppIcon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: !!modelData.kind
-                            name: Theme.scheduleKindIcon(modelData.kind || "")
-                            color: "#ffffff"
-                            size: 12
-                        }
-                        Text {
-                            id: nameLabel
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.name
-                            color: "#ffffff"
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
-                            font.weight: Theme.font.weightSemiBold
-                            // Black 1px drop shadow under each glyph — keeps
-                            // the title legible even when a theme background
-                            // pushes through the translucent chip on a light
-                            // scene.
-                            style: Text.Raised
-                            styleColor: "#000000"
-                        }
+                        text: modelData.name
+                        color: "#ffffff"
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                        font.weight: Theme.font.weightSemiBold
+                        // Black 1px drop shadow under each glyph — keeps the
+                        // title legible even when a theme's background
+                        // pushes through the translucent chip on a light
+                        // scene.
+                        style: Text.Raised
+                        styleColor: "#000000"
                     }
                 }
 
@@ -486,6 +470,39 @@ Item {
                     anchors.top: parent.top
                     anchors.margins: 8
                     spacing: 4
+
+                    // Kind badge — square chip tinted with Theme.scheduleColor
+                    // for that kind (typeSong / typeScripture / typeSermon /
+                    // …). Same color vocabulary the schedule sidebar uses,
+                    // so operators scan "what kind is this theme" with the
+                    // same hue→meaning mapping they already learned. Sits
+                    // first in the row so the eye reads kind → role
+                    // (DEFAULT / PRIMARY / NDI) left-to-right. Icon glyph
+                    // uses near-black ink so the colored chip carries the
+                    // signal and the icon reads as a label on top of it
+                    // rather than competing with the chip color — same
+                    // dark-on-color polarity brandInk uses elsewhere.
+                    Rectangle {
+                        visible: !!modelData.kind
+                        width: 16
+                        height: 16
+                        radius: 2
+                        color: Theme.scheduleColor(modelData.kind || "")
+
+                        AppIcon {
+                            anchors.centerIn: parent
+                            name: Theme.scheduleKindIcon(modelData.kind || "")
+                            // Black ink — WCAG contrast on every kind color
+                            // sits in 5.2:1-7.5:1; white would drop below
+                            // 3:1 and fail. Lucide is single-weight outline
+                            // only (no filled variants exist for music /
+                            // book-2 / presentation / video / image / file-
+                            // text), so we can't switch to fills without
+                            // changing the icon font itself.
+                            color: "#0b0b0b"
+                            size: 13
+                        }
+                    }
 
                     // DEFAULT = the per-kind fallback theme that ships on
                     // the primary monitor when nothing else is assigned.
