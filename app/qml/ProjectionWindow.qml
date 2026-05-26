@@ -155,11 +155,12 @@ Window {
     }
 
     // The audience-facing render surface. outputKind="primary" so theme
-    // resolution honors themeIdForPrimary. The component encapsulates
-    // letterbox + canvas-native stage + content/no-theme/logo layers —
-    // see qml/components/ProjectionScene.qml. NdiCanvas mounts the same
-    // component with outputKind="ndi" when dual output is on, so NDI
-    // renders its own scene with its own theme assignment.
+    // resolution honors the "primary" OutputBinding's per-kind slots in
+    // OutputService. The component encapsulates letterbox + canvas-native
+    // stage + content/no-theme/logo layers — see qml/components/
+    // ProjectionScene.qml. NdiCanvas mounts the same component with
+    // outputKind="ndi" when dual output is on, so NDI renders its own
+    // scene with its own per-kind theme assignment.
     ProjectionScene {
         id: scene
         anchors.fill: parent

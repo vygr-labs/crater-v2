@@ -56,4 +56,14 @@ QString DbPaths::mediaDir()
     return ensureDir(QDir(dataDir()).filePath(QStringLiteral("media")));
 }
 
+QString DbPaths::fontsDir()
+{
+    return ensureDir(QDir(dataDir()).filePath(QStringLiteral("fonts")));
+}
+
+QString DbPaths::importStagingDir()
+{
+    return ensureDir(QDir(dataDir()).filePath(QStringLiteral(".import-staging")));
+}
+
 }  // namespace crater::db

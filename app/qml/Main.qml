@@ -81,6 +81,17 @@ ApplicationWindow {
         // projection Item the NDI sender uses, so the TV browser mirrors the
         // primary audience output.
         BrowserCastService.setSourceItem(projectionWindow.renderItem)
+
+        // Bring the operator console to the foreground on launch. Windows
+        // suppresses focus-stealing for processes that didn't start with
+        // foreground rights, so `visible: true` alone can leave us painted
+        // but parked behind the user's current app. Defer one event-loop
+        // tick so the WM has finished realizing the surface — raising
+        // before the window is mapped is a no-op on some compositors.
+        Qt.callLater(function() {
+            root.raise()
+            root.requestActivate()
+        })
     }
 
     // ── Shutdown ────────────────────────────────────────────────────────

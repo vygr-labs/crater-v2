@@ -4,29 +4,6 @@
 
 namespace crater {
 
-namespace {
-// Whitelist transition style strings. Unknown / mistyped values collapse
-// to "crossfade" so a buggy QML write or a hand-edited registry can't put
-// the projection in an undefined render state. Mirrors the same pattern
-// used by setOutputMode for outputMode.
-QString normalizedTransitionStyle(const QString& style)
-{
-    if (style == QStringLiteral("cut"))       return QStringLiteral("cut");
-    if (style == QStringLiteral("fadeBlack")) return QStringLiteral("fadeBlack");
-    return QStringLiteral("crossfade");
-}
-
-// Anything beyond ~1.5 s on stage feels like an outage, not a transition.
-// Anything below 0 is nonsense. Clamp so a slider / numeric input can't
-// land somewhere uncomfortable.
-int clampedTransitionMs(int ms)
-{
-    if (ms < 0)    return 0;
-    if (ms > 1500) return 1500;
-    return ms;
-}
-}  // namespace
-
 struct SettingsService::Impl
 {
     // Mirrors OutputService's QSettings instance — same organisation +
@@ -47,19 +24,6 @@ struct SettingsService::Impl
     // and TVs in the worship space. 4K and 720p are picker options in the
     // dialog but the persisted default never silently grows past 1080p.
     QString outputResolution = QStringLiteral("1920×1080");
-    // Per-output theme overrides. 0 = no override (fall back to kind default).
-    int     themeIdForPrimary = 0;
-    int     themeIdForNdi     = 0;
-    int     themeIdForStage   = 0;
-    // Per-output transition style + duration. "crossfade" @ 280 ms reproduces
-    // the historical hardcoded ProjectionScene fade so an existing install
-    // looks identical until the operator touches the new controls.
-    QString transitionStyleForPrimary       = QStringLiteral("crossfade");
-    QString transitionStyleForNdi           = QStringLiteral("crossfade");
-    QString transitionStyleForStage         = QStringLiteral("crossfade");
-    int     transitionDurationMsForPrimary  = 280;
-    int     transitionDurationMsForNdi      = 280;
-    int     transitionDurationMsForStage    = 280;
     // Render-pipeline mode — see header. "single" is the lower-cost default
     // (NDI mirrors projection); "dual" enables independent NDI scene + theme.
     QString outputMode       = QStringLiteral("single");
@@ -74,22 +38,14 @@ struct SettingsService::Impl
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
-    // belongs to another service (e.g. "Output/" for OutputService).
+    // belongs to another service (e.g. "Output/" + "Outputs/" for
+    // OutputService).
     static constexpr const char* kThemeMode      = "Settings/themeMode";
     static constexpr const char* kFontSize       = "Settings/fontSize";
     static constexpr const char* kShowCcli       = "Settings/showCcli";
     static constexpr const char* kReduceMotion   = "Settings/reduceMotion";
     static constexpr const char* kShowLogo       = "Settings/showLogoByDefault";
     static constexpr const char* kOutputResolution = "Settings/outputResolution";
-    static constexpr const char* kThemeForPrimary  = "Settings/themeIdForPrimary";
-    static constexpr const char* kThemeForNdi      = "Settings/themeIdForNdi";
-    static constexpr const char* kThemeForStage    = "Settings/themeIdForStage";
-    static constexpr const char* kTransStyleForPrimary  = "Settings/transitionStyleForPrimary";
-    static constexpr const char* kTransStyleForNdi      = "Settings/transitionStyleForNdi";
-    static constexpr const char* kTransStyleForStage    = "Settings/transitionStyleForStage";
-    static constexpr const char* kTransMsForPrimary     = "Settings/transitionDurationMsForPrimary";
-    static constexpr const char* kTransMsForNdi         = "Settings/transitionDurationMsForNdi";
-    static constexpr const char* kTransMsForStage       = "Settings/transitionDurationMsForStage";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
@@ -109,15 +65,6 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->reduceMotion   = s.value(QString::fromLatin1(Impl::kReduceMotion),  m_impl->reduceMotion).toBool();
     m_impl->showLogoByDef    = s.value(QString::fromLatin1(Impl::kShowLogo),         m_impl->showLogoByDef).toBool();
     m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
-    m_impl->themeIdForPrimary = s.value(QString::fromLatin1(Impl::kThemeForPrimary), m_impl->themeIdForPrimary).toInt();
-    m_impl->themeIdForNdi     = s.value(QString::fromLatin1(Impl::kThemeForNdi),     m_impl->themeIdForNdi).toInt();
-    m_impl->themeIdForStage   = s.value(QString::fromLatin1(Impl::kThemeForStage),   m_impl->themeIdForStage).toInt();
-    m_impl->transitionStyleForPrimary      = normalizedTransitionStyle(s.value(QString::fromLatin1(Impl::kTransStyleForPrimary), m_impl->transitionStyleForPrimary).toString());
-    m_impl->transitionStyleForNdi          = normalizedTransitionStyle(s.value(QString::fromLatin1(Impl::kTransStyleForNdi),     m_impl->transitionStyleForNdi).toString());
-    m_impl->transitionStyleForStage        = normalizedTransitionStyle(s.value(QString::fromLatin1(Impl::kTransStyleForStage),   m_impl->transitionStyleForStage).toString());
-    m_impl->transitionDurationMsForPrimary = clampedTransitionMs(s.value(QString::fromLatin1(Impl::kTransMsForPrimary), m_impl->transitionDurationMsForPrimary).toInt());
-    m_impl->transitionDurationMsForNdi     = clampedTransitionMs(s.value(QString::fromLatin1(Impl::kTransMsForNdi),     m_impl->transitionDurationMsForNdi).toInt());
-    m_impl->transitionDurationMsForStage   = clampedTransitionMs(s.value(QString::fromLatin1(Impl::kTransMsForStage),   m_impl->transitionDurationMsForStage).toInt());
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
@@ -134,15 +81,6 @@ bool    SettingsService::showCcli() const          { return m_impl->showCcli; }
 bool    SettingsService::reduceMotion() const      { return m_impl->reduceMotion; }
 bool    SettingsService::showLogoByDefault() const { return m_impl->showLogoByDef; }
 QString SettingsService::outputResolution() const  { return m_impl->outputResolution; }
-int     SettingsService::themeIdForPrimary() const { return m_impl->themeIdForPrimary; }
-int     SettingsService::themeIdForNdi() const     { return m_impl->themeIdForNdi; }
-int     SettingsService::themeIdForStage() const   { return m_impl->themeIdForStage; }
-QString SettingsService::transitionStyleForPrimary() const      { return m_impl->transitionStyleForPrimary; }
-QString SettingsService::transitionStyleForNdi() const          { return m_impl->transitionStyleForNdi; }
-QString SettingsService::transitionStyleForStage() const        { return m_impl->transitionStyleForStage; }
-int     SettingsService::transitionDurationMsForPrimary() const { return m_impl->transitionDurationMsForPrimary; }
-int     SettingsService::transitionDurationMsForNdi() const     { return m_impl->transitionDurationMsForNdi; }
-int     SettingsService::transitionDurationMsForStage() const   { return m_impl->transitionDurationMsForStage; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
@@ -208,84 +146,6 @@ void SettingsService::setOutputResolution(const QString& v)
     m_impl->outputResolution = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputResolution), v);
     emit outputResolutionChanged();
-}
-
-void SettingsService::setThemeIdForPrimary(int id)
-{
-    if (m_impl->themeIdForPrimary == id) return;
-    m_impl->themeIdForPrimary = id;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kThemeForPrimary), id);
-    emit themeIdForPrimaryChanged();
-}
-
-void SettingsService::setThemeIdForNdi(int id)
-{
-    if (m_impl->themeIdForNdi == id) return;
-    m_impl->themeIdForNdi = id;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kThemeForNdi), id);
-    emit themeIdForNdiChanged();
-}
-
-void SettingsService::setThemeIdForStage(int id)
-{
-    if (m_impl->themeIdForStage == id) return;
-    m_impl->themeIdForStage = id;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kThemeForStage), id);
-    emit themeIdForStageChanged();
-}
-
-void SettingsService::setTransitionStyleForPrimary(const QString& style)
-{
-    const QString s = normalizedTransitionStyle(style);
-    if (m_impl->transitionStyleForPrimary == s) return;
-    m_impl->transitionStyleForPrimary = s;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransStyleForPrimary), s);
-    emit transitionStyleForPrimaryChanged();
-}
-
-void SettingsService::setTransitionStyleForNdi(const QString& style)
-{
-    const QString s = normalizedTransitionStyle(style);
-    if (m_impl->transitionStyleForNdi == s) return;
-    m_impl->transitionStyleForNdi = s;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransStyleForNdi), s);
-    emit transitionStyleForNdiChanged();
-}
-
-void SettingsService::setTransitionStyleForStage(const QString& style)
-{
-    const QString s = normalizedTransitionStyle(style);
-    if (m_impl->transitionStyleForStage == s) return;
-    m_impl->transitionStyleForStage = s;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransStyleForStage), s);
-    emit transitionStyleForStageChanged();
-}
-
-void SettingsService::setTransitionDurationMsForPrimary(int ms)
-{
-    const int v = clampedTransitionMs(ms);
-    if (m_impl->transitionDurationMsForPrimary == v) return;
-    m_impl->transitionDurationMsForPrimary = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForPrimary), v);
-    emit transitionDurationMsForPrimaryChanged();
-}
-
-void SettingsService::setTransitionDurationMsForNdi(int ms)
-{
-    const int v = clampedTransitionMs(ms);
-    if (m_impl->transitionDurationMsForNdi == v) return;
-    m_impl->transitionDurationMsForNdi = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForNdi), v);
-    emit transitionDurationMsForNdiChanged();
-}
-
-void SettingsService::setTransitionDurationMsForStage(int ms)
-{
-    const int v = clampedTransitionMs(ms);
-    if (m_impl->transitionDurationMsForStage == v) return;
-    m_impl->transitionDurationMsForStage = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kTransMsForStage), v);
-    emit transitionDurationMsForStageChanged();
 }
 
 void SettingsService::setOutputMode(const QString& mode)

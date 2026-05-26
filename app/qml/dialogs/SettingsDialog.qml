@@ -12,6 +12,8 @@ ModalShell {
 
     readonly property var sections: [
         { id: "appearance",    label: qsTr("Appearance"),     iconName: "palette" },
+        // Fonts management moved into Projection — see ProjectionSection's
+        // FONTS subsection. Output appearance levers all live in one tab.
         { id: "projection",    label: qsTr("Projection"),     iconName: "monitor" },
         { id: "scripture",     label: qsTr("Scripture"),      iconName: "book-open" },
         { id: "song",          label: qsTr("Song"),           iconName: "music" },
@@ -90,6 +92,10 @@ ModalShell {
                 sourceComponent: {
                     switch (AppState.settingsSection) {
                         case "appearance":    return appearanceComp
+                        // Legacy "fonts" id remapped to projection — older
+                        // persisted state lands on the new home without
+                        // showing an empty pane.
+                        case "fonts":         return projectionComp
                         case "projection":    return projectionComp
                         case "scripture":     return scriptureComp
                         case "song":          return songComp

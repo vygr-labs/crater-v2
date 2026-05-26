@@ -1,6 +1,7 @@
 #pragma once
 
 #include "crater/value/Theme.h"
+#include "crater/value/ThemeImportReport.h"
 
 #include <QList>
 #include <QObject>
@@ -11,6 +12,9 @@
 #include <memory>
 
 namespace crater {
+
+class MediaService;
+class FontService;
 
 // Theme service — CRUD over themes table in app.sqlite.
 //
@@ -26,6 +30,14 @@ class ThemeService : public QObject
 public:
     explicit ThemeService(QObject* parent = nullptr);
     ~ThemeService() override;
+
+    // Wire MediaService + FontService so export/import can bundle and
+    // restore referenced assets (ARCHITECTURE.md §10). Call once at
+    // startup, before any export/import. Optional — ThemeService still
+    // works without these wired for non-asset operations (CRUD, default
+    // selection, validation), making it testable in isolation.
+    void setMediaService(MediaService* media);
+    void setFontService(FontService* font);
 
     QList<crater::Theme> allThemes();
 
@@ -46,27 +58,61 @@ public:
     Q_INVOKABLE void   update(qint64 id, QString name, QVariantMap tokens);
     Q_INVOKABLE void   destroy(qint64 id);
 
-    // Pure validation entry point — used by importFromJson and also exposed
-    // to the editor so users see field-level errors before attempting Save.
-    // Returns an empty list when tokens are well-formed.
+    // Pure validation entry point — used by importThemeFile and also
+    // exposed to the editor so users see field-level errors before
+    // attempting Save. Returns an empty list when tokens are well-formed.
     Q_INVOKABLE QStringList validateTokens(QVariantMap tokens);
 
-    // Serializes a theme as the .craterheme on-disk format (metadata wrapper
-    // + tokens body). Returns empty string on miss.
-    Q_INVOKABLE QString serializeForExport(qint64 id);
+    // ── Export (ARCHITECTURE.md §10) ────────────────────────────────────
+    // Returns the proposed contents of a .craterheme v2 bundle for theme
+    // `id`. Used by the export confirmation dialog (Stage 6b) to show the
+    // user which media and fonts will be embedded BEFORE the file is
+    // written, so they can opt fonts out before redistribution. Shape:
+    //   {
+    //     "themeName": "...", "themeKind": "...", "appVersion": "...",
+    //     "media": [{ "mediaId": 47, "title": "...", "sourcePath": "...",
+    //                 "sizeBytes": 12345, "type": "image"|"video"|"pdf" }, ...],
+    //     "fonts": {
+    //       "bundleable": [{ "family": "Inter", "sourcePath": "...",
+    //                        "sizeBytes": 218904 }, ...],
+    //       "systemOnly": ["Arial", ...]
+    //     }
+    //   }
+    // Returns an empty map when the theme id doesn't resolve.
+    Q_INVOKABLE QVariantMap resolveExportPlan(qint64 id);
 
-    // Writes a theme's serialized form to disk atomically (QSaveFile).
-    // Returns true on success. Does not prompt the user — the caller is
-    // expected to have chosen a path (typically via FileDialogService).
-    Q_INVOKABLE bool exportTheme(qint64 id, QString filePath);
+    // Writes a .craterheme v2 bundle (zip) to `filePath` atomically.
+    // Bundles every referenced media file plus every bundleable font
+    // EXCEPT those whose family appears in `excludedFontFamilies`. The
+    // export dialog passes its opt-out list here; programmatic callers
+    // pass an empty list to bundle everything resolvable.
+    //
+    // Returns true on success; on failure see lastExportError().
+    Q_INVOKABLE bool exportTheme(qint64       id,
+                                 QString      filePath,
+                                 QStringList  excludedFontFamilies = {});
 
-    // Parses a .craterheme JSON document, validates, and inserts as a new
-    // non-builtin theme. Returns the new id, or 0 on failure (call
-    // lastImportError() for a human-readable reason). Name collisions
-    // append " (Import)", " (Import 2)", etc., within the same themeKind.
-    Q_INVOKABLE qint64  importFromJson(QString jsonText);
-    Q_INVOKABLE qint64  importThemeFile(QString filePath);
+    Q_INVOKABLE QString lastExportError() const;
+
+    // ── Import (ARCHITECTURE.md §10) ────────────────────────────────────
+    // Reads a .craterheme v2 bundle and inserts it as a new non-builtin
+    // theme. Best-effort: per-asset failures populate the import report
+    // but do not abort. Catastrophic failures (not a zip, manifest
+    // invalid, theme INSERT fails) roll back and leave themeId == 0.
+    //
+    // Name collisions append " (Import)", " (Import 2)", etc., within
+    // the same themeKind.
+    //
+    // v1 (JSON-only) files are deliberately not supported — they would
+    // import with broken mediaId references; we refuse with a clear error
+    // pointing the user at re-exporting from the original install.
+    Q_INVOKABLE crater::ThemeImportReport importThemeFile(QString filePath);
     Q_INVOKABLE QString lastImportError() const;
+
+    // Removes any leftover .import-staging/<uuid>/ directories from a
+    // process kill mid-import. Idempotent. Call once at startup, after
+    // FontService and MediaService are constructed (Stage 7c).
+    static void sweepImportStaging();
 
     // Deep-copies an existing theme (built-in or user) with a new name.
     // Returns the new id, or 0 on failure.
@@ -84,6 +130,9 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     QString m_lastImportError;
+    QString m_lastExportError;
+    MediaService* m_media = nullptr;
+    FontService*  m_fonts = nullptr;
     void invalidateCache();
 };
 

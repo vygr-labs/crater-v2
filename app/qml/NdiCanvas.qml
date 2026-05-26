@@ -53,8 +53,9 @@ Item {
     ProjectionScene {
         id: scene
         anchors.fill: parent
-        // outputKind="ndi" so resolveItemTheme honors themeIdForNdi when
-        // the operator has pinned one — the whole point of dual output.
+        // outputKind="ndi" so resolveItemTheme honors the "ndi"
+        // OutputBinding's per-kind theme slots when the operator has
+        // pinned one — the whole point of dual output.
         outputKind: "ndi"
         // Scene-level hint that mirrors NdiService.blank, so when the
         // operator blanks the broadcast the scene graph also goes to

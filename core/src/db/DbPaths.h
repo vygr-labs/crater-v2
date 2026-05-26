@@ -26,6 +26,8 @@ public:
     static QString scheduleHistoryDir();   // schedules/.history/
     static QString thumbnailsDir();        // thumbnails/
     static QString mediaDir();             // media/  (MediaService destination)
+    static QString fontsDir();             // fonts/  (FontService destination)
+    static QString importStagingDir();     // .import-staging/  (.craterheme v2 temp)
 };
 
 }  // namespace crater::db

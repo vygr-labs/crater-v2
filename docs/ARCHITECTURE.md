@@ -328,7 +328,124 @@ Quick reference — when in doubt:
 
 ---
 
-## 10. Things we're deliberately not doing
+## 10. Theme bundle format (`.craterheme` v2)
+
+Themes can reference media (`mediaId`) and fonts (`fontFamily`) that live in
+local services. A JSON-only export — which is what v1 was — therefore exports
+*pointers* to assets, not the assets themselves, and an import on another
+machine finds dangling references. v2 fixes this by making the bundle
+self-contained.
+
+### 10.1 Container
+
+`.craterheme` v2 is a **zip archive** (magic bytes `PK\x03\x04`) containing:
+
+```
+MyTheme.craterheme        (zip)
+├── manifest.json         # format/version + asset index
+├── theme.json            # tokens, with mediaRef/fontRef hashes
+├── media/
+│   └── <sha256>.<ext>    # content-addressed
+└── fonts/
+    └── <sha256>.<ext>    # content-addressed
+```
+
+Content-addressed filenames give us natural dedup (one image referenced
+from three nodes ships once) and integrity verification at import (hash of
+extracted bytes must equal filename).
+
+### 10.2 The v1 break
+
+**v1 (JSON-only) files are not backward compatible.** Import refuses them
+with: *"This file was exported by an older version of Crater. Please
+re-export from the original installation."*
+
+This is a deliberate one-way break. v1 couldn't carry media or fonts
+anyway, so the population of meaningful v1 exports in the wild is the set
+of themes whose authors didn't reference any. Keeping a v1 import path
+alive would mean carrying a second parser, a second token-validation
+shape (no `mediaRef`/`fontRef`), and a second set of import warnings —
+permanently — to support files that produce broken projection state on
+import. Not worth the surface area.
+
+The zip wrapper for v2 lives in `core/src/bundle/`, mirroring the §2
+"thin wrapper over a C library" approach we already use for SQLite. We
+vendor `miniz` (single-file public-domain) rather than depend on Qt's
+private `QZipReader`/`QZipWriter`.
+
+### 10.3 Export — confirmation dialog required
+
+Export resolves every `mediaId` and every `fontFamily` the theme actually
+references, then opens an `ExportThemeDialog` listing each font's source
+file path, byte size, and a license-responsibility warning. The user can
+opt individual fonts out per item before the zip is written.
+
+**Why a dialog**: most font files are not legally redistributable. Silent
+auto-bundling would put us in the position of having shipped a release
+that silently embedded a licensed font into a user's theme exports. The
+dialog moves that decision — and that responsibility — to the user.
+
+Media is bundled without per-item opt-out; media in a Crater install is
+overwhelmingly user-provided (photos, video clips) where redistribution
+intent is unambiguous from the act of exporting.
+
+### 10.4 Import — best-effort, with a report
+
+Per-asset failures during import do **not** abort. Instead they
+accumulate into a `ThemeImportReport`:
+
+```cpp
+struct ThemeImportReport {
+    qint64      themeId;          // 0 if catastrophic failure
+    QString     errorMessage;     // catastrophic only
+    QStringList mediaWarnings;    // "background.jpg failed magic-byte check"
+    QStringList fontWarnings;     // "Inter.ttf failed to register"
+};
+```
+
+Tokens referencing a failed asset are rewritten to `mediaId = null` /
+`fontFamily` (string only, no `fontRef`) and the theme imports anyway.
+The UI surfaces warnings in a non-blocking banner.
+
+**Catastrophic failures still roll back the entire import**: bundle not a
+zip, `manifest.json` missing/invalid, `theme.json` missing/invalid,
+rewritten tokens fail `validateTokensV2`, theme INSERT fails. Catastrophic
+rollback walks a `created_files` list and deletes anything we wrote to
+`AppDataLocation/{media,fonts}/` during the failed import. SQLite gives
+us atomicity for free; the filesystem does not.
+
+Media is extracted to `AppDataLocation/.import-staging/<uuid>/` during the
+import. **Startup sweeps any leftover staging dirs** — if the process
+was killed mid-import, those temp files would otherwise leak forever.
+
+### 10.5 Asset registration goes through the normal services
+
+Bundled media is imported via `MediaService::importPathSync` — the same
+boundary validation from §5.1 (extension, magic bytes, size cap, path
+normalization) applies. The theme importer must not bypass it.
+
+Bundled fonts are registered via `FontService::importFontFile`, which
+writes to `AppDataLocation/fonts/<hash>.<ext>` and calls
+`QFontDatabase::addApplicationFontFromData` so the family is usable
+immediately. `FontService` loads all previously-imported fonts at app
+startup; without that, a font from a previously-imported theme would
+silently fall back to a system substitute after a restart.
+
+### 10.6 Token rewrite happens at import, not at runtime
+
+On disk, v2 tokens hold `{ "mediaRef": "<hash>" }` and (for bundled
+fonts) `{ "fontFamily": "Inter", "fontRef": "<hash>" }`. **In the
+runtime DB**, tokens still hold the same `mediaId: <int>` and
+`fontFamily: <string>` shape they always have. The import path rewrites
+refs → local ids before insert, so QML/`ThemedMonitor`/
+`ProjectionContentLayer` see no change at all.
+
+This is the load-bearing design choice in §10 — keep the on-disk bundle
+format's complexity *out* of the runtime hot path.
+
+---
+
+## 11. Things we're deliberately not doing
 
 - **No ORM.** SQLite + hand-written queries. ORMs leak abstraction at
   exactly the point where we'd want full control (FTS, custom collations,

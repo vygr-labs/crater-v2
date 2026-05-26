@@ -5,14 +5,17 @@ import Crater
 // ProjectionWindow (audience display) and NdiCanvas (NDI broadcast in dual
 // output mode). Drives a two-layer transition between the previous and
 // current live content, with the style (cut / crossfade / fade-through-
-// black) and duration resolved per output via SettingsService.
+// black) and duration resolved per output via OutputService.
 //
-// outputKind selects which per-output settings the scene honors:
-//   "primary" → transitionStyleForPrimary + transitionDurationMsForPrimary
-//   "ndi"     → transitionStyleForNdi     + transitionDurationMsForNdi
-//                (when outputMode==="dual"; in single mode NDI inherits
-//                primary's scene wholesale, so these prefs aren't reached)
-//   "stage"   → reserved for v1.1 multi-output stage monitor
+// outputKind here is an output id from the OutputService registry —
+// "primary", "ndi", "stage", or any dynamically-registered output. Each
+// registered output carries its own transition style + duration on its
+// OutputBinding, so a fourth output costs zero changes here.
+//   "primary" → output("primary").transitionStyle / .transitionDurationMs
+//   "ndi"     → output("ndi").{...}   (relevant in outputMode==="dual";
+//                in single mode NDI inherits primary's scene wholesale,
+//                so this binding isn't reached)
+//   "stage"   → output("stage").{...} (reserved for v1.1 multi-output)
 //
 // The same component instantiates in both consumer windows; only the
 // outputKind property differs. That keeps the rendering source-of-truth
@@ -41,21 +44,22 @@ Item {
     property alias renderItem: stage
 
     // ── Per-output transition resolution ────────────────────────────────
-    // Reads style + duration from SettingsService based on this scene's
-    // outputKind. reduceMotion overrides both to "cut" / 0 ms.
+    // Reads style + duration off the OutputBinding identified by
+    // outputKind. _outputsRev forces re-evaluation when any binding in
+    // the registry mutates (theme slots, transitions, additions,
+    // removals). reduceMotion overrides both to "cut" / 0 ms.
+    property int _outputsRev: 0
+    Connections {
+        target: OutputService
+        function onOutputsChanged() { scene._outputsRev++ }
+    }
     readonly property string _outStyle: {
-        switch (outputKind) {
-            case "ndi":   return SettingsService.transitionStyleForNdi
-            case "stage": return SettingsService.transitionStyleForStage
-            default:      return SettingsService.transitionStyleForPrimary
-        }
+        _outputsRev  // dep
+        return OutputService.transitionStyle(outputKind)
     }
     readonly property int _outMs: {
-        switch (outputKind) {
-            case "ndi":   return SettingsService.transitionDurationMsForNdi
-            case "stage": return SettingsService.transitionDurationMsForStage
-            default:      return SettingsService.transitionDurationMsForPrimary
-        }
+        _outputsRev  // dep
+        return OutputService.transitionDurationMs(outputKind)
     }
     readonly property string _style: SettingsService.reduceMotion ? "cut" : _outStyle
     readonly property int    _ms:    SettingsService.reduceMotion ? 0     : _outMs
@@ -93,10 +97,14 @@ Item {
     }
     Connections {
         target: SettingsService
-        function onOutputModeChanged()         { scene._themeRevision++ }
-        function onThemeIdForPrimaryChanged()  { scene._themeRevision++ }
-        function onThemeIdForNdiChanged()      { scene._themeRevision++ }
-        function onThemeIdForStageChanged()    { scene._themeRevision++ }
+        function onOutputModeChanged() { scene._themeRevision++ }
+    }
+    Connections {
+        // Per-output theme-pin changes arrive on the registry's coarse
+        // signal — bump in lock-step so both layers re-resolve their
+        // themes on the same revision tick.
+        target: OutputService
+        function onOutputsChanged() { scene._themeRevision++ }
     }
 
     // ── Canvas size ─────────────────────────────────────────────────────

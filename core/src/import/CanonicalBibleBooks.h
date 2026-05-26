@@ -19,10 +19,19 @@ struct BibleBookMeta {
     QString testament;    // "OT" or "NT"
 };
 
-// Returns metadata for a book name. Case-insensitive. Handles common alternates:
-// "psalms"/"psalm"/"ps", "1 samuel"/"1sam"/"first samuel",
-// "song of solomon"/"song of songs"/"canticles", "revelation"/"revelations".
-// Returns nullopt for genuinely unknown names.
+// Returns metadata for a book name. Case-insensitive.
+//
+// Resolution is two-tier:
+//   1. Exact match against canonical names, canonical abbrevs, and a small
+//      alias table ("psalm", "song of songs", "canticles", "revelations",
+//      plus tie-breakers like "jn"→John, "jud"→Jude).
+//   2. On miss: fuzzy fallback that scores every book by prefix match,
+//      subsequence match, and bounded edit distance. Picks up shortforms
+//      operators routinely type (gn → Genesis, mt → Matthew, dt →
+//      Deuteronomy) and typos (phillipians → Philippians) without an
+//      alias-table entry per variant.
+//
+// Returns nullopt only when nothing clears the fuzzy quality gate.
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt);
 
 // All 66 books in canonical order.

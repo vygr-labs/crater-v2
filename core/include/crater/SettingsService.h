@@ -12,12 +12,17 @@ namespace crater {
 // "Settings/", every Q_PROPERTY writes through on its setter.
 //
 // Why a single grab-bag service rather than scattering each setting onto
-// its "natural" service (e.g. CCLI display on SongService, verse numbers
-// on BibleService): the Settings dialog reads/writes a uniform surface and
-// having one source of truth means there is one place to look when an
+// its "natural" service: the Settings dialog reads/writes a uniform surface
+// and having one source of truth means there is one place to look when an
 // operator asks "did my toggle stick?" Consumers (QML views) bind to
 // SettingsService.* directly; they don't need to know what underlying
 // service the toggle conceptually belongs to.
+//
+// Per-output state (theme assignments, transition style/duration) used to
+// live here as parallel triples (themeIdForPrimary/Ndi/Stage etc) but moved
+// to OutputService's per-output registry — see OutputBinding. The split
+// follows §4 of the architecture doc: settings that vary with an output
+// instance belong to the service that owns outputs.
 //
 // fontScale is a derived read-only property — fontSize is the canonical
 // "small"/"medium"/"large" string, fontScale is the real-number multiplier
@@ -41,41 +46,16 @@ private:
     // / scale content when this differs from the native res so themes
     // designed for 1080p look right on a 4K projector and vice versa.
     Q_PROPERTY(QString outputResolution   READ outputResolution   WRITE setOutputResolution   NOTIFY outputResolutionChanged)
-    // Per-output theme overrides — each output can pin a specific theme that
-    // wins over per-kind defaults. 0 means "no override; use per-kind default".
-    // Only themeIdForPrimary drives rendering today (Primary HDMI is the
-    // sole live output); NDI / Stage slots persist for the v1.1 multi-output
-    // pipeline. AppState.resolveItemTheme consults Primary's slot.
-    Q_PROPERTY(int     themeIdForPrimary  READ themeIdForPrimary  WRITE setThemeIdForPrimary  NOTIFY themeIdForPrimaryChanged)
-    Q_PROPERTY(int     themeIdForNdi      READ themeIdForNdi      WRITE setThemeIdForNdi      NOTIFY themeIdForNdiChanged)
-    Q_PROPERTY(int     themeIdForStage    READ themeIdForStage    WRITE setThemeIdForStage    NOTIFY themeIdForStageChanged)
-    // Per-output content transitions. Style ∈ { "cut", "crossfade",
-    // "fadeBlack" }; duration in ms (clamped 0..1500). ProjectionScene reads
-    // these via outputKind to pick its animation when ProjectionService
-    // emits an item / page / crop change. Defaults are crossfade @ 280 ms
-    // for every output — preserves the historical _transMs behavior so
-    // upgrading the app doesn't visibly change anything until the operator
-    // touches the new controls. reduceMotion (existing global) coerces the
-    // effective style to "cut" regardless of these slots; it's an
-    // accessibility override, not a per-output preference. Setters normalize
-    // unknown style strings to "crossfade" and clamp duration into range
-    // so QML writes can't put the rendering in an undefined state.
-    Q_PROPERTY(QString transitionStyleForPrimary       READ transitionStyleForPrimary       WRITE setTransitionStyleForPrimary       NOTIFY transitionStyleForPrimaryChanged)
-    Q_PROPERTY(QString transitionStyleForNdi           READ transitionStyleForNdi           WRITE setTransitionStyleForNdi           NOTIFY transitionStyleForNdiChanged)
-    Q_PROPERTY(QString transitionStyleForStage         READ transitionStyleForStage         WRITE setTransitionStyleForStage         NOTIFY transitionStyleForStageChanged)
-    Q_PROPERTY(int     transitionDurationMsForPrimary  READ transitionDurationMsForPrimary  WRITE setTransitionDurationMsForPrimary  NOTIFY transitionDurationMsForPrimaryChanged)
-    Q_PROPERTY(int     transitionDurationMsForNdi      READ transitionDurationMsForNdi      WRITE setTransitionDurationMsForNdi      NOTIFY transitionDurationMsForNdiChanged)
-    Q_PROPERTY(int     transitionDurationMsForStage    READ transitionDurationMsForStage    WRITE setTransitionDurationMsForStage    NOTIFY transitionDurationMsForStageChanged)
     // Render-pipeline mode. "single" (default): NDI grabs frames from the
     // projection window's scene graph, so NDI inherits the projection's
     // theme and the projection window must stay alive (parked offscreen)
     // while broadcasting solo. "dual": a dedicated NdiCanvas window
-    // renders its own scene with `themeIdForNdi` honored separately, and
-    // the projection window can fully Window.Hidden when the operator
-    // closes it. Dual mode costs one extra scene-graph evaluation per
-    // frame; single mode is free. ThemesTab gates the "Set for NDI" menu
-    // item on this, and AppState.resolveItemTheme only consults the NDI
-    // slot when dual is active.
+    // renders its own scene with its own theme assignment honored
+    // separately, and the projection window can fully Window.Hidden when
+    // the operator closes it. Dual mode costs one extra scene-graph
+    // evaluation per frame; single mode is free. ThemesTab gates the
+    // "Set for NDI" menu item on this, and AppState.resolveItemTheme only
+    // consults the NDI binding's theme slots when dual is active.
     Q_PROPERTY(QString outputMode         READ outputMode         WRITE setOutputMode         NOTIFY outputModeChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
@@ -102,15 +82,6 @@ public:
     bool    reduceMotion() const;
     bool    showLogoByDefault() const;
     QString outputResolution() const;
-    int     themeIdForPrimary() const;
-    int     themeIdForNdi() const;
-    int     themeIdForStage() const;
-    QString transitionStyleForPrimary() const;
-    QString transitionStyleForNdi() const;
-    QString transitionStyleForStage() const;
-    int     transitionDurationMsForPrimary() const;
-    int     transitionDurationMsForNdi() const;
-    int     transitionDurationMsForStage() const;
     QString outputMode() const;
     bool    useHeadlessNdi() const;
     bool    showVerseNumbers() const;
@@ -124,15 +95,6 @@ public:
     void setReduceMotion(bool v);
     void setShowLogoByDefault(bool v);
     void setOutputResolution(const QString& v);
-    void setThemeIdForPrimary(int id);
-    void setThemeIdForNdi(int id);
-    void setThemeIdForStage(int id);
-    void setTransitionStyleForPrimary(const QString& style);
-    void setTransitionStyleForNdi(const QString& style);
-    void setTransitionStyleForStage(const QString& style);
-    void setTransitionDurationMsForPrimary(int ms);
-    void setTransitionDurationMsForNdi(int ms);
-    void setTransitionDurationMsForStage(int ms);
     void setOutputMode(const QString& mode);
     void setUseHeadlessNdi(bool v);
     void setShowVerseNumbers(bool v);
@@ -147,15 +109,6 @@ signals:
     void reduceMotionChanged();
     void showLogoByDefaultChanged();
     void outputResolutionChanged();
-    void themeIdForPrimaryChanged();
-    void themeIdForNdiChanged();
-    void themeIdForStageChanged();
-    void transitionStyleForPrimaryChanged();
-    void transitionStyleForNdiChanged();
-    void transitionStyleForStageChanged();
-    void transitionDurationMsForPrimaryChanged();
-    void transitionDurationMsForNdiChanged();
-    void transitionDurationMsForStageChanged();
     void outputModeChanged();
     void useHeadlessNdiChanged();
     void showVerseNumbersChanged();

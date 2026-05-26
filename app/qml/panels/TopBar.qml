@@ -141,11 +141,18 @@ Rectangle {
 
         // NDI blank / restore — explicit opacity-0 toggle for the broadcast
         // scene. Lives next to Settings because both are "occasional output
-        // controls" with the same chip footprint. Matches settingsChip's
-        // chrome (34×34 square, borderStrong rest, overlay hover); active
-        // state lights up in live-red — same idiom as Clear in the right
-        // cluster, since both are "force-blank" gestures (Clear targets the
-        // projection content; this targets the NDI broadcast).
+        // controls"; chrome matches settingsChip (34px tall, borderStrong
+        // rest, overlay hover) but is a width-fit pill with an inline
+        // label, giving the operator a more findable target than a bare
+        // icon in a busy cluster. Active state lights up in live-red —
+        // same idiom as Clear in the right cluster.
+        //
+        // Label orientation: action-first ("Hide NDI" / "Show NDI") rather
+        // than state-first. The accompanying eye / eye-off icon still
+        // describes the CURRENT state (same rule as Clear), but the words
+        // a tense operator reads under pressure should describe what a
+        // click will DO — that's the whole point of widening this control
+        // from a glyph to a labelled pill.
         //
         // Visible only when the NDI runtime is loaded — the existing NDI
         // status pill in the right cluster uses the same gate, so the two
@@ -155,26 +162,53 @@ Rectangle {
             visible: NdiService.available
             anchors.verticalCenter: parent.verticalCenter
             height: 34
-            width:  34
-            color: NdiService.blank ? Theme.color.liveSubtle
-                 : ndiBlankMa.containsMouse  ? Theme.color.overlay
-                                              : "transparent"
+            width:  ndiBlankRow.implicitWidth + Theme.space.lg * 2
+
+            // Three-state palette:
+            //   • blank          → live-red (broadcast is being suppressed; same
+            //                       red family as the Clear control)
+            //   • streaming, not blank → mixer cyan border + icon + text only;
+            //                             background stays neutral so the chip
+            //                             doesn't visually compete with the
+            //                             right-cluster NDI status pill which
+            //                             is the actual "on the wire" indicator
+            //   • idle           → neutral chrome matching settingsChip
+            // Order matters: `blank` wins over `sending` so the suppression
+            // signal is unambiguous even mid-broadcast.
+            readonly property bool _streaming: NdiService.sending && !NdiService.blank
+            color: NdiService.blank      ? Theme.color.liveSubtle
+                 : ndiBlankMa.containsMouse ? Theme.color.overlay
+                                            : "transparent"
             border.color: NdiService.blank ? Theme.color.live
-                                           : Theme.color.borderStrong
+                       : _streaming        ? Theme.color.brandHover
+                                            : Theme.color.borderStrong
             border.width: 1
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
             Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
-            AppIcon {
+            Row {
+                id: ndiBlankRow
                 anchors.centerIn: parent
-                // eye-off in the active (blanked) state, eye when visible —
-                // the icon describes the CURRENT state, not the next action,
-                // matching how the Clear chip's icon reads (eye-off when
-                // cleared, eye when showing). Operators learn one rule.
-                name: NdiService.blank ? "eye-off" : "eye"
-                color: NdiService.blank ? Theme.color.live
-                                        : Theme.color.textSecondary
-                size: Theme.icon.md
+                spacing: Theme.space.sm
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: NdiService.blank ? "eye-off" : "eye"
+                    color: NdiService.blank   ? Theme.color.live
+                         : ndiBlankChip._streaming ? Theme.color.brandHover
+                                                    : Theme.color.textSecondary
+                    size: Theme.icon.sm
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: NdiService.blank ? qsTr("Show NDI") : qsTr("Hide NDI")
+                    color: NdiService.blank   ? Theme.color.live
+                         : ndiBlankChip._streaming ? Theme.color.brandHover
+                                                    : Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    font.weight: Theme.font.weightMedium
+                }
             }
             MouseArea {
                 id: ndiBlankMa

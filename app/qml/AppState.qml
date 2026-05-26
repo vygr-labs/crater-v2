@@ -235,27 +235,27 @@ QtObject {
 
     // Resolve the effective theme for a schedule item — three-tier priority:
     //   1. Per-item override stored on the item itself
-    //   2. Per-output theme pinned via the Themes tab. Which slot we consult
-    //      depends on the (outputKind, outputMode) pair:
-    //        single mode → every consumer collapses to themeIdForPrimary, so
-    //                      NDI / Stage inherit Primary's pin (and the visible
-    //                      projection IS what NDI grabs from anyway).
-    //        dual mode + outputKind="ndi"   → themeIdForNdi (the NdiCanvas
-    //                                          renders its own scene)
-    //        dual mode + outputKind="stage" → themeIdForStage (reserved for
-    //                                          v1.1 multi-output)
-    //        else → themeIdForPrimary
+    //   2. Per-output, PER-KIND theme pinned on the OutputBinding registered
+    //      with OutputService. The outputId argument identifies which
+    //      registry row to consult — "primary" by default. item.kind picks
+    //      one of {song, scripture, presentation} within that output's
+    //      themes slot.
+    //
+    //      outputMode collapses NDI / Stage onto Primary in "single" mode —
+    //      in that mode NDI mirrors the projection scene, so it should
+    //      resolve against the same per-kind slots Primary uses. In "dual"
+    //      mode each output stands alone.
     //   3. Per-kind default from ThemeService.defaultFor(kind)
     //
     // The sentinel-check on t.id at each tier handles the case where the
     // referenced theme was deleted; we fall through to the next tier rather
     // than render a bogus theme.
     //
-    // outputKind defaults to "primary" so existing callers (ThemedMonitor,
+    // outputId defaults to "primary" so existing callers (ThemedMonitor,
     // and any future consumer that doesn't know about per-output themes)
     // get the same behavior they had before this signature change.
-    function resolveItemTheme(item, outputKind) {
-        if (outputKind === undefined) outputKind = "primary"
+    function resolveItemTheme(item, outputId) {
+        if (outputId === undefined) outputId = "primary"
 
         const overrideId = (item && typeof item.themeId === "number") ? item.themeId : 0
         if (overrideId > 0) {
@@ -263,17 +263,24 @@ QtObject {
             if (t.id > 0) return t
         }
 
-        const dual = SettingsService.outputMode === "dual"
-        let outputId = 0
-        if (dual && outputKind === "ndi")        outputId = SettingsService.themeIdForNdi
-        else if (dual && outputKind === "stage") outputId = SettingsService.themeIdForStage
-        else                                     outputId = SettingsService.themeIdForPrimary
-        if (outputId > 0) {
-            const t = ThemeService.theme(outputId)
+        const kind = (item && item.kind) || "song"
+
+        // Single-mode collapse: NDI / Stage have no independent scene, so
+        // they read from Primary's per-kind slots. Dual-mode lets each
+        // output stand alone.
+        let effectiveId = outputId
+        if (SettingsService.outputMode !== "dual"
+            && (outputId === "ndi" || outputId === "stage")) {
+            effectiveId = "primary"
+        }
+
+        const pinned = OutputService.themeIdFor(effectiveId, kind)
+        if (pinned > 0) {
+            const t = ThemeService.theme(pinned)
             if (t.id > 0) return t
         }
 
-        return ThemeService.defaultFor((item && item.kind) || "song")
+        return ThemeService.defaultFor(kind)
     }
 
     function goLive(raise) {
@@ -370,6 +377,12 @@ QtObject {
     property string activeModal: ""        // "" | "settings" | "songEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
+
+    // Last theme export error, written by ExportThemeDialog when
+    // ThemeService.exportTheme returns false. ThemesTab polls this on
+    // modal close so the dialog itself doesn't need to know about the
+    // tab's banner UI. Cleared by the tab after surfacing.
+    property string lastThemeExportError: ""
 
     function openModal(name, props) {
         modalProps = props || {}

@@ -15,7 +15,7 @@ namespace crater {
 //
 // User-initiated ONLY. There is no automatic or background upload; the
 // "Send logs" button in the Diagnostics settings section is the sole trigger
-// (ARCHITECTURE.md §10 — no telemetry without explicit opt-in).
+// (ARCHITECTURE.md §11 — no telemetry without explicit opt-in).
 //
 // Layer placement: the app target, not crater-core. It needs
 // QNetworkAccessManager (Qt6::Network — linked by the app, not by core) and

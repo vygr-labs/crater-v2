@@ -137,6 +137,66 @@ struct PendingImport {
     int     pageCount;   // 1 for image/video; QPdfDocument::pageCount() for pdf
 };
 
+// Per-file validate + copy + probe. Shared by the async importPaths worker
+// and the sync importPathSync. On success returns a PendingImport ready to
+// be INSERTed by the DB-owning thread. On failure returns nullopt and (if
+// `outReason` is non-null) writes a one-line explanation.
+//
+// Pure function — no DB access — so callers can run it from any thread.
+// Side effect: a successful return has already copied the file into
+// `destDirCanonical`. Callers must roll that copy back on subsequent
+// INSERT failure (existing behavior in importPaths' main-thread phase).
+std::optional<PendingImport> tryStageOneFile(const QString& raw,
+                                             qint64         sizeCap,
+                                             const QString& destDirCanonical,
+                                             QString*       outReason = nullptr)
+{
+    const auto fail = [&](QString why) -> std::optional<PendingImport> {
+        if (outReason) *outReason = std::move(why);
+        return std::nullopt;
+    };
+
+    const QString src = normalizeInputPath(raw);
+    if (src.isEmpty())
+        return fail(QStringLiteral("unreadable path: %1").arg(raw));
+
+    const QFileInfo info(src);
+    if (info.size() > sizeCap)
+        return fail(QStringLiteral("exceeds size cap (%1 > %2)").arg(info.size()).arg(sizeCap));
+
+    const QString type = sniffMediaType(src);
+    if (type.isEmpty())
+        return fail(QStringLiteral("unrecognized media type (magic-byte sniff failed)"));
+
+    const QString dst = pickDestinationName(QDir(destDirCanonical).absolutePath(),
+                                            info.fileName());
+    const QString dstClean = QDir::cleanPath(dst);
+    if (!dstClean.startsWith(destDirCanonical + QStringLiteral("/"))
+        && !dstClean.startsWith(destDirCanonical + QStringLiteral("\\"))) {
+        return fail(QStringLiteral("destination escapes media dir: %1").arg(dstClean));
+    }
+
+    if (!QFile::copy(src, dstClean))
+        return fail(QStringLiteral("copy failed: %1 -> %2").arg(src, dstClean));
+
+    int pageCount = 1;
+    if (type == QStringLiteral("pdf")) {
+        pageCount = probePdfPageCount(dstClean);
+        if (pageCount <= 0) {
+            QFile::remove(dstClean);
+            return fail(QStringLiteral("PDF probe returned 0 pages (corrupt or encrypted)"));
+        }
+    }
+
+    return PendingImport{
+        dstClean,
+        info.completeBaseName(),
+        type,
+        QDateTime::currentMSecsSinceEpoch(),
+        pageCount
+    };
+}
+
 }  // namespace
 
 struct MediaService::Impl
@@ -432,74 +492,14 @@ int MediaService::importPaths(QStringList paths)
         int skipped = 0;
 
         for (const QString& raw : paths) {
-            const QString src = normalizeInputPath(raw);
-            if (src.isEmpty()) {
-                qWarning().noquote() << "MediaService: skipping unreadable path:" << raw;
+            QString reason;
+            auto staged = tryStageOneFile(raw, cap, destDirCanonical, &reason);
+            if (!staged) {
+                qWarning().noquote() << "MediaService: skipping" << raw << "—" << reason;
                 ++skipped;
                 continue;
             }
-
-            const QFileInfo info(src);
-            if (info.size() > cap) {
-                qWarning().noquote() << "MediaService: skipping" << src
-                                     << "— exceeds size cap (" << info.size()
-                                     << ">" << cap << ")";
-                ++skipped;
-                continue;
-            }
-
-            const QString type = sniffMediaType(src);
-            if (type.isEmpty()) {
-                qWarning().noquote() << "MediaService: skipping" << src
-                                     << "— unrecognized media type (magic-byte sniff failed)";
-                ++skipped;
-                continue;
-            }
-
-            // Pick a destination filename inside mediaDir() and confirm it
-            // canonically resolves inside that directory.
-            const QString dst = pickDestinationName(QDir(destDirCanonical).absolutePath(),
-                                                    info.fileName());
-            const QString dstClean = QDir::cleanPath(dst);
-            if (!dstClean.startsWith(destDirCanonical + QStringLiteral("/"))
-                && !dstClean.startsWith(destDirCanonical + QStringLiteral("\\"))) {
-                qWarning().noquote() << "MediaService: refused destination outside media dir:" << dstClean;
-                ++skipped;
-                continue;
-            }
-
-            if (!QFile::copy(src, dstClean)) {
-                qWarning().noquote() << "MediaService: copy failed" << src << "->" << dstClean;
-                ++skipped;
-                continue;
-            }
-
-            // PDF page-count probe runs after the copy on the worker thread —
-            // we read the document we just dropped into managed storage. This
-            // is cheap (single xref scan, sub-100 ms even on 200-page PDFs)
-            // and removes the need for a separate post-import probe pass.
-            // Images / videos default to 1; videos get duration_ms instead
-            // (probed later by the app-side VideoThumbnailer).
-            int pageCount = 1;
-            if (type == QStringLiteral("pdf")) {
-                pageCount = probePdfPageCount(dstClean);
-                if (pageCount <= 0) {
-                    qWarning().noquote() << "MediaService: skipping" << src
-                                         << "— PDF probe returned 0 pages "
-                                            "(corrupt or encrypted)";
-                    QFile::remove(dstClean);
-                    ++skipped;
-                    continue;
-                }
-            }
-
-            pending.append(PendingImport{
-                dstClean,
-                info.completeBaseName(),
-                type,
-                QDateTime::currentMSecsSinceEpoch(),
-                pageCount
-            });
+            pending.append(*staged);
         }
 
         qInfo().noquote() << "MediaService::importPaths worker done — pending="
@@ -540,6 +540,55 @@ int MediaService::importPaths(QStringList paths)
     });
 
     return paths.size();   // queued count; caller can listen to importFinished
+}
+
+qint64 MediaService::importPathSync(QString path)
+{
+    m_lastImportError.clear();
+    if (!m_impl) {
+        m_lastImportError = QStringLiteral("MediaService not initialized");
+        return 0;
+    }
+
+    const QString destDirCanonical =
+        QFileInfo(db::DbPaths::mediaDir()).canonicalFilePath();
+
+    QString reason;
+    auto staged = tryStageOneFile(path, m_sizeCapBytes, destDirCanonical, &reason);
+    if (!staged) {
+        m_lastImportError = reason;
+        return 0;
+    }
+
+    // INSERT inline on the owning connection — this method runs on the main
+    // thread (the bundle importer's caller), so we hit the same connection
+    // that owns this service's other writes. No QMetaObject::invokeMethod
+    // round-trip needed.
+    qint64 newId = 0;
+    try {
+        auto& s = m_impl->insertItem;
+        s.reset();
+        s.bind(1, staged->dst);
+        s.bind(2, staged->title);
+        s.bind(3, staged->type);
+        s.bind(4, staged->addedAt);
+        s.bind(5, qint64(staged->pageCount));
+        s.step();
+        newId = m_impl->conn.lastInsertRowId();
+    } catch (const db::Error& e) {
+        // Roll back the staged file copy so we don't leak.
+        QFile::remove(staged->dst);
+        m_lastImportError = QStringLiteral("INSERT failed: %1").arg(e.message());
+        return 0;
+    }
+
+    invalidateCache();
+    return newId;
+}
+
+QString MediaService::lastImportError() const
+{
+    return m_lastImportError;
 }
 
 void MediaService::remove(qint64 id)

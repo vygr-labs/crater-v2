@@ -24,10 +24,41 @@ Column {
     function _liveData   (f, v) { workspace.workingTheme.setNodeData (node.id, f, v) }
     function _commitData (f, v) { workspace.saveToHistory() }
 
-    // System font enumeration cached at first construction. Qt.fontFamilies()
-    // is ~50 ms on Windows; binding the Combobox to a fresh call on every
-    // open would cost the user a noticeable beat. Read once, reuse forever.
-    readonly property var _fontFamilies: Qt.fontFamilies()
+    // Font picker model — system fonts from Qt.fontFamilies() plus a
+    // visual "imported" suffix on any family that came in through
+    // FontService (a Crater-imported .ttf/.otf). The Combobox accepts
+    // both bare strings and {label, value} objects (see Combobox.qml
+    // header comment), so user-imported fonts get the suffixed label
+    // while still selecting on the bare family name — the stored
+    // tokens.style.fontFamily stays unchanged.
+    //
+    // Qt.fontFamilies() is ~50 ms on Windows. We rebuild only when
+    // FontService.allFonts changes (add / remove); the function reads
+    // both inputs, so binding to the property fires on either side's
+    // notify signal automatically.
+    readonly property var _fontFamilies: {
+        const sys = Qt.fontFamilies()
+        const userFonts = FontService.allFonts || []
+        if (userFonts.length === 0) return sys
+
+        // O(1) membership check. Build a set of family names that came
+        // through FontService so the next loop can branch quickly.
+        const userSet = {}
+        for (let i = 0; i < userFonts.length; ++i) {
+            userSet[userFonts[i].family] = true
+        }
+
+        const out = []
+        for (let i = 0; i < sys.length; ++i) {
+            const fam = sys[i]
+            if (userSet[fam]) {
+                out.push({ label: fam + qsTr(" · imported"), value: fam })
+            } else {
+                out.push(fam)
+            }
+        }
+        return out
+    }
 
     // ── Color ─────────────────────────────────────────────────────────
     AccordionSection {
@@ -95,14 +126,12 @@ Column {
                     onLive:   function(v) { root._liveStyle("fontPixelSize", Math.round(v)) }
                     onCommit: function(v) { root._commitStyle("fontPixelSize", Math.round(v)) }
                 }
-                NumericInput {
+                WeightSelect {
                     width: (parent.width - 6) / 2
-                    workspace: root.workspace
-                    label: qsTr("Weight"); step: 100
-                    min: 100; max: 900
+                    label: qsTr("Weight")
                     value: (node && node.style && node.style.fontWeight) || 500
-                    onLive:   function(v) { root._liveStyle("fontWeight", Math.round(v / 100) * 100) }
-                    onCommit: function(v) { root._commitStyle("fontWeight", Math.round(v / 100) * 100) }
+                    onLive:   function(v) { root._liveStyle("fontWeight", v) }
+                    onCommit: function(v) { root._commitStyle("fontWeight", v) }
                 }
             }
 

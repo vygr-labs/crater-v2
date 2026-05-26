@@ -53,6 +53,22 @@ public:
     // immediately. Listen on importFinished() if you need a completion hook.
     Q_INVOKABLE int importPaths(QStringList paths);
 
+    // Synchronous single-file import. Used by ThemeService when extracting
+    // bundled media from a v2 theme bundle — the bundle importer needs the
+    // freshly-assigned media id before it can rewrite token references in
+    // theme.json, and it doesn't have an obvious place to wait on the
+    // async importFinished() signal (it's already mid-transaction).
+    //
+    // Reuses the same boundary validation as importPaths (ARCHITECTURE.md
+    // §5.1: magic bytes, size cap, path confinement) — the bundle importer
+    // must not bypass it. Returns the new media id, or 0 on failure with
+    // a human-readable reason available via lastImportError().
+    Q_INVOKABLE qint64 importPathSync(QString path);
+
+    // Reason for the most recent importPathSync() failure. Empty when the
+    // last call succeeded or no call has been made.
+    Q_INVOKABLE QString lastImportError() const;
+
     Q_INVOKABLE void remove(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
@@ -134,6 +150,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     qint64 m_sizeCapBytes = qint64(4) * 1024 * 1024 * 1024;   // 4 GiB
+    QString m_lastImportError;
 
     void invalidateCache();
 };

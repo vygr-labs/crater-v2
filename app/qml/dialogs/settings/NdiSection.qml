@@ -271,12 +271,20 @@ Item {
             SettingsSectionHeader { title: qsTr("Rendering") }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: dualToggle.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                           width: parent.width; elide: Text.ElideRight }
                     Text { text: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
-                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                           width: parent.width; elide: Text.ElideRight }
                 }
                 ToggleSwitch {
+                    id: dualToggle
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     value: SettingsService.outputMode === "dual"
@@ -291,12 +299,20 @@ Item {
             // falls back to the legacy `grabToImage` path on the NdiCanvas Item;
             // intended only if a particular GPU misbehaves with QRhi readback.
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: headlessToggle.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                           width: parent.width; elide: Text.ElideRight }
                     Text { text: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
-                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                           width: parent.width; elide: Text.ElideRight }
                 }
                 ToggleSwitch {
+                    id: headlessToggle
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     value: SettingsService.useHeadlessNdi

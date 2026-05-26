@@ -16,6 +16,10 @@ add_library(crater-core STATIC
     src/db/Migrator.cpp
     src/db/DbPaths.cpp
 
+    # Bundle layer — stored-only ZIP for .craterheme v2 (ARCHITECTURE.md §10).
+    src/bundle/Crc32.cpp
+    src/bundle/Zip.cpp
+
     # One-time data import from electron's bundled DBs.
     src/import/CanonicalBibleBooks.cpp
     src/import/ElectronDataImporter.cpp
@@ -34,6 +38,7 @@ add_library(crater-core STATIC
     src/ScheduleService.cpp
     src/ThemeService.cpp
     src/MediaService.cpp
+    src/FontService.cpp
     src/OutputService.cpp
     src/ProjectionService.cpp
     src/SettingsService.cpp
@@ -49,6 +54,7 @@ add_library(crater-core STATIC
     include/crater/ScheduleService.h
     include/crater/ThemeService.h
     include/crater/MediaService.h
+    include/crater/FontService.h
     include/crater/OutputService.h
     include/crater/ProjectionService.h
     include/crater/SettingsService.h
@@ -63,8 +69,12 @@ add_library(crater-core STATIC
     include/crater/value/SongSection.h
     include/crater/value/SavedSchedule.h
     include/crater/value/Theme.h
+    include/crater/value/ThemeImportReport.h
     include/crater/value/Screen.h
     include/crater/value/MediaItem.h
+    include/crater/value/UserFont.h
+    include/crater/value/OutputThemeSlots.h
+    include/crater/value/OutputBinding.h
     include/crater/LyricsDSL.h
     include/crater/LyricsService.h
 )
@@ -151,6 +161,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V004__media_duration.sql
         src/db/migrations/app/V005__media_pdf.sql
         src/db/migrations/app/V006__remove_builtin_themes.sql
+        src/db/migrations/app/V008__user_fonts.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)

@@ -11,6 +11,17 @@ Item {
 
     property bool clearOnIdle: false
 
+    // Local error banner for the Fonts subsection at the bottom. Lives at
+    // the root so the section header / Flickable can both reach it; the
+    // 5s auto-clear matches the Themes tab's pattern so feedback is
+    // transient but visible.
+    property string _fontError: ""
+    Timer {
+        id: fontErrorClearTimer
+        interval: 5000
+        onTriggered: root._fontError = ""
+    }
+
     Flickable {
         anchors.fill: parent
         contentHeight: layout.implicitHeight
@@ -128,16 +139,16 @@ Item {
                     // collapses to Crossfade so the picker never shows
                     // empty after a registry hand-edit.
                     value: {
-                        switch (SettingsService.transitionStyleForPrimary) {
+                        switch (OutputService.transitionStyle("primary")) {
                             case "cut":       return qsTr("Cut")
                             case "fadeBlack": return qsTr("Fade through black")
                             default:          return qsTr("Crossfade")
                         }
                     }
                     onValueSelected: function(v) {
-                        if (v === qsTr("Cut"))                  SettingsService.transitionStyleForPrimary = "cut"
-                        else if (v === qsTr("Fade through black")) SettingsService.transitionStyleForPrimary = "fadeBlack"
-                        else                                    SettingsService.transitionStyleForPrimary = "crossfade"
+                        if (v === qsTr("Cut"))                  OutputService.setTransitionStyle("primary", "cut")
+                        else if (v === qsTr("Fade through black")) OutputService.setTransitionStyle("primary", "fadeBlack")
+                        else                                    OutputService.setTransitionStyle("primary", "crossfade")
                     }
                 }
             }
@@ -163,7 +174,7 @@ Item {
                               qsTr("Slow (500 ms)"),
                               qsTr("Very slow (1000 ms)")]
                     value: {
-                        const ms = SettingsService.transitionDurationMsForPrimary
+                        const ms = OutputService.transitionDurationMs("primary")
                         if (ms <= 0)    return qsTr("Instant")
                         if (ms <= 150)  return qsTr("Fast (150 ms)")
                         if (ms <= 280)  return qsTr("Normal (280 ms)")
@@ -171,11 +182,11 @@ Item {
                         return qsTr("Very slow (1000 ms)")
                     }
                     onValueSelected: function(v) {
-                        if (v === qsTr("Instant"))                 SettingsService.transitionDurationMsForPrimary = 0
-                        else if (v === qsTr("Fast (150 ms)"))      SettingsService.transitionDurationMsForPrimary = 150
-                        else if (v === qsTr("Normal (280 ms)"))    SettingsService.transitionDurationMsForPrimary = 280
-                        else if (v === qsTr("Slow (500 ms)"))      SettingsService.transitionDurationMsForPrimary = 500
-                        else                                       SettingsService.transitionDurationMsForPrimary = 1000
+                        if (v === qsTr("Instant"))                 OutputService.setTransitionDurationMs("primary", 0)
+                        else if (v === qsTr("Fast (150 ms)"))      OutputService.setTransitionDurationMs("primary", 150)
+                        else if (v === qsTr("Normal (280 ms)"))    OutputService.setTransitionDurationMs("primary", 280)
+                        else if (v === qsTr("Slow (500 ms)"))      OutputService.setTransitionDurationMs("primary", 500)
+                        else                                       OutputService.setTransitionDurationMs("primary", 1000)
                     }
                 }
             }
@@ -202,16 +213,16 @@ Item {
                     searchable: false
                     options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
                     value: {
-                        switch (SettingsService.transitionStyleForNdi) {
+                        switch (OutputService.transitionStyle("ndi")) {
                             case "cut":       return qsTr("Cut")
                             case "fadeBlack": return qsTr("Fade through black")
                             default:          return qsTr("Crossfade")
                         }
                     }
                     onValueSelected: function(v) {
-                        if (v === qsTr("Cut"))                  SettingsService.transitionStyleForNdi = "cut"
-                        else if (v === qsTr("Fade through black")) SettingsService.transitionStyleForNdi = "fadeBlack"
-                        else                                    SettingsService.transitionStyleForNdi = "crossfade"
+                        if (v === qsTr("Cut"))                  OutputService.setTransitionStyle("ndi", "cut")
+                        else if (v === qsTr("Fade through black")) OutputService.setTransitionStyle("ndi", "fadeBlack")
+                        else                                    OutputService.setTransitionStyle("ndi", "crossfade")
                     }
                 }
             }
@@ -242,7 +253,7 @@ Item {
                               qsTr("Slow (500 ms)"),
                               qsTr("Very slow (1000 ms)")]
                     value: {
-                        const ms = SettingsService.transitionDurationMsForNdi
+                        const ms = OutputService.transitionDurationMs("ndi")
                         if (ms <= 0)    return qsTr("Instant")
                         if (ms <= 150)  return qsTr("Fast (150 ms)")
                         if (ms <= 280)  return qsTr("Normal (280 ms)")
@@ -250,11 +261,11 @@ Item {
                         return qsTr("Very slow (1000 ms)")
                     }
                     onValueSelected: function(v) {
-                        if (v === qsTr("Instant"))                 SettingsService.transitionDurationMsForNdi = 0
-                        else if (v === qsTr("Fast (150 ms)"))      SettingsService.transitionDurationMsForNdi = 150
-                        else if (v === qsTr("Normal (280 ms)"))    SettingsService.transitionDurationMsForNdi = 280
-                        else if (v === qsTr("Slow (500 ms)"))      SettingsService.transitionDurationMsForNdi = 500
-                        else                                       SettingsService.transitionDurationMsForNdi = 1000
+                        if (v === qsTr("Instant"))                 OutputService.setTransitionDurationMs("ndi", 0)
+                        else if (v === qsTr("Fast (150 ms)"))      OutputService.setTransitionDurationMs("ndi", 150)
+                        else if (v === qsTr("Normal (280 ms)"))    OutputService.setTransitionDurationMs("ndi", 280)
+                        else if (v === qsTr("Slow (500 ms)"))      OutputService.setTransitionDurationMs("ndi", 500)
+                        else                                       OutputService.setTransitionDurationMs("ndi", 1000)
                     }
                 }
             }
@@ -496,6 +507,213 @@ Item {
                         opacity: 0.45
                         enabled: false
                         onToggled: { }
+                    }
+                }
+            }
+
+            // ── FONTS ────────────────────────────────────────────────────
+            // Manage operator-imported fonts (ARCHITECTURE.md §10.5).
+            // Lives in the Projection section because fonts are part of
+            // what the projection output renders — moving the management
+            // here keeps every output-appearance lever in one tab.
+            //
+            // Lists everything registered through FontService.importFontFile
+            // (the button below OR a previously imported theme bundle).
+            // Removing a font unregisters it from QFontDatabase and deletes
+            // the on-disk file; themes that referenced it fall back to a
+            // system substitute on their next render. System / QRC fonts
+            // (Funnel Sans, Lucide, Arial, Calibri, …) aren't listed —
+            // they're outside this service's scope by design.
+            SettingsSectionHeader { title: qsTr("Fonts") }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+
+                // Column anchored to the import button's left edge with
+                // elide on both labels — keeps the long subtitle from
+                // sliding under the button at narrow widths.
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: importFontButton.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+
+                    Text {
+                        text: qsTr("Manage fonts available to themes")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                        width: parent.width
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        text: qsTr("Imported fonts are available in every theme's font picker "
+                                   + "and can be bundled into exported themes.")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                        width: parent.width
+                        elide: Text.ElideRight
+                    }
+                }
+
+                GhostButton {
+                    id: importFontButton
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Import font…")
+                    iconName: "type"
+                    onClicked: {
+                        const path = FileDialogService.chooseOpenFile(
+                            qsTr("Import Font"),
+                            [qsTr("Font Files (*.ttf *.otf)"),
+                             qsTr("All Files (*.*)")])
+                        if (!path || path.length === 0) return
+
+                        const font = FontService.importFontFile(path)
+                        if (font.id === 0) {
+                            root._fontError = FontService.lastError()
+                                           || qsTr("Font import failed")
+                            fontErrorClearTimer.restart()
+                        }
+                    }
+                }
+            }
+
+            // Transient error banner for font import failures.
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 36 : 0
+                Layout.topMargin: visible ? Theme.space.sm : 0
+                visible: root._fontError.length > 0
+                radius: Theme.radius.md
+                color: Theme.color.liveSubtle
+                border.color: Theme.color.live
+                border.width: 1
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.md
+                    text: root._fontError
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    elide: Text.ElideRight
+                }
+            }
+
+            // Empty state when no operator-imported fonts exist yet.
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 120
+                Layout.topMargin: Theme.space.md
+                visible: (FontService.allFonts || []).length === 0
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: Theme.space.sm
+
+                    AppIcon {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        name: "type"
+                        color: Theme.color.textTertiary
+                        size: Theme.icon.lg
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: qsTr("No imported fonts yet")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: qsTr("Import a .ttf or .otf to make it available to themes")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+            }
+
+            // Imported-font rows. Family name rendered in its OWN font so a
+            // failed registration shows in the fallback face — an honest
+            // visual signal without a separate validity column.
+            Repeater {
+                model: FontService.allFonts || []
+                delegate: Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 56
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.bottomMargin: 1
+                        color: rowMa.containsMouse ? Theme.color.overlay : "transparent"
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.right: removeFontButton.left
+                            anchors.rightMargin: Theme.space.md
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Text {
+                                text: modelData.family
+                                color: Theme.color.textPrimary
+                                font.family: modelData.family
+                                font.pixelSize: Theme.font.bodySize + 2
+                                font.weight: Theme.font.weightMedium
+                                width: parent.width
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                // 8-char hash prefix uniquely identifies a
+                                // row at our scale (hundreds of fonts at
+                                // most) without hogging the line with a
+                                // 64-char hex string.
+                                text: qsTr("hash %1… · added %2")
+                                    .arg(modelData.hash.substring(0, 8))
+                                    .arg(Qt.formatDateTime(
+                                        new Date(modelData.addedAt),
+                                        "yyyy-MM-dd"))
+                                color: Theme.color.textTertiary
+                                font.family: Theme.font.monoFamily
+                                font.pixelSize: Theme.font.smallSize - 1
+                                width: parent.width
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        IconButton {
+                            id: removeFontButton
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "trash"
+                            iconSize: Theme.icon.sm
+                            onClicked: FontService.removeFont(modelData.id)
+                        }
+
+                        MouseArea {
+                            id: rowMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            // Hover-only for the overlay tint; the trash
+                            // button above captures clicks.
+                        }
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: Theme.color.borderSubtle
+                        }
                     }
                 }
             }

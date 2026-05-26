@@ -40,16 +40,17 @@ Item {
     property int    layerPage: 0
     property rect   layerCrop: Qt.rect(0, 0, 1, 1)
 
-    // Which output this layer feeds — drives per-output theme resolution
-    // (AppState.resolveItemTheme picks themeIdFor{Primary,Ndi,Stage} based
-    // on this) and audio routing (only the primary scene's current layer
-    // is allowed to drive system audio).
+    // Which output this layer feeds — the OutputService registry id.
+    // Drives per-output, per-kind theme resolution (AppState.resolveItemTheme
+    // reads OutputService.themeIdFor(outputKind, item.kind)) and audio
+    // routing (only the primary scene's current layer is allowed to drive
+    // system audio).
     property string outputKind: "primary"
 
     // Bump-counter forwarded from the scene; rises when ThemeService
-    // defaults change, when AllThemes refresh, or when SettingsService
-    // per-output theme assignments mutate. Pulling it as a dependency of
-    // _theme forces re-evaluation in lock-step with the scene's other
+    // defaults change, when AllThemes refresh, or when an OutputBinding
+    // mutates in the OutputService registry. Pulling it as a dependency
+    // of _theme forces re-evaluation in lock-step with the scene's other
     // layer, so a theme edit doesn't leave the two layers out of sync.
     property int    themeRevision: 0
 

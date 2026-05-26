@@ -128,6 +128,7 @@ qt_add_qml_module(crater
         qml/workspaces/editor/inputs/NumericInput.qml
         qml/workspaces/editor/inputs/SimpleSlider.qml
         qml/workspaces/editor/inputs/SegmentedControl.qml
+        qml/workspaces/editor/inputs/WeightSelect.qml
 
         # ── Major UI panels ───────────────────────────────────────────
         qml/panels/TitleBar.qml
@@ -157,6 +158,7 @@ qt_add_qml_module(crater
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
+        qml/dialogs/ExportThemeDialog.qml
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml

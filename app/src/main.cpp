@@ -42,6 +42,7 @@
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
 #include "crater/LyricsService.h"
+#include "crater/FontService.h"
 #include "crater/MediaService.h"
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
@@ -331,7 +332,24 @@ int main(int argc, char* argv[])
     crater::ScheduleService   scheduleService;
     crater::ThemeService      themeService;
     crater::MediaService      mediaService;
+    // FontService must come BEFORE QML loads so user-imported fonts get
+    // re-registered with QFontDatabase on this session's first paint;
+    // see FontService.h's Lifecycle note. No service deps.
+    crater::FontService       fontService;
+    // Wire ThemeService -> MediaService/FontService for bundle export and
+    // import (ARCHITECTURE.md §10). Construction order above already put
+    // both downstream services first.
+    themeService.setMediaService(&mediaService);
+    themeService.setFontService(&fontService);
+    // Clean up any .import-staging/ leftovers from a process kill in a
+    // prior session (§10.4). Idempotent.
+    crater::ThemeService::sweepImportStaging();
     crater::OutputService     outputService;
+    // Hand OutputService a ThemeService reference so its one-shot legacy
+    // migration (Settings/themeIdFor* → Outputs/<id>/themes) can look up
+    // each pinned theme's kind. Migration is scheduled on the next event
+    // loop tick — order between this call and QML load doesn't matter.
+    outputService.attachThemeService(&themeService);
     crater::ProjectionService projectionService;
     // SettingsService is constructed BEFORE QML loads so Theme.uiScale +
     // any other early bindings have a populated source. No service deps;
@@ -343,7 +361,7 @@ int main(int argc, char* argv[])
     crater::NdiService        ndiService;
     crater::FileDialogService fileDialogService;
     // LogReportService uploads crater.log to voyagerlabs.tech on an explicit
-    // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §10. It
+    // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
     // takes the path main.cpp logs to so it reports the exact file in use.
     crater::LogReportService  logReportService(logPath);
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
@@ -384,6 +402,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",    &scheduleService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",       &themeService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "FontService",        &fontService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);

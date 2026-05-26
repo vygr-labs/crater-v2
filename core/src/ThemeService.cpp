@@ -1,6 +1,10 @@
 #include "crater/ThemeService.h"
 
+#include "bundle/Zip.h"
+#include "crater/FontService.h"
+#include "crater/MediaService.h"
 #include "crater/Version.h"
+#include "crater/value/MediaItem.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
@@ -8,13 +12,19 @@
 #include "db/Transaction.h"
 
 #include <QColor>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
+#include <QUuid>
 
 #include <cmath>
 #include <optional>
@@ -149,9 +159,9 @@ QVariantMap buildV2FromV1(const QString& kind, const QVariantMap& v1)
 // Hand-written validator for v2 tokens. Returns an empty list when the
 // input is well-formed. Each error string is human-readable and pinned to
 // the JSON path that failed ("nodes[2].style.opacity must be 0..1") so the
-// editor can surface them inline. Called from importFromJson, create, and
-// update — but never during preview rendering, which must tolerate partial
-// in-progress state.
+// editor can surface them inline. Called from importThemeFile, create,
+// and update — but never during preview rendering, which must tolerate
+// partial in-progress state.
 
 bool isFiniteNumber(const QVariant& v)
 {
@@ -602,49 +612,28 @@ QStringList ThemeService::validateTokens(QVariantMap tokens)
     return validateTokensV2(tokens);
 }
 
-QString ThemeService::serializeForExport(qint64 id)
-{
-    const Theme t = theme(id);
-    if (t.id == 0) return {};
-
-    QVariantMap wrapper;
-    wrapper["kind"]          = QStringLiteral("craterheme");
-    wrapper["formatVersion"] = 1;
-    wrapper["themeKind"]     = t.kind;
-    wrapper["name"]          = t.name;
-    wrapper["author"]        = QString();
-    wrapper["exportedAt"]    = QDateTime::currentMSecsSinceEpoch();
-    wrapper["appVersion"]    = versionString();
-    wrapper["tokens"]        = t.tokens;
-
-    return QString::fromUtf8(
-        QJsonDocument(QJsonObject::fromVariantMap(wrapper)).toJson(QJsonDocument::Indented));
-}
-
-bool ThemeService::exportTheme(qint64 id, QString filePath)
-{
-    const QString json = serializeForExport(id);
-    if (json.isEmpty()) return false;
-
-    // QSaveFile = tmpfile + atomic rename + fsync. Per ARCHITECTURE.md §8.
-    QSaveFile f(filePath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        qWarning().noquote() << "ThemeService::exportTheme(): cannot open" << filePath
-                             << "—" << f.errorString();
-        return false;
-    }
-    f.write(json.toUtf8());
-    if (!f.commit()) {
-        qWarning().noquote() << "ThemeService::exportTheme(): commit failed —" << f.errorString();
-        return false;
-    }
-    return true;
-}
+// ═══════════════════════════════════════════════════════════════════════
+// Bundle (.craterheme v2) — export and import
+// ═══════════════════════════════════════════════════════════════════════
+//
+// On-disk layout and rationale: ARCHITECTURE.md §10.
+//
+// One key invariant: the RUNTIME token shape never changes.
+//   • On disk in the bundle:  data.mediaRef = "<sha256>",
+//                             style.fontRef  = "<sha256>" (sibling of fontFamily)
+//   • In the DB at runtime:   data.mediaId  = <qint64>,
+//                             style.fontFamily = "Inter"   (no fontRef)
+// The import path rewrites refs -> local ids before insert, so QML and
+// the renderer code never see mediaRef/fontRef. See §10.6 — this is the
+// load-bearing decision that keeps the bundle complexity out of the hot
+// rendering path.
 
 namespace {
 
+constexpr int kBundleFormatVersion = 2;
+
 // Builds a unique theme name within (kind, name) by appending " (Import)",
-// " (Import 2)", … until no row matches. Used by importFromJson.
+// " (Import 2)", … until no row matches.
 QString resolveImportName(db::Statement& countStmt, const QString& kind, const QString& base)
 {
     const auto exists = [&](const QString& n) -> bool {
@@ -663,74 +652,711 @@ QString resolveImportName(db::Statement& countStmt, const QString& kind, const Q
     return base + QStringLiteral(" (Import)");
 }
 
+QString sha256Hex(QByteArrayView bytes)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(
+        QByteArray::fromRawData(bytes.data(), bytes.size()),
+        QCryptographicHash::Sha256).toHex());
+}
+
+// Walks tokens.nodes and collects every numeric mediaId that container
+// nodes refer to. Skips nulls and zeros (the "no media" sentinel).
+QSet<qint64> collectMediaIds(const QVariantMap& tokens)
+{
+    QSet<qint64> out;
+    const QVariantList nodes = tokens.value(QStringLiteral("nodes")).toList();
+    for (const QVariant& n : nodes) {
+        const QVariantMap node = n.toMap();
+        if (node.value(QStringLiteral("kind")).toString() != QLatin1String("container")) continue;
+        const QVariantMap data = node.value(QStringLiteral("data")).toMap();
+        const QVariant idVar = data.value(QStringLiteral("mediaId"));
+        if (!idVar.isValid() || idVar.isNull()) continue;
+        bool ok = false;
+        const qint64 id = idVar.toLongLong(&ok);
+        if (ok && id > 0) out.insert(id);
+    }
+    return out;
+}
+
+// Walks tokens.nodes and collects every fontFamily a text node references.
+// Empty strings are skipped (text without an explicit family falls back to
+// the app default).
+QSet<QString> collectFontFamilies(const QVariantMap& tokens)
+{
+    QSet<QString> out;
+    const QVariantList nodes = tokens.value(QStringLiteral("nodes")).toList();
+    for (const QVariant& n : nodes) {
+        const QVariantMap node = n.toMap();
+        if (node.value(QStringLiteral("kind")).toString() != QLatin1String("text")) continue;
+        const QVariantMap style = node.value(QStringLiteral("style")).toMap();
+        const QString fam = style.value(QStringLiteral("fontFamily")).toString().trimmed();
+        if (!fam.isEmpty()) out.insert(fam);
+    }
+    return out;
+}
+
+// Returns a deep-rewritten copy of `tokens` for ON-DISK export:
+//   • container.data.mediaId N        ->  container.data.mediaRef "<hash>"
+//                                         (existing mediaId removed)
+//   • text.style fontFamily "Inter"   ->  unchanged, but style.fontRef "<hash>"
+//                                         is added when the family is bundled
+QVariantMap rewriteTokensForExport(const QVariantMap& tokens,
+                                   const QHash<qint64, QString>& mediaIdToHash,
+                                   const QHash<QString, QString>& fontFamilyToHash)
+{
+    QVariantMap out = tokens;
+    QVariantList nodes = out.value(QStringLiteral("nodes")).toList();
+    for (int i = 0; i < nodes.size(); ++i) {
+        QVariantMap node = nodes[i].toMap();
+        const QString kind = node.value(QStringLiteral("kind")).toString();
+        if (kind == QLatin1String("container")) {
+            QVariantMap data = node.value(QStringLiteral("data")).toMap();
+            const QVariant idVar = data.value(QStringLiteral("mediaId"));
+            bool ok = false;
+            const qint64 id = idVar.toLongLong(&ok);
+            if (ok && id > 0) {
+                const auto it = mediaIdToHash.constFind(id);
+                if (it != mediaIdToHash.constEnd()) {
+                    data.remove(QStringLiteral("mediaId"));
+                    data[QStringLiteral("mediaRef")] = it.value();
+                } else {
+                    // Stale reference — the row was deleted before export.
+                    // We must NOT ship our local id in the bundle: on the
+                    // importing machine, that integer would be interpreted
+                    // as one of THEIR media rows (a number that might
+                    // happen to exist and point at totally unrelated
+                    // bytes). Nulling it is the only safe value.
+                    data[QStringLiteral("mediaId")] = QVariant::fromValue(nullptr);
+                }
+            }
+            node[QStringLiteral("data")] = data;
+        } else if (kind == QLatin1String("text")) {
+            QVariantMap style = node.value(QStringLiteral("style")).toMap();
+            const QString fam = style.value(QStringLiteral("fontFamily")).toString().trimmed();
+            if (!fam.isEmpty()) {
+                const auto it = fontFamilyToHash.constFind(fam);
+                if (it != fontFamilyToHash.constEnd()) {
+                    style[QStringLiteral("fontRef")] = it.value();
+                }
+            }
+            node[QStringLiteral("style")] = style;
+        }
+        nodes[i] = node;
+    }
+    out[QStringLiteral("nodes")] = nodes;
+    return out;
+}
+
+// Returns a deep-rewritten copy of `tokens` for IMPORT into the live DB:
+//   • container.data.mediaRef "<hash>"  ->  container.data.mediaId (resolved id)
+//                                            or mediaId = null on miss
+//   • text.style.fontRef "<hash>"        ->  removed (a hash is meaningless
+//                                            at runtime); fontFamily stays
+//
+// The hash maps come from the bundle import — mediaRefs that fail to
+// import won't be in `hashToMediaId`, and the corresponding mediaId is
+// set to null. Per-asset failures are accumulated as warnings outside
+// this function (see importThemeFile).
+QVariantMap rewriteTokensForImport(const QVariantMap& tokens,
+                                   const QHash<QString, qint64>& hashToMediaId)
+{
+    QVariantMap out = tokens;
+    QVariantList nodes = out.value(QStringLiteral("nodes")).toList();
+    for (int i = 0; i < nodes.size(); ++i) {
+        QVariantMap node = nodes[i].toMap();
+        const QString kind = node.value(QStringLiteral("kind")).toString();
+        if (kind == QLatin1String("container")) {
+            QVariantMap data = node.value(QStringLiteral("data")).toMap();
+            if (data.contains(QStringLiteral("mediaRef"))) {
+                const QString hash = data.value(QStringLiteral("mediaRef")).toString();
+                data.remove(QStringLiteral("mediaRef"));
+                const auto it = hashToMediaId.constFind(hash);
+                if (it != hashToMediaId.constEnd()) {
+                    data[QStringLiteral("mediaId")] = QVariant(it.value());
+                } else {
+                    // Bundled media failed to import — leave nodes pointing
+                    // at no media, exactly the "Background" container's
+                    // default state when nothing has been picked.
+                    data[QStringLiteral("mediaId")] = QVariant::fromValue(nullptr);
+                }
+            }
+            node[QStringLiteral("data")] = data;
+        } else if (kind == QLatin1String("text")) {
+            QVariantMap style = node.value(QStringLiteral("style")).toMap();
+            // fontRef is purely an on-disk hint — strip it for runtime.
+            // The fontFamily string was preserved alongside it at export,
+            // so font resolution at render time works the usual way
+            // (registered via FontService at startup, or system-installed).
+            style.remove(QStringLiteral("fontRef"));
+            node[QStringLiteral("style")] = style;
+        }
+        nodes[i] = node;
+    }
+    out[QStringLiteral("nodes")] = nodes;
+    return out;
+}
+
+// QFile::readAll() wrapper that handles open-failure with a populated
+// QString error rather than the caller having to interpret an empty
+// QByteArray.
+std::optional<QByteArray> readWholeFile(const QString& path, QString* outReason)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        if (outReason) *outReason = f.errorString();
+        return std::nullopt;
+    }
+    QByteArray bytes = f.readAll();
+    if (f.error() != QFileDevice::NoError) {
+        if (outReason) *outReason = f.errorString();
+        return std::nullopt;
+    }
+    return bytes;
+}
+
 }  // namespace
 
-qint64 ThemeService::importFromJson(QString jsonText)
+void ThemeService::setMediaService(MediaService* media) { m_media = media; }
+void ThemeService::setFontService(FontService* font)    { m_fonts = font;  }
+
+QString ThemeService::lastImportError() const { return m_lastImportError; }
+QString ThemeService::lastExportError() const { return m_lastExportError; }
+
+QVariantMap ThemeService::resolveExportPlan(qint64 id)
 {
+    const Theme t = theme(id);
+    if (t.id == 0) return {};
+
+    QVariantMap plan;
+    plan[QStringLiteral("themeName")]  = t.name;
+    plan[QStringLiteral("themeKind")]  = t.kind;
+    plan[QStringLiteral("appVersion")] = versionString();
+
+    // Media: every referenced row that still resolves becomes a bundle
+    // candidate. We don't surface per-item opt-out in v1 (operator-owned
+    // media isn't license-constrained the way fonts are — §10.3).
+    QVariantList mediaList;
+    if (m_media) {
+        for (qint64 mid : collectMediaIds(t.tokens)) {
+            const MediaItem item = m_media->byId(mid);
+            if (item.id == 0) continue;
+            const QFileInfo info(item.path);
+            QVariantMap entry;
+            entry[QStringLiteral("mediaId")]    = mid;
+            entry[QStringLiteral("title")]      = item.title;
+            entry[QStringLiteral("sourcePath")] = item.path;
+            entry[QStringLiteral("sizeBytes")]  = info.size();
+            entry[QStringLiteral("type")]       = item.type;
+            mediaList.append(entry);
+        }
+    }
+    plan[QStringLiteral("media")] = mediaList;
+
+    // Fonts: split into bundleable (FontService knows a file path for
+    // the family) vs systemOnly (we'll record the family name but ship
+    // no bytes; importer's machine has to have it installed).
+    QVariantList bundleable;
+    QStringList  systemOnly;
+    const QSet<QString> families = collectFontFamilies(t.tokens);
+    for (const QString& fam : families) {
+        QString path = m_fonts ? m_fonts->filePathForFamily(fam) : QString();
+        if (path.isEmpty()) {
+            systemOnly.append(fam);
+            continue;
+        }
+        const QFileInfo info(path);
+        QVariantMap entry;
+        entry[QStringLiteral("family")]     = fam;
+        entry[QStringLiteral("sourcePath")] = path;
+        entry[QStringLiteral("sizeBytes")]  = info.size();
+        bundleable.append(entry);
+    }
+    QVariantMap fonts;
+    fonts[QStringLiteral("bundleable")] = bundleable;
+    fonts[QStringLiteral("systemOnly")] = systemOnly;
+    plan[QStringLiteral("fonts")] = fonts;
+
+    return plan;
+}
+
+bool ThemeService::exportTheme(qint64       id,
+                               QString      filePath,
+                               QStringList  excludedFontFamilies)
+{
+    m_lastExportError.clear();
+
+    const Theme t = theme(id);
+    if (t.id == 0) {
+        m_lastExportError = QStringLiteral("No theme with id %1").arg(id);
+        return false;
+    }
+
+    // ── Resolve media files referenced by the theme ─────────────────────
+    QHash<qint64, QString> mediaIdToHash;   // for token rewrite
+    QHash<QString, QByteArray> mediaBytes;  // hash -> bytes (dedup'd)
+    QJsonArray mediaManifest;
+
+    if (!m_media && !collectMediaIds(t.tokens).isEmpty()) {
+        m_lastExportError = QStringLiteral(
+            "Theme references media but MediaService is not wired");
+        return false;
+    }
+
+    for (qint64 mid : collectMediaIds(t.tokens)) {
+        const MediaItem item = m_media->byId(mid);
+        if (item.id == 0) {
+            // Stale reference — silently skip. The token rewriter leaves
+            // the original mediaId in place; the importer will null it
+            // out on miss (matches §10.4's best-effort posture).
+            continue;
+        }
+        QString reason;
+        auto bytes = readWholeFile(item.path, &reason);
+        if (!bytes) {
+            qWarning().noquote() << "exportTheme: skipping media id" << mid
+                                 << "—" << reason;
+            continue;
+        }
+        const QString hash = sha256Hex(*bytes);
+        mediaIdToHash.insert(mid, hash);
+        // Dedup: same image referenced twice ships once.
+        if (!mediaBytes.contains(hash)) {
+            mediaBytes.insert(hash, *bytes);
+            QJsonObject mEntry;
+            mEntry[QStringLiteral("hash")]            = hash;
+            mEntry[QStringLiteral("originalFilename")] = QFileInfo(item.path).fileName();
+            mEntry[QStringLiteral("bytes")]            = qint64(bytes->size());
+            mEntry[QStringLiteral("originalMediaId")] = mid;
+            mEntry[QStringLiteral("type")]             = item.type;
+            mediaManifest.append(mEntry);
+        }
+    }
+
+    // ── Resolve fonts (respecting the exclusion list) ───────────────────
+    QSet<QString> excluded;
+    for (const QString& f : excludedFontFamilies) excluded.insert(f);
+
+    QHash<QString, QString>   fontFamilyToHash;  // for token rewrite
+    QHash<QString, QByteArray> fontBytes;        // hash -> bytes
+    QJsonArray fontManifest;
+
+    if (m_fonts) {
+        for (const QString& fam : collectFontFamilies(t.tokens)) {
+            if (excluded.contains(fam)) continue;
+            const QString src = m_fonts->filePathForFamily(fam);
+            if (src.isEmpty()) continue;   // system-only; not bundleable
+            QString reason;
+            auto bytes = readWholeFile(src, &reason);
+            if (!bytes) {
+                qWarning().noquote() << "exportTheme: skipping font" << fam
+                                     << "—" << reason;
+                continue;
+            }
+            const QString hash = sha256Hex(*bytes);
+            fontFamilyToHash.insert(fam, hash);
+            if (!fontBytes.contains(hash)) {
+                fontBytes.insert(hash, *bytes);
+                QJsonObject fEntry;
+                fEntry[QStringLiteral("hash")]   = hash;
+                fEntry[QStringLiteral("family")] = fam;
+                fEntry[QStringLiteral("bytes")]  = qint64(bytes->size());
+                fontManifest.append(fEntry);
+            }
+        }
+    }
+
+    // ── Build the rewritten theme.json + manifest.json ─────────────────
+    const QVariantMap rewritten = rewriteTokensForExport(
+        t.tokens, mediaIdToHash, fontFamilyToHash);
+
+    const QByteArray themeJson = QJsonDocument(
+        QJsonObject::fromVariantMap(rewritten)).toJson(QJsonDocument::Indented);
+
+    QJsonObject manifest;
+    manifest[QStringLiteral("kind")]          = QStringLiteral("craterheme");
+    manifest[QStringLiteral("formatVersion")] = kBundleFormatVersion;
+    manifest[QStringLiteral("themeKind")]     = t.kind;
+    manifest[QStringLiteral("name")]          = t.name;
+    manifest[QStringLiteral("exportedAt")]    = QDateTime::currentMSecsSinceEpoch();
+    manifest[QStringLiteral("appVersion")]    = versionString();
+    manifest[QStringLiteral("media")]         = mediaManifest;
+    manifest[QStringLiteral("fonts")]         = fontManifest;
+    const QByteArray manifestJson =
+        QJsonDocument(manifest).toJson(QJsonDocument::Indented);
+
+    // ── Write zip (atomic via QSaveFile inside ZipWriter) ───────────────
+    bundle::ZipWriter zip(filePath);
+    if (!zip.isOpen()) {
+        m_lastExportError = zip.errorString();
+        return false;
+    }
+    const auto fail = [&](QString why) {
+        m_lastExportError = std::move(why);
+        return false;
+    };
+    if (!zip.addEntry(QStringLiteral("manifest.json"), manifestJson))
+        return fail(zip.errorString());
+    if (!zip.addEntry(QStringLiteral("theme.json"), themeJson))
+        return fail(zip.errorString());
+
+    for (auto it = mediaBytes.constBegin(); it != mediaBytes.constEnd(); ++it) {
+        const QString hash = it.key();
+        // Look up the manifest entry to recover the original extension.
+        QString ext;
+        for (const QJsonValue& v : mediaManifest) {
+            const QJsonObject o = v.toObject();
+            if (o.value(QStringLiteral("hash")).toString() == hash) {
+                ext = QFileInfo(o.value(QStringLiteral("originalFilename"))
+                                   .toString()).suffix();
+                break;
+            }
+        }
+        const QString name = ext.isEmpty()
+            ? QStringLiteral("media/%1").arg(hash)
+            : QStringLiteral("media/%1.%2").arg(hash, ext.toLower());
+        if (!zip.addEntry(name, it.value()))
+            return fail(zip.errorString());
+    }
+    for (auto it = fontBytes.constBegin(); it != fontBytes.constEnd(); ++it) {
+        // We always wrote .ttf or .otf into AppData/fonts; reuse that
+        // extension. (FontService sniffed the magic bytes at import time.)
+        QString ext;
+        for (const QJsonValue& v : fontManifest) {
+            const QJsonObject o = v.toObject();
+            if (o.value(QStringLiteral("hash")).toString() == it.key()) {
+                const QString fam = o.value(QStringLiteral("family")).toString();
+                const QString path = m_fonts ? m_fonts->filePathForFamily(fam) : QString();
+                ext = QFileInfo(path).suffix();
+                break;
+            }
+        }
+        const QString name = ext.isEmpty()
+            ? QStringLiteral("fonts/%1").arg(it.key())
+            : QStringLiteral("fonts/%1.%2").arg(it.key(), ext.toLower());
+        if (!zip.addEntry(name, it.value()))
+            return fail(zip.errorString());
+    }
+
+    if (!zip.commit())
+        return fail(zip.errorString());
+
+    qInfo().noquote() << "ThemeService: exported theme" << t.id << "("
+                      << t.name << ") to" << filePath
+                      << "— bundled" << mediaManifest.size() << "media,"
+                      << fontManifest.size() << "fonts";
+    return true;
+}
+
+ThemeImportReport ThemeService::importThemeFile(QString filePath)
+{
+    ThemeImportReport report;
     m_lastImportError.clear();
     if (!m_impl) {
-        m_lastImportError = QStringLiteral("Theme service not available");
-        return 0;
+        report.errorMessage = QStringLiteral("Theme service not available");
+        m_lastImportError = report.errorMessage;
+        return report;
     }
 
+    // Reject v1 (JSON) outright — per ARCHITECTURE.md §10.2 the format
+    // break is deliberate. Sniff the leading bytes: v2 = PK\x03\x04, v1
+    // would start with '{' or whitespace. We don't want a maintenance-
+    // forever parser fork; the error tells the user how to recover.
+    QFile probe(filePath);
+    if (!probe.open(QIODevice::ReadOnly)) {
+        report.errorMessage = QStringLiteral("Cannot open %1: %2")
+                                  .arg(filePath, probe.errorString());
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
+    const QByteArray head = probe.read(4);
+    probe.close();
+    if (head.size() < 4 || head[0] != 'P' || head[1] != 'K'
+        || (uint8_t(head[2]) != 0x03) || (uint8_t(head[3]) != 0x04)) {
+        report.errorMessage = QStringLiteral(
+            "This file was exported by an older version of Crater. "
+            "Please re-export from the original installation.");
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
+
+    bundle::ZipReader zip(filePath);
+    if (!zip.isOpen()) {
+        report.errorMessage = zip.errorString();
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
+
+    // ── Validate manifest ───────────────────────────────────────────────
+    const QByteArray manifestBytes = zip.readEntry(QStringLiteral("manifest.json"));
+    if (manifestBytes.isEmpty()) {
+        report.errorMessage = QStringLiteral("Bundle is missing manifest.json");
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
     QJsonParseError pe{};
-    const auto doc = QJsonDocument::fromJson(jsonText.toUtf8(), &pe);
-    if (pe.error != QJsonParseError::NoError || !doc.isObject()) {
-        m_lastImportError = QStringLiteral("Not a valid JSON document: %1").arg(pe.errorString());
-        return 0;
+    const QJsonDocument manifestDoc = QJsonDocument::fromJson(manifestBytes, &pe);
+    if (pe.error != QJsonParseError::NoError || !manifestDoc.isObject()) {
+        report.errorMessage = QStringLiteral("manifest.json is not valid JSON: %1")
+                                  .arg(pe.errorString());
+        m_lastImportError = report.errorMessage;
+        return report;
     }
-    const QVariantMap wrapper = doc.object().toVariantMap();
-
-    if (wrapper.value("kind").toString() != QLatin1String("craterheme")) {
-        m_lastImportError = QStringLiteral("File is not a Crater theme (missing magic header)");
-        return 0;
+    const QJsonObject manifest = manifestDoc.object();
+    if (manifest.value(QStringLiteral("kind")).toString() != QLatin1String("craterheme")) {
+        report.errorMessage = QStringLiteral("manifest.json missing craterheme magic header");
+        m_lastImportError = report.errorMessage;
+        return report;
     }
-    if (wrapper.value("formatVersion").toInt() != 1) {
-        m_lastImportError = QStringLiteral("Unsupported formatVersion %1; expected 1")
-                                .arg(wrapper.value("formatVersion").toInt());
-        return 0;
+    if (manifest.value(QStringLiteral("formatVersion")).toInt() != kBundleFormatVersion) {
+        report.errorMessage = QStringLiteral(
+            "Unsupported formatVersion %1; expected %2")
+            .arg(manifest.value(QStringLiteral("formatVersion")).toInt())
+            .arg(kBundleFormatVersion);
+        m_lastImportError = report.errorMessage;
+        return report;
     }
     static const QSet<QString> validKinds{ "song", "scripture", "presentation" };
-    const QString kind = wrapper.value("themeKind").toString();
+    const QString kind = manifest.value(QStringLiteral("themeKind")).toString();
     if (!validKinds.contains(kind)) {
-        m_lastImportError = QStringLiteral("Unknown themeKind '%1'").arg(kind);
-        return 0;
+        report.errorMessage = QStringLiteral("Unknown themeKind '%1'").arg(kind);
+        m_lastImportError = report.errorMessage;
+        return report;
     }
 
-    const QVariantMap tokens = wrapper.value("tokens").toMap();
-    const QStringList errs = validateTokensV2(tokens);
+    // ── Read theme.json (the rewritten tokens body) ─────────────────────
+    const QByteArray themeBytes = zip.readEntry(QStringLiteral("theme.json"));
+    if (themeBytes.isEmpty()) {
+        report.errorMessage = QStringLiteral("Bundle is missing theme.json");
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
+    const QJsonDocument themeDoc = QJsonDocument::fromJson(themeBytes, &pe);
+    if (pe.error != QJsonParseError::NoError || !themeDoc.isObject()) {
+        report.errorMessage = QStringLiteral("theme.json is not valid JSON: %1")
+                                  .arg(pe.errorString());
+        m_lastImportError = report.errorMessage;
+        return report;
+    }
+    QVariantMap onDiskTokens = themeDoc.object().toVariantMap();
+
+    // ── Best-effort media import ────────────────────────────────────────
+    // Track every on-disk file we create so a later catastrophic failure
+    // (theme INSERT itself) can roll the filesystem back. SQLite gives us
+    // atomicity for free; the filesystem does not (ARCHITECTURE.md §10.4).
+    QStringList createdFiles;
+    const auto rollbackFiles = [&]() {
+        for (const QString& p : createdFiles) QFile::remove(p);
+    };
+
+    QHash<QString, qint64> hashToMediaId;
+    const QJsonArray mediaArr = manifest.value(QStringLiteral("media")).toArray();
+    for (const QJsonValue& v : mediaArr) {
+        const QJsonObject e = v.toObject();
+        const QString hash = e.value(QStringLiteral("hash")).toString();
+        const QString origName = e.value(QStringLiteral("originalFilename")).toString();
+        const qint64  expected = e.value(QStringLiteral("bytes")).toVariant().toLongLong();
+        if (hash.isEmpty()) continue;
+
+        // Locate the entry in the zip — we don't know the extension a
+        // priori, so probe the names. Bundle filenames are
+        // "media/<hash>.<ext>" or just "media/<hash>" — accept either.
+        QString entryName;
+        for (const QString& candidate : zip.entryNames()) {
+            if (candidate.startsWith(QStringLiteral("media/") + hash)) {
+                entryName = candidate;
+                break;
+            }
+        }
+        if (entryName.isEmpty()) {
+            report.mediaWarnings.append(QStringLiteral(
+                "missing media entry for '%1' (hash %2…)").arg(origName, hash.left(8)));
+            continue;
+        }
+        const QByteArray bytes = zip.readEntry(entryName);
+        if (bytes.isEmpty()) {
+            report.mediaWarnings.append(QStringLiteral(
+                "could not read or CRC failed for '%1'").arg(origName));
+            continue;
+        }
+        if (bytes.size() != expected) {
+            report.mediaWarnings.append(QStringLiteral(
+                "size mismatch for '%1': bundle says %2, got %3")
+                .arg(origName).arg(expected).arg(bytes.size()));
+            continue;
+        }
+        if (sha256Hex(bytes) != hash) {
+            report.mediaWarnings.append(QStringLiteral(
+                "hash mismatch for '%1' (possibly tampered)").arg(origName));
+            continue;
+        }
+
+        // Extract to a staging file, then route through MediaService so
+        // §5.1 boundary validation (magic bytes, size cap, path
+        // confinement) runs on the same path it does for normal imports.
+        const QString stagingDir =
+            QDir(db::DbPaths::importStagingDir())
+                .filePath(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        QDir().mkpath(stagingDir);
+        const QString stagingPath = QDir(stagingDir).filePath(
+            origName.isEmpty() ? hash : origName);
+        QFile out(stagingPath);
+        if (!out.open(QIODevice::WriteOnly)) {
+            report.mediaWarnings.append(QStringLiteral(
+                "cannot stage '%1': %2").arg(origName, out.errorString()));
+            continue;
+        }
+        out.write(bytes);
+        out.close();
+
+        if (!m_media) {
+            report.mediaWarnings.append(QStringLiteral(
+                "MediaService not wired — skipped '%1'").arg(origName));
+            QFile::remove(stagingPath);
+            QDir(stagingDir).removeRecursively();
+            continue;
+        }
+        const qint64 newId = m_media->importPathSync(stagingPath);
+        QFile::remove(stagingPath);
+        QDir(stagingDir).removeRecursively();
+        if (newId == 0) {
+            report.mediaWarnings.append(QStringLiteral(
+                "MediaService refused '%1': %2")
+                .arg(origName, m_media->lastImportError()));
+            continue;
+        }
+        hashToMediaId.insert(hash, newId);
+        // The new media file lives at <mediaDir>/<filename>; MediaService
+        // owns its layout, but the absolute path is recoverable via
+        // byId(newId).path. Track it for potential rollback.
+        const MediaItem mi = m_media->byId(newId);
+        if (!mi.path.isEmpty()) createdFiles.append(mi.path);
+    }
+
+    // ── Best-effort font import ─────────────────────────────────────────
+    const QJsonArray fontArr = manifest.value(QStringLiteral("fonts")).toArray();
+    for (const QJsonValue& v : fontArr) {
+        const QJsonObject e = v.toObject();
+        const QString hash   = e.value(QStringLiteral("hash")).toString();
+        const QString family = e.value(QStringLiteral("family")).toString();
+        const qint64  expected = e.value(QStringLiteral("bytes")).toVariant().toLongLong();
+        if (hash.isEmpty()) continue;
+
+        QString entryName;
+        for (const QString& candidate : zip.entryNames()) {
+            if (candidate.startsWith(QStringLiteral("fonts/") + hash)) {
+                entryName = candidate;
+                break;
+            }
+        }
+        if (entryName.isEmpty()) {
+            report.fontWarnings.append(QStringLiteral(
+                "missing font entry for '%1' (hash %2…)").arg(family, hash.left(8)));
+            continue;
+        }
+        const QByteArray bytes = zip.readEntry(entryName);
+        if (bytes.isEmpty() || bytes.size() != expected || sha256Hex(bytes) != hash) {
+            report.fontWarnings.append(QStringLiteral(
+                "integrity check failed for '%1'").arg(family));
+            continue;
+        }
+
+        if (!m_fonts) {
+            report.fontWarnings.append(QStringLiteral(
+                "FontService not wired — skipped '%1'").arg(family));
+            continue;
+        }
+
+        // FontService.importFontFile wants a path, so stage to disk first.
+        const QString stagingDir =
+            QDir(db::DbPaths::importStagingDir())
+                .filePath(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        QDir().mkpath(stagingDir);
+        const QString stagingPath = QDir(stagingDir).filePath(hash);
+        QFile out(stagingPath);
+        if (!out.open(QIODevice::WriteOnly)) {
+            report.fontWarnings.append(QStringLiteral(
+                "cannot stage font '%1': %2").arg(family, out.errorString()));
+            continue;
+        }
+        out.write(bytes);
+        out.close();
+
+        const UserFont uf = m_fonts->importFontFile(stagingPath);
+        QFile::remove(stagingPath);
+        QDir(stagingDir).removeRecursively();
+        if (uf.id == 0) {
+            report.fontWarnings.append(QStringLiteral(
+                "FontService refused '%1': %2")
+                .arg(family, m_fonts->lastError()));
+            continue;
+        }
+        if (!uf.path.isEmpty()) createdFiles.append(uf.path);
+    }
+
+    // ── Rewrite tokens with resolved media ids ──────────────────────────
+    const QVariantMap runtimeTokens =
+        rewriteTokensForImport(onDiskTokens, hashToMediaId);
+
+    // Validate rewritten tokens. A failure here IS catastrophic — the
+    // bundle's token shape is corrupt independently of media availability,
+    // and creating the theme row with broken tokens would yield an
+    // unusable artifact that the editor would later refuse to save.
+    const QStringList errs = validateTokensV2(runtimeTokens);
     if (!errs.isEmpty()) {
-        m_lastImportError = QStringLiteral("Schema errors: %1").arg(errs.join(QStringLiteral("; ")));
-        return 0;
+        report.errorMessage = QStringLiteral("theme.json schema errors: %1")
+                                  .arg(errs.join(QStringLiteral("; ")));
+        m_lastImportError = report.errorMessage;
+        rollbackFiles();
+        return report;
     }
 
-    QString name = wrapper.value("name").toString().trimmed();
+    // ── Resolve a unique name and INSERT ────────────────────────────────
+    QString name = manifest.value(QStringLiteral("name")).toString().trimmed();
     if (name.isEmpty()) name = QStringLiteral("Imported Theme");
     try {
         name = resolveImportName(m_impl->countByKindName, kind, name);
     } catch (const db::Error& e) {
-        m_lastImportError = QStringLiteral("DB lookup failed: %1").arg(e.message());
-        return 0;
+        report.errorMessage = QStringLiteral("DB lookup failed: %1").arg(e.message());
+        m_lastImportError = report.errorMessage;
+        rollbackFiles();
+        return report;
     }
 
-    return create(kind, name, tokens);
-}
-
-qint64 ThemeService::importThemeFile(QString filePath)
-{
-    m_lastImportError.clear();
-    QFile f(filePath);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        m_lastImportError = QStringLiteral("Cannot open %1: %2").arg(filePath, f.errorString());
-        return 0;
+    const qint64 newId = create(kind, name, runtimeTokens);
+    if (newId == 0) {
+        report.errorMessage = QStringLiteral("theme INSERT failed");
+        m_lastImportError = report.errorMessage;
+        rollbackFiles();
+        return report;
     }
-    const QString json = QString::fromUtf8(f.readAll());
-    return importFromJson(json);
+
+    report.themeId = newId;
+    qInfo().noquote() << "ThemeService: imported theme" << newId << "(" << name
+                      << ") — media warnings:" << report.mediaWarnings.size()
+                      << "font warnings:" << report.fontWarnings.size();
+    return report;
 }
 
-QString ThemeService::lastImportError() const
+void ThemeService::sweepImportStaging()
 {
-    return m_lastImportError;
+    // The bundle import path (importThemeFile) creates per-import temp
+    // directories under AppDataLocation/.import-staging/<uuid>/ and
+    // cleans them up on success/failure. A process kill mid-import would
+    // leak the directory. Sweep at startup so the leak is bounded to one
+    // run. Idempotent — safe to call when the directory doesn't exist.
+    QDir staging(db::DbPaths::importStagingDir());
+    if (!staging.exists()) return;
+    const auto entries = staging.entryList(
+        QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden);
+    int swept = 0;
+    for (const QString& name : entries) {
+        QDir(staging.filePath(name)).removeRecursively();
+        ++swept;
+    }
+    if (swept > 0) {
+        qInfo().noquote() << "ThemeService::sweepImportStaging: removed"
+                          << swept << "leftover staging entries";
+    }
 }
 
 qint64 ThemeService::duplicateTheme(qint64 id, QString newName)

@@ -55,8 +55,9 @@ constexpr int kPromoteWindow   = 60;
 // Inline QML loaded into the headless window. Imports `Crater` so it can
 // reference `ProjectionScene` (a type registered into the same module the
 // main app uses). `outputKind="ndi"` is the whole reason this scene exists
-// — it makes ProjectionScene resolve via SettingsService.themeIdForNdi in
-// dual mode.
+// — it makes ProjectionScene resolve via the OutputService registry's
+// "ndi" OutputBinding (its per-kind theme slots + its transition style /
+// duration) in dual mode.
 //
 // `opacity: NdiService.blank ? 0 : 1` is the cooperative perf hint for the
 // blank toggle — when the operator blanks the broadcast, the scene graph

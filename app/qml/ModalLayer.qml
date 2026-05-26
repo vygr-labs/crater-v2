@@ -51,6 +51,13 @@ Item {
         sourceComponent: ImportDialog { }
     }
 
+    // ── Export theme (.craterheme v2 confirmation, ARCHITECTURE.md §10.3) ─
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "exportTheme"
+        sourceComponent: ExportThemeDialog { }
+    }
+
     // ── Schedule dropdown popover (anchored under TopBar) ───────────────
     Loader {
         anchors.fill: parent
