@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QPdfDocument>
+#include <QSet>
 #include <QUrl>
 #include <QtConcurrent>
 
@@ -215,7 +216,7 @@ struct MediaService::Impl
     std::optional<QList<MediaItem>> cachedAll;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("MediaService"))
         , selectAll(conn.prepare(QStringLiteral(
             "SELECT id, path, title, type, is_favorite, added_at, duration_ms, page_count "
             "FROM media ORDER BY added_at DESC")))
@@ -628,6 +629,84 @@ void MediaService::remove(qint64 id)
         invalidateCache();
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::remove():" << e.message();
+    }
+}
+
+void MediaService::sweepOrphans()
+{
+    if (!m_impl) return;
+    try {
+        // Snapshot every (id, path) the table still references. selectAll
+        // is the already-prepared statement; reusing it avoids spinning
+        // up an ad-hoc Statement for a one-shot pass. Paths are stored
+        // post-cleanPath at import time (see line ~96), so cleanPath
+        // again on the disk-walk side gives a like-for-like comparison
+        // across OS path-separator quirks.
+        QSet<QString> referenced;
+        QSet<qint64>  referencedIds;
+        {
+            auto& sel = m_impl->selectAll;
+            sel.reset();
+            while (sel.step()) {
+                referencedIds.insert(sel.columnInt64(0));
+                referenced.insert(QDir::cleanPath(sel.columnText(1)));
+            }
+        }
+
+        const QDir mediaDir(db::DbPaths::mediaDir());
+        if (!mediaDir.exists()) return;  // first-run: nothing to sweep yet
+
+        int removed = 0;
+
+        // Top-level managed media. Layout is intentionally flat — every
+        // imported file lives directly under mediaDir/, with thumbs/ the
+        // only sub-dir we own. Files NOT in the referenced set are
+        // orphans whose DB row was deleted but whose file QFile::remove
+        // couldn't clear at the time (typically a Windows transient
+        // file lock).
+        const auto files = mediaDir.entryInfoList(
+            QDir::Files | QDir::NoDotAndDotDot);
+        for (const auto& fi : files) {
+            const QString cleaned = QDir::cleanPath(fi.absoluteFilePath());
+            if (referenced.contains(cleaned)) continue;
+            if (QFile::remove(fi.absoluteFilePath())) {
+                ++removed;
+                qInfo().noquote() << "MediaService::sweepOrphans: removed orphan"
+                                  << fi.fileName();
+            } else {
+                qWarning().noquote() << "MediaService::sweepOrphans: could not remove"
+                                     << fi.fileName();
+            }
+        }
+
+        // Thumbs: <mediaDir>/thumbs/<id>.jpg. An orphan thumb is any
+        // .jpg whose stem doesn't parse as a referenced media id —
+        // either the row was deleted (typical) or the file is stray
+        // (filename never came from VideoThumbnailer's naming, also a
+        // candidate for sweeping).
+        const QDir thumbs(mediaDir.filePath(QStringLiteral("thumbs")));
+        if (thumbs.exists()) {
+            const auto thumbFiles = thumbs.entryInfoList(
+                QStringList{QStringLiteral("*.jpg")},
+                QDir::Files | QDir::NoDotAndDotDot);
+            for (const auto& fi : thumbFiles) {
+                bool ok = false;
+                const qint64 id = fi.completeBaseName().toLongLong(&ok);
+                if (ok && referencedIds.contains(id)) continue;
+                if (QFile::remove(fi.absoluteFilePath())) {
+                    ++removed;
+                    qInfo().noquote() << "MediaService::sweepOrphans: removed orphan thumb"
+                                      << fi.fileName();
+                }
+            }
+        }
+
+        if (removed > 0) {
+            qInfo().noquote() << "MediaService::sweepOrphans: reclaimed"
+                              << removed << "orphan file(s)";
+        }
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::sweepOrphans():" << e.message();
     }
 }
 

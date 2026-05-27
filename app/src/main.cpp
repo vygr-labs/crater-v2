@@ -344,6 +344,14 @@ int main(int argc, char* argv[])
     // Clean up any .import-staging/ leftovers from a process kill in a
     // prior session (§10.4). Idempotent.
     crater::ThemeService::sweepImportStaging();
+    // Reclaim any orphaned files in managed media storage — files whose
+    // DB rows were deleted but whose on-disk file was held by a Windows
+    // file lock or other transient failure during remove(). Synchronous
+    // and racing-write-free: this runs before any QML loads and before
+    // any import path can fire, so the (id, path) snapshot it reads is
+    // authoritative for the duration of the sweep. Idempotent: empty
+    // libraries are a no-op.
+    mediaService.sweepOrphans();
     crater::OutputService     outputService;
     // Hand OutputService a ThemeService reference so its one-shot legacy
     // migration (Settings/themeIdFor* → Outputs/<id>/themes) can look up

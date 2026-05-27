@@ -86,7 +86,7 @@ struct FontService::Impl
     std::optional<QList<UserFont>> cachedAll;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("FontService"))
         , selectAll(conn.prepare(QStringLiteral(
             "SELECT id, hash, family, path, added_at FROM user_fonts ORDER BY family")))
         , selectByHash(conn.prepare(QStringLiteral(

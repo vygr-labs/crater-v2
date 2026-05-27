@@ -153,7 +153,7 @@ struct SongService::Impl
     std::optional<QList<Song>> cachedAll;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("SongService"))
         // All three SELECT-from-songs paths share the same column layout so
         // readSongRow can be reused. created_at + updated_at sit at columns
         // 7-8; any additional columns (e.g. searchFts's bm25 score) come after.

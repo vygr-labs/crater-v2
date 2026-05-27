@@ -69,7 +69,7 @@ struct ScheduleService::Impl
     db::Statement kvDel;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("ScheduleService"))
         , loadCurrent(conn.prepare(QStringLiteral(
             "SELECT items_json FROM current_schedule WHERE id = 1")))
         , updateCurrentRow(conn.prepare(QStringLiteral(

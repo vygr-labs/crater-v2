@@ -1,5 +1,6 @@
 #include "db/Statement.h"
 
+#include "db/Connection.h"
 #include "db/Error.h"
 
 #include <sqlite3.h>
@@ -16,12 +17,19 @@ namespace crater::db {
 namespace {
 
 // Process-wide count of in-flight Statement::step() calls. Bumped on entry,
-// decremented on exit. Used only by the SQLITE_BUSY diagnostic below — if
-// step() fails with BUSY and this counter is == 1 at that moment, the lock
-// holder is OUTSIDE this process (another Crater instance, antivirus, sync
-// tool). If > 1, an in-process worker thread is mid-step on a different
-// connection. That two-way split is the cheapest signal for narrowing the
-// hunt for a writer that takes more than the configured busy_timeout.
+// decremented on exit.
+//
+// IMPORTANT — limitation of this counter:
+// This counter ONLY tracks threads currently inside `sqlite3_step()`. A
+// connection sitting BETWEEN `BEGIN TRANSACTION` and `COMMIT` (i.e.,
+// holding the WAL writer lock while user code runs on the thread) is
+// invisible here. So `concurrent==0` does NOT prove the lock holder is
+// out-of-process — only that no other thread is mid-step right now.
+// For the actual "which in-process connection holds the writer" answer,
+// see the `lock-holders=[...]` field emitted by the BUSY diagnostic
+// below — that walks the live Connection registry and reports each
+// connection's autocommit state plus how long its current transaction
+// has been open.
 std::atomic<int> g_activeSteps{0};
 
 }  // namespace
@@ -119,14 +127,20 @@ bool Statement::step()
 
     // BUSY-specific diagnostic. Reaches this branch only after SQLite's
     // internal busy_handler exhausted PRAGMA busy_timeout (5 s as of the
-    // current Connection.cpp). The single line below captures the four
-    // facts that disambiguate the lock holder:
-    //   • pid           — to compare against running Crater processes
-    //   • concurrent    — in-process step()s active right now (minus self)
-    //   • wal           — WAL file size; a huge WAL suggests checkpoint
-    //                     contention rather than a held writer
-    //   • sql           — the statement that gave up
-    // If concurrent == 0 at BUSY time, the holder is outside this process.
+    // current Connection.cpp). Captures the facts that disambiguate the
+    // lock holder:
+    //   • pid             — to compare against running Crater processes
+    //   • concurrent-steps — in-process step()s active right now (minus self).
+    //                        See the g_activeSteps comment above for what
+    //                        this CAN and CANNOT prove.
+    //   • wal             — WAL file size; a huge WAL suggests checkpoint
+    //                        contention rather than a held writer
+    //   • lock-holders    — per-connection transaction state at this exact
+    //                        moment. The connection labelled "in-txn" with
+    //                        the largest ms count is the prime suspect.
+    //                        This is the field that actually identifies an
+    //                        in-process writer; concurrent-steps cannot.
+    //   • sql             — the statement that gave up
     if (rc == SQLITE_BUSY && m_owner) {
         const char* dbName = sqlite3_db_filename(m_owner, "main");
         const QString dbPath = dbName ? QString::fromUtf8(dbName) : QString();
@@ -135,13 +149,15 @@ bool Statement::step()
         const qint64 walSize = walPath.isEmpty() ? -1 : QFileInfo(walPath).size();
         const char* sqlText = sqlite3_sql(m_stmt);
         const int concurrent = g_activeSteps.load(std::memory_order_acquire) - 1;
+        const QString holders = dumpConnectionStates();
 
         qWarning().noquote()
             << "SQLITE_BUSY diagnostic:"
             << "pid=" << QCoreApplication::applicationPid()
-            << "concurrent=" << concurrent
+            << "concurrent-steps=" << concurrent
             << "wal=" << walSize
             << "db=" << dbPath
+            << "lock-holders=[" << holders << "]"
             << "sql=" << (sqlText ? QString::fromUtf8(sqlText) : QStringLiteral("(no sql)"));
     }
 

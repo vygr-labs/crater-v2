@@ -5,8 +5,14 @@
 
 #include <sqlite3.h>
 
+#include <QDateTime>
 #include <QDebug>
+#include <QStringList>
+
+#include <algorithm>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 namespace crater::db {
 
@@ -22,10 +28,92 @@ int openFlags(OpenMode mode) noexcept
     return SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
 }
 
+// Process-wide registry of live Connection objects. Mutated only on
+// Connection construction / destruction / move; iterated by the SQLITE_BUSY
+// diagnostic when it dumps lock-holder state. A std::mutex is sufficient —
+// the registry is small (~5-10 entries on a running app), and the dump
+// path is rare (only fires on BUSY).
+std::mutex             g_registryMutex;
+std::vector<Connection*> g_registry;
+
+void registerConnection(Connection* c)
+{
+    std::lock_guard<std::mutex> lock(g_registryMutex);
+    g_registry.push_back(c);
+}
+
+void unregisterConnection(Connection* c)
+{
+    std::lock_guard<std::mutex> lock(g_registryMutex);
+    g_registry.erase(std::remove(g_registry.begin(), g_registry.end(), c),
+                     g_registry.end());
+}
+
+// Returns the connection's display name for diagnostic output —
+// service-supplied label if present, else the DB filename basename
+// (importer / migrator connections that don't supply a label still
+// produce something readable in the trace).
+QString displayName(const Connection* c)
+{
+    if (!c) return QStringLiteral("(null)");
+    if (!c->label().isEmpty()) return c->label();
+    const QString& p = c->path();
+    const int slash = qMax(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+    return slash >= 0 ? p.mid(slash + 1) : p;
+}
+
 }  // namespace
 
-Connection::Connection(QStringView path, OpenMode mode)
+// ── Commit / rollback hook trampolines ────────────────────────────────────
+// SQLite calls these from inside its own COMMIT / ROLLBACK code paths,
+// passing back the `this` pointer we registered at hook install time. We
+// emit a one-line log per transaction completion (with duration when known)
+// and clear the BEGIN timestamp so subsequent transactions on the same
+// connection start fresh.
+//
+// Defined at namespace scope (not `static`) so they can be declared as
+// friends in Connection.h without exposing m_txnStartedMs publicly.
+
+int craterDbConnectionCommitHook(void* userData)
+{
+    auto* self = static_cast<Connection*>(userData);
+    if (!self) return 0;
+    const qint64 began = self->m_txnStartedMs.load();
+    const QString name = displayName(self);
+    if (began > 0) {
+        const qint64 dur = QDateTime::currentMSecsSinceEpoch() - began;
+        qInfo().noquote() << QStringLiteral("[%1] COMMIT (%2 ms)").arg(name).arg(dur);
+    } else {
+        // Auto-commit single-statement write — not a tracked transaction.
+        // We still log so the trace covers every write end-to-end; the
+        // "(auto)" suffix disambiguates from BEGIN-COMMIT cycles.
+        qInfo().noquote() << QStringLiteral("[%1] COMMIT (auto)").arg(name);
+    }
+    self->m_txnStartedMs.store(0);
+    return 0;  // 0 = allow commit; non-zero would abort
+}
+
+void craterDbConnectionRollbackHook(void* userData)
+{
+    auto* self = static_cast<Connection*>(userData);
+    if (!self) return;
+    const QString name = displayName(self);
+    const qint64 began = self->m_txnStartedMs.load();
+    if (began > 0) {
+        const qint64 dur = QDateTime::currentMSecsSinceEpoch() - began;
+        qWarning().noquote()
+            << QStringLiteral("[%1] ROLLBACK (%2 ms)").arg(name).arg(dur);
+    } else {
+        qWarning().noquote() << QStringLiteral("[%1] ROLLBACK").arg(name);
+    }
+    self->m_txnStartedMs.store(0);
+}
+
+// ── Connection ───────────────────────────────────────────────────────────
+
+Connection::Connection(QStringView path, OpenMode mode, QStringView label)
     : m_path(path.toString())
+    , m_label(label.toString())
 {
     const int flags = openFlags(mode) | SQLITE_OPEN_FULLMUTEX;
     const QByteArray utf8 = m_path.toUtf8();
@@ -57,11 +145,30 @@ Connection::Connection(QStringView path, OpenMode mode)
         m_db = nullptr;
         throw;
     }
+
+    // Install per-connection commit/rollback hooks so every transaction
+    // boundary lands in the log with this connection's label. Hooks receive
+    // `this` as the userData pointer; trampolines route into the trace
+    // emitters above.
+    sqlite3_commit_hook  (m_db, &craterDbConnectionCommitHook,   this);
+    sqlite3_rollback_hook(m_db, &craterDbConnectionRollbackHook, this);
+
+    registerConnection(this);
 }
 
 Connection::~Connection()
 {
     if (m_db) {
+        // Diagnostic-on-destruction: if this connection dies mid-transaction,
+        // log it loudly. That's almost certainly a missing tx.commit() or an
+        // exception escape — exactly the bug class the BUSY hunt is looking
+        // for, caught at a different layer.
+        if (sqlite3_get_autocommit(m_db) == 0) {
+            qWarning().noquote()
+                << QStringLiteral("[%1] connection destroyed mid-transaction "
+                                  "— rolling back implicitly").arg(displayName(this));
+        }
+        unregisterConnection(this);
         // sqlite3_close_v2 is safe even with outstanding prepared statements
         // (it defers cleanup), unlike sqlite3_close which would error.
         sqlite3_close_v2(m_db);
@@ -72,14 +179,36 @@ Connection::~Connection()
 Connection::Connection(Connection&& other) noexcept
     : m_db(std::exchange(other.m_db, nullptr))
     , m_path(std::move(other.m_path))
-{}
+    , m_label(std::move(other.m_label))
+    , m_txnStartedMs(other.m_txnStartedMs.exchange(0))
+{
+    if (m_db) {
+        // Re-point the hooks at our new `this`; the moved-from object is
+        // about to be dropped from the registry.
+        sqlite3_commit_hook  (m_db, &craterDbConnectionCommitHook,   this);
+        sqlite3_rollback_hook(m_db, &craterDbConnectionRollbackHook, this);
+        unregisterConnection(&other);
+        registerConnection(this);
+    }
+}
 
 Connection& Connection::operator=(Connection&& other) noexcept
 {
     if (this != &other) {
-        if (m_db) sqlite3_close_v2(m_db);
+        if (m_db) {
+            unregisterConnection(this);
+            sqlite3_close_v2(m_db);
+        }
         m_db   = std::exchange(other.m_db, nullptr);
         m_path = std::move(other.m_path);
+        m_label = std::move(other.m_label);
+        m_txnStartedMs.store(other.m_txnStartedMs.exchange(0));
+        if (m_db) {
+            sqlite3_commit_hook  (m_db, &craterDbConnectionCommitHook,   this);
+            sqlite3_rollback_hook(m_db, &craterDbConnectionRollbackHook, this);
+            unregisterConnection(&other);
+            registerConnection(this);
+        }
     }
     return *this;
 }
@@ -151,6 +280,49 @@ void Connection::setUserVersion(qint64 v)
 {
     // PRAGMA does not accept bound parameters; format directly.
     exec(QStringLiteral("PRAGMA user_version = %1").arg(v));
+}
+
+bool Connection::inTransaction() const noexcept
+{
+    // sqlite3_get_autocommit returns non-zero when autocommit is ON
+    // (no transaction). Inverted result is "we're inside one."
+    return m_db && sqlite3_get_autocommit(m_db) == 0;
+}
+
+void Connection::markTransactionBegin() noexcept
+{
+    m_txnStartedMs.store(QDateTime::currentMSecsSinceEpoch());
+}
+
+// ── Process-wide diagnostic ──────────────────────────────────────────────
+
+QString dumpConnectionStates()
+{
+    std::lock_guard<std::mutex> lock(g_registryMutex);
+    if (g_registry.empty()) return QStringLiteral("(no connections)");
+
+    QStringList parts;
+    parts.reserve(static_cast<int>(g_registry.size()));
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    for (auto* c : g_registry) {
+        if (!c) continue;
+        const QString name = displayName(c);
+        if (c->inTransaction()) {
+            const qint64 began = c->transactionStartedMs();
+            if (began > 0) {
+                parts << QStringLiteral("%1(in-txn,%2ms)").arg(name).arg(now - began);
+            } else {
+                // In a transaction but markTransactionBegin wasn't called —
+                // implicit transaction from a multi-step write, or
+                // SQLite's internal state. Still flag it.
+                parts << QStringLiteral("%1(in-txn,untracked)").arg(name);
+            }
+        } else {
+            parts << QStringLiteral("%1(idle)").arg(name);
+        }
+    }
+    return parts.join(QStringLiteral(", "));
 }
 
 }  // namespace crater::db

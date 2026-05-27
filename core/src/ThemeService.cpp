@@ -347,7 +347,7 @@ struct ThemeService::Impl
     std::optional<QList<Theme>> cachedAll;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("ThemeService"))
         , selectAll(conn.prepare(QStringLiteral(
             "SELECT id, kind, name, tokens_json, is_builtin FROM themes ORDER BY kind, name")))
         , selectById(conn.prepare(QStringLiteral(

@@ -72,6 +72,23 @@ public:
     Q_INVOKABLE void remove(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // One-shot reclaim of orphaned files in AppDataLocation/media/ that
+    // no media table row references. Runs synchronously and is safe at
+    // any time, but the canonical call site is once at startup before
+    // any import path can fire — that's when racing-write concerns are
+    // strictly zero.
+    //
+    // Orphans accumulate when remove()'s best-effort QFile::remove() at
+    // line ~617 fails (file locked, transient permission denial, etc.).
+    // The DB row is gone but the file lingers; without this sweep, that
+    // file would never be reclaimed.
+    //
+    // Covers two locations: the top-level managed-media directory and
+    // its thumbs/ sub-directory. Anything outside those two is left
+    // alone (defensive — operators or future features may park
+    // unrelated artifacts under AppDataLocation/media/ later).
+    Q_INVOKABLE void sweepOrphans();
+
     // Rename a row's display title. The managed file on disk is NOT renamed —
     // its filename is collision-engineered at import time and we use the id
     // (not the title) as the stable reference for thumbnails and theme nodes.

@@ -205,12 +205,31 @@ Item {
     }
 
     function batchDelete() {
+        // Confirmation modal mirrors the per-row Delete in _mediaMenuItems
+        // — friction proportional to consequence. Batch is the more
+        // destructive of the two delete paths (N files, not 1), so it
+        // gets the same "Are you sure?" gate the single-row case has
+        // had since the start. Selection is snapshotted before opening
+        // the modal so subsequent clicks (e.g. clearing the batch on a
+        // background click while the dialog is open) don't shrink the
+        // set we eventually delete.
         const selected = AppState.mediaBatchSelection.slice()
-        for (let i = 0; i < selected.length; i++) {
-            const m = root.filteredMedia[selected[i]]
-            if (m) MediaService.remove(m.id)
-        }
-        AppState.clearMediaBatchSelection()
+        const n = selected.length
+        if (n === 0) return
+        AppState.openModal("confirm", {
+            title:       qsTr("Delete %1 item%2?").arg(n).arg(n === 1 ? "" : "s"),
+            body:        qsTr("Remove %1 selected item%2 from your library? "
+                            + "Files will also be deleted from managed media storage.")
+                            .arg(n).arg(n === 1 ? "" : "s"),
+            confirmText: qsTr("Delete"),
+            onConfirm:   function() {
+                for (let i = 0; i < selected.length; i++) {
+                    const m = root.filteredMedia[selected[i]]
+                    if (m) MediaService.remove(m.id)
+                }
+                AppState.clearMediaBatchSelection()
+            }
+        })
     }
 
     // Shared right-click menu builder — grid and list view both invoke it so
@@ -836,6 +855,20 @@ Item {
                     anchors.margins: 3
                     radius: 0
                     color: "#0d0d12"
+                    // z:1 lifts thumb (and its nested interactive children
+                    // — most importantly the batch-select checkbox's
+                    // MouseArea) above cellMa, which is a sibling declared
+                    // later in this delegate and therefore wins hit testing
+                    // by default. Without this, clicks on the checkbox
+                    // were swallowed by cellMa's plain-click branch
+                    // (fluid-focus + pushPreview) and never reached
+                    // toggleBatch — multi-select was effectively dead via
+                    // the checkbox. Ctrl/Shift+click on the tile still
+                    // worked because that path lives inside cellMa itself.
+                    // Non-MouseArea content inside thumb (the image, type
+                    // badge, state pill, hover scrim) doesn't capture
+                    // events, so plain clicks still fall through to cellMa.
+                    z: 1
                     // Border priority: batch (always vivid brand) > selected
                     // (brand-pressed when pane focused, borderStrong when not)
                     // > hover > none. The selected border was previously
@@ -1222,8 +1255,14 @@ Item {
                 }
 
                 // Batch-checkbox (visible on hover or while batch is active)
+                // z:1 lifts this above rowMa (the row-wide click handler
+                // declared later in this delegate). Without it, clicks on
+                // the checkbox were swallowed by rowMa's plain-click branch
+                // and toggleBatch never fired. Same bug pattern as the
+                // grid delegate's thumb.z fix.
                 Rectangle {
                     id: rowCheckbox
+                    z: 1
                     visible: rowMa.containsMouse || listRow._batch
                           || AppState.mediaBatchSelection.length > 0
                     anchors.left: parent.left
@@ -1360,6 +1399,11 @@ Item {
 
                 Row {
                     id: rowRight
+                    // z:1 lifts the right-side cluster (LIVE/PREVIEW pill,
+                    // hover favorite-toggle star) above rowMa so the
+                    // favorite star's MouseArea can actually receive
+                    // clicks — same z-order fix as rowCheckbox above.
+                    z: 1
                     anchors.right: parent.right
                     anchors.rightMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter

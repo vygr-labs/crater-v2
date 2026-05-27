@@ -53,12 +53,109 @@ Item {
         interval: 120
         onTriggered: root._debouncedQuery = root.queryText
     }
-    onQueryTextChanged: queryDebounce.restart()
+    onQueryTextChanged: {
+        queryDebounce.restart()
+        // Translation switch is INTENTIONALLY un-debounced — the operator
+        // should see the sidebar flip the instant they finish typing the
+        // code. Reconcile is cheap (one tokenize + hash lookup).
+        _reconcileQueryTranslation()
+    }
 
     // Translations come back as uppercase codes ("KJV"); the sidebar stores
     // them lowercase ("kjv").
     readonly property string activeTranslation:
         (AppState.activeLibraryGroup.scripture || "").toUpperCase()
+
+    // ── Translation auto-switch from query token ────────────────────────
+    // Typing a known translation code into the search input (e.g. "jn 3:16
+    // NIV" or just "NIV") flips the active translation to that code. When
+    // the operator backspaces the code out, we restore whichever translation
+    // they were on before. Lets the operator pivot between versions without
+    // taking their hand off the keyboard to click the sidebar.
+    //
+    // Code recognition is a Set of every installed translation's `.code`
+    // uppercased; `BibleService.translations()` is the canonical source.
+    // We rebuild on translationsChanged so freshly-imported translations
+    // become typeable immediately (no app restart).
+    readonly property var _translationCodeSet: {
+        const set = {}
+        const trs = BibleService.translations()
+        for (let i = 0; i < trs.length; ++i) {
+            set[String(trs[i].code).toUpperCase()] = true
+        }
+        return set
+    }
+    // The translation we switched to because the user typed its code, and
+    // the translation we'll revert to when they remove it. Both empty when
+    // no override is active.
+    property string _queryOverrideCode:    ""
+    property string _priorTranslation:     ""
+    // Set just before we drive a translation switch ourselves, cleared on
+    // the next tick. Lets onActiveTranslationChanged tell "we did this" from
+    // "the operator clicked the sidebar."
+    property bool   _switchingFromOverride: false
+
+    // Scan `text` for the first whole-word token that matches an installed
+    // translation code. Case-insensitive. Returns "" when nothing matches.
+    function _detectQueryTranslation(text) {
+        const tokens = String(text || "").split(/\s+/)
+        for (let i = 0; i < tokens.length; ++i) {
+            const t = String(tokens[i]).toUpperCase()
+            if (t.length > 0 && _translationCodeSet[t]) return t
+        }
+        return ""
+    }
+
+    // Same scan + strip — returns the query with the recognized translation
+    // token removed so the reference parser and FTS search don't have to
+    // deal with the trailing/leading "NIV" remnant.
+    function _strippedQuery(text) {
+        const t = String(text || "")
+        const detected = _detectQueryTranslation(t)
+        if (!detected) return t
+        // Whole-word, case-insensitive replace, single occurrence (the one
+        // _detectQueryTranslation found). \b boundaries keep "KJV" from
+        // chewing into a hypothetical "KJV2".
+        const re = new RegExp("\\b" + detected + "\\b", "i")
+        return t.replace(re, "").replace(/\s+/g, " ").trim()
+    }
+
+    // React to query edits: switch translation if a code appeared, revert
+    // if it disappeared. Drives off raw queryText (not the debounced shadow)
+    // so the sidebar flip is instant — feels like the input owns the
+    // translation while a code is in it.
+    //
+    // Critical: after switching translation, force _debouncedQuery to the
+    // current queryText synchronously. parsedRef reads _parserQuery which
+    // reads _debouncedQuery; without this push, parsedRef would re-evaluate
+    // against the new translation but the OLD query, leaving the cursor on
+    // whatever stale row matched, until the 120 ms debounce eventually
+    // fires and corrects it. The force-push collapses that race into one
+    // deterministic tick — the same well-tested onParsedRefChanged path
+    // that handles normal reference typing does all the cursor work.
+    function _reconcileQueryTranslation() {
+        const detected = _detectQueryTranslation(queryText)
+        if (detected) {
+            if (detected !== activeTranslation && detected !== _queryOverrideCode) {
+                if (_priorTranslation === "") {
+                    _priorTranslation = activeTranslation
+                }
+                _queryOverrideCode = detected
+                _switchingFromOverride = true
+                AppState.setLibraryGroup(tabKey, detected.toLowerCase())
+                _debouncedQuery = queryText
+                Qt.callLater(function() { _switchingFromOverride = false })
+            }
+        } else if (_queryOverrideCode !== "" && _priorTranslation !== "") {
+            const prev = _priorTranslation
+            _queryOverrideCode = ""
+            _priorTranslation  = ""
+            _switchingFromOverride = true
+            AppState.setLibraryGroup(tabKey, prev.toLowerCase())
+            _debouncedQuery = queryText
+            Qt.callLater(function() { _switchingFromOverride = false })
+        }
+    }
 
     // Cache-by-translation: BibleService.allVerses is ~80 ms cold for KJV.
     // The expensive call lives in a binding whose only dependency is the
@@ -72,9 +169,18 @@ Item {
     // operator always has something to scroll while deciding what to type —
     // matches the electron behavior of returning `allScriptures()` when the
     // search box is empty regardless of mode.
+    // Strip any translation-code token from the debounced query before
+    // handing it to the reference parser / FTS search — those paths only
+    // care about the verse-reference / search-text portion. Without this,
+    // "jn 3:16 NIV" would parse with "NIV" as a stray trailing token and
+    // a bare "NIV" search would yield zero hits while the switch quietly
+    // succeeded behind it. Stripping makes the typed code feel like a
+    // sidebar control: it changes the corpus, it doesn't filter inside.
+    readonly property string _parserQuery: _strippedQuery(_debouncedQuery)
+
     readonly property var currentVerses: {
-        if (mode === "search" && _debouncedQuery.length > 0) {
-            return BibleService.search(_debouncedQuery, activeTranslation)
+        if (mode === "search" && _parserQuery.length > 0) {
+            return BibleService.search(_parserQuery, activeTranslation)
         }
         return versesForActiveTranslation
     }
@@ -82,8 +188,8 @@ Item {
     // Reference-parser result (reference mode only). Used to scroll-to-match.
     readonly property var parsedRef: {
         if (mode !== "reference") return null
-        if (_debouncedQuery.length === 0) return null
-        const v = BibleService.parseReference(_debouncedQuery, activeTranslation)
+        if (_parserQuery.length === 0) return null
+        const v = BibleService.parseReference(_parserQuery, activeTranslation)
         return (v && v.text && v.text.length > 0) ? v : null
     }
 
@@ -342,7 +448,15 @@ Item {
         if (idx < 0 || idx >= currentVerses.length) return
         const v = currentVerses[idx]
         if (!v) return
-        AppState.setSearch(tabKey, v.book + " " + v.chapter + " " + v.verse)
+        let text = v.book + " " + v.chapter + " " + v.verse
+        // Preserve the translation override across sync rewrites. Without
+        // this, arrow-key navigation overwrites the input with a plain
+        // reference, the reconcile sees no translation token, and reverts
+        // the operator to the prior version mid-scroll. Re-appending the
+        // active override keeps the typed-code state alive as long as the
+        // operator is still navigating the synced reference.
+        if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
+        AppState.setSearch(tabKey, text)
     }
 
     // When the parser yields a match, scroll there and highlight.
@@ -408,6 +522,22 @@ Item {
         const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
+
+        // Force-resync list.currentIndex with fluidIndex AND re-center the
+        // viewport — but only when needed. ListView's model-swap path
+        // internally writes currentIndex = 0, which the standalone Binding
+        // doesn't recover from (it only re-pushes when its `value` —
+        // fluidIndex — changes; fluidIndex hasn't changed). The
+        // search-mode keystroke path also fires this handler but usually
+        // doesn't break the binding, so the re-sync is a no-op there
+        // — and the Center scroll would jolt the viewport on every
+        // typed character. Guarding both behind the "binding broke"
+        // check avoids that lag.
+        Qt.callLater(function() {
+            if (list.currentIndex === idx) return
+            list.currentIndex = idx
+            list.positionViewAtIndex(idx, ListView.Center)
+        })
     }
 
     // Refresh preview when the operator switches into this tab.
@@ -479,7 +609,34 @@ Item {
     // into the old corpus, and silently mapping coords across translations
     // gets ambiguous fast for ranges that include subdivision verses ("2a").
     onActiveTranslationChanged: {
+        // If the operator flipped translation manually (sidebar click or
+        // dblclick), our remembered "prior" is stale — backspacing the
+        // typed code later should NOT yank them back. Detect "not us"
+        // via the _switchingFromOverride one-tick flag.
+        if (!_switchingFromOverride && _queryOverrideCode !== "") {
+            _queryOverrideCode = ""
+            _priorTranslation  = ""
+        }
         AppState.clearLibrarySelected(tabKey)
+
+        // When we drove the switch via the typed-code override, leave
+        // cursor placement to onParsedRefChanged (it already ran with
+        // synchronously-pushed _debouncedQuery). But the model swap
+        // also reset ListView's viewport to the top, and Contain-mode
+        // positionViewAtIndex in onCurrentIndexChanged is too lazy to
+        // re-scroll once the focused row is technically visible
+        // anywhere in the viewport. Force-center on the actual
+        // fluidIndex AFTER the cascade settles so the operator sees
+        // the highlighted verse in the middle of the list instead of
+        // perceiving Gen 1:1 at top as "the highlight."
+        if (_switchingFromOverride) {
+            Qt.callLater(function() {
+                if (root.fluidIndex >= 0 && root.fluidIndex < root.currentVerses.length)
+                    list.positionViewAtIndex(root.fluidIndex, ListView.Center)
+            })
+            return
+        }
+
         if (!_focusedCoord) {
             AppState.setLibraryFluid(tabKey, 0)
             return
@@ -487,7 +644,10 @@ Item {
         const idx = indexOf(_focusedCoord.book, _focusedCoord.chapter, _focusedCoord.verse)
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
-            Qt.callLater(() => list.positionViewAtIndex(idx, ListView.Contain))
+            // Center, not Contain — model swap reset the viewport. Same
+            // reasoning as the override branch above; applies to manual
+            // sidebar translation switches too.
+            Qt.callLater(() => list.positionViewAtIndex(idx, ListView.Center))
         } else {
             AppState.setLibraryFluid(tabKey, 0)
         }
@@ -644,7 +804,19 @@ Item {
         visible: root.currentVerses.length > 0
 
         model: root.currentVerses
-        currentIndex: root.fluidIndex
+
+        // NOT an inline `currentIndex: root.fluidIndex` binding. Qt 6
+        // ListView resets currentIndex to 0 internally whenever the
+        // `model` property is reassigned (e.g. translation switch), and
+        // that imperative write *permanently breaks* an inline binding.
+        // The standalone Binding below re-pushes fluidIndex into
+        // currentIndex on every fluidIndex change, so the binding
+        // survives model swaps. Symptom of the inline form: after
+        // typing a translation code, the visual highlight stuck on
+        // Gen 1:1 even though fluidIndex was on the right verse —
+        // arrow keys would then jump from the misleading Gen 1:1 to
+        // the actual focused verse + 1 (e.g. Gen 1:3 + Down → Gen 1:4
+        // with the highlight visually skipping 1:2/1:3).
 
         onCurrentIndexChanged: {
             const v = root.currentVerses[currentIndex]
@@ -922,6 +1094,17 @@ Item {
                 }
             }
         }
+    }
+
+    // Survives the model-swap binding-break described above the ListView.
+    // Without this, the ListView's internal setCurrentIndex(0) call during
+    // a translation switch leaves currentIndex stuck at 0 forever; with it,
+    // every fluidIndex change re-pushes into currentIndex.
+    Binding {
+        target: list
+        property: "currentIndex"
+        value: root.fluidIndex
+        restoreMode: Binding.RestoreBindingOrValue
     }
 
     // ── Keyboard navigation routed from TabSearchBar ────────────────────

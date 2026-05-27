@@ -25,7 +25,7 @@ struct ProjectionService::KvImpl
     db::Statement  upsertStmt;
 
     explicit KvImpl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("ProjectionService"))
         , selectStmt(conn.prepare(QStringLiteral(
             "SELECT value FROM kv WHERE key = ?")))
         , upsertStmt(conn.prepare(QStringLiteral(

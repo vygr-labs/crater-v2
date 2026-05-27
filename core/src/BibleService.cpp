@@ -30,7 +30,7 @@ struct BibleService::Impl
     db::Statement searchScoped;
 
     explicit Impl(const QString& path)
-        : conn(path)
+        : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
             "SELECT code, name, year, description "
             "FROM translations "
