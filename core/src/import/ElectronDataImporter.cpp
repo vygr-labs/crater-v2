@@ -107,6 +107,9 @@ void importBibleData(db::Connection& legacy,
                 find.reset();
                 find.bind(1, code);
                 if (find.step()) ourId = find.columnInt64(0);
+                find.reset();   // close cursor: this reads `target` mid-loop,
+                                // so leaving it open pins the snapshot and the
+                                // next ins.step() write can fail with 517
             }
             legacyTransToOurs.insert(legacyId, ourId);
         }
@@ -162,6 +165,7 @@ void importBibleData(db::Connection& legacy,
                     find.bind(1, ourTrans);
                     find.bind(2, qint64(m.bookNumber));
                     if (find.step()) ourBookId = find.columnInt64(0);
+                    find.reset();   // close cursor before subsequent ins writes
                 }
                 bookLookup.insert({legacyTrans, legacyName}, ourBookId);
             }

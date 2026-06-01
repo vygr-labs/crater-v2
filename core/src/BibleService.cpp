@@ -161,6 +161,8 @@ Verse BibleService::verse(QString translationCode, QString bookName, int chapter
             v.verse           = verseNumber;
             v.text            = stmt.columnText(0);
         }
+        stmt.reset();   // close cursor: don't leave a read txn open on the
+                        // bibles connection between lookups (WAL snapshot pin)
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleService::verse():" << e.message();
     }

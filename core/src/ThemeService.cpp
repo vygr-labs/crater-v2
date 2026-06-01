@@ -478,6 +478,8 @@ Theme ThemeService::theme(qint64 id)
         stmt.reset();
         stmt.bind(1, id);
         if (stmt.step()) t = m_impl->readRow(stmt);
+        stmt.reset();   // close cursor: an open SELECT pins this connection's
+                        // WAL snapshot, silently failing the next update() write
     } catch (const db::Error& e) {
         qWarning().noquote() << "ThemeService::theme():" << e.message();
     }
@@ -494,19 +496,24 @@ Theme ThemeService::defaultFor(QString kind)
         auto& kv = m_impl->getKv;
         kv.reset();
         kv.bind(1, kvKey);
+        qint64 wantId = 0;
+        bool   haveId = false;
         if (kv.step()) {
             bool ok = false;
             const qint64 id = kv.columnText(0).toLongLong(&ok);
-            if (ok) {
-                t = theme(id);
-                if (t.id != 0 && t.kind == kind) return t;
-            }
+            if (ok) { wantId = id; haveId = true; }
+        }
+        kv.reset();   // close cursor before theme()'s query / the early return
+        if (haveId) {
+            t = theme(wantId);
+            if (t.id != 0 && t.kind == kind) return t;
         }
         // 2. Fall back to first built-in of this kind.
         auto& fallback = m_impl->selectFirstBuiltinOfKind;
         fallback.reset();
         fallback.bind(1, kind);
         if (fallback.step()) t = m_impl->readRow(fallback);
+        fallback.reset();   // release read txn
     } catch (const db::Error& e) {
         qWarning().noquote() << "ThemeService::defaultFor():" << e.message();
     }
@@ -567,7 +574,12 @@ void ThemeService::update(qint64 id, QString name, QVariantMap tokens)
         auto& isB = m_impl->selectIsBuiltin;
         isB.reset();
         isB.bind(1, id);
-        if (isB.step() && isB.columnInt(0) != 0) {
+        const bool isBuiltin = isB.step() && isB.columnInt(0) != 0;
+        isB.reset();   // close cursor: this probe runs right before the UPDATE
+                       // write below. Left open, it pins this connection's WAL
+                       // snapshot and the UPDATE fails with SQLITE_BUSY (517) —
+                       // the silent cause of lost theme edits (e.g. video bg).
+        if (isBuiltin) {
             qWarning().noquote() << "ThemeService::update(): refusing to edit built-in theme id="
                                  << id << "— duplicate it first";
             return;
@@ -640,7 +652,9 @@ QString resolveImportName(db::Statement& countStmt, const QString& kind, const Q
         countStmt.reset();
         countStmt.bind(1, kind);
         countStmt.bind(2, n);
-        return countStmt.step() && countStmt.columnInt(0) > 0;
+        const bool found = countStmt.step() && countStmt.columnInt(0) > 0;
+        countStmt.reset();   // close cursor before the create() INSERT that follows
+        return found;
     };
     if (!exists(base)) return base;
     const QString withTag = base + QStringLiteral(" (Import)");

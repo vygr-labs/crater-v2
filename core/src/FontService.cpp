@@ -209,7 +209,11 @@ UserFont FontService::importFontFile(QString path)
         auto& s = m_impl->selectByHash;
         s.reset();
         s.bind(1, hash);
-        if (s.step()) return Impl::readRow(s);
+        const bool hit = s.step();
+        UserFont existing;
+        if (hit) existing = Impl::readRow(s);
+        s.reset();   // close cursor before the insertFont write / dedup return
+        if (hit) return existing;
     } catch (const db::Error& e) {
         m_lastError = QStringLiteral("DB lookup failed: %1").arg(e.message());
         return {};
@@ -299,6 +303,7 @@ bool FontService::removeFont(qint64 id)
             return false;
         }
         path = s.columnText(3);
+        s.reset();   // close cursor before the DELETE write below
     } catch (const db::Error& e) {
         m_lastError = QStringLiteral("DB lookup failed: %1").arg(e.message());
         return false;
@@ -347,7 +352,10 @@ UserFont FontService::byHash(QString hash)
         auto& s = m_impl->selectByHash;
         s.reset();
         s.bind(1, hash);
-        if (s.step()) return Impl::readRow(s);
+        UserFont f;
+        if (s.step()) f = Impl::readRow(s);
+        s.reset();   // release read txn (WAL snapshot pin)
+        return f;
     } catch (const db::Error& e) {
         qWarning().noquote() << "FontService::byHash():" << e.message();
     }
@@ -361,7 +369,10 @@ QString FontService::filePathForFamily(QString family)
         auto& s = m_impl->selectByFamily;
         s.reset();
         s.bind(1, family);
-        if (s.step()) return s.columnText(3);
+        QString path;
+        if (s.step()) path = s.columnText(3);
+        s.reset();   // release read txn (WAL snapshot pin)
+        return path;
     } catch (const db::Error& e) {
         qWarning().noquote() << "FontService::filePathForFamily():" << e.message();
     }

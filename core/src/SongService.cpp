@@ -293,12 +293,14 @@ SongService::SongService(QObject* parent)
             QStringLiteral("SELECT count(*) FROM songs"));
         int songCount = 0;
         if (songCountStmt.step()) songCount = songCountStmt.columnInt(0);
+        songCountStmt.reset();   // close cursor before the rebuild write below
 
         if (songCount > 0) {
             auto ftsCountStmt = m_impl->conn.prepare(
                 QStringLiteral("SELECT count(*) FROM songs_fts"));
             int ftsCount = 0;
             if (ftsCountStmt.step()) ftsCount = ftsCountStmt.columnInt(0);
+            ftsCountStmt.reset();   // close cursor before rebuildFtsIndex()
             if (ftsCount == 0) {
                 qInfo().noquote() << "SongService: songs_fts empty for"
                                   << songCount << "songs — rebuilding now";

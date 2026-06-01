@@ -104,6 +104,36 @@ Rectangle {
             }
         }
 
+        // Copy the previewed scripture to the clipboard — same "quote +
+        // attribution" format the Scripture tab produces. Only shown for
+        // scripture items: songs/media carry no copyText, so the slot stays
+        // empty for them rather than copying something meaningless.
+        IconButton {
+            id: copyBtn
+            anchors.right: settingsBtn.left
+            anchors.rightMargin: Theme.space.xs
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.selectedItem !== null
+                     && root.selectedItem.kind === "scripture"
+                     && !!root.selectedItem.copyText
+            iconName: copyBtn._copied ? "check" : "copy"
+            iconSize: Theme.icon.sm
+
+            property bool _copied: false
+            Timer {
+                id: copiedReset
+                interval: 1200
+                onTriggered: copyBtn._copied = false
+            }
+
+            onClicked: {
+                if (!root.selectedItem || !root.selectedItem.copyText) return
+                ClipboardService.setText(root.selectedItem.copyText)
+                copyBtn._copied = true
+                copiedReset.restart()
+            }
+        }
+
         IconButton {
             id: settingsBtn
             anchors.right: parent.right

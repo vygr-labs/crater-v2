@@ -28,6 +28,7 @@
 #endif
 
 #include "BrowserCastService.h"  // BrowserCast (removable feature)
+#include "ClipboardService.h"
 #include "FileDialogService.h"
 #include "LogReportService.h"
 #include "MediaPlaybackService.h"
@@ -368,6 +369,10 @@ int main(int argc, char* argv[])
     // that. Source window is wired from Main.qml's Component.onCompleted.
     crater::NdiService        ndiService;
     crater::FileDialogService fileDialogService;
+    // Thin QtGui clipboard shim — lets QML copy scripture text to the system
+    // clipboard. Stateless, no deps; see ClipboardService.h for why it's in
+    // the app target rather than crater-core.
+    crater::ClipboardService  clipboardService;
     // LogReportService uploads crater.log to voyagerlabs.tech on an explicit
     // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
     // takes the path main.cpp logs to so it reports the exact file in use.
@@ -416,6 +421,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);

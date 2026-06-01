@@ -129,6 +129,15 @@ Connection::Connection(QStringView path, OpenMode mode, QStringView label)
         throw Error(QStringLiteral("sqlite3_open_v2(%1) failed: %2").arg(m_path, err), rc);
     }
 
+    // Surface SQLite's extended result codes. The primary code is unchanged
+    // for the `(rc & 0xFF) == SQLITE_BUSY` checks in Statement, but the extra
+    // detail turns an opaque "database is locked" (5) into an actionable
+    // signal: SQLITE_BUSY_SNAPSHOT (517) means a write hit a stale read
+    // snapshot — i.e. a SELECT on this connection was stepped to a row and
+    // never reset, pinning the WAL snapshot (ARCHITECTURE.md §3). 517 in the
+    // log points straight at the un-reset cursor; 5 alone hides it.
+    sqlite3_extended_result_codes(m_db, 1);
+
     // Connection-level pragmas. WAL and synchronous are DB-level (persisted on
     // the file) — setting them requires write access. Skip those when opened
     // ReadOnly; the others are per-connection and always safe.

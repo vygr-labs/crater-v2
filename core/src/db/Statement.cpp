@@ -125,10 +125,17 @@ bool Statement::step()
         ? QString::fromUtf8(sqlite3_errmsg(m_owner))
         : QStringLiteral("(no connection)");
 
-    // BUSY-specific diagnostic. Reaches this branch only after SQLite's
-    // internal busy_handler exhausted PRAGMA busy_timeout (5 s as of the
-    // current Connection.cpp). Captures the facts that disambiguate the
-    // lock holder:
+    // BUSY-family diagnostic. We mask to the primary code because extended
+    // result codes are enabled (Connection.cpp) — `rc` may be SQLITE_BUSY (5,
+    // writer-lock contention, reached only after busy_timeout is exhausted) or
+    // SQLITE_BUSY_SNAPSHOT (517, a write attempted from a stale read snapshot,
+    // which returns *immediately* without consulting the busy handler).
+    // Captures the facts that disambiguate the cause:
+    //   • hint            — the BUSY sub-kind. A snapshot conflict is NOT lock
+    //                        contention: it means a SELECT on THIS connection
+    //                        was stepped to a row and never reset, so the
+    //                        connection is pinned to an old snapshot while
+    //                        another connection has committed past it.
     //   • pid             — to compare against running Crater processes
     //   • concurrent-steps — in-process step()s active right now (minus self).
     //                        See the g_activeSteps comment above for what
@@ -136,12 +143,12 @@ bool Statement::step()
     //   • wal             — WAL file size; a huge WAL suggests checkpoint
     //                        contention rather than a held writer
     //   • lock-holders    — per-connection transaction state at this exact
-    //                        moment. The connection labelled "in-txn" with
-    //                        the largest ms count is the prime suspect.
-    //                        This is the field that actually identifies an
-    //                        in-process writer; concurrent-steps cannot.
+    //                        moment. NB: a connection holding only a stale
+    //                        read snapshot still reports "idle" here (it has
+    //                        no explicit transaction), so on a 517 the holder
+    //                        is THIS connection, not any "in-txn" peer.
     //   • sql             — the statement that gave up
-    if (rc == SQLITE_BUSY && m_owner) {
+    if ((rc & 0xFF) == SQLITE_BUSY && m_owner) {
         const char* dbName = sqlite3_db_filename(m_owner, "main");
         const QString dbPath = dbName ? QString::fromUtf8(dbName) : QString();
         const QString walPath = dbPath.isEmpty() ? QString()
@@ -150,9 +157,14 @@ bool Statement::step()
         const char* sqlText = sqlite3_sql(m_stmt);
         const int concurrent = g_activeSteps.load(std::memory_order_acquire) - 1;
         const QString holders = dumpConnectionStates();
+        const QString hint = (rc == SQLITE_BUSY_SNAPSHOT)
+            ? QStringLiteral("stale read snapshot — an unreset SELECT pinned this connection")
+            : QStringLiteral("writer-lock contention");
 
         qWarning().noquote()
             << "SQLITE_BUSY diagnostic:"
+            << "rc=" << rc
+            << "hint=" << hint
             << "pid=" << QCoreApplication::applicationPid()
             << "concurrent-steps=" << concurrent
             << "wal=" << walSize

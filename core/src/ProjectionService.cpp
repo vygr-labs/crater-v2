@@ -37,8 +37,12 @@ struct ProjectionService::KvImpl
     {
         selectStmt.reset();
         selectStmt.bind(1, key);
-        if (selectStmt.step()) return selectStmt.columnText(0);
-        return {};
+        QString value;
+        if (selectStmt.step()) value = selectStmt.columnText(0);
+        selectStmt.reset();   // close cursor: set() writes on this same
+                              // connection, and an open SELECT would pin its
+                              // WAL snapshot and fail that write.
+        return value;
     }
 
     void set(const QString& key, const QString& value)

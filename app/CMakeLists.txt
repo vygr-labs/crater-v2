@@ -4,6 +4,8 @@
 
 qt_add_executable(crater
     src/main.cpp
+    src/ClipboardService.cpp
+    src/ClipboardService.h
     src/FileDialogService.cpp
     src/FileDialogService.h
     src/LogReportService.cpp

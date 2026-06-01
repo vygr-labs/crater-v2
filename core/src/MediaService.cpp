@@ -603,6 +603,7 @@ void MediaService::remove(qint64 id)
             sel.reset();
             sel.bind(1, id);
             if (sel.step()) path = sel.columnText(1);
+            sel.reset();   // close cursor before the DELETE transaction below
         }
 
         db::Transaction tx(m_impl->conn);
@@ -773,6 +774,8 @@ MediaItem MediaService::byId(qint64 id)
         s.reset();
         s.bind(1, id);
         if (s.step()) m = Impl::readRow(s);
+        s.reset();   // close cursor: an open SELECT here pins the media
+                     // connection's snapshot, failing the next import INSERT
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::byId():" << e.message();
     }

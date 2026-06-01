@@ -275,6 +275,10 @@ Item {
             kind:     "scripture",
             title:    verse.book + " " + verse.chapter + ":" + verse.verse + " (" + code + ")",
             subtitle: "",
+            // Clipboard-ready text in the "quote + attribution" format. Built
+            // here so it rides along to Preview/Live/Schedule — any surface
+            // holding the item can copy without re-deriving the verse text.
+            copyText: _formatCopyText([verse]),
             pages:    [{ label: verse.book + " " + verse.chapter + ":" + verse.verse, content: verse.text }],
             scriptureRef: {
                 translationCode: code,
@@ -318,6 +322,10 @@ Item {
             kind:     "scripture",
             title:    title,
             subtitle: "",
+            // Flowing-quote clipboard text for the whole selection (see
+            // _formatCopyText). Distinct from `combined` above, which numbers
+            // each verse for the projection slide.
+            copyText: _formatCopyText(usable),
             pages:    [{ label: _formatVerseRangeTitle(usable), content: combined }],
             scriptureRef: {
                 translationCode: code,
@@ -327,6 +335,28 @@ Item {
                 verseEnd:        last.verse
             }
         }
+    }
+
+    // Build the "copy to clipboard" string for a verse array — the format the
+    // operator pastes into a YouTube description, sermon notes, etc. The verses
+    // flow as one quoted passage (no inline verse numbers), followed by a single
+    // attribution line carrying the collapsed reference + translation:
+    //
+    //   "For God so loved the world... to condemn the world..."
+    //
+    //   - John 3:16-17 (KJV)
+    //
+    // Straight ASCII quotes (not typographic) keep the paste clean across web
+    // inputs. Reuses _formatVerseRangeTitle so the reference shape matches the
+    // projection title exactly. Returns "" when nothing usable is passed, so
+    // callers can guard on an empty result instead of copying a bare reference.
+    function _formatCopyText(verses) {
+        if (!verses || verses.length === 0) return ""
+        const usable = verses.filter(function(v) { return v && v.text && v.text.length > 0 })
+        if (usable.length === 0) return ""
+        const code = usable[0].translationCode || activeTranslation
+        const body = usable.map(function(v) { return v.text }).join(" ")
+        return "\"" + body + "\"\n\n- " + _formatVerseRangeTitle(usable) + " (" + code + ")"
     }
 
     // Compose a human reference string for a sorted verse array. Groups
@@ -673,6 +703,37 @@ Item {
             color: Theme.color.textTertiary
             font.family: Theme.font.family
             font.pixelSize: Theme.font.smallSize
+        }
+
+        // Copy the active scripture selection to the system clipboard in the
+        // "quote + attribution" format (_formatCopyText). Sits just left of the
+        // gear menu. Enabled whenever there's a focused/selected verse — on the
+        // scripture tab that's almost always true, so copy is one click away.
+        IconButton {
+            id: copyBtn
+            anchors.right: gearBtn.left
+            anchors.rightMargin: Theme.space.xs
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: copyBtn._copied ? "check" : "copy"
+            iconSize: Theme.icon.sm
+            enabled: root._activeVerses().length > 0
+
+            // Momentary check-glyph confirmation after a copy. There's no
+            // global toast in this console, so the icon itself is the feedback.
+            property bool _copied: false
+            Timer {
+                id: copiedReset
+                interval: 1200
+                onTriggered: copyBtn._copied = false
+            }
+
+            onClicked: {
+                const text = root._formatCopyText(root._activeVerses())
+                if (text.length === 0) return
+                ClipboardService.setText(text)
+                copyBtn._copied = true
+                copiedReset.restart()
+            }
         }
 
         // Right side: gear menu — quick toggles for mode and a refresh hook.

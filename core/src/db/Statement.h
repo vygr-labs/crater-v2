@@ -23,6 +23,19 @@ class Connection;
 //   while (stmt.step()) {
 //       const auto title = stmt.columnText(0);
 //   }
+//
+// WAL INVARIANT — reset single-row reads. A `while (step())` loop runs to
+// SQLITE_DONE and releases the statement's read transaction. A single-row
+// read does NOT:
+//   stmt.reset(); stmt.bind(1, id);
+//   if (stmt.step()) value = stmt.columnText(0);
+//   stmt.reset();   // <-- REQUIRED
+// Without that trailing reset(), the statement stays in the SQLITE_ROW state,
+// holding an implicit read transaction open. Under WAL that pins the
+// connection to a fixed snapshot, so the NEXT write on this connection fails
+// with SQLITE_BUSY_SNAPSHOT (surfaced as SQLITE_BUSY 5 unless extended result
+// codes are on) and keeps failing until the connection is torn down — i.e.
+// until the app restarts. Reset-before-use is not enough; reset after too.
 class Statement
 {
 public:

@@ -106,25 +106,34 @@ struct ScheduleService::Impl
             const auto doc = QJsonDocument::fromJson(json);
             if (doc.isArray()) items = doc.array();
         }
+        // Close the cursor. This SELECT is only ever stepped here, so leaving
+        // it in the SQLITE_ROW state would hold a read transaction open and
+        // pin this connection's WAL snapshot for the ENTIRE session — wedging
+        // every later write (the 5 s auto-save) the moment any other connection
+        // commits past the launch snapshot. This was the master lock-up.
+        loadCurrent.reset();
 
         // Restore the loaded-schedule pointer. If the row no longer exists
         // (operator deleted it while the app was closed), drop the kv entry
         // so we don't keep referencing a phantom.
         kvGet.reset();
         kvGet.bind(1, QString::fromLatin1(kLoadedKvKey));
-        if (kvGet.step()) {
-            const qint64 sid = kvGet.columnText(0).toLongLong();
-            if (sid > 0) {
-                nameForId.reset();
-                nameForId.bind(1, sid);
-                if (nameForId.step()) {
-                    loadedScheduleId   = sid;
-                    loadedScheduleName = nameForId.columnText(0);
-                } else {
-                    kvDel.reset();
-                    kvDel.bind(1, QString::fromLatin1(kLoadedKvKey));
-                    kvDel.step();
-                }
+        qint64 sid = 0;
+        if (kvGet.step()) sid = kvGet.columnText(0).toLongLong();
+        kvGet.reset();   // release the read txn before any later write
+        if (sid > 0) {
+            nameForId.reset();
+            nameForId.bind(1, sid);
+            const bool found = nameForId.step();
+            if (found) {
+                loadedScheduleId   = sid;
+                loadedScheduleName = nameForId.columnText(0);
+            }
+            nameForId.reset();   // release the read txn
+            if (!found) {
+                kvDel.reset();
+                kvDel.bind(1, QString::fromLatin1(kLoadedKvKey));
+                kvDel.step();
             }
         }
     }
@@ -310,6 +319,7 @@ void ScheduleService::load(qint64 scheduleId)
         if (!stmt.step()) return;
 
         const QByteArray json = stmt.columnText(0).toUtf8();
+        stmt.reset();   // close cursor before the saveCurrentNow() write below
         const auto doc = QJsonDocument::fromJson(json);
         m_impl->items = doc.isArray() ? doc.array() : QJsonArray{};
 
@@ -321,6 +331,7 @@ void ScheduleService::load(qint64 scheduleId)
         nameStmt.bind(1, scheduleId);
         QString name;
         if (nameStmt.step()) name = nameStmt.columnText(0);
+        nameStmt.reset();   // release the read txn before writing
         setLoaded(scheduleId, name);
         setDirty(false);
 
