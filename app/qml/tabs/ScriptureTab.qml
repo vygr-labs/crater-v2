@@ -327,8 +327,12 @@ Item {
         // dslToHtml HTML-escapes the body text, so only our own markers are
         // interpreted; the verse body already flowed through the DSL parser
         // before this change, so no new escaping surface is introduced.
+        // Trailing period ("3.") sits INSIDE the bold+color markup so the dot
+        // inherits the same gold/bold styling as the digit — it reads as a
+        // numbered marker rather than a bare digit colliding with the verse's
+        // first word (and a separate unstyled dot would render plain white).
         const combined = usable.map(function(v) {
-            return "{color=yellow}**" + v.verse + "**{/color} " + v.text
+            return "{color=yellow}**" + v.verse + ".**{/color} " + v.text
         }).join("  ")
 
         const first = usable[0]
@@ -1055,6 +1059,14 @@ Item {
             RightClickArea {
                 id: verseMa
                 anchors.fill: parent
+
+                // Remembers the multi-selection that a plain click just
+                // collapsed, so a following double-click can restore it and
+                // project the whole combined slide instead of one verse.
+                // Reset at the top of onLeftClicked (click 1 of a double-click
+                // runs there first); consumed and cleared in onDoubleClicked.
+                property var _collapseStash: null
+
                 // Group order matches SongsTab and MediaTab: row-edit
                 // actions first (Mark Up — closest scripture analogue to
                 // Edit), then projection (Add to Schedule / Push to Live),
@@ -1092,8 +1104,16 @@ Item {
                 // one clicked verse Live instead of the combined slide. With
                 // it, the set survives into onDoubleClicked → pushLiveFor.
                 function _focus() {
+                    // Capture membership BEFORE moving the anchor. setLibraryFluid
+                    // flips list.currentIndex (via the standalone Binding), which
+                    // makes _selected — and therefore _highlighted — read true for
+                    // THIS row. Reading the guard after that write would always see
+                    // true and skip the clear, so a plain/shift click after a
+                    // multi-selection failed to collapse it and the clicked row got
+                    // folded into the active set instead of replacing it.
+                    const wasHighlighted = verseRow._highlighted
                     AppState.setLibraryFluid(root.tabKey, index)
-                    if (!verseRow._highlighted) {
+                    if (!wasHighlighted) {
                         AppState.clearLibrarySelected(root.tabKey)
                     }
                     // Claim Up/Down/Enter for the library — operator just
@@ -1145,23 +1165,59 @@ Item {
                         sel.push(root.fluidIndex)
                     }
                     const at = sel.indexOf(index)
-                    if (at >= 0) sel.splice(at, 1)
+                    const removed = at >= 0
+                    if (removed) sel.splice(at, 1)
                     else         sel.push(index)
-                    // Anchor moves to the most recently touched row, matching
-                    // Finder behavior (next shift+click extends from here).
-                    AppState.setLibraryFluid(root.tabKey, index)
+
+                    // Anchor placement. Adding a row (or removing the last one,
+                    // leaving an empty set) anchors on the clicked row — Finder
+                    // semantics, and the empty case falls back to single-row
+                    // focus on it. But when we REMOVE a row that still has
+                    // company, anchoring on the just-removed row would defeat the
+                    // deselect: _activeIndices() folds the anchor back into the
+                    // active set and _selected keeps it highlighted, so the row
+                    // would never actually leave. So keep the anchor where it was
+                    // — or hop it onto a surviving row if the removed row WAS the
+                    // anchor.
+                    let anchorIdx
+                    if (!removed || sel.length === 0) anchorIdx = index
+                    else if (root.fluidIndex === index) anchorIdx = sel[sel.length - 1]
+                    else                                anchorIdx = root.fluidIndex
+
+                    AppState.setLibraryFluid(root.tabKey, anchorIdx)
                     AppState.setLibrarySelected(root.tabKey, sel)
                     AppState.setActiveFocus("library")
-                    root.pushPreviewFor(index)
+                    root.pushPreviewFor(anchorIdx)
                 }
 
                 onLeftClicked: function(mouse) {
+                    // Fresh click — discard any prior collapse stash. The
+                    // member-collapse branch below re-arms it when relevant.
+                    verseMa._collapseStash = null
                     if (mouse.modifiers & Qt.ShiftModifier) {
                         _extendRange()
                     } else if (mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
                         _toggleInSet()
                     } else {
-                        _focus()
+                        const selArr = AppState.librarySelectedIndices[root.tabKey] || []
+                        if (selArr.length > 0 && verseRow._highlighted) {
+                            // Plain click on a member of an active multi-
+                            // selection: collapse to just this verse NOW, so the
+                            // operator gets instant feedback. Stash the prior set
+                            // first — if this is actually click 1 of a double-
+                            // click, onDoubleClicked restores it and projects the
+                            // whole combined slide. Collapsing instantly (vs. a
+                            // deferred timer) avoids a "did it register?" double-
+                            // tap that would otherwise send the whole set Live.
+                            verseMa._collapseStash = selArr.slice()
+                            AppState.clearLibrarySelected(root.tabKey)
+                            AppState.setLibraryFluid(root.tabKey, index)
+                            AppState.setActiveFocus("library")
+                            root.pushPreviewFor(index)
+                            root._syncInputToVerse(index)
+                        } else {
+                            _focus()
+                        }
                     }
                 }
                 onRightClicked: function(mouse) {
@@ -1176,9 +1232,17 @@ Item {
                     }
                 }
                 onDoubleClicked: {
+                    // If click 1 collapsed a multi-selection, restore it so the
+                    // double-click projects the whole combined slide rather than
+                    // only this verse. Preview is re-pushed to match Live.
+                    if (verseMa._collapseStash && verseMa._collapseStash.length > 0) {
+                        AppState.setLibrarySelected(root.tabKey, verseMa._collapseStash)
+                    }
+                    verseMa._collapseStash = null
                     AppState.setLibraryFluid(root.tabKey, index)
                     AppState.setActiveFocus("library")
                     root._syncInputToVerse(index)
+                    root.pushPreviewFor(index)
                     root.pushLiveFor(index)
                 }
             }

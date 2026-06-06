@@ -128,6 +128,25 @@ Rectangle {
             readonly property bool _locked:   !!(modelData.data && modelData.data.locked)
             readonly property bool _dragging: list.dragId === modelData.id
 
+            // Open the rename dialog. Shared by the double-click gesture (the
+            // expected "edit name" affordance in a layers list) and the
+            // right-click "Rename layer" item, so both stay in lock-step.
+            function _openRename() {
+                AppState.openModal("naming", {
+                    title:       qsTr("Rename layer"),
+                    placeholder: qsTr("Layer name"),
+                    confirmText: qsTr("Save"),
+                    initialValue: (modelData.data && modelData.data.layerName)
+                                  || modelData.id || "",
+                    onConfirm:   function(name) {
+                        if (name && name.length > 0) {
+                            workspace.workingTheme.renameNode(modelData.id, name)
+                            workspace.saveToHistory()
+                        }
+                    }
+                })
+            }
+
             color: _selected         ? Theme.color.brandSubtle
                  : rowHover.hovered  ? Theme.color.overlay
                                      : "transparent"
@@ -165,7 +184,14 @@ Rectangle {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
+                    // Prefer an explicit layerName (editor-created nodes set
+                    // one); else fall back to the node id, which for JSON-
+                    // imported themes IS the author's meaningful name
+                    // ("reference" / "verse" / "bg" …) — the schema carries no
+                    // layerName field. Only when neither exists do we show the
+                    // generic kind label.
                     text: (modelData.data && modelData.data.layerName)
+                        || modelData.id
                         || (modelData.kind === "text" ? qsTr("Text") : qsTr("Container"))
                     color: row._selected ? Theme.color.textPrimary : Theme.color.textSecondary
                     font.family: Theme.font.family
@@ -242,23 +268,13 @@ Rectangle {
                     _select()
                 }
                 onRightClicked: _select()
+                // Double-click the row to rename — the standard layers-list
+                // gesture. Right-click → "Rename layer" still works too.
+                onDoubleClicked: row._openRename()
 
                 menuItems: [
                     { label: qsTr("Rename layer"), iconName: "edit-3",
-                      action: function() {
-                          AppState.openModal("naming", {
-                              title:       qsTr("Rename layer"),
-                              placeholder: qsTr("Layer name"),
-                              confirmText: qsTr("Save"),
-                              initialValue: (modelData.data && modelData.data.layerName) || "",
-                              onConfirm:   function(name) {
-                                  if (name && name.length > 0) {
-                                      workspace.workingTheme.renameNode(modelData.id, name)
-                                      workspace.saveToHistory()
-                                  }
-                              }
-                          })
-                      } },
+                      action: function() { row._openRename() } },
                     { separator: true },
                     { label: row._hidden ? qsTr("Show") : qsTr("Hide"),
                       iconName: row._hidden ? "eye" : "eye-off",

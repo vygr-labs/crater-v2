@@ -91,15 +91,6 @@ Item {
         return data.text || ""
     }
 
-    // Pre-sort by z so render order matches layer order. Recomputes only
-    // when _nodes changes — cheap for ≤50 nodes.
-    readonly property var _sortedNodes: {
-        const arr = _nodes.slice()
-        arr.sort((a, b) =>
-            ((a.style && a.style.z) || 0) - ((b.style && b.style.z) || 0))
-        return arr
-    }
-
     readonly property bool _showStage:
         _hasItem
         && !_isMedia
@@ -119,8 +110,15 @@ Item {
         && (!_theme || (_theme.id || 0) === 0 || _nodes.length === 0)
 
     // ── Theme stage (text-bearing kinds) ────────────────────────────────
+    // Letterbox + canvas-NATIVE stage + a single `scale` transform — identical
+    // to ProjectionScene. The old approach sized the stage to canvas×scale and
+    // positioned nodes by percent, which left a node's absolute fontPixelSize
+    // painted literally (a fixed-size reference rendered far too large at
+    // monitor scale). Rendering native + scaling shrinks fixed font sizes in
+    // proportion. The node layout — including group/card stacking — is
+    // delegated to ThemedNodeGraph so this monitor is WYSIWYG against live.
     Item {
-        id: stage
+        id: letterbox
         anchors.centerIn: parent
         visible: root._showStage
         readonly property real _scale:
@@ -130,32 +128,24 @@ Item {
         height: root._canvas.height * _scale
         clip: true
 
-        Repeater {
-            model: stage.visible ? root._sortedNodes : []
-            delegate: Item {
-                readonly property var _style: modelData.style || ({})
-                x:        stage.width  * ((_style.x      || 0) / 100)
-                y:        stage.height * ((_style.y      || 0) / 100)
-                width:    stage.width  * ((_style.width  || 0) / 100)
-                height:   stage.height * ((_style.height || 0) / 100)
-                opacity:  _style.opacity !== undefined ? _style.opacity : 1
-                rotation: _style.rotation || 0
+        Item {
+            id: stage
+            width:  root._canvas.width
+            height: root._canvas.height
+            transformOrigin: Item.TopLeft
+            scale: letterbox._scale
 
-                // Text nodes hide instantly when isClear is true (mini-
-                // monitor mirrors the projection's clear semantic, but
-                // snaps because the operator monitor is intentionally
-                // animation-free for fast feedback). Non-text nodes
-                // (background images, containers, decorations) ignore
-                // isClear and stay visible — matching the projection.
-                visible: !(root.isClear && modelData.kind === "text")
-
-                NodeRenderer {
-                    anchors.fill: parent
-                    node: modelData
-                    resolvedText: root.resolveText(modelData)
-                    suppressAnimations: true
-                    autoPlayVideos: root.autoPlayVideos
-                }
+            ThemedNodeGraph {
+                anchors.fill: parent
+                nodes:              root._showStage ? root._nodes : []
+                resolveTextFn:      node => root.resolveText(node)
+                autoPlayVideos:     root.autoPlayVideos
+                suppressAnimations: true
+                // The operator monitor mirrors the projection's clear semantic
+                // but SNAPS rather than fades (animation-free for fast feedback)
+                // — passiveFadeMs 0 makes the clear gate hide text instantly.
+                clearActive:        root.isClear
+                passiveFadeMs:      0
             }
         }
     }

@@ -76,6 +76,17 @@ Rectangle {
         if (_suppressUpdate) return
         commit(_hsvaToHex(hue, sat, val, alpha))
     }
+    // Apply a typed/pasted hex: parse, drive the HSV state (which moves the
+    // wheel + markers and repaints), and emit. No-op for anything Qt's color
+    // parser rejects, so partial input mid-type (e.g. "#ff") just leaves the
+    // picker on its last valid color until enough characters land.
+    function _applyHex(t) {
+        const c = Qt.color(t)
+        if (!c || c.toString() === "") return
+        value = t
+        _syncFromValue()
+        _emit()
+    }
 
     Component.onCompleted: _syncFromValue()
     onValueChanged:        if (!_suppressUpdate) _syncFromValue()
@@ -303,13 +314,21 @@ Rectangle {
                 font.pixelSize: Theme.font.bodySize
                 text: root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
                 selectByMouse: true
+                // Live: track the typed hex on every keystroke so the wheel,
+                // markers and chosen color follow along immediately — no need
+                // to press Enter or blur the field (the old behavior only
+                // committed on focus loss, e.g. switching windows).
+                onTextEdited: root._applyHex(text)
+                // Enter / blur: final commit, then re-establish the `text`
+                // binding that the manual edit broke. Without this the field
+                // would stop reflecting wheel/slider changes after any typed
+                // entry, and the displayed value would stay non-canonical
+                // (e.g. "#fff" instead of "#ffffff").
                 onEditingFinished: {
-                    const c = Qt.color(text)
-                    if (c && c.toString() !== "") {
-                        root.value = text
-                        root._syncFromValue()
-                        root._emit()
-                    }
+                    root._applyHex(text)
+                    text = Qt.binding(function() {
+                        return root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
+                    })
                 }
             }
         }

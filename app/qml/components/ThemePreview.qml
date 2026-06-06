@@ -6,9 +6,13 @@ import Crater
 // text nodes so the preview reads the same way for everyone — actual live
 // content only appears in ProjectionWindow.
 //
-// Used by:
-//   - ThemesTab tile bodies (small thumbnails, autoPlay videos OFF)
-//   - The editor's canvas (full-size editing surface, autoPlay videos ON)
+// Used by the ThemesTab tile bodies (small thumbnails, autoPlay videos OFF).
+// The actual node layout — including group/card stacking + auto-layout — is
+// delegated to ThemedNodeGraph, the SAME renderer ProjectionWindow's live
+// output uses, so a thumbnail is a faithful preview of what will go live
+// (cards stack and hug here exactly as they do on the projection output).
+// The theme editor canvas does NOT use this; it has its own NodeDelegate
+// rendering that intentionally shows each node at its raw configured box.
 //
 // Pass a Theme (value type with `.tokens` etc.) via the `theme` property.
 Item {
@@ -40,8 +44,14 @@ Item {
 
     // Letterbox math — scale by the smaller axis so the canvas keeps its
     // aspect ratio regardless of parent shape.
+    // Letterbox preserves the canvas aspect; the stage inside renders at
+    // canvas-NATIVE pixels and is shrunk by a single `scale` transform — so a
+    // node's absolute fontPixelSize (non-auto-fit text, e.g. a fixed-size
+    // scripture reference) scales down in proportion with the canvas instead of
+    // towering over a scaled-down box. Mirrors ProjectionScene's letterbox /
+    // stage split exactly, which is why the thumbnail matches the live output.
     Item {
-        id: stage
+        id: letterbox
         anchors.centerIn: parent
         readonly property real _scale: Math.min(parent.width  / root._canvas.width,
                                                 parent.height / root._canvas.height)
@@ -49,32 +59,25 @@ Item {
         height: root._canvas.height * _scale
         clip: true
 
-        // Sorted-by-z node list — Repeater respects model order, so we
-        // pre-sort once per (re-) render. Cheap: <50 nodes.
-        readonly property var _sortedNodes: {
-            const arr = root._nodes.slice()
-            arr.sort((a, b) => ((a.style && a.style.z) || 0) - ((b.style && b.style.z) || 0))
-            return arr
-        }
+        Item {
+            id: stage
+            width:  root._canvas.width
+            height: root._canvas.height
+            transformOrigin: Item.TopLeft
+            scale: letterbox._scale
 
-        Repeater {
-            model: stage._sortedNodes
-            delegate: Item {
-                readonly property var _style: modelData.style || ({})
-                x:        stage.width  * ((_style.x      || 0) / 100)
-                y:        stage.height * ((_style.y      || 0) / 100)
-                width:    stage.width  * ((_style.width  || 0) / 100)
-                height:   stage.height * ((_style.height || 0) / 100)
-                opacity:  _style.opacity !== undefined ? _style.opacity : 1
-                rotation: _style.rotation || 0
-
-                NodeRenderer {
-                    anchors.fill: parent
-                    node: modelData
-                    resolvedText: root.resolveText(modelData)
-                    suppressAnimations: true
-                    autoPlayVideos: root.autoPlayVideos
-                }
+            // The whole node graph, INCLUDING group/card stacking + auto-layout,
+            // rendered by the same ThemedNodeGraph the live projection output
+            // uses. Mock content (root.resolveText) keeps the thumbnail
+            // deterministic; videos + gradient animation stay off for a grid.
+            ThemedNodeGraph {
+                anchors.fill: parent
+                nodes:              root._nodes
+                resolveTextFn:      node => root.resolveText(node)
+                autoPlayVideos:     root.autoPlayVideos
+                suppressAnimations: true
+                // A preview is never in the projection "clear" state.
+                clearActive:        false
             }
         }
     }

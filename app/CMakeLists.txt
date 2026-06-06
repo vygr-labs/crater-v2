@@ -97,6 +97,7 @@ qt_add_qml_module(crater
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/ProjectionScene.qml
         qml/components/ProjectionContentLayer.qml
+        qml/components/ThemedNodeGraph.qml
         qml/components/NodeRenderer.qml
         qml/components/GradientFill.qml
         qml/components/CroppableMediaPreview.qml
