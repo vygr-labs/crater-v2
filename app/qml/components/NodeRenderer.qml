@@ -42,7 +42,14 @@ Item {
                 readonly property var _style: nodeRoot.node.style || ({})
                 readonly property var _data:  nodeRoot.node.data  || ({})
 
-                color: _style.backgroundColor || "transparent"
+                // In gradient mode the GradientFill IS the fill (and may carry
+                // its own alpha — e.g. a fade-to-black scrim), so the solid base
+                // drops to transparent and the gradient's transparency reveals
+                // whatever is composited behind this node. Solid mode keeps the
+                // picked color.
+                color: (_data.fill && _data.fill.type === "gradient")
+                       ? "transparent"
+                       : (_style.backgroundColor || "transparent")
                 radius: ((_style.borderTopLeftRadius     || 0)
                        + (_style.borderTopRightRadius    || 0)
                        + (_style.borderBottomLeftRadius  || 0)

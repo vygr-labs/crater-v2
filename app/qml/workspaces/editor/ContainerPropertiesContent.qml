@@ -52,20 +52,24 @@ Column {
         const g = node && node.data && node.data.fill && node.data.fill.gradient
         return (g && g.style) || "mesh"
     }
-    // Color-stop model for the Repeater, refreshed only when the stop COLORS
-    // change — not on every node refresh. An angle / speed drag rewrites the
-    // whole `fill` map ~60x/s; without this guard the stop rows (and their
-    // color popovers) would rebuild every frame. Edits still read the live node
-    // via _gradient(), so this is purely a render-stability cache.
-    property var _stopColors: ["#1e3a8a", "#7c3aed", "#db2777"]
-    function _syncStops() {
+    // Only conic and mesh use the time clock — linear / radial are static
+    // clamped ramps — so the Animate / Speed controls surface for those two.
+    readonly property bool _animatable: _gradStyle === "conic" || _gradStyle === "mesh"
+    // The color-stop Repeater is modelled on the stop COUNT, not the colors
+    // array. ColorPicker commits live on every drag tick, so keying the model
+    // on the colors would rebuild the rows mid-drag and destroy the very popover
+    // being dragged — the press then falls through to the canvas behind. Keying
+    // on count means only add / remove rebuilds; each row reads its own color by
+    // index (a binding on `node`), updating in place without a rebuild. This
+    // also makes angle / speed drags (which never change the count) free.
+    readonly property int _stopCount: {
         const g = node && node.data && node.data.fill && node.data.fill.gradient
-        const c = (g && g.colors && g.colors.length >= 1)
-                      ? g.colors : ["#1e3a8a", "#7c3aed", "#db2777"]
-        if (JSON.stringify(c) !== JSON.stringify(_stopColors)) _stopColors = c.slice()
+        return (g && g.colors && g.colors.length >= 2) ? g.colors.length : 3
     }
-    onNodeChanged: _syncStops()
-    Component.onCompleted: _syncStops()
+    function _stopColorAt(i) {
+        const g = node && node.data && node.data.fill && node.data.fill.gradient
+        return (g && g.colors && g.colors[i] !== undefined) ? g.colors[i] : "#ffffff"
+    }
 
     function _gradient() {
         const g = node && node.data && node.data.fill && node.data.fill.gradient
@@ -172,7 +176,7 @@ Column {
                     spacing: 6
 
                     Repeater {
-                        model: root._stopColors
+                        model: root._stopCount
                         delegate: Row {
                             anchors.left: parent.left
                             anchors.right: parent.right
@@ -181,7 +185,7 @@ Column {
                                 width: parent.width - 34
                                 height: 32
                                 label: qsTr("Stop %1").arg(index + 1)
-                                value: modelData
+                                value: root._stopColorAt(index)
                                 onColorPicked: function(c) {
                                     const g = root._gradient(); g.colors[index] = c
                                     root._writeGradient(g, true)
@@ -191,7 +195,7 @@ Column {
                                 anchors.verticalCenter: parent.verticalCenter
                                 iconName: "trash"
                                 iconSize: Theme.icon.sm
-                                enabled: root._stopColors.length > 2
+                                enabled: root._stopCount > 2
                                 opacity: enabled ? 1 : 0.35
                                 onClicked: {
                                     const g = root._gradient()
@@ -205,7 +209,7 @@ Column {
                     }
 
                     GhostButton {
-                        visible: root._stopColors.length < 6
+                        visible: root._stopCount < 6
                         text: qsTr("Add color")
                         iconName: "plus"
                         onClicked: {
@@ -242,6 +246,7 @@ Column {
                     anchors.left: parent.left
                     width: 120
                     height: 32
+                    visible: root._animatable
                     readonly property bool _on: {
                         const g = node && node.data && node.data.fill && node.data.fill.gradient
                         return !g || g.animate !== false
@@ -285,7 +290,7 @@ Column {
                 SimpleSlider {
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    visible: animateRow._on
+                    visible: root._animatable && animateRow._on
                     label: qsTr("Speed")
                     value: {
                         const g = node && node.data && node.data.fill && node.data.fill.gradient

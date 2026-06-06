@@ -3,6 +3,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -69,6 +70,11 @@ public:
     // direction: positive = bring forward (+1 z) or to front (>= 100),
     //            negative = send backward (-1) or to back (<= -100).
     Q_INVOKABLE void    reorderZ(QString id, int direction);
+    // Reassigns z densely from a top-to-bottom (front-most first) ordered id
+    // list — the Layers panel's drag-reorder commit. Front gets the highest
+    // z so the canvas/projection z-sort reproduces the list order exactly.
+    // Emits nodesChanged() once.
+    Q_INVOKABLE void    reorderNodes(QStringList orderedIdsFrontToBack);
 
 signals:
     void canvasChanged();

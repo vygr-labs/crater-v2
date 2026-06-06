@@ -107,6 +107,21 @@ public:
     // import with broken mediaId references; we refuse with a clear error
     // pointing the user at re-exporting from the original install.
     Q_INVOKABLE crater::ThemeImportReport importThemeFile(QString filePath);
+
+    // Imports a plain-JSON theme — the format a designer (or Claude) authors
+    // by hand. The file is a single JSON object:
+    //   { "name": "...", "kind": "song"|"scripture"|"presentation",
+    //     "tokens": { "version": 2, "canvas": {...}, "nodes": [...] } }
+    // Validates the tokens and inserts a new non-builtin theme with a
+    // collision-safe name. Returns the new id, or 0 on failure — see
+    // lastImportError() for the parse / validation message.
+    //
+    // Distinct from importThemeFile (the .craterheme ZIP bundle): a JSON theme
+    // references no bundled media/font assets, so it skips the entire asset
+    // relocation machinery — gradients, solid colors and system fonts only.
+    // See qt/docs/theme-schema.md for the authored format.
+    Q_INVOKABLE qint64 importThemeJsonFile(QString filePath);
+
     Q_INVOKABLE QString lastImportError() const;
 
     // Removes any leftover .import-staging/<uuid>/ directories from a

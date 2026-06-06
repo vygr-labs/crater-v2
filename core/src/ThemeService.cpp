@@ -1403,4 +1403,73 @@ qint64 ThemeService::duplicateTheme(qint64 id, QString newName)
     return create(src.kind, name, src.tokens);
 }
 
+qint64 ThemeService::importThemeJsonFile(QString filePath)
+{
+    // Plain-JSON theme import — the format a designer (or Claude) authors by
+    // hand. Unlike importThemeFile's .craterheme ZIP, a JSON theme references
+    // no bundled media/fonts, so there is no asset relocation: it's just
+    // validate-and-create. See qt/docs/theme-schema.md for the authored shape.
+    m_lastImportError.clear();
+    if (!m_impl) { m_lastImportError = QStringLiteral("theme service not initialized"); return 0; }
+
+    QFile f(filePath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        m_lastImportError = QStringLiteral("cannot open file: %1").arg(f.errorString());
+        return 0;
+    }
+    const QByteArray bytes = f.readAll();
+    f.close();
+
+    QJsonParseError perr{};
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &perr);
+    if (doc.isNull() || !doc.isObject()) {
+        m_lastImportError = QStringLiteral("not valid JSON: %1").arg(perr.errorString());
+        return 0;
+    }
+    const QJsonObject root = doc.object();
+
+    const QString name = root.value(QStringLiteral("name")).toString();
+    const QString kind = root.value(QStringLiteral("kind")).toString();
+    if (name.isEmpty()) {
+        m_lastImportError = QStringLiteral("missing top-level \"name\"");
+        return 0;
+    }
+    if (kind != QLatin1String("song")
+        && kind != QLatin1String("scripture")
+        && kind != QLatin1String("presentation")) {
+        m_lastImportError = QStringLiteral("\"kind\" must be song, scripture or presentation");
+        return 0;
+    }
+
+    const QJsonValue tv = root.value(QStringLiteral("tokens"));
+    if (!tv.isObject()) {
+        m_lastImportError = QStringLiteral("missing \"tokens\" object");
+        return 0;
+    }
+    const QVariantMap tokens = tv.toObject().toVariantMap();
+
+    // Field-level validation up front so the operator sees a precise message
+    // (create() also validates, but only logs + returns 0 — we want the text).
+    const QStringList errs = validateTokensV2(tokens);
+    if (!errs.isEmpty()) {
+        m_lastImportError = QStringLiteral("invalid theme tokens: %1")
+                                .arg(errs.join(QStringLiteral("; ")));
+        return 0;
+    }
+
+    try {
+        // Collision-safe name within the kind — same " (Import)" suffixing the
+        // bundle path uses, so re-importing never silently shadows a theme.
+        const QString unique = resolveImportName(m_impl->countByKindName, kind, name);
+        const qint64 id = create(kind, unique, tokens);
+        if (id == 0 && m_lastImportError.isEmpty()) {
+            m_lastImportError = QStringLiteral("theme insert failed");
+        }
+        return id;
+    } catch (const db::Error& e) {
+        m_lastImportError = e.message();
+        return 0;
+    }
+}
+
 }  // namespace crater

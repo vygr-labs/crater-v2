@@ -268,4 +268,29 @@ void WorkingTheme::reorderZ(QString id, int direction)
     emit nodesChanged();   // canvas + projection re-sort by z
 }
 
+void WorkingTheme::reorderNodes(QStringList orderedIdsFrontToBack)
+{
+    if (orderedIdsFrontToBack.isEmpty()) return;
+
+    // Front-most (top of the Layers list) gets the highest z. Dense,
+    // collision-free integers so the canvas + projection z-sort reproduce the
+    // panel order exactly. Any id not found is skipped; the panel passes the
+    // full set so that doesn't happen in practice.
+    const int n = orderedIdsFrontToBack.size();
+    bool changed = false;
+    for (int rank = 0; rank < n; ++rank) {
+        const int i = indexOf(orderedIdsFrontToBack.at(rank));
+        if (i < 0) continue;
+        const int newZ = n - rank;             // rank 0 (front) -> highest z
+        QVariantMap node  = m_nodes[i].toMap();
+        QVariantMap style = node.value("style").toMap();
+        if (style.value("z").toInt() == newZ) continue;
+        style["z"]    = newZ;
+        node["style"] = style;
+        m_nodes[i]    = node;
+        changed = true;
+    }
+    if (changed) emit nodesChanged();          // canvas + panel re-sort by z
+}
+
 }  // namespace crater

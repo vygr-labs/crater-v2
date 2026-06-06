@@ -181,6 +181,13 @@ Item {
     }
     function _bump(dir) {
         const newV = Math.max(root.min, Math.min(root.max, root.value + dir * root.step))
+        if (newV === root.value) return
+        // A stepper press must WRITE the value, not just snapshot history.
+        // commit() only calls saveToHistory() in every caller, so without the
+        // live() write the model never changes — Up/Down did nothing, and the
+        // field (bound to the model) didn't even move. Mirror the drag-scrub
+        // path: live() to write, commit() to close the undo step.
+        root.live(newV)
         root.commit(newV)
     }
     // Keep input.text in sync with root.value. Two cases:

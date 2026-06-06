@@ -56,6 +56,43 @@ Rectangle {
         anchors.rightMargin: 1
         clip: true
         spacing: 1
+
+        // ── Drag-to-reorder ─────────────────────────────────────────────
+        // Commit-on-drop: the dragged row lifts to follow the cursor (a pure
+        // transform, so nothing reflows) and an insertion line shows the
+        // target slot; on release we reassign z once via reorderNodes. The
+        // model is a derived z-sorted array, so live shuffling would fight the
+        // binding — this avoids that. Flicking is off while dragging so the
+        // list can't scroll out from under the pointer.
+        readonly property int rowStride: 36 + spacing
+        property string dragId: ""
+        property int    dragFrom: -1
+        property int    dragTo:   -1
+        property real   dragCursorY: 0          // cursor Y in contentItem coords
+        interactive: dragId === ""
+
+        function dragBegin(fromIndex) {
+            dragFrom = fromIndex
+            dragTo   = fromIndex
+            dragId   = model[fromIndex].id
+        }
+        function dragMove(contentY) {
+            dragCursorY = contentY
+            dragTo = Math.max(0, Math.min(count - 1, Math.floor(contentY / rowStride)))
+        }
+        function dragEnd() {
+            if (dragId !== "" && dragTo >= 0 && dragTo !== dragFrom) {
+                const ids = []
+                for (let k = 0; k < model.length; ++k) ids.push(model[k].id)
+                ids.splice(dragFrom, 1)
+                ids.splice(dragTo, 0, dragId)
+                workspace.workingTheme.reorderNodes(ids)
+                workspace.selectedNodeId = dragId
+                workspace.saveToHistory()
+            }
+            dragId = ""; dragFrom = -1; dragTo = -1
+        }
+
         // Top of list = top of z-order. The model is z-sorted descending so
         // the rendering order on the canvas matches what the operator sees.
         model: {
@@ -71,11 +108,30 @@ Rectangle {
             readonly property bool _selected: workspace.selectedNodeId === modelData.id
             readonly property bool _hidden:   !!(modelData.data && modelData.data.hidden)
             readonly property bool _locked:   !!(modelData.data && modelData.data.locked)
+            readonly property bool _dragging: list.dragId === modelData.id
 
-            color: _selected             ? Theme.color.brandSubtle
-                 : rowMa.containsMouse   ? Theme.color.overlay
-                                         : "transparent"
-            opacity: _hidden ? 0.5 : 1.0
+            color: _selected         ? Theme.color.brandSubtle
+                 : rowHover.hovered  ? Theme.color.overlay
+                                     : "transparent"
+            opacity: _hidden ? 0.5 : (_dragging ? 0.9 : 1.0)
+
+            // Whole-row hover that survives the action buttons grabbing the
+            // pointer. A plain MouseArea (rowMa) loses containsMouse the moment
+            // the cursor enters a child button stacked on top of it; a
+            // HoverHandler keeps reporting hovered for the entire row, so the
+            // action buttons stay visible while you reach for them.
+            HoverHandler { id: rowHover }
+
+            // Lift the dragged row to follow the cursor. Transform only, so
+            // the row keeps its layout slot and neighbours don't reflow — the
+            // insertion line (below) shows where it will land. Raised z so the
+            // lifted row floats above the others.
+            z: _dragging ? 5 : 0
+            transform: Translate {
+                y: row._dragging
+                   ? (list.dragCursorY - index * list.rowStride - row.height / 2)
+                   : 0
+            }
 
             Row {
                 anchors.fill: parent
@@ -101,13 +157,19 @@ Rectangle {
                 }
             }
 
-            // Hover-revealed actions
+            // Hover-revealed actions. z:1 lifts this above rowMa so the buttons
+            // actually receive clicks — rowMa is declared later and would
+            // otherwise sit on top and swallow them (the bug that made every
+            // action button dead, only selecting the row). Visibility keys off
+            // the row-wide HoverHandler so the buttons don't vanish the instant
+            // the cursor reaches them.
             Row {
+                z: 1
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.rightMargin: Theme.space.sm
                 spacing: 0
-                visible: rowMa.containsMouse || row._selected || row._hidden || row._locked
+                visible: rowHover.hovered || row._selected || row._hidden || row._locked
                 IconButton { iconName: row._hidden ? "eye-off" : "eye"; iconSize: Theme.icon.sm
                     onClicked: {
                         workspace.workingTheme.setNodeData(modelData.id, "hidden", !row._hidden)
@@ -135,11 +197,32 @@ Rectangle {
             RightClickArea {
                 id: rowMa
                 anchors.fill: parent
-                // Don't intercept clicks on the action buttons (which sit above us in z).
-                preventStealing: false
+                // Keep the press through a vertical drag so the row reorders
+                // instead of the ListView stealing it for a flick.
+                preventStealing: true
+                cursorShape: _moved ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+
+                property real _pressY: 0
+                property bool _moved: false          // crossed the drag threshold
+                property bool _suppressClick: false  // a finished drag also emits clicked
 
                 function _select() { workspace.selectedNodeId = modelData.id }
-                onLeftClicked:  _select()
+
+                onPressed: function(mouse) { _pressY = mouse.y; _moved = false }
+                onPositionChanged: function(mouse) {
+                    if (!pressed) return
+                    if (!_moved && Math.abs(mouse.y - _pressY) < 6) return
+                    if (!_moved) { _moved = true; list.dragBegin(index) }
+                    list.dragMove(mapToItem(list.contentItem, mouse.x, mouse.y).y)
+                }
+                onReleased: function(mouse) {
+                    if (_moved) { list.dragEnd(); _moved = false; _suppressClick = true }
+                }
+
+                onLeftClicked: function(mouse) {
+                    if (_suppressClick) { _suppressClick = false; return }
+                    _select()
+                }
                 onRightClicked: _select()
 
                 menuItems: [
@@ -198,5 +281,19 @@ Rectangle {
                 ]
             }
         }
+    }
+
+    // Drop indicator — a brand-coloured insertion line marking the slot the
+    // dragged row will land in. Positioned in panel coords: the list's offset
+    // plus the target slot's top (minus any scroll). Above the list so it's
+    // always visible during a drag.
+    Rectangle {
+        visible: list.dragId !== "" && list.dragTo >= 0
+        x: list.x
+        width: list.width - 1
+        height: 2
+        color: Theme.color.brand
+        y: list.y + (list.dragTo * list.rowStride - list.contentY)
+        z: 100
     }
 }

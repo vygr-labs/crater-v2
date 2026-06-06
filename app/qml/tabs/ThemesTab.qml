@@ -207,6 +207,28 @@ Item {
             }
         }
         GhostButton {
+            text: qsTr("Import JSON")
+            iconName: "upload"
+            onClicked: {
+                const path = FileDialogService.chooseOpenFile(
+                    qsTr("Import Theme JSON"),
+                    [qsTr("Theme JSON (*.json)"), qsTr("All Files (*.*)")])
+                if (!path || path.length === 0) return
+
+                // Plain-JSON theme — gradients / colors / system fonts, no
+                // bundled assets (see qt/docs/theme-schema.md). Returns the new
+                // theme id, or 0 with a field-level message on failure.
+                const id = ThemeService.importThemeJsonFile(path)
+                if (id === 0) {
+                    root._importError = ThemeService.lastImportError()
+                                     || qsTr("JSON theme import failed")
+                    errorClearTimer.restart()
+                    return
+                }
+                root._statusMessage = qsTr("Imported theme from JSON")
+            }
+        }
+        GhostButton {
             id: newThemeBtn
             text: qsTr("New theme")
             iconName: "plus"
