@@ -230,6 +230,9 @@ QtObject {
         readonly property int rowHeight:         44
         readonly property int controlHeight:     32
         readonly property int scheduleRowHeight: 36
+        // Width of AppScrollBar's overlay lane. Scrollable views inset their
+        // content by this so the bar rides the right gutter, not the content.
+        readonly property int scrollBar:         14
     }
 
     // Schedule-item display helpers — derive label + color from item `kind`

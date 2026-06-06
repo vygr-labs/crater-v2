@@ -1,0 +1,59 @@
+{
+  "name": "Midnight Worship",
+  "kind": "song",
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [
+      {
+        "id": "bg",
+        "kind": "container",
+        "style": { "x": 0, "y": 0, "width": 100, "height": 100, "z": 0, "backgroundColor": "#1e1b4b" },
+        "data": {
+          "fill": {
+            "type": "gradient",
+            "gradient": {
+              "style": "mesh",
+              "colors": ["#1e1b4b", "#4c1d95", "#6d28d9", "#1e3a8a"],
+              "angle": 0,
+              "speed": 0.25,
+              "animate": true
+            }
+          }
+        }
+      },
+      {
+        "id": "vignette",
+        "kind": "container",
+        "style": { "x": 0, "y": 0, "width": 100, "height": 100, "z": 1 },
+        "data": {
+          "fill": {
+            "type": "gradient",
+            "gradient": {
+              "style": "radial",
+              "colors": ["#00000000", "#99000000"],
+              "animate": false
+            }
+          }
+        }
+      },
+      {
+        "id": "lyric",
+        "kind": "text",
+        "style": {
+          "x": 8, "y": 15, "width": 84, "height": 70, "z": 2,
+          "color": "#f8fafc",
+          "fontPixelSize": 64,
+          "fontWeight": 600,
+          "lineHeightMultiplier": 1.25,
+          "textAlign": "center",
+          "verticalAlign": "center",
+          "textShadowColor": "#b3000000",
+          "textShadowOffsetY": 2,
+          "textShadowBlur": 20
+        },
+        "data": { "linkage": "lyric", "autoResize": true, "maxFontSize": 120 }
+      }
+    ]
+  }
+}

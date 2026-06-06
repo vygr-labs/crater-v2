@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Media tab — full UX parity with the Electron media pane.
 //
@@ -792,14 +793,16 @@ Item {
         // ── Grid view ───────────────────────────────────────────────────
         GridView {
             id: grid
+            ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm
+            anchors.rightMargin: 0   // run to the panel edge; the cell math reserves the bar's lane
             clip: true
             cacheBuffer: 600
             visible: AppState.mediaViewMode === "grid" && root.filteredMedia.length > 0
             currentIndex: root.fluidIndex
             model: root.filteredMedia
-            cellWidth:  Math.max(80, Math.floor(width / Math.max(1, AppState.mediaGridColumns)))
+            cellWidth:  Math.max(80, Math.floor((width - Theme.size.scrollBar) / Math.max(1, AppState.mediaGridColumns)))
             cellHeight: Math.floor(cellWidth * 9.0 / 16.0) + 4
 
             delegate: Item {
@@ -1192,8 +1195,10 @@ Item {
         // ── List view ───────────────────────────────────────────────────
         ListView {
             id: listView
+            ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm
+            anchors.rightMargin: 0   // run to the panel edge; delegate reserves the bar's lane
             clip: true
             cacheBuffer: 400
             visible: AppState.mediaViewMode === "list" && root.filteredMedia.length > 0
@@ -1203,7 +1208,7 @@ Item {
 
             delegate: Item {
                 id: listRow
-                width: listView.width
+                width: listView.width - Theme.size.scrollBar
                 height: 48
 
                 // Same binding-rebind-safe pattern as the grid cell — read

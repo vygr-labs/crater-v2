@@ -24,6 +24,54 @@ Column {
     function _liveData   (f, v) { workspace.workingTheme.setNodeData (node.id, f, v) }
     function _commitData (f, v) { workspace.saveToHistory() }
 
+    // ── Auto-layout (stacking) helpers ─────────────────────────────────
+    // Text keeps Auto-fit; the CONTAINER does the hugging (see Container
+    // properties). Here a text node can stack ABOVE / BELOW another node's
+    // content (data.autoPosition) — e.g. the reference riding above the verse.
+    // Applies on the live output; the editor canvas shows the configured box.
+    readonly property bool _hasPos: !!(node && node.data && node.data.autoPosition)
+    readonly property string _posPlace: {
+        const p = node && node.data && node.data.autoPosition
+        return (p && p.place) || "none"
+    }
+    function _autoPosition() {
+        const p = node && node.data && node.data.autoPosition
+        return {
+            place:  (p && p.place)  || "above",
+            source: (p && p.source) || "",
+            gap:    (p && p.gap !== undefined) ? p.gap : 2
+        }
+    }
+    function _writeAutoPosition(p, commit) {
+        workspace.workingTheme.setNodeData(node.id, "autoPosition", p)
+        if (commit) workspace.saveToHistory()
+    }
+    function _setPosPlace(place) {
+        if (place === "none") {
+            workspace.workingTheme.setNodeData(node.id, "autoPosition", null)
+            workspace.saveToHistory()
+        } else {
+            const p = _autoPosition(); p.place = place
+            if (!p.source) p.source = _firstOtherNodeId()
+            _writeAutoPosition(p, true)
+        }
+    }
+    // Other nodes (any kind) this one can stack against, labelled by id.
+    readonly property var _otherNodeOptions: {
+        const nodes = (workspace && workspace.workingTheme && workspace.workingTheme.nodes) || []
+        const out = []
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i]
+            if (!n || (node && n.id === node.id)) continue
+            out.push({ label: n.id, value: n.id })
+        }
+        return out
+    }
+    function _firstOtherNodeId() {
+        const o = _otherNodeOptions
+        return o.length > 0 ? o[0].value : ""
+    }
+
     // Font picker model — system fonts from Qt.fontFamilies() plus a
     // visual "imported" suffix on any family that came in through
     // FontService (a Crater-imported .ttf/.otf). The Combobox accepts
@@ -463,6 +511,84 @@ Column {
                     value: (node && node.data && node.data.maxFontSize) || 220
                     onLive:   function(v) { root._liveData("maxFontSize", Math.round(v)) }
                     onCommit: function(v) { root._commitData("maxFontSize", Math.round(v)) }
+                }
+            }
+        }
+    }
+
+    // ── Auto-layout (stacking) ─────────────────────────────────────────
+    // Text keeps Auto-fit; the CONTAINER does the hugging (see Container
+    // properties). Here a text node can stack ABOVE / BELOW another node's
+    // content — e.g. the reference riding above the verse. Applies on the live
+    // output; the editor canvas shows the configured box.
+    AccordionSection {
+        id: layoutSection
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: qsTr("Auto-layout")
+        // Lift above sections below while the source combobox is open.
+        z: posCombobox._open ? 100 : 0
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Theme.space.md
+            anchors.topMargin: Theme.space.sm
+            spacing: 6
+
+            // ── Stacking (above / below another node) ─────────────────
+            Text {
+                anchors.left: parent.left
+                text: qsTr("Position")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+            }
+            SegmentedControl {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 28
+                options: [
+                    { value: "none",  label: qsTr("Free")  },
+                    { value: "above", label: qsTr("Above") },
+                    { value: "below", label: qsTr("Below") }
+                ]
+                current: root._posPlace
+                onChanged: function(v) { root._setPosPlace(v) }
+            }
+
+            Column {
+                visible: root._hasPos && root._otherNodeOptions.length > 0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 6
+
+                Text {
+                    text: qsTr("Relative to")
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+                Combobox {
+                    id: posCombobox
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    searchable: false
+                    placeholder: qsTr("Select a node")
+                    options: root._otherNodeOptions
+                    value: root._autoPosition().source
+                    onValueSelected: function(v) {
+                        const p = root._autoPosition(); p.source = v; root._writeAutoPosition(p, true)
+                    }
+                }
+                NumericInput {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    workspace: root.workspace
+                    label: qsTr("Gap"); suffix: "%"
+                    min: 0; max: 50; step: 0.5
+                    value: root._autoPosition().gap
+                    onLive:   function(v) { const p = root._autoPosition(); p.gap = Math.round(v * 10) / 10; root._writeAutoPosition(p, false) }
+                    onCommit: function(v) { workspace.saveToHistory() }
                 }
             }
         }

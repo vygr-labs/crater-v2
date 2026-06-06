@@ -247,8 +247,8 @@ Item {
                         const first = popover._filteredOptions[0]
                         const v = (typeof first === "string") ? first
                                 : (first.value || first.label || "")
+                        root._close()           // close before notify — see row onClicked
                         root.valueSelected(v)
-                        root._close()
                     }
                 }
             }
@@ -301,8 +301,13 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        root.valueSelected(parent._value)
+                        // Close BEFORE notifying. A valueSelected handler that
+                        // mutates `options` (e.g. the card's "add member" picker)
+                        // rebuilds this ListView and destroys THIS delegate
+                        // mid-click — so a _close() placed after the emit would
+                        // never run and the popover would stick open. Close first.
                         root._close()
+                        root.valueSelected(parent._value)
                     }
                 }
             }

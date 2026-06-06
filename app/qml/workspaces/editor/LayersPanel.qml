@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import Crater
 
 // Vertical list of nodes in the working theme. Top-of-list maps to top-of-z
@@ -49,6 +50,7 @@ Rectangle {
 
     ListView {
         id: list
+        ScrollBar.vertical: AppScrollBar {}
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -93,9 +95,25 @@ Rectangle {
             dragId = ""; dragFrom = -1; dragTo = -1
         }
 
+        // The model binds to `nodes` (NOTIFY nodesChanged), which fires on
+        // structural changes (add/remove/duplicate/z-reorder) — but NOT on
+        // setNodeData, which emits the granular nodeDataChanged. Without
+        // re-reading on that signal the rows' hidden/locked/name state went
+        // stale: toggling hide left the row showing the old icon AND made
+        // `_hidden` read false forever, so the eye button kept re-hiding and
+        // could never un-hide (same for lock). This tick forces a fresh read.
+        // Only nodeDataChanged is needed — x/y/colour edits don't show here,
+        // and z changes already emit nodesChanged.
+        property int dataRev: 0
+        Connections {
+            target: workspace.workingTheme
+            function onNodeDataChanged() { list.dataRev++ }
+        }
+
         // Top of list = top of z-order. The model is z-sorted descending so
         // the rendering order on the canvas matches what the operator sees.
         model: {
+            const _ = list.dataRev          // re-read on hidden/locked/name change
             const arr = workspace.workingTheme.nodes.slice()
             arr.sort((a, b) => ((b.style && b.style.z) || 0) - ((a.style && a.style.z) || 0))
             return arr
@@ -103,7 +121,7 @@ Rectangle {
 
         delegate: Rectangle {
             id: row
-            width: list.width
+            width: list.width - Theme.size.scrollBar   // clear the scrollbar lane
             height: 36
             readonly property bool _selected: workspace.selectedNodeId === modelData.id
             readonly property bool _hidden:   !!(modelData.data && modelData.data.hidden)
@@ -290,7 +308,7 @@ Rectangle {
     Rectangle {
         visible: list.dragId !== "" && list.dragTo >= 0
         x: list.x
-        width: list.width - 1
+        width: list.width - Theme.size.scrollBar
         height: 2
         color: Theme.color.brand
         y: list.y + (list.dragTo * list.rowStride - list.contentY)

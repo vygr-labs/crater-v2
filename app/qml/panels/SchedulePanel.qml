@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls.Basic
 
 // Left top pane — the working schedule (the "playlist" being assembled).
 //
@@ -218,6 +219,7 @@ Rectangle {
 
         ListView {
             id: list
+            ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             // Rows are now flat (no card inset) so they sit flush against
             // the header — drop the top margin, keep a small bottom one for
@@ -257,7 +259,7 @@ Rectangle {
             }
 
             delegate: ScheduleRow {
-                width: list.width
+                width: list.width - Theme.size.scrollBar
                 rowIndex: index
                 title:    modelData.title    || ""
                 subtitle: modelData.subtitle || ""
@@ -434,7 +436,7 @@ Rectangle {
                 visible: list.draggedRow >= 0
                       && list.dropTargetIndex() !== list.draggedRow
                 x: 0
-                width: list.width
+                width: list.width - Theme.size.scrollBar
                 height: 2
                 z: 1000
                 color: Qt.lighter(Theme.color.brand, 1.6)

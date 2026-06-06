@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls.Basic
 
 // Middle top pane — what the operator is *staging*. Shows pages of the
 // currently-selected schedule item. A page-row list at the top, a mini
@@ -184,9 +185,13 @@ Rectangle {
 
         ListView {
             id: pagesList
+            ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.leftMargin: Theme.space.lg
-            anchors.rightMargin: Theme.space.lg
+            // Run to the panel's right edge so the scrollbar rides the gutter
+            // instead of sitting on the cards; the delegate insets itself by
+            // space.lg on the right (below) to keep the card width unchanged.
+            anchors.rightMargin: 0
             anchors.topMargin: Theme.space.sm
             visible: root.selectedItem !== null && !root.isCroppableMedia
             model: root.pages
@@ -242,7 +247,10 @@ Rectangle {
                 readonly property bool hasHeader: headLabel.length > 0
                                                || translationCode.length > 0
 
-                width:  pagesList.width
+                // Inset on the right by space.lg + the scrollbar lane, so the
+                // gap to the bar matches the space.lg gap on the left (equal
+                // breathing room), with the bar beyond it at the panel edge.
+                width:  pagesList.width - Theme.space.lg - Theme.size.scrollBar
                 height: bodyArea.y + bodyArea.height + 1
 
                 color: isActive && _paneFocused ? Theme.color.previewSubtle

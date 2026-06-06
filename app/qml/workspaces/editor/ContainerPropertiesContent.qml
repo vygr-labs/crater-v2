@@ -90,6 +90,69 @@ Column {
         if (commit) workspace.saveToHistory()
     }
 
+
+    // ── Group / card helpers ───────────────────────────────────────────
+    // A container becomes a card (data.group): it stacks its member nodes, hugs
+    // the total, and bottom-anchors. The recommended layout mechanic — the card
+    // owns positioning, so alignment is exact. Supersedes the hug controls.
+    readonly property bool _isCard: !!(node && node.data && node.data.group)
+    readonly property var _members: {
+        const g = node && node.data && node.data.group
+        return (g && g.members) ? g.members : []
+    }
+    function _group() {
+        const g = node && node.data && node.data.group
+        return {
+            members:   (g && g.members) ? g.members.slice() : [],
+            gap:       (g && g.gap       !== undefined) ? g.gap       : 1.5,
+            padTop:    (g && g.padTop    !== undefined) ? g.padTop    : 4,
+            padBottom: (g && g.padBottom !== undefined) ? g.padBottom : 4,
+            padX:      (g && g.padX      !== undefined) ? g.padX      : 8,
+            anchor:    (g && g.anchor) || "bottom"
+        }
+    }
+    function _writeGroup(grp, commit) {
+        workspace.workingTheme.setNodeData(node.id, "group", grp)
+        if (commit) workspace.saveToHistory()
+    }
+    function _setCard(on) {
+        if (on) {
+            // Group supersedes the single-node hug; clear it to avoid conflict.
+            workspace.workingTheme.setNodeData(node.id, "autoHeight", null)
+            _writeGroup(_group(), true)
+        } else {
+            workspace.workingTheme.setNodeData(node.id, "group", null)
+            workspace.saveToHistory()
+        }
+    }
+    function _addMember(id) {
+        const grp = _group()
+        if (id && grp.members.indexOf(id) < 0) { grp.members.push(id); _writeGroup(grp, true) }
+    }
+    function _removeMember(i) {
+        const grp = _group()
+        if (i >= 0 && i < grp.members.length) { grp.members.splice(i, 1); _writeGroup(grp, true) }
+    }
+    function _moveMember(i, delta) {
+        const grp = _group(); const j = i + delta
+        if (j < 0 || j >= grp.members.length) return
+        const t = grp.members[i]; grp.members[i] = grp.members[j]; grp.members[j] = t
+        _writeGroup(grp, true)
+    }
+    // Nodes not yet members (and not self), for the "Add member" picker.
+    readonly property var _nonMemberOptions: {
+        const nodes = (workspace && workspace.workingTheme && workspace.workingTheme.nodes) || []
+        const mem = _members
+        const out = []
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i]
+            if (!n || n.id === node.id) continue
+            if (mem.indexOf(n.id) >= 0) continue
+            out.push({ label: n.id, value: n.id })
+        }
+        return out
+    }
+
     // ── Background ────────────────────────────────────────────────────
     AccordionSection {
         anchors.left: parent.left
@@ -299,6 +362,188 @@ Column {
                     min: 0.1; max: 3.0; step: 0.1
                     onLive:   function(v) { const g = root._gradient(); g.speed = v; root._writeGradient(g, false) }
                     onCommit: function(v) { workspace.saveToHistory() }
+                }
+            }
+        }
+    }
+
+    // ── Card / Group ───────────────────────────────────────────────────
+    // Makes this container a card: it stacks its member nodes, hugs the total,
+    // and bottom-anchors to its box bottom (the recommended lower-third
+    // mechanic). Members keep auto-fit; the card owns their position. Applies
+    // on the projection output; the editor canvas shows the configured box.
+    AccordionSection {
+        id: cardSection
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: qsTr("Card / Group")
+        z: addMemberCombo._open ? 100 : 0
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Theme.space.md
+            anchors.topMargin: Theme.space.sm
+            spacing: 6
+
+            // Toggle — make this container a card.
+            Item {
+                id: cardRow
+                anchors.left: parent.left
+                width: 200
+                height: 32
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18; radius: 0
+                        color: root._isCard ? Theme.color.brand : Theme.color.canvas
+                        border.color: root._isCard ? Theme.color.brand : Theme.color.borderStrong
+                        border.width: 1
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: root._isCard
+                            name: "check"; size: Theme.icon.sm
+                            color: Theme.color.brandInk
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Card (stack & hug members)")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root._setCard(!root._isCard)
+                }
+            }
+
+            // Card configuration.
+            Column {
+                visible: root._isCard
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 6
+
+                Text {
+                    text: qsTr("Members (top → bottom)")
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+
+                // Ordered member list: each row reorders / removes itself.
+                Repeater {
+                    model: root._members
+                    delegate: Row {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        spacing: 4
+                        Rectangle {
+                            width: parent.width - 84
+                            height: 28
+                            radius: 0
+                            color: Theme.color.canvas
+                            border.color: Theme.color.borderStrong
+                            border.width: 1
+                            Text {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                verticalAlignment: Text.AlignVCenter
+                                text: modelData
+                                color: Theme.color.textPrimary
+                                font.family: Theme.font.family
+                                font.pixelSize: Theme.font.bodySize
+                                elide: Text.ElideRight
+                            }
+                        }
+                        IconButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "chevron-up"; iconSize: Theme.icon.sm
+                            enabled: index > 0
+                            opacity: enabled ? 1 : 0.35
+                            onClicked: root._moveMember(index, -1)
+                        }
+                        IconButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "chevron-down"; iconSize: Theme.icon.sm
+                            enabled: index < root._members.length - 1
+                            opacity: enabled ? 1 : 0.35
+                            onClicked: root._moveMember(index, 1)
+                        }
+                        IconButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "trash"; iconSize: Theme.icon.sm
+                            onClicked: root._removeMember(index)
+                        }
+                    }
+                }
+
+                // Add member — a pure action picker (always shows placeholder).
+                Combobox {
+                    id: addMemberCombo
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    visible: root._nonMemberOptions.length > 0
+                    searchable: false
+                    placeholder: qsTr("Add member…")
+                    value: ""
+                    options: root._nonMemberOptions
+                    onValueSelected: function(v) { root._addMember(v) }
+                }
+
+                // Gap + side padding.
+                Row {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    spacing: 6
+                    NumericInput {
+                        width: (parent.width - 6) / 2
+                        workspace: root.workspace
+                        label: qsTr("Gap"); suffix: "%"
+                        min: 0; max: 30; step: 0.5
+                        value: root._group().gap
+                        onLive:   function(v) { const g = root._group(); g.gap = Math.round(v * 10) / 10; root._writeGroup(g, false) }
+                        onCommit: function(v) { workspace.saveToHistory() }
+                    }
+                    NumericInput {
+                        width: (parent.width - 6) / 2
+                        workspace: root.workspace
+                        label: qsTr("Pad X"); suffix: "%"
+                        min: 0; max: 40; step: 0.5
+                        value: root._group().padX
+                        onLive:   function(v) { const g = root._group(); g.padX = Math.round(v * 10) / 10; root._writeGroup(g, false) }
+                        onCommit: function(v) { workspace.saveToHistory() }
+                    }
+                }
+                // Top + bottom padding.
+                Row {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    spacing: 6
+                    NumericInput {
+                        width: (parent.width - 6) / 2
+                        workspace: root.workspace
+                        label: qsTr("Pad top"); suffix: "%"
+                        min: 0; max: 40; step: 0.5
+                        value: root._group().padTop
+                        onLive:   function(v) { const g = root._group(); g.padTop = Math.round(v * 10) / 10; root._writeGroup(g, false) }
+                        onCommit: function(v) { workspace.saveToHistory() }
+                    }
+                    NumericInput {
+                        width: (parent.width - 6) / 2
+                        workspace: root.workspace
+                        label: qsTr("Pad bot"); suffix: "%"
+                        min: 0; max: 40; step: 0.5
+                        value: root._group().padBottom
+                        onLive:   function(v) { const g = root._group(); g.padBottom = Math.round(v * 10) / 10; root._writeGroup(g, false) }
+                        onCommit: function(v) { workspace.saveToHistory() }
+                    }
                 }
             }
         }

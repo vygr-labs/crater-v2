@@ -222,11 +222,12 @@ QString WorkingTheme::duplicateNode(QString id)
                          ? QStringLiteral("text") : QStringLiteral("ctn");
     copy["id"] = makeUniqueId(prefix);
 
-    // Offset the duplicate slightly so it's visually distinguishable.
-    QVariantMap style = copy.value("style").toMap();
-    style["x"] = qMin(95.0, style.value("x").toDouble() + 2.0);
-    style["y"] = qMin(95.0, style.value("y").toDouble() + 2.0);
-    copy["style"] = style;
+    // Copy in place — identical position and size to the source. The previous
+    // +2% x/y "offset to distinguish the copy" shifted full-bleed background
+    // containers off their (0,0) origin, leaving a visible gap and clipping the
+    // far edge. The duplicate is inserted directly above the original (i + 1)
+    // and appears as its own row in the Layers panel, which is how the operator
+    // tells them apart; they can nudge it afterwards if they want.
 
     // Append " Copy" to the layerName.
     QVariantMap data = copy.value("data").toMap();

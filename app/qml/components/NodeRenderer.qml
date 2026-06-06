@@ -30,6 +30,20 @@ Item {
     readonly property bool _isText:      node && node.kind === "text"
     readonly property bool _isContainer: node && node.kind === "container"
 
+    // Measured height (in stage / canvas px) of this node's rendered text at
+    // its fitted size — 0 for containers or before the first fit. The
+    // projection scene reads this to let a container hug a text node's content
+    // (data.autoHeight) and to stack nodes relative to it (data.autoPosition).
+    // See ProjectionContentLayer's node layout.
+    readonly property real contentHeightPx:
+        (_isText && textLoader.item) ? textLoader.item.contentPx : 0
+
+    // When > 0, auto-fit measures text against THIS height instead of the
+    // node's own box height. Group / card layout sets it so a member fits to
+    // its allotted slice (stable) while its visible box equals the rendered
+    // content — without the split, fit↔box would feed back and loop.
+    property real fitHeightOverride: 0
+
     // ─── Container delegate ──────────────────────────────────────────────
     // Uniform radius for v1 — Qt 6's Rectangle.radius is a single value. The
     // 4 stored corner fields are averaged here; true per-corner rendering
@@ -106,6 +120,7 @@ Item {
     // the behavior of the Electron build's TextFill.js (which measures via
     // DOM offsetHeight) but without the JS-round-trip cost.
     Loader {
+        id: textLoader
         anchors.fill: parent
         active: nodeRoot._isText
         sourceComponent: Component {
@@ -115,6 +130,13 @@ Item {
 
                 readonly property var _style: nodeRoot.node.style || ({})
                 readonly property var _data:  nodeRoot.node.data  || ({})
+
+                // Rendered text height (px) at the fitted size, published up to
+                // nodeRoot.contentHeightPx so the scene can hug it. 0 until the
+                // first fit so a stale/zero frame never drives a hug. Depends
+                // only on width + font (not box height), so a height-changing
+                // hug can't feed back into it — no layout loop.
+                readonly property real contentPx: _fitted ? visibleText.paintedHeight : 0
 
                 // textTransform + DSL formatting both go through LyricsService.
                 // resolvedText may contain inline DSL markers (bold/italic/
@@ -196,7 +218,10 @@ Item {
                         return
                     }
                     const w = textHost.width
-                    const h = textHost.height
+                    // Fit against the override height when set (card members fit
+                    // to their allotted slice, not their hugged box); else the box.
+                    const h = nodeRoot.fitHeightOverride > 0
+                        ? nodeRoot.fitHeightOverride : textHost.height
                     if (w <= 0 || h <= 0) return
                     const maxSize = Math.max(8, _data.maxFontSize || 220)
                     let lo = 8, hi = maxSize, best = 8
@@ -231,6 +256,8 @@ Item {
                 onHeightChanged: textHost._fitted ? refitTimer.restart() : textHost._refit()
                 Connections {
                     target: nodeRoot
+                    // A changed fit-height override (card re-allotment) re-fits.
+                    function onFitHeightOverrideChanged() { refitTimer.restart() }
                     // Node-property changes (style, data) can burst during a
                     // drag-resize in the editor — keep these debounced.
                     function onNodeChanged()         { refitTimer.restart() }

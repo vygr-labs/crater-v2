@@ -145,7 +145,9 @@ Rectangle {
         anchors.right: parent.right
         anchors.rightMargin: 1   // leave room for the right-edge divider
         clip: true
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        // Themed bar to match the rest of the tabs/panels (AppScrollBar is
+        // AsNeeded itself); keep the horizontal one off.
+        ScrollBar.vertical: AppScrollBar {}
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         // One content child so ScrollView has a single, unambiguous item to

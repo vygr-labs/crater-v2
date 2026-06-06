@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import Crater
 
 // Right-hand properties panel — switches its body on the selected node's
@@ -72,6 +73,7 @@ Rectangle {
     }
 
     Flickable {
+        ScrollBar.vertical: AppScrollBar {}
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -86,6 +88,9 @@ Rectangle {
             id: body
             anchors.left: parent.left
             anchors.right: parent.right
+            // Reserve the scrollbar's lane so the property rows don't run under
+            // the bar, which rides the Flickable's (full-width) right edge.
+            anchors.rightMargin: Theme.size.scrollBar
             anchors.top: parent.top
             spacing: 0
 

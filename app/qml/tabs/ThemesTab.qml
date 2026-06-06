@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import Crater
 
 // Themes tab — visual presets for projection text rendering.
@@ -389,6 +390,7 @@ Item {
     // ── Grid ────────────────────────────────────────────────────────────
     GridView {
         id: grid
+        ScrollBar.vertical: AppScrollBar {}
         anchors.top: statusBar.visible ? statusBar.bottom
                    : errorBar.visible  ? errorBar.bottom
                                        : filterRow.bottom
@@ -396,12 +398,17 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.leftMargin: Theme.space.lg
-        anchors.rightMargin: Theme.space.lg
+        // Run to the panel edge; the responsive cellWidth below reserves the
+        // scrollbar's lane on the right so the bar never lands on a tile.
+        anchors.rightMargin: 0
         anchors.bottomMargin: Theme.space.lg
         anchors.topMargin: Theme.space.sm
         visible: root.filteredThemes.length > 0
         model: root.filteredThemes
-        cellWidth: 220
+        // Flex ~220px columns to fill the row, reserving the scrollbar lane on
+        // the right so the bar never overlaps a tile.
+        readonly property int _cols: Math.max(1, Math.floor((width - Theme.size.scrollBar) / 220))
+        cellWidth: Math.floor((width - Theme.size.scrollBar) / _cols)
         cellHeight: 148
         clip: true
         cacheBuffer: 400

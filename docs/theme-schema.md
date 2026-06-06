@@ -185,15 +185,62 @@ If it looks inverted, swap the two colors or set `angle` to `270`.
 
 ---
 
-## 7. Worked example
+## 7. Content-hugging cards — the **group**
 
-See `qt/docs/examples/scripture-aurora.theme.json` — a complete scripture theme
-with an animated **mesh** background, the lower-third **scrim** above, and
-**verse** + **reference** text boxes. Import it as-is, or use it as a template.
+A short verse in a fixed box leaves dead space below it. The clean way to get a
+lower-third that hugs its content is a **group container** (a "card"): it holds
+its text members, stacks them, hugs the total, and pins to the bottom. Members
+keep **auto-fit** and are positioned by the card — no per-node linking.
+
+> **Live output only (for now).** The card lays out on the projection / NDI
+> output; the editor canvas shows each node at its configured box.
+
+### `data.group` — a container becomes a card
+
+```jsonc
+"group": {
+  "members": ["reference", "verse"],  // node ids, top → bottom
+  "gap": 1.5,                          // % between members
+  "padTop": 4, "padBottom": 4, "padX": 8,   // % inset
+  "anchor": "bottom"                   // card pinned to its box bottom, grows up
+}
+```
+
+- Put it on the **container** that carries the scrim (its gradient fill renders
+  behind the whole card). The container's configured box: its **bottom edge**
+  (`y + height`) is where the card sits (your screen margin); its **width** is the
+  card width (members fill it minus `padX`).
+- Each **member** keeps its own style. A member's **height** is its *own* auto-fit
+  max region — a long verse shrinks to fit its height; the card then hugs whatever
+  the members actually render to.
+- The card **bottom-anchors** and grows upward: short verse → short card; long
+  verse → taller card. No dead space, and the verse still auto-fits.
+
+### Recipe: bottom-anchored card (see §8)
+1. **bg** — full-canvas gradient.
+2. **card** (container) — the scrim gradient + `data.group` listing `["reference","verse"]`, with the bottom box edge at your margin.
+3. **reference** (text) — `autoResize:false`, its `height` = the label's area.
+4. **verse** (text) — `autoResize:true` + `maxFontSize`, its `height` = the verse's max area.
+
+### Lower-level primitives (advanced / back-compat)
+`data.autoHeight` (a container hugs another node's content — `{source}` or
+`{from,to}`) and `data.autoPosition` (`{place:"above"|"below", source, gap}`)
+still work for one-off layouts, but the **group** is the recommended path for
+cards: it owns the layout, so alignment is exact and there's nothing to
+cross-link.
 
 ---
 
-## 8. Checklist before importing
+## 8. Worked example
+
+See `qt/docs/examples/scripture-aurora.theme.json` — a complete scripture theme
+with an animated **mesh** background, a lower-third **scrim** that **hugs** the
+verse (§7), and **verse** + **reference** text that stack above the screen
+bottom. Import it as-is, or use it as a template.
+
+---
+
+## 9. Checklist before importing
 
 - [ ] `version` is `2`; `canvas.width`/`height` > 0; `nodes` non-empty.
 - [ ] Every node has a unique `id`, a `kind`, and `style.x/y/width/height` in `0..100`.

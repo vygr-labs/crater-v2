@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Scripture tab — flat virtualized verse list. Behavior mirrors the Electron
 // scripture pane:
@@ -865,6 +866,7 @@ Item {
     // ── Verse list ──────────────────────────────────────────────────────
     ListView {
         id: list
+        ScrollBar.vertical: AppScrollBar {}
 
         anchors.top: actionBar.bottom
         anchors.topMargin: Theme.space.sm
@@ -903,7 +905,7 @@ Item {
 
         delegate: Item {
             id: verseRow
-            width: list.width
+            width: list.width - Theme.size.scrollBar   // leave the scrollbar its lane
             // 36 (was 40) — dropping the redundant per-row book icon
             // freed enough horizontal weight that the row no longer needs
             // 40 px to breathe. Density win on long passages: Psalm 119

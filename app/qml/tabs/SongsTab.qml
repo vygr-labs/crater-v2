@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Songs tab — full library experience matching the Electron desktop app:
 //
@@ -547,6 +548,7 @@ Item {
     // ── Songs list ──────────────────────────────────────────────────────
     ListView {
         id: list
+        ScrollBar.vertical: AppScrollBar {}
         anchors.top: actionBar.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -568,7 +570,7 @@ Item {
 
         delegate: Item {
             id: songRow
-            width: list.width
+            width: list.width - Theme.size.scrollBar   // leave the scrollbar its lane
             // 36px matches electron's virtualizer row height (estimateSize: 36
             // + py-2 padding). Title at 14px + author at 12px fit because the
             // Column is verticalCenter-anchored and Qt's font metrics leave
