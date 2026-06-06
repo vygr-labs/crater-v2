@@ -49,6 +49,25 @@ Item {
                        + (_style.borderBottomRightRadius || 0)) / 4
                 clip: true
 
+                // Animated gradient fill — bottom of the container stack (below
+                // media + overlay), covering the solid `color` when the node
+                // opts in via data.fill.type === "gradient". Mounted through a
+                // Loader so plain-color containers pay nothing. Animation is
+                // gated off for thumbnail surfaces (autoPlayVideos false) and
+                // when reduceMotion is set — the same policy video backgrounds
+                // already follow.
+                Loader {
+                    anchors.fill: parent
+                    active: !!(_data.fill && _data.fill.type === "gradient")
+                    sourceComponent: Component {
+                        GradientFill {
+                            spec: (_data.fill && _data.fill.gradient) || ({})
+                            animate: nodeRoot.autoPlayVideos
+                                  && !SettingsService.reduceMotion
+                        }
+                    }
+                }
+
                 // Media background — only mounted when mediaId is non-zero.
                 // The Loader keeps us from doing a MediaService lookup every
                 // render for plain-color containers.

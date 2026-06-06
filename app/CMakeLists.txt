@@ -97,6 +97,7 @@ qt_add_qml_module(crater
         qml/components/ProjectionScene.qml
         qml/components/ProjectionContentLayer.qml
         qml/components/NodeRenderer.qml
+        qml/components/GradientFill.qml
         qml/components/CroppableMediaPreview.qml
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
@@ -172,6 +173,19 @@ qt_add_qml_module(crater
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
+)
+
+# Animated-gradient fragment shader. qt_add_shaders (Qt6::ShaderTools)
+# compiles gradient.frag to a Vulkan-flavoured .qsb blob and bundles it as a
+# Qt resource, reached from GradientFill.qml as
+# `qrc:/crater/shaders/gradient.frag.qsb`. BASE strips the qml/ prefix so the
+# resource path is short (PREFIX + path-relative-to-BASE + ".qsb"). This is
+# the first shader in the project — no runtime DLL is needed (the .qsb is
+# embedded and ShaderEffect ships with Qt6::Quick, already linked).
+qt_add_shaders(crater "crater_shaders"
+    PREFIX "/crater"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/qml"
+    FILES  qml/shaders/gradient.frag
 )
 
 # Bundle the Lucide icon font and Funnel Sans body font as Qt resources

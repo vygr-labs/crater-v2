@@ -40,6 +40,52 @@ Column {
     readonly property var _media: (node && node.data && node.data.mediaId)
         ? MediaService.byId(node.data.mediaId) : null
 
+    // ── Gradient fill helpers ──────────────────────────────────────────
+    // The gradient lives as a nested map at data.fill.gradient. setNodeData
+    // only writes whole top-level data fields, so every edit reads the current
+    // gradient, patches one key, and writes the entire `fill` object back.
+    // _gradient() always returns a fully-defaulted spec so partial / legacy
+    // data still edits cleanly.
+    readonly property bool _isGradient:
+        !!(node && node.data && node.data.fill && node.data.fill.type === "gradient")
+    readonly property string _gradStyle: {
+        const g = node && node.data && node.data.fill && node.data.fill.gradient
+        return (g && g.style) || "mesh"
+    }
+    // Color-stop model for the Repeater, refreshed only when the stop COLORS
+    // change — not on every node refresh. An angle / speed drag rewrites the
+    // whole `fill` map ~60x/s; without this guard the stop rows (and their
+    // color popovers) would rebuild every frame. Edits still read the live node
+    // via _gradient(), so this is purely a render-stability cache.
+    property var _stopColors: ["#1e3a8a", "#7c3aed", "#db2777"]
+    function _syncStops() {
+        const g = node && node.data && node.data.fill && node.data.fill.gradient
+        const c = (g && g.colors && g.colors.length >= 1)
+                      ? g.colors : ["#1e3a8a", "#7c3aed", "#db2777"]
+        if (JSON.stringify(c) !== JSON.stringify(_stopColors)) _stopColors = c.slice()
+    }
+    onNodeChanged: _syncStops()
+    Component.onCompleted: _syncStops()
+
+    function _gradient() {
+        const g = node && node.data && node.data.fill && node.data.fill.gradient
+        return {
+            style:   (g && g.style) || "mesh",
+            colors:  (g && g.colors && g.colors.length >= 2)
+                         ? g.colors.slice() : ["#1e3a8a", "#7c3aed", "#db2777"],
+            angle:   (g && g.angle) || 0,
+            speed:   (g && g.speed   !== undefined) ? g.speed   : 1.0,
+            animate: (g && g.animate !== undefined) ? g.animate : true
+        }
+    }
+    // commit=true snapshots one undo step; live edits (angle / speed drag) pass
+    // false and let the input's onCommit call saveToHistory once at release.
+    function _writeGradient(g, commit) {
+        workspace.workingTheme.setNodeData(node.id, "fill",
+            { type: "gradient", gradient: g })
+        if (commit) workspace.saveToHistory()
+    }
+
     // ── Background ────────────────────────────────────────────────────
     AccordionSection {
         anchors.left: parent.left
@@ -52,13 +98,203 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
+            // Fill type — Solid uses the color picker; Gradient swaps in the
+            // animated GradientFill and reveals its controls below. The first
+            // switch to Gradient seeds a default mesh; switching back to Solid
+            // keeps the gradient spec so re-selecting restores it.
+            SegmentedControl {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 28
+                options: [
+                    { value: "solid",    label: qsTr("Solid")    },
+                    { value: "gradient", label: qsTr("Gradient") }
+                ]
+                current: root._isGradient ? "gradient" : "solid"
+                onChanged: function(v) {
+                    const fill = (node.data && node.data.fill) || ({})
+                    if (v === "gradient") {
+                        root._setData("fill", {
+                            type: "gradient",
+                            gradient: fill.gradient || {
+                                style: "mesh",
+                                colors: ["#1e3a8a", "#7c3aed", "#db2777"],
+                                angle: 0, speed: 1.0, animate: true
+                            }
+                        })
+                    } else {
+                        root._setData("fill", { type: "solid", gradient: fill.gradient || null })
+                    }
+                }
+            }
+
+            // ── Solid fill ────────────────────────────────────────────
             ColorSwatchInput {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 32
+                visible: !root._isGradient
                 label: qsTr("Fill")
                 value: (node && node.style && node.style.backgroundColor) || "#000000"
                 onColorPicked: function(c) { root._setStyle("backgroundColor", c) }
+            }
+
+            // ── Gradient fill ─────────────────────────────────────────
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: root._isGradient
+                spacing: 6
+
+                // Style — mesh is the flowing "aurora" blend; the others are
+                // classic directional ramps.
+                SegmentedControl {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 28
+                    options: [
+                        { value: "linear", label: qsTr("Linear") },
+                        { value: "radial", label: qsTr("Radial") },
+                        { value: "conic",  label: qsTr("Conic")  },
+                        { value: "mesh",   label: qsTr("Mesh")   }
+                    ]
+                    current: root._gradStyle
+                    onChanged: function(v) {
+                        const g = root._gradient(); g.style = v; root._writeGradient(g, true)
+                    }
+                }
+
+                // Color stops — 2..6. Each row is a swatch + remove; the Add
+                // button hides once six stops exist.
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    spacing: 6
+
+                    Repeater {
+                        model: root._stopColors
+                        delegate: Row {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            spacing: 6
+                            ColorSwatchInput {
+                                width: parent.width - 34
+                                height: 32
+                                label: qsTr("Stop %1").arg(index + 1)
+                                value: modelData
+                                onColorPicked: function(c) {
+                                    const g = root._gradient(); g.colors[index] = c
+                                    root._writeGradient(g, true)
+                                }
+                            }
+                            IconButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                iconName: "trash"
+                                iconSize: Theme.icon.sm
+                                enabled: root._stopColors.length > 2
+                                opacity: enabled ? 1 : 0.35
+                                onClicked: {
+                                    const g = root._gradient()
+                                    if (g.colors.length > 2) {
+                                        g.colors.splice(index, 1)
+                                        root._writeGradient(g, true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    GhostButton {
+                        visible: root._stopColors.length < 6
+                        text: qsTr("Add color")
+                        iconName: "plus"
+                        onClicked: {
+                            const g = root._gradient()
+                            if (g.colors.length < 6) {
+                                g.colors.push("#ffffff")
+                                root._writeGradient(g, true)
+                            }
+                        }
+                    }
+                }
+
+                // Angle — only linear / conic have a direction; radial and mesh
+                // ignore it, so it's hidden for those.
+                NumericInput {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    visible: root._gradStyle === "linear" || root._gradStyle === "conic"
+                    workspace: root.workspace
+                    label: qsTr("Angle"); suffix: "°"
+                    min: 0; max: 360; step: 1
+                    value: {
+                        const g = node && node.data && node.data.fill && node.data.fill.gradient
+                        return (g && g.angle) || 0
+                    }
+                    onLive:   function(v) { const g = root._gradient(); g.angle = Math.round(v); root._writeGradient(g, false) }
+                    onCommit: function(v) { workspace.saveToHistory() }
+                }
+
+                // Animate toggle — mirrors the editor's other checkbox rows
+                // (Auto-fit / Drop shadow). Speed dims out when animation is off.
+                Item {
+                    id: animateRow
+                    anchors.left: parent.left
+                    width: 120
+                    height: 32
+                    readonly property bool _on: {
+                        const g = node && node.data && node.data.fill && node.data.fill.gradient
+                        return !g || g.animate !== false
+                    }
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 18; height: 18; radius: 0
+                            color: animateRow._on ? Theme.color.brand : Theme.color.canvas
+                            border.color: animateRow._on ? Theme.color.brand : Theme.color.borderStrong
+                            border.width: 1
+                            AppIcon {
+                                anchors.centerIn: parent
+                                visible: animateRow._on
+                                name: "check"; size: Theme.icon.sm
+                                color: Theme.color.brandInk
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Animate")
+                            color: Theme.color.textSecondary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize
+                            font.weight: Theme.font.weightMedium
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const g = root._gradient()
+                            g.animate = !(g.animate !== false)
+                            root._writeGradient(g, true)
+                        }
+                    }
+                }
+
+                SimpleSlider {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    visible: animateRow._on
+                    label: qsTr("Speed")
+                    value: {
+                        const g = node && node.data && node.data.fill && node.data.fill.gradient
+                        return (g && g.speed !== undefined) ? g.speed : 1.0
+                    }
+                    min: 0.1; max: 3.0; step: 0.1
+                    onLive:   function(v) { const g = root._gradient(); g.speed = v; root._writeGradient(g, false) }
+                    onCommit: function(v) { workspace.saveToHistory() }
+                }
             }
         }
     }

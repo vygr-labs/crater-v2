@@ -30,6 +30,7 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
     Quick
     QuickControls2
     QuickEffects   # MultiEffect — drop shadow / blur via the QtQuick.Effects QML module
+    ShaderTools    # qt_add_shaders — compiles the animated-gradient .frag to .qsb (Phase: gradients)
     Sql
     Multimedia
     Pdf             # PDF rasterization via pdfium — used by MediaService + PdfPageImageProvider
