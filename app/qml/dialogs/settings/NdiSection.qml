@@ -320,6 +320,38 @@ Item {
                 }
             }
 
+            // On-demand rendering — renders an NDI frame only when the scene
+            // actually changes (text advance, transition), idling between
+            // updates and re-sending the last frame at a low keepalive rate,
+            // capped at 30 Hz. Large CPU saver for mostly-static broadcasts
+            // (e.g. a dual-output lower-third) on weak hardware. Headless path
+            // only — the legacy grabToImage fallback ignores it — so it's
+            // disabled when the headless renderer is off. Applies on the next
+            // broadcast start, matching the headless toggle's lifecycle.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: onDemandToggle.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    ElidedText { text: qsTr("On-demand rendering (low CPU)"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                                 width: parent.width }
+                    ElidedText { text: qsTr("Only render when the scene changes; idle between updates. Caps at 30 Hz. Best for static lower-thirds. Applies on next broadcast start.")
+                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                                 width: parent.width }
+                }
+                ToggleSwitch {
+                    id: onDemandToggle
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    enabled: SettingsService.useHeadlessNdi
+                    opacity: SettingsService.useHeadlessNdi ? 1.0 : 0.45
+                    value: SettingsService.ndiOnDemand
+                    onToggled: SettingsService.ndiOnDemand = !SettingsService.ndiOnDemand
+                }
+            }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
     }

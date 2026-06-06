@@ -100,6 +100,15 @@ Item {
     }
 
     // ── Header: filter chips (left) + Import / New theme (right) ────────
+    // On a narrow tab the two button groups would overlap, so the right-hand
+    // actions wrap to a second row beneath the filter chips. Keyed on the two
+    // groups' rendered widths vs the tab width (plus the three lg gaps: left,
+    // middle, right) rather than a hardcoded breakpoint — the labels are
+    // translated, so only measuring the real widths is correct. Flips once at
+    // the threshold without oscillating (neither width depends on the wrap).
+    readonly property bool _headerWrap:
+        filterRow.width + header.width + Theme.space.lg * 3 > width
+
     Row {
         id: filterRow
         anchors.left: parent.left
@@ -135,100 +144,109 @@ Item {
 
     Row {
         id: header
-        anchors.top: parent.top
         anchors.right: parent.right
-        anchors.margins: Theme.space.lg
+        anchors.rightMargin: Theme.space.lg
+        // Inline with the filter chips when they fit; otherwise drop to a
+        // second row beneath them (see root._headerWrap).
+        anchors.top: root._headerWrap ? filterRow.bottom : parent.top
+        anchors.topMargin: root._headerWrap ? Theme.space.sm : Theme.space.lg
         spacing: Theme.space.sm
         z: 1
 
-        // Import a redistributable font file (.ttf / .otf) so subsequent
-        // theme exports can bundle it. See ARCHITECTURE.md §10.5 + the
-        // FontService re-registration model. Bypasses the bundle path —
-        // this is the operator's deliberate consent to add a font from
-        // outside the QRC/system set.
+        // Import — one dropdown collapsing the three import paths so the header
+        // stays compact (esp. on narrow tabs). Each menu item keeps its own
+        // file-picker + result-banner logic. Anchored bottom-right of the
+        // button (dx: -menuWidth) so the menu doesn't fall off the tab's right
+        // edge, matching the New-theme button.
         GhostButton {
-            text: qsTr("Import font")
-            iconName: "type"
-            onClicked: {
-                const path = FileDialogService.chooseOpenFile(
-                    qsTr("Import Font"),
-                    [qsTr("Font Files (*.ttf *.otf)"),
-                     qsTr("All Files (*.*)")])
-                if (!path || path.length === 0) return
-
-                const font = FontService.importFontFile(path)
-                if (font.id === 0) {
-                    root._importError = FontService.lastError()
-                                     || qsTr("Font import failed")
-                    errorClearTimer.restart()
-                    return
-                }
-                // Success — give visible confirmation. Sticky banner so
-                // the operator notices even if they were looking
-                // elsewhere when the dialog closed.
-                root._statusMessage =
-                    qsTr("Imported font: %1").arg(font.family)
-            }
-        }
-        GhostButton {
-            text: qsTr("Import theme")
+            id: importBtn
+            text: qsTr("Import")
             iconName: "upload"
             onClicked: {
-                const path = FileDialogService.chooseOpenFile(
-                    qsTr("Import Theme"),
-                    [qsTr("Crater Theme (*.craterheme)"), qsTr("All Files (*.*)")])
-                if (!path || path.length === 0) return
+                AppState.openContextMenuAt(importBtn,
+                    importBtn.width, importBtn.height,
+                    [
+                        // Bundle (.craterheme v2) — self-contained zip that can
+                        // carry media + fonts. See ARCHITECTURE.md §10.
+                        { label: qsTr("Import theme…"), iconName: "upload",
+                          action: function() {
+                              const path = FileDialogService.chooseOpenFile(
+                                  qsTr("Import Theme"),
+                                  [qsTr("Crater Theme (*.craterheme)"), qsTr("All Files (*.*)")])
+                              if (!path || path.length === 0) return
 
-                // Returns a ThemeImportReport (Q_GADGET). themeId === 0 is
-                // a catastrophic failure; warnings are best-effort issues
-                // on a successful import (e.g., one bundled font failed).
-                const report = ThemeService.importThemeFile(path)
-                if (report.themeId === 0) {
-                    root._importError = report.errorMessage
-                                     || ThemeService.lastImportError()
-                                     || qsTr("Import failed")
-                    errorClearTimer.restart()
-                    return
-                }
+                              // ThemeImportReport (Q_GADGET). themeId === 0 is a
+                              // catastrophic failure; warnings are best-effort
+                              // issues on an otherwise-successful import.
+                              const report = ThemeService.importThemeFile(path)
+                              if (report.themeId === 0) {
+                                  root._importError = report.errorMessage
+                                                   || ThemeService.lastImportError()
+                                                   || qsTr("Import failed")
+                                  errorClearTimer.restart()
+                                  return
+                              }
 
-                // A bundle can carry video backgrounds. Those land via
-                // MediaService::importPathSync, which emits allMediaChanged but
-                // NOT importFinished, so the startup-wired thumbnail sweep never
-                // sees them and the new clips show no poster until the next
-                // launch. Kick the sweep here so imported videos get a
-                // thumbnail right away (it's a no-op for ids already covered).
-                VideoThumbnailer.ensureForAllVideos()
+                              // A bundle can carry video backgrounds. Those land
+                              // via MediaService::importPathSync, which emits
+                              // allMediaChanged but NOT importFinished, so the
+                              // startup-wired thumbnail sweep never sees them and
+                              // the clips show no poster until the next launch.
+                              // Kick the sweep here (no-op for ids already done).
+                              VideoThumbnailer.ensureForAllVideos()
 
-                if (report.mediaWarnings.length > 0
-                    || report.fontWarnings.length > 0) {
-                    const lines = report.mediaWarnings
-                                  .concat(report.fontWarnings)
-                    root._statusMessage =
-                        qsTr("Import succeeded with warnings:") + "\n"
-                        + lines.join("\n")
-                }
-            }
-        }
-        GhostButton {
-            text: qsTr("Import JSON")
-            iconName: "upload"
-            onClicked: {
-                const path = FileDialogService.chooseOpenFile(
-                    qsTr("Import Theme JSON"),
-                    [qsTr("Theme JSON (*.json)"), qsTr("All Files (*.*)")])
-                if (!path || path.length === 0) return
+                              if (report.mediaWarnings.length > 0
+                                  || report.fontWarnings.length > 0) {
+                                  const lines = report.mediaWarnings
+                                                .concat(report.fontWarnings)
+                                  root._statusMessage =
+                                      qsTr("Import succeeded with warnings:") + "\n"
+                                      + lines.join("\n")
+                              }
+                          } },
+                        // Plain-JSON theme — gradients / colors / system fonts,
+                        // no bundled assets (see qt/docs/theme-schema.md).
+                        { label: qsTr("Import theme JSON…"), iconName: "file-text",
+                          action: function() {
+                              const path = FileDialogService.chooseOpenFile(
+                                  qsTr("Import Theme JSON"),
+                                  [qsTr("Theme JSON (*.json)"), qsTr("All Files (*.*)")])
+                              if (!path || path.length === 0) return
 
-                // Plain-JSON theme — gradients / colors / system fonts, no
-                // bundled assets (see qt/docs/theme-schema.md). Returns the new
-                // theme id, or 0 with a field-level message on failure.
-                const id = ThemeService.importThemeJsonFile(path)
-                if (id === 0) {
-                    root._importError = ThemeService.lastImportError()
-                                     || qsTr("JSON theme import failed")
-                    errorClearTimer.restart()
-                    return
-                }
-                root._statusMessage = qsTr("Imported theme from JSON")
+                              const id = ThemeService.importThemeJsonFile(path)
+                              if (id === 0) {
+                                  root._importError = ThemeService.lastImportError()
+                                                   || qsTr("JSON theme import failed")
+                                  errorClearTimer.restart()
+                                  return
+                              }
+                              root._statusMessage = qsTr("Imported theme from JSON")
+                          } },
+                        { separator: true },
+                        // Font import is a deliberate, separate consent action —
+                        // it adds a font from outside the QRC/system set so
+                        // subsequent exports can bundle it (ARCHITECTURE.md §10.5).
+                        { label: qsTr("Import font…"), iconName: "type",
+                          action: function() {
+                              const path = FileDialogService.chooseOpenFile(
+                                  qsTr("Import Font"),
+                                  [qsTr("Font Files (*.ttf *.otf)"), qsTr("All Files (*.*)")])
+                              if (!path || path.length === 0) return
+
+                              const font = FontService.importFontFile(path)
+                              if (font.id === 0) {
+                                  root._importError = FontService.lastError()
+                                                   || qsTr("Font import failed")
+                                  errorClearTimer.restart()
+                                  return
+                              }
+                              // Sticky banner so the confirmation is noticed even
+                              // if the operator looked away when the dialog closed.
+                              root._statusMessage =
+                                  qsTr("Imported font: %1").arg(font.family)
+                          } }
+                    ],
+                    { dx: -220 })
             }
         }
         GhostButton {
@@ -262,7 +280,7 @@ Item {
     // filterRow.bottom in the common case.
     Rectangle {
         id: errorBar
-        anchors.top: filterRow.bottom
+        anchors.top: root._headerWrap ? header.bottom : filterRow.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: Theme.space.lg
@@ -313,7 +331,8 @@ Item {
     // stay visible for the operator to notice.
     Rectangle {
         id: statusBar
-        anchors.top: errorBar.visible ? errorBar.bottom : filterRow.bottom
+        anchors.top: errorBar.visible ? errorBar.bottom
+                   : root._headerWrap ? header.bottom : filterRow.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: Theme.space.lg
@@ -395,6 +414,7 @@ Item {
         ScrollBar.vertical: AppScrollBar {}
         anchors.top: statusBar.visible ? statusBar.bottom
                    : errorBar.visible  ? errorBar.bottom
+                   : root._headerWrap  ? header.bottom
                                        : filterRow.bottom
         anchors.left: parent.left
         anchors.right: parent.right

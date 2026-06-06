@@ -73,6 +73,15 @@ private:
     // Settings; intended as a user-facing fallback if QRhi struggles on a
     // particular GPU. See qt/docs/render-pipeline-decouple.md.
     Q_PROPERTY(bool    useHeadlessNdi     READ useHeadlessNdi     WRITE setUseHeadlessNdi     NOTIFY useHeadlessNdiChanged)
+    // On-demand NDI rendering. When true, the headless renderer renders +
+    // reads back a frame ONLY when the scene graph is dirty (content / text /
+    // transition change); between changes it re-sends the last frame at a low
+    // keepalive rate and caps the cadence at 30 Hz. A large CPU win for the
+    // mostly-static broadcasts NDI typically carries (e.g. a lower-third on its
+    // own dual-output theme) on weak hardware. Default off — opt-in, applied on
+    // the next broadcast (re)start (same as useHeadlessNdi). No effect on the
+    // legacy grabToImage path.
+    Q_PROPERTY(bool    ndiOnDemand        READ ndiOnDemand        WRITE setNdiOnDemand        NOTIFY ndiOnDemandChanged)
     // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
     // in the same uppercase form BibleService::translations() reports and the
     // scripture sidebar displays; AppState lowercases it to seed
@@ -97,6 +106,7 @@ public:
     QString outputMode() const;
     bool    projectionInAltTab() const;
     bool    useHeadlessNdi() const;
+    bool    ndiOnDemand() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    showStrongsTab() const;
@@ -112,6 +122,7 @@ public:
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
     void setUseHeadlessNdi(bool v);
+    void setNdiOnDemand(bool v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setShowStrongsTab(bool v);
@@ -128,6 +139,7 @@ signals:
     void outputModeChanged();
     void projectionInAltTabChanged();
     void useHeadlessNdiChanged();
+    void ndiOnDemandChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void showStrongsTabChanged();

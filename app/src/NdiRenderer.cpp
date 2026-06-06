@@ -11,6 +11,7 @@
 #include <QQuickRenderControl>
 #include <QQuickRenderTarget>
 #include <QQuickWindow>
+#include <QSettings>
 #include <QTimer>
 #include <QUrl>
 
@@ -51,6 +52,22 @@ constexpr qint64 kPromoteBelowMs = 6;
 constexpr int kCostRingSize    = 60;
 constexpr int kDemoteWindow    = 30;
 constexpr int kPromoteWindow   = 60;
+
+// On-demand keepalive cadence. When the scene is idle (nothing to render),
+// re-send the cached last frame every Nth tick so the NDI receiver (vMix,
+// Studio Monitor, …) holds a live source with correct timing rather than
+// timing it out. 6 ticks @ 30 Hz ≈ 5 Hz — a re-send only (no render, no
+// readback, no color convert), so the cost is negligible.
+constexpr int kKeepaliveEveryNTicks = 6;
+
+// On-demand render burst. A scene change arms this many render ticks. We must
+// keep rendering for a few ticks AFTER the last change because async readback
+// completes on the *next* beginFrame() — a one-shot "render once" would submit
+// the changed frame's readback and then go idle before any beginFrame fired it,
+// leaving NDI one change behind. A burst longer than the 3-deep readback ring
+// guarantees the settled frame flushes all the way out before we idle. At
+// 30 Hz this is ~200 ms of rendering after a text advance, then idle.
+constexpr int kRenderBurstTicks = 6;
 
 // Inline QML loaded into the headless window. Imports `Crater` so it can
 // reference `ProjectionScene` (a type registered into the same module the
@@ -130,6 +147,17 @@ struct NdiRenderer::Impl
     int                       costIdx     = 0;
     int                       costCount   = 0;
 
+    // On-demand rendering state (opt-in via Settings/ndiOnDemand, read at
+    // start()). When `onDemand` is set, renderTick renders only while
+    // `renderBudget > 0` — re-armed to kRenderBurstTicks by the renderControl
+    // sceneChanged / renderRequested signals — and otherwise re-sends
+    // `lastFrame` every kKeepaliveEveryNTicks ticks. `idleTicks` counts ticks
+    // since the last send. Capped at 30 Hz (no adaptive promotion) on-demand.
+    bool                      onDemand    = false;
+    int                       renderBudget = 0;     // render ticks remaining (on-demand)
+    int                       idleTicks   = 0;       // ticks since last keepalive send
+    QImage                    lastFrame;             // cached for keepalive re-send
+
     // Reports the QRhi backend Qt picked. Logged on start() so a future
     // bug report can include "we were running on D3D11 / Vulkan / etc."
     // without re-deriving it from Qt's logs.
@@ -200,6 +228,16 @@ NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
     m_impl->renderTimer.setInterval(kTickIntervalMs60Hz);
     connect(&m_impl->renderTimer, &QTimer::timeout,
             this, &NdiRenderer::renderTick);
+
+    // Dirty tracking for on-demand mode. QQuickRenderControl emits these
+    // whenever the scene graph needs a fresh frame — content/property changes
+    // (sceneChanged) or a running animation/transition asking to repaint
+    // (renderRequested). Each re-arms the render burst; renderTick draws while
+    // the budget lasts (on-demand) or ignores it entirely (default path).
+    connect(m_impl->renderControl, &QQuickRenderControl::sceneChanged,
+            this, [this]() { m_impl->renderBudget = kRenderBurstTicks; });
+    connect(m_impl->renderControl, &QQuickRenderControl::renderRequested,
+            this, [this]() { m_impl->renderBudget = kRenderBurstTicks; });
 
     qInfo() << "NdiRenderer: constructed — offscreen surface, render control, "
                "and NDI scene ready";
@@ -302,14 +340,30 @@ bool NdiRenderer::start()
     // bleed into this one (e.g. a heavy theme during the last broadcast
     // shouldn't keep us throttled when the operator restarts NDI under a
     // light theme).
+    // Read the on-demand toggle fresh on each broadcast start (same lifecycle
+    // as useHeadlessNdi — a Settings change applies on the next NDI start, not
+    // mid-stream). Read straight from QSettings to avoid coupling the renderer
+    // to SettingsService; the key matches SettingsService::kNdiOnDemand.
+    {
+        QSettings s(QStringLiteral("Voyager Labs"), QStringLiteral("Crater"));
+        m_impl->onDemand = s.value(QStringLiteral("Settings/ndiOnDemand"), false).toBool();
+    }
+    m_impl->renderBudget = kRenderBurstTicks;  // draw the opening frames
+    m_impl->idleTicks    = 0;
+    m_impl->lastFrame    = QImage();
+
     m_impl->costSamplesMs.fill(0);
     m_impl->costIdx   = 0;
     m_impl->costCount = 0;
-    if (m_impl->framerateHz != 60) {
-        m_impl->framerateHz = 60;
+    // On-demand caps at 30 Hz (no promotion); otherwise start at 60 Hz and let
+    // the adaptive scheduler demote under load.
+    const int startHz = m_impl->onDemand ? 30 : 60;
+    if (m_impl->framerateHz != startHz) {
+        m_impl->framerateHz = startHz;
         emit framerateChanged();
     }
-    m_impl->renderTimer.setInterval(kTickIntervalMs60Hz);
+    m_impl->renderTimer.setInterval(
+        m_impl->onDemand ? kTickIntervalMs30Hz : kTickIntervalMs60Hz);
 
     m_impl->running   = true;
     m_impl->available = true;
@@ -377,6 +431,22 @@ void NdiRenderer::renderTick()
 {
     if (!m_impl->running) return;
 
+    // On-demand: once the render burst from the last scene change is spent,
+    // skip the entire render → readback → color-convert → encode chain. Re-send
+    // the cached last frame every Nth tick so the NDI receiver keeps the source
+    // live. This is the CPU win for static broadcasts (e.g. a dual-output
+    // lower-third that only changes on text advance). The budget is re-armed by
+    // the renderControl signals wired in the constructor; it's decremented
+    // below once we commit to a real render.
+    if (m_impl->onDemand && m_impl->renderBudget <= 0) {
+        if (!m_impl->lastFrame.isNull()
+            && ++m_impl->idleTicks >= kKeepaliveEveryNTicks) {
+            m_impl->idleTicks = 0;
+            emit frameReady(m_impl->lastFrame);
+        }
+        return;
+    }
+
     // Backpressure: if the GPU is more than three frames behind, drop
     // this tick. The next completion will free a slot and we'll resume.
     // Without this guard we'd build an unbounded queue of pending
@@ -395,6 +465,14 @@ void NdiRenderer::renderTick()
         }
     }
     if (slot < 0) return;
+
+    // Committed to rendering this tick — spend one unit of the burst budget.
+    // Decrementing here (after the backpressure/slot guards, not at the top)
+    // means a tick we *defer* keeps its budget and retries next time. A scene
+    // change landing mid-burst re-arms the budget via the renderControl
+    // signals, so nothing is lost.
+    if (m_impl->onDemand) --m_impl->renderBudget;
+    m_impl->idleTicks = 0;
 
     // Wall-clock the entire render+submit sequence. This is what the
     // adaptive scheduler reads back from: if our GUI thread spends >10 ms
@@ -460,6 +538,11 @@ void NdiRenderer::renderTick()
                 QImage::Format_RGBA8888);
             const QImage bgra = view.convertToFormat(QImage::Format_ARGB32);
 
+            // Cache for the on-demand keepalive re-send. convertToFormat
+            // returned a deep copy, so lastFrame owns its pixels independently
+            // of the recycled readback slot. Harmless (one ~8 MB frame) when
+            // on-demand is off — it's simply never re-sent.
+            m_impl->lastFrame = bgra;
             emit frameReady(bgra);
         };
 
@@ -471,6 +554,12 @@ void NdiRenderer::renderTick()
     }
 
     m_impl->renderControl->endFrame();
+
+    // On-demand mode runs at a fixed 30 Hz cap — skip the adaptive scheduler
+    // entirely (no demote/promote). Promotion to 60 Hz would otherwise fire
+    // here: a static scene renders cheaply, the cost average drops below the
+    // promote threshold, and we'd bump back to 60 — defeating the cap.
+    if (m_impl->onDemand) return;
 
     // ── Adaptive cadence ────────────────────────────────────────────────
     // Record paint cost for this tick and re-evaluate the framerate.
