@@ -480,6 +480,27 @@ QtObject {
         "themes":    "all-themes"
     })
 
+    // Seed the active scripture translation from the persisted operator default
+    // (SettingsService.defaultScriptureVersion). The literal "kjv" above is the
+    // first-run fallback; this overrides it with the saved choice on startup —
+    // but only when that translation is actually installed, so a default left
+    // pointing at a since-removed version never strands the scripture tab on an
+    // empty corpus. Mid-session sidebar switches stay independent: they write
+    // activeLibraryGroup directly without touching the saved default. Live
+    // re-application when the operator picks a new default is driven from the
+    // Settings dropdown (a QtObject can't host a Connections child here).
+    Component.onCompleted: {
+        const want = (SettingsService.defaultScriptureVersion || "").toLowerCase()
+        if (want.length === 0) return
+        const trs = BibleService.translations()
+        for (let i = 0; i < trs.length; ++i) {
+            if (String(trs[i].code).toLowerCase() === want) {
+                setLibraryGroup("scripture", want)
+                return
+            }
+        }
+    }
+
     // Per-tab fluid-focus index — the row the operator is currently navigating
     // inside the library list (independent of selection). Arrow keys move it
     // without leaving the search input. -1 means no row is focused.

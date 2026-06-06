@@ -73,6 +73,11 @@ private:
     // Settings; intended as a user-facing fallback if QRhi struggles on a
     // particular GPU. See qt/docs/render-pipeline-decouple.md.
     Q_PROPERTY(bool    useHeadlessNdi     READ useHeadlessNdi     WRITE setUseHeadlessNdi     NOTIFY useHeadlessNdiChanged)
+    // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
+    // in the same uppercase form BibleService::translations() reports and the
+    // scripture sidebar displays; AppState lowercases it to seed
+    // activeLibraryGroup.scripture at startup.
+    Q_PROPERTY(QString defaultScriptureVersion READ defaultScriptureVersion WRITE setDefaultScriptureVersion NOTIFY defaultScriptureVersionChanged)
     Q_PROPERTY(bool    showVerseNumbers   READ showVerseNumbers   WRITE setShowVerseNumbers   NOTIFY showVerseNumbersChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
@@ -92,6 +97,7 @@ public:
     QString outputMode() const;
     bool    projectionInAltTab() const;
     bool    useHeadlessNdi() const;
+    QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
@@ -106,6 +112,7 @@ public:
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
     void setUseHeadlessNdi(bool v);
+    void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
@@ -121,6 +128,7 @@ signals:
     void outputModeChanged();
     void projectionInAltTabChanged();
     void useHeadlessNdiChanged();
+    void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void showStrongsTabChanged();
     void showSongAuthorChanged();

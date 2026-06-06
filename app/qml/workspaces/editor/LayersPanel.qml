@@ -127,6 +127,11 @@ Rectangle {
             readonly property bool _hidden:   !!(modelData.data && modelData.data.hidden)
             readonly property bool _locked:   !!(modelData.data && modelData.data.locked)
             readonly property bool _dragging: list.dragId === modelData.id
+            // Action buttons appear on hover, and stay shown for the selected /
+            // hidden / locked row. The name column reserves room for them only
+            // while they're visible, so an idle row's name can use full width.
+            readonly property bool _actionsVisible:
+                rowHover.hovered || row._selected || row._hidden || row._locked
 
             // Open the rename dialog. Shared by the double-click gesture (the
             // expected "edit name" affordance in a layers list) and the
@@ -194,7 +199,10 @@ Rectangle {
                     color: row._selected ? Theme.color.brand : Theme.color.textSecondary
                     size: Theme.icon.md
                 }
-                Text {
+                // ElidedText surfaces the full name in a hover tooltip, but
+                // ONLY when the name is actually truncated — names that already
+                // fit show no tooltip, so there's no hover noise.
+                ElidedText {
                     anchors.verticalCenter: parent.verticalCenter
                     // Prefer an explicit layerName (editor-created nodes set
                     // one); else fall back to the node id, which for JSON-
@@ -209,7 +217,15 @@ Rectangle {
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize
                     elide: Text.ElideRight
-                    width: row.width - 90
+                    // Reserve room for the leading icon + margins, and for the
+                    // action buttons (actionRow) only while they're shown — so a
+                    // long name elides before it collides with the hover icons
+                    // instead of overrunning them.
+                    width: Math.max(0, row.width
+                        - Theme.space.md - Theme.icon.md - Theme.space.sm
+                        - (row._actionsVisible
+                            ? actionRow.width + Theme.space.md + Theme.space.sm
+                            : Theme.space.sm))
                 }
             }
 
@@ -220,12 +236,13 @@ Rectangle {
             // the row-wide HoverHandler so the buttons don't vanish the instant
             // the cursor reaches them.
             Row {
+                id: actionRow
                 z: 1
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.rightMargin: Theme.space.sm
                 spacing: 0
-                visible: rowHover.hovered || row._selected || row._hidden || row._locked
+                visible: row._actionsVisible
                 IconButton { iconName: row._hidden ? "eye-off" : "eye"; iconSize: Theme.icon.sm
                     onClicked: {
                         workspace.workingTheme.setNodeData(modelData.id, "hidden", !row._hidden)

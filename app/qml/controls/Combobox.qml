@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import Crater
 
 // A select-style dropdown with optional filter. Displays the current value
@@ -257,6 +258,7 @@ Item {
         // ── Scrolling list ────────────────────────────────────────────
         ListView {
             id: listView
+            ScrollBar.vertical: AppScrollBar {}
             anchors.top: root.searchable ? searchRow.bottom : parent.top
             anchors.topMargin: root.searchable ? 4 : 6
             anchors.bottom: parent.bottom
@@ -270,7 +272,12 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
 
             delegate: Rectangle {
-                width: listView.width
+                // Reserve the scrollbar's lane only when the list actually
+                // overflows (AppScrollBar is AsNeeded). Short, non-scrolling
+                // dropdowns keep full-width rows and gain no dead right gutter.
+                width: listView.contentHeight > listView.height
+                       ? listView.width - Theme.size.scrollBar
+                       : listView.width
                 height: root.rowHeight
                 radius: 0
                 readonly property string _label: (typeof modelData === "string")

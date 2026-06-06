@@ -7,9 +7,9 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    // Local placeholders for Soon-flagged rows. Wired rows
-    // (showVerseNumbers, showStrongsTab) read/write SettingsService.
-    property string defaultVersion: "KJV"
+    // Local placeholders for the Soon-flagged rows below. The wired rows
+    // (defaultScriptureVersion, showVerseNumbers, showStrongsTab) read/write
+    // SettingsService directly.
     property bool   highlightCurrentVerse: true
     property bool   showBookChapterFooter: false
 
@@ -36,23 +36,27 @@ Item {
                     Text { text: qsTr("Default version"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Version preselected when opening Scripture"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
+                Combobox {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    SelectChip {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: root.defaultVersion
-                        opacity: 0.45
-                        enabled: false
-                        radius: 0
+                    width: 180
+                    searchable: false
+                    // One option per installed translation, shown by code
+                    // ("KJV", "NIV") — the same vocabulary the scripture
+                    // sidebar uses. Evaluated when Settings opens; importing a
+                    // translation while this dialog is open won't refresh the
+                    // list (matches the sidebar, which also reads
+                    // translations() non-reactively).
+                    options: BibleService.translations().map(function(t) { return t.code })
+                    value: SettingsService.defaultScriptureVersion
+                    onValueSelected: function(code) {
+                        // Persist for next launch AND apply immediately — flip
+                        // the scripture tab to the chosen version now (same path
+                        // as a sidebar translation switch). Without the live
+                        // apply, the change would silently wait for a restart
+                        // and read as broken.
+                        SettingsService.defaultScriptureVersion = code
+                        AppState.setLibraryGroup("scripture", code.toLowerCase())
                     }
                 }
             }
