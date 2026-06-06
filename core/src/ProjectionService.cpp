@@ -100,7 +100,14 @@ void ProjectionService::goLiveWithCrop(QVariantMap item, int page, QRectF cropRe
 
     const int n = pageCount();
     m_pageIndex = (n > 0) ? qBound(0, page, n - 1) : 0;
-    m_isClear   = false;
+    // Clear is a sticky overlay, PRESERVED across go-live: staging new content
+    // while the screen is blanked must not reveal it. m_isClear is left as-is —
+    // when set, the freshly-promoted layer binds its text node to opacity 0 from
+    // birth, so nothing paints. (An earlier QML attempt re-cleared *after* a
+    // go-live that had reset the flag; the new layer briefly painted text at full
+    // opacity and then faded it out — a visible 1-second flash. Preserving the
+    // flag at the source avoids ever showing the text.) The operator lifts a
+    // clear explicitly via unclear() (AppState.clearLive).
 
     // Clamp + sanitize. An empty or invalid rect collapses to full-frame so
     // ProjectionScene's renderer always has a valid sub-region to clip to.
@@ -121,13 +128,30 @@ void ProjectionService::clear()
     emit stateChanged();
 }
 
+void ProjectionService::unclear()
+{
+    // Lift a clear without re-staging the item — the text node fades back in
+    // over the existing background via NodeRenderer's clear-fade, and the live
+    // crop / page / item are all untouched. Idempotent when not cleared.
+    if (!m_isClear) return;
+    m_isClear = false;
+    emit stateChanged();
+}
+
 void ProjectionService::setPage(int i)
 {
     const int n = pageCount();
     const int clamped = (n > 0) ? qBound(0, i, n - 1) : 0;
-    if (clamped == m_pageIndex && !m_isClear) return;
+    // Page navigation is clear-agnostic: it owns only the page index. Clearing
+    // is a sticky overlay the operator lifts explicitly (AppState.clearLive /
+    // Ctrl+C, which re-stages via goLiveWithCrop) — advancing or rewinding
+    // pages while cleared moves the hidden content underneath and the audience
+    // stays blank until an explicit un-clear. Previously this set
+    // m_isClear=false, which surprised operators who had intentionally blanked
+    // the screen. Nothing un-clears via setPage, so dropping that is safe; the
+    // guard below no longer special-cases m_isClear (same page == no-op).
+    if (clamped == m_pageIndex) return;
     m_pageIndex = clamped;
-    m_isClear   = false;
     emit stateChanged();
 }
 

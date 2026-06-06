@@ -314,10 +314,11 @@ Rectangle {
                 // window from a schedule double-click was a surprise — the
                 // operator may be staging items during a rehearsal or
                 // between songs, and yanking the projector up mid-stage is
-                // disruptive. The explicit "Go Live" button in the TopBar
-                // is the single committed entry point for raising the
-                // window; schedule double-click is now a "stage to live"
-                // shortcut that respects the current projector visibility.
+                // disruptive. The explicit "Go Live" button in the TopBar is
+                // the entry point for raising the window (it now ONLY opens the
+                // window — it no longer commits anything); schedule double-click
+                // is a "stage to live" shortcut that respects the current
+                // projector visibility.
                 onDoubleClicked: {
                     AppState.selectScheduleItem(index)
                     AppState.goLive(false)

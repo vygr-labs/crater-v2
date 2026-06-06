@@ -141,7 +141,10 @@ ApplicationWindow {
     function _updateNdiSource() {
         if (SettingsService.outputMode === "dual") {
             NdiService.setSourceWindow(root)
-            NdiService.setSourceItem(ndiCanvas.renderItem)
+            // ndiCanvasLoader.item is null until outputMode flips to dual and the
+            // Loader builds the canvas; guard so a stray call in that window sets
+            // a null source rather than dereferencing null. onLoaded re-runs this.
+            NdiService.setSourceItem(ndiCanvasLoader.item ? ndiCanvasLoader.item.renderItem : null)
         } else {
             NdiService.setSourceWindow(projectionWindow)
             NdiService.setSourceItem(projectionWindow.renderItem)
@@ -443,13 +446,14 @@ ApplicationWindow {
         // Two orthogonal flags drive the projection window's state:
         //
         //   visibleToOperator — "is the audience seeing this right now?"
-        //     Set true by mouse-driven goLive(true) (TopBar Go Live button,
-        //     schedule double-click, schedule context-menu); set false by
-        //     AppState.endLive() (the windowed projector's close button or
-        //     Esc shortcut). clearLive() blanks content but doesn't lower
-        //     the projector. Ctrl+L is goLive(false) so the shortcut
-        //     transitions content to live for rehearsal without exposing
-        //     the audience screen.
+        //     Set true by AppState.openProjector() (the TopBar Go Live button,
+        //     which only opens the window) and by the schedule context-menu's
+        //     "Send to Live" (goLive(true) — commit that row AND raise); set
+        //     false by AppState.endLive() (the windowed projector's close
+        //     button or Esc shortcut). clearLive() blanks content but doesn't
+        //     lower the projector. Content-commit gestures (Enter, preview /
+        //     schedule double-click, library push) use goLive(false) /
+        //     pushLibraryLive and do NOT raise the window.
         //
         //   keepRendering — "does anything need frames in the background?"
         //     In single output mode this is `NdiService.sending` — NDI
@@ -470,6 +474,29 @@ ApplicationWindow {
                         || BrowserCastService.active
     }
 
+    // Single-screen go-live: keep the console in front. ProjectionWindow drops
+    // its always-on-top hint when there's only one display (see _singleScreen
+    // there), so the fullscreen audience output renders BEHIND this console
+    // instead of burying it. But the OS still briefly foregrounds a freshly-
+    // shown window, so we shove the console back on top one event-loop tick
+    // later — same Qt.callLater(raise + requestActivate) pattern the launch
+    // code uses, and for the same reason (Windows suppresses focus-stealing).
+    // The operator then surfaces the projection deliberately via its taskbar /
+    // Alt-Tab entry. No-op on multi-monitor (nothing to bury) and in windowed
+    // mode (the small preview never covers the console).
+    Connections {
+        target: projectionWindow
+        function onVisibleToOperatorChanged() {
+            if (!projectionWindow.visibleToOperator) return
+            if (OutputService.screens.length > 1) return
+            if (OutputService.projectionMode !== OutputService.Fullscreen) return
+            Qt.callLater(function() {
+                root.raise()
+                root.requestActivate()
+            })
+        }
+    }
+
     // ── Dedicated NDI render canvas (dual output mode only) ─────────────
     // Hidden Item parked far offscreen within this ApplicationWindow. It
     // hosts a ProjectionScene with outputKind="ndi" so dual mode can grab
@@ -478,8 +505,28 @@ ApplicationWindow {
     // this window's render context — see NdiCanvas.qml for *why* that
     // matters. `visible: _shouldRender` inside NdiCanvas suspends scene-
     // graph cost when not broadcasting.
-    NdiCanvas {
-        id: ndiCanvas
+    // Deferred behind a Loader keyed on output mode. NdiCanvas is used ONLY in
+    // dual output mode: its renderItem is read by _updateNdiSource solely in the
+    // dual branch, and its scene renders only when _shouldRender (which also
+    // requires dual). In the common single-output launch it was a full
+    // ProjectionScene instantiated at startup and never used — gating it here
+    // skips that QML object creation entirely. outputMode is a persisted setting
+    // that rarely flips, so there's no create/destroy churn in practice. When it
+    // does flip to dual, onLoaded re-runs the NDI source wiring against the fresh
+    // canvas — covering the race where onOutputModeChanged fires _updateNdiSource
+    // before the Loader has built its item.
+    Loader {
+        id: ndiCanvasLoader
+        active: SettingsService.outputMode === "dual"
+        sourceComponent: ndiCanvasComponent
+        onLoaded: root._updateNdiSource()
+
+        // Explicit Component (matches the workspaceLoader pattern above) rather
+        // than an inline NdiCanvas {} — sourceComponent wants a Component.
+        Component {
+            id: ndiCanvasComponent
+            NdiCanvas { }
+        }
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────

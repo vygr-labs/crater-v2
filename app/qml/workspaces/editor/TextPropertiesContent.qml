@@ -110,6 +110,9 @@ Column {
                 placeholder: qsTr("Font family")
                 value: (node && node.style && node.style.fontFamily) || Theme.font.family
                 options: root._fontFamilies
+                // Render each family in its own typeface so the operator can
+                // eyeball fonts inline instead of selecting them one by one.
+                previewFontFamily: true
                 onValueSelected: function(v) { root._setStyle("fontFamily", v) }
             }
 

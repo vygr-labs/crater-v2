@@ -99,14 +99,16 @@ QtObject {
     // ndiOpacity property only reached one of those paths; consolidated
     // here as a comment marker so future hackers don't reintroduce it.
 
-    // Projection window visibility. Toggled true only by goLive(true) (the
-    // explicit "Go Live" button, schedule double-click, and the schedule
-    // context-menu's "Go Live"); reset to false only by endLive() (the
-    // windowed projector's close button). clearLive() blanks content but
-    // does NOT lower the projector. Ctrl+L deliberately calls goLive(false)
-    // so the keyboard shortcut can transition content to live for rehearsal
-    // without exposing the audience screen — the operator must use a mouse
-    // gesture to actually raise the projector.
+    // Projection window visibility — independent of what's on the live channel.
+    // Raised by openProjector() (the TopBar "Go Live" button, whose only job is
+    // to show the audience window) and by the schedule context-menu's "Send to
+    // Live" (goLive(true) — commit that row AND raise). Lowered by endLive()
+    // (the windowed projector's close button, its Esc shortcut, or the button's
+    // "End Live" face). clearLive() blanks content but does NOT lower the
+    // projector. Content-commit gestures (Enter, preview/schedule double-click,
+    // library push) deliberately do NOT raise — they call goLive(false) /
+    // pushLibraryLive — so staging during rehearsal never pops the audience
+    // screen.
     property bool projectorVisible:   false
 
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
@@ -159,9 +161,12 @@ QtObject {
         // the operator's selected page so live picks up the same card the
         // operator was looking at — not always page 0.
         if (page === undefined) page = 0
+        // isClear is deliberately left untouched. Clear is a sticky overlay —
+        // ProjectionService.goLiveWithCrop preserves it — so staging new content
+        // while blanked keeps the screen blanked until an explicit unclear
+        // (clearLive / Ctrl+C). The operator's clear survives go-live.
         libraryPreviewItem = item     // mirror to preview so the panes agree
         libraryLiveActive  = true
-        isClear            = false
         liveScheduleIndex  = -1       // signal: live did not come from schedule
         liveSubIndex       = page
         previewSubIndex    = page
@@ -294,12 +299,13 @@ QtObject {
         // and Ctrl+L work whether the operator is staging from the library or
         // the schedule.
         //
-        // `raise` controls whether the projection window is brought up.
-        // Mouse-driven "commit" entry points (TopBar Go Live button,
-        // schedule double-click, schedule context-menu) pass true (the
-        // default). The preview-card double-click passes false so quick
-        // page-staging doesn't surprise the operator by opening the
-        // audience-facing window mid-rehearsal.
+        // `raise` controls whether the projection window is ALSO brought up.
+        // Only the schedule context-menu's "Send to Live" passes true (commit
+        // that row AND show it). Every other caller passes false — Enter, the
+        // preview-card double-click, and the schedule double-click all stage to
+        // the live channel without popping the audience window. The TopBar "Go
+        // Live" button no longer routes here at all; it calls openProjector(),
+        // which raises the window without committing anything.
         if (raise === undefined) raise = true
 
         if (libraryPreviewItem !== null) {
@@ -316,8 +322,8 @@ QtObject {
 
         liveScheduleIndex  = selectedScheduleIndex
         liveSubIndex       = previewSubIndex
-        isClear            = false
         libraryLiveActive  = false   // schedule is driving live now
+        // isClear left untouched — clear is sticky across go-live (see pushLibraryLive).
 
         // Theme resolution moved into ProjectionWindow — see pushLibraryLive.
         // Crop-aware: a PDF/image staged with a crop keeps it when the
@@ -333,38 +339,46 @@ QtObject {
         // is never collapsed; we deliberately do NOT touch
         // liveScheduleIndex / liveSubIndex / libraryLiveActive.
         //
-        // To "unclear", we re-stage the current item — ProjectionService's
-        // goLive() sets m_isClear=false as a side effect. The item and
-        // page are unchanged, so audience sees text fade back in over the
-        // existing background. To clear, we just call ProjectionService.clear()
-        // which only flips m_isClear=true on the C++ side.
+        // Clear is independent of content: go-live and page nav are
+        // clear-agnostic (ProjectionService.goLiveWithCrop / setPage preserve
+        // m_isClear), so this toggle is the only way in or out. unclear() flips
+        // m_isClear=false and the text fades back in over the existing
+        // background via NodeRenderer's clear-fade — no re-stage, so the live
+        // crop / page / item are left intact.
         //
         // Projector window visibility is independent. Only goLive() with
         // raise=true raises; only endLive() lowers.
         if (isClear) {
-            const item = ProjectionService.currentItem
-            if (item && Object.keys(item).length > 0) {
-                // Re-stage with the LIVE crop intact (ProjectionService
-                // already holds it). The plain goLive() would reset it to
-                // full-frame, so a cropped PDF would "uncrop" on unclear.
-                ProjectionService.goLiveWithCrop(item, liveSubIndex,
-                                                 ProjectionService.cropRect)
-            }
+            ProjectionService.unclear()
             isClear = false
         } else {
-            isClear = true
             ProjectionService.clear()
+            isClear = true
         }
     }
 
+    function openProjector() {
+        // Raise the audience projection window WITHOUT touching the live
+        // channel. This is the TopBar "Go Live" button's sole job: make the
+        // audience screen visible, showing whatever was last committed to live
+        // — or the logo / blank theme background if nothing has been pushed
+        // yet. Content reaches the live channel through SEPARATE gestures
+        // (Enter or a preview-card / schedule double-click → goLive(false); a
+        // library row → pushLibraryLive), so "show the screen" and "send the
+        // content" are independent actions. That mirrors how operators work:
+        // bring the screen up on the pre-service logo, then trigger slides into
+        // it. Idempotent — already-open stays open. endLive() is the inverse.
+        projectorVisible = true
+    }
+
     function endLive() {
-        // Inverse of goLive(): lower the projection window. ProjectionService
-        // content state is preserved — a subsequent goLive() picks back up
-        // where it left off without re-rendering. Distinct from clearLive(),
-        // which blanks content but keeps the window raised. The windowed
-        // projector's close (X) button calls this; in fullscreen mode the
-        // window is frameless and end-live currently has no UI entry point
-        // (a TopBar "End Live" button is a deferred follow-up).
+        // Inverse of openProjector() / goLive(true): lower the projection
+        // window. ProjectionService content state is preserved — a subsequent
+        // raise picks back up where it left off without re-rendering. Distinct
+        // from clearLive(), which blanks content but keeps the window raised.
+        // Entry points: the windowed projector's close (X) button, the
+        // projection window's Esc shortcut, and the TopBar button's "End Live"
+        // face (it flips to End Live whenever the projector is open — TopBar.qml).
         projectorVisible = false
     }
 

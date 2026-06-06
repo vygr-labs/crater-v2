@@ -57,6 +57,13 @@ private:
     // "Set for NDI" menu item on this, and AppState.resolveItemTheme only
     // consults the NDI binding's theme slots when dual is active.
     Q_PROPERTY(QString outputMode         READ outputMode         WRITE setOutputMode         NOTIFY outputModeChanged)
+    // Whether the projection window claims a taskbar button + Alt-Tab slot.
+    // true (default): Qt.Window, so the operator can surface a backgrounded
+    // projector by clicking it. false: Qt.Tool (WS_EX_TOOLWINDOW on Windows),
+    // which hides it from BOTH the taskbar and the Alt-Tab switcher — for a
+    // fixed projector the operator never tabs to. See ProjectionWindow.qml
+    // flags; note it also removes the single-screen "click to surface" route.
+    Q_PROPERTY(bool    projectionInAltTab READ projectionInAltTab WRITE setProjectionInAltTab NOTIFY projectionInAltTabChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
     // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
@@ -83,6 +90,7 @@ public:
     bool    showLogoByDefault() const;
     QString outputResolution() const;
     QString outputMode() const;
+    bool    projectionInAltTab() const;
     bool    useHeadlessNdi() const;
     bool    showVerseNumbers() const;
     bool    showStrongsTab() const;
@@ -96,6 +104,7 @@ public:
     void setShowLogoByDefault(bool v);
     void setOutputResolution(const QString& v);
     void setOutputMode(const QString& mode);
+    void setProjectionInAltTab(bool v);
     void setUseHeadlessNdi(bool v);
     void setShowVerseNumbers(bool v);
     void setShowStrongsTab(bool v);
@@ -110,6 +119,7 @@ signals:
     void showLogoByDefaultChanged();
     void outputResolutionChanged();
     void outputModeChanged();
+    void projectionInAltTabChanged();
     void useHeadlessNdiChanged();
     void showVerseNumbersChanged();
     void showStrongsTabChanged();

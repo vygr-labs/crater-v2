@@ -36,4 +36,12 @@ target_link_libraries(test_theme_bundle PRIVATE
     crater-core
 )
 
+# White-box access to crater-core's PRIVATE headers: the test drives the zip
+# wrapper directly via #include "bundle/Zip.h". crater-core declares src/ as a
+# PRIVATE include dir so it doesn't leak to normal consumers, which means it
+# isn't on this target's include path by default — restate it for the test.
+target_include_directories(test_theme_bundle PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
 add_test(NAME theme_bundle COMMAND test_theme_bundle)

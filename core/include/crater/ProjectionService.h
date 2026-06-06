@@ -87,6 +87,7 @@ public:
     Q_INVOKABLE void goLiveWithCrop(QVariantMap item, int page, QRectF cropRect);
 
     Q_INVOKABLE void clear();              // shows background only (no content)
+    Q_INVOKABLE void unclear();            // lifts a clear — content text returns
     Q_INVOKABLE void setPage(int i);
     Q_INVOKABLE void nextPage();
     Q_INVOKABLE void prevPage();

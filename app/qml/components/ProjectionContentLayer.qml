@@ -77,6 +77,18 @@ Item {
     // fallback message.
     readonly property var theme: {
         themeRevision  // dep
+        // Empty live channel (nothing committed yet → layerKind is "") must
+        // render BLANK, not a default-theme background. The operator can now
+        // open the audience window before pushing content (TopBar "Go Live"
+        // only raises — see AppState.openProjector), and resolveItemTheme would
+        // otherwise fall through to ThemeService.defaultFor("song") — line 271
+        // defaults an empty item's kind to "song" — and paint that theme's
+        // background on a screen that should be dark. The Live pane already
+        // shows its "Nothing live" empty state in this case (it gates on
+        // liveScheduleIndex / libraryLiveActive); returning an empty theme keeps
+        // the projection in agreement. Any real commit sets a non-empty kind,
+        // which restores normal resolution.
+        if (!layerKind) return ({})
         return AppState.resolveItemTheme(layerItem, outputKind)
     }
     readonly property var _tokens : theme && theme.tokens ? theme.tokens : ({})

@@ -57,6 +57,28 @@ Window {
     readonly property bool _windowed:
         OutputService.projectionMode === OutputService.Windowed
 
+    // True when this machine has no second display. With one screen there is
+    // nowhere to put the audience output that isn't also the operator's
+    // screen, so a fullscreen projector claiming the always-on-top layer would
+    // bury the console the operator is driving. On a single screen we instead
+    //   (a) drop WindowStaysOnTopHint below so the window CAN sit behind the
+    //       console, and
+    //   (b) let Main.qml re-raise the console on go-live (the OS still briefly
+    //       foregrounds a freshly-shown window).
+    // The projection still renders fullscreen — it just stays hidden behind
+    // the console until the operator clicks its taskbar / Alt-Tab entry to
+    // bring it forward. Multi-monitor rigs are unaffected.
+    readonly property bool _singleScreen: Qt.application.screens.length <= 1
+
+    // Base window-type flag for the operator-visible states. Qt.Window gives
+    // the projection its own taskbar button + Alt-Tab slot; Qt.Tool
+    // (WS_EX_TOOLWINDOW on Windows) hides it from BOTH so a fixed projector
+    // stops cluttering the switcher. Driven by SettingsService.projectionInAltTab.
+    // (The offscreen-NDI branch below stays Qt.Tool unconditionally — it's
+    // never meant to be operator-visible regardless of this preference.)
+    readonly property int _windowTypeFlag:
+        SettingsService.projectionInAltTab ? Qt.Window : Qt.Tool
+
     screen: _targetScreen
 
     // Detach from the operator console's window family. Without this, Qt
@@ -89,8 +111,15 @@ Window {
     flags: _offscreen
         ? (Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
         : _windowed
-            ? Qt.Window
-            : (Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+            ? _windowTypeFlag
+            // Fullscreen production. On a multi-monitor rig the audience output
+            // owns the always-on-top layer so nothing can pop over it. On a
+            // SINGLE screen we drop that hint (see _singleScreen) so the
+            // projector sits behind the console rather than burying it; the
+            // _windowTypeFlag (Qt.Window unless the operator hid it from
+            // Alt-Tab) keeps a taskbar entry so they can still surface it.
+            : (_windowTypeFlag | Qt.FramelessWindowHint
+               | (_singleScreen ? 0 : Qt.WindowStaysOnTopHint))
     title: qsTr("Crater Projection")
 
     // Geometry — three cases, matching the visibility states above:

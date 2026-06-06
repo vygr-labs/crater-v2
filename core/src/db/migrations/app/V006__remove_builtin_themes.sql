@@ -10,6 +10,12 @@
 -- future migration (V007+) can introduce the redesigned defaults
 -- additively without destroying what V001 seeded.
 --
+-- NOTE for that future migration: seed any new defaults as v2 token JSON
+-- with tokens_version = 2 set EXPLICITLY. A row left at the column DEFAULT
+-- of 1 gets re-run through the v1->v2 converter (ThemeService::migrateRowsToV2)
+-- on the next launch. That is now harmless (the converter skips already-v2
+-- JSON), but the explicit 2 is the real contract — don't reintroduce the trap.
+--
 -- For DBs that already ran the original deleting V006: the built-in
 -- themes are gone and cannot be recovered in place. Either wipe the
 -- DB to re-seed from V001, or ship a later migration that re-INSERTs

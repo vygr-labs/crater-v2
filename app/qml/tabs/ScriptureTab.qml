@@ -312,8 +312,22 @@ Item {
         // the slide. Two spaces between verses give the eye a parsing break
         // without bloating the layout the way line breaks would on themes
         // not designed for multi-verse content.
+        //
+        // The verse number is wrapped in DSL markup — bold (**…**) so it
+        // reads as the heaviest run on the slide, and {color=yellow} (the
+        // palette's #fdd835, the same gold the default theme uses for its
+        // reference label) so it stands distinct from the verse body. This
+        // is build-time, not render-time, on purpose: every surface that
+        // shows this content (ProjectionContentLayer, ThemedMonitor, and the
+        // Preview/Live page-list cards) feeds it through LyricsService.dslToHtml,
+        // so a concrete color marker renders identically on all of them. A
+        // per-theme "match the scriptureRef node color" scheme would only
+        // reach the two resolveText paths and skip the thumbnail cards.
+        // dslToHtml HTML-escapes the body text, so only our own markers are
+        // interpreted; the verse body already flowed through the DSL parser
+        // before this change, so no new escaping surface is introduced.
         const combined = usable.map(function(v) {
-            return v.verse + " " + v.text
+            return "{color=yellow}**" + v.verse + "**{/color} " + v.text
         }).join("  ")
 
         const first = usable[0]
@@ -1064,10 +1078,22 @@ Item {
                 // right-clicks that land on rows outside the current
                 // selection (so the context menu acts on what was just
                 // visually pointed at, the way every desktop file manager
-                // works). Clears any prior multi-selection.
+                // works).
+                //
+                // Clears any prior multi-selection ONLY when the click lands
+                // on a row that isn't already highlighted. Clicking a row
+                // that IS part of the current selection keeps the set intact,
+                // because the first click of a double-click-to-go-live fires
+                // onLeftClicked (→ _focus) BEFORE onDoubleClicked. Without
+                // this guard that first click wiped the multi-selection, so
+                // double-clicking a multi-verse range silently sent only the
+                // one clicked verse Live instead of the combined slide. With
+                // it, the set survives into onDoubleClicked → pushLiveFor.
                 function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
-                    AppState.clearLibrarySelected(root.tabKey)
+                    if (!verseRow._highlighted) {
+                        AppState.clearLibrarySelected(root.tabKey)
+                    }
                     // Claim Up/Down/Enter for the library — operator just
                     // clicked a verse row, so subsequent arrow keys should
                     // walk the verse list rather than the preview/live

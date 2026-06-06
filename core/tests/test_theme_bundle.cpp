@@ -48,6 +48,24 @@ QByteArray fakeImage(const QByteArray& tag)
     return b;
 }
 
+// A synthetic MP4: a valid ISO-BMFF 'ftyp' box header (so
+// MediaService::sniffMediaType classifies it "video" via its
+// matchAt(4,"ftyp",4) rule) followed by an arbitrary payload. crater-core
+// never decodes video — it only sniffs magic bytes and copies the file
+// (decode/thumbnailing is the app-side VideoThumbnailer's job) — so a fake
+// like this round-trips through export/import identically to a real clip,
+// without dragging a multi-MB binary fixture into the repo. The four leading
+// bytes are appended individually to dodge the C++ \x escape swallowing the
+// following 'f' as a hex digit.
+QByteArray fakeVideo(const QByteArray& tag)
+{
+    QByteArray b;
+    b.append('\x00').append('\x00').append('\x00').append('\x18'); // ftyp box size
+    b.append("ftypisom", 8);                                       // 'ftyp' + major brand
+    b += tag;
+    return b;
+}
+
 // Minimal valid v2 token map referencing one media id. We hand-craft this
 // rather than going through the editor because the test owns the
 // invariant we care about (refs round-trip correctly) and bypassing the
@@ -331,6 +349,156 @@ private slots:
         QVERIFY(newFile.open(QIODevice::ReadOnly));
         const QByteArray newBytes = newFile.readAll();
         QCOMPARE(newBytes, originalBytes);
+    }
+
+    // The video counterpart of testBundleRoundTrip: the feature has to
+    // round-trip video backgrounds as flawlessly as images. Same invariant
+    // — export a theme that references a video, reset, import, and verify
+    // the new media row holds byte-identical content and is still classified
+    // "video". This is the case the user explicitly cares about; video media
+    // travels through the exact same bundle path as images (content-addressed
+    // entry under media/<sha256>.<ext>), so a green here means both work.
+    void testBundleRoundTripVideo()
+    {
+        resetState();
+        crater::runAllMigrations();
+        MediaService media;
+        FontService  fonts;
+        ThemeService ts;
+        ts.setMediaService(&media);
+        ts.setFontService(&fonts);
+
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+
+        // Stage a fake MP4 for MediaService to import + classify as video.
+        const QByteArray originalBytes = fakeVideo("round-trip-video-source");
+        const QString stagePath = tmp.filePath(QStringLiteral("source.mp4"));
+        {
+            QFile f(stagePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(originalBytes);
+        }
+        const qint64 origMediaId = media.importPathSync(stagePath);
+        QVERIFY2(origMediaId > 0, qPrintable(media.lastImportError()));
+        // Confirm the boundary actually classified it as video, not image —
+        // otherwise this test would silently degenerate into the PNG case.
+        QCOMPARE(media.byId(origMediaId).type, QStringLiteral("video"));
+
+        const qint64 themeId = ts.create(QStringLiteral("scripture"),
+                                         QStringLiteral("Video Round Trip"),
+                                         makeTokensWithMediaId(origMediaId));
+        QVERIFY(themeId > 0);
+
+        const QString bundlePath = tmp.filePath(QStringLiteral("rtv.craterheme"));
+        QVERIFY2(ts.exportTheme(themeId, bundlePath, {}),
+                 qPrintable(ts.lastExportError()));
+
+        // The bundle must carry a media/ entry for the video.
+        {
+            ZipReader r(bundlePath);
+            QVERIFY(r.isOpen());
+            bool foundMedia = false;
+            for (const QString& n : r.entryNames())
+                if (n.startsWith(QStringLiteral("media/"))) { foundMedia = true; break; }
+            QVERIFY(foundMedia);
+        }
+
+        ts.destroy(themeId);
+
+        const ThemeImportReport report = ts.importThemeFile(bundlePath);
+        QCOMPARE(report.errorMessage, QString());
+        QVERIFY(report.themeId > 0);
+        QCOMPARE(report.mediaWarnings.size(), 0);
+        QCOMPARE(report.fontWarnings.size(), 0);
+
+        const crater::Theme imported = ts.theme(report.themeId);
+        const qint64 importedMediaId = firstMediaIdIn(imported.tokens);
+        QVERIFY(importedMediaId > 0);
+        QVERIFY(importedMediaId != origMediaId);
+
+        const crater::MediaItem mi = media.byId(importedMediaId);
+        QVERIFY(mi.id > 0);
+        QCOMPARE(mi.type, QStringLiteral("video"));
+
+        QFile newFile(mi.path);
+        QVERIFY(newFile.open(QIODevice::ReadOnly));
+        QCOMPARE(newFile.readAll(), originalBytes);
+    }
+
+    // Regression: an imported theme must survive an app RESTART with its
+    // custom styling intact. ThemeService runs the lazy v1->v2 token rewrite
+    // (migrateRowsToV2) in its constructor, selecting every row with
+    // tokens_version < 2. A create()/import INSERT that omitted tokens_version
+    // left the row at the column DEFAULT of 1, so the next launch re-ran the
+    // v1->v2 converter over already-v2 JSON and blanked it to the default
+    // theme. The in-process round-trip tests above can't see this because the
+    // migration only runs at construction — so we explicitly open a SECOND
+    // ThemeService on the same DB to stand in for a restart.
+    void testImportedThemeSurvivesRestart()
+    {
+        resetState();
+        crater::runAllMigrations();
+
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+
+        qint64       importedId = 0;
+        QVariantMap  tokensBeforeRestart;
+        const QByteArray originalBytes = fakeImage("survives-restart");
+
+        // ── Session 1: import a theme that references media ──────────────
+        {
+            MediaService media;
+            FontService  fonts;
+            ThemeService ts;
+            ts.setMediaService(&media);
+            ts.setFontService(&fonts);
+
+            const QString stagePath = tmp.filePath(QStringLiteral("src.png"));
+            {
+                QFile f(stagePath);
+                QVERIFY(f.open(QIODevice::WriteOnly));
+                f.write(originalBytes);
+            }
+            const qint64 mid = media.importPathSync(stagePath);
+            QVERIFY2(mid > 0, qPrintable(media.lastImportError()));
+
+            const qint64 srcThemeId = ts.create(QStringLiteral("scripture"),
+                                                QStringLiteral("Restart Source"),
+                                                makeTokensWithMediaId(mid));
+            QVERIFY(srcThemeId > 0);
+
+            const QString bundlePath = tmp.filePath(QStringLiteral("restart.craterheme"));
+            QVERIFY2(ts.exportTheme(srcThemeId, bundlePath, {}),
+                     qPrintable(ts.lastExportError()));
+            ts.destroy(srcThemeId);
+
+            const ThemeImportReport report = ts.importThemeFile(bundlePath);
+            QVERIFY(report.themeId > 0);
+            importedId = report.themeId;
+
+            tokensBeforeRestart = ts.theme(importedId).tokens;
+            // Precondition: the fresh import really does carry custom nodes
+            // and a resolved media id, so a post-restart regression is visible.
+            QVERIFY(tokensBeforeRestart.value(QStringLiteral("nodes")).toList().size() >= 2);
+            QVERIFY(firstMediaIdIn(tokensBeforeRestart) > 0);
+        }
+        // ts/media/fonts destroyed here — connections closed, like app exit.
+
+        // ── Session 2: "restart" — a new service re-runs migrateRowsToV2 ──
+        {
+            ThemeService ts2;
+            const crater::Theme after = ts2.theme(importedId);
+            QCOMPARE(after.id, importedId);
+            // Custom layout must persist: same node count, same media ref.
+            // Pre-fix this collapsed to the 2-node blank default with a null
+            // mediaId, so these comparisons are the teeth of the test.
+            QCOMPARE(after.tokens.value(QStringLiteral("nodes")).toList().size(),
+                     tokensBeforeRestart.value(QStringLiteral("nodes")).toList().size());
+            QCOMPARE(firstMediaIdIn(after.tokens), firstMediaIdIn(tokensBeforeRestart));
+            QVERIFY(firstMediaIdIn(after.tokens) > 0);
+        }
     }
 
     // Tampering with a bundled media file must surface as a per-asset

@@ -113,6 +113,21 @@ Item {
                     onValueSelected: function(v) { SettingsService.outputResolution = v }
                 }
             }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Taskbar / Alt-Tab presence for the projection window. Off routes
+            // it through Qt.Tool so a fixed projector stops showing up in the
+            // switcher — at the cost of the single-screen "click the taskbar
+            // entry to surface it" route, hence the honest subtitle.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Show projection in Alt-Tab"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Also gives the projection a taskbar button; off hides it from both"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.projectionInAltTab
+                    onToggled: SettingsService.projectionInAltTab = !SettingsService.projectionInAltTab }
+            }
 
             // ── TRANSITIONS ──────────────────────────────────────────────
             // Per-output transition between live items + between pages of the

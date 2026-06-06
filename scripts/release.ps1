@@ -9,8 +9,16 @@
     is installed) a Crater-Setup-X.Y.Z.exe installer that also bootstraps the
     Visual C++ Runtime.
 
+    Finally, unless -SkipRelease is passed, it creates (or updates) a DRAFT
+    GitHub release tagged vX.Y.Z via the `gh` CLI and attaches the ZIP and
+    installer. "Draft" means GitHub does not create the git tag until a human
+    clicks Publish, so running this locally never pollutes tags or main; a
+    re-run clobbers the same draft's assets, so it is safe to invoke repeatedly.
+
     Designed to run from a clean PowerShell window on a dev machine, and to
-    be invoked verbatim by the GitHub Actions release workflow.
+    be invoked verbatim by the GitHub Actions release workflow. NOTE: CI runs
+    it with -SkipRelease because the release.yml orchestrator owns release
+    creation in automation (a single, build-gated, combined Win+Mac draft).
 
 .PARAMETER QtDir
     Path to the Qt MSVC kit (e.g. C:\Qt\6.11.0\msvc2022_64). Optional —
@@ -35,6 +43,16 @@
 .PARAMETER SkipZip
     Skip the ZIP archive step. Produces installer only.
 
+.PARAMETER SkipRelease
+    Skip creating/updating the draft GitHub release. CI passes this so the
+    release.yml orchestrator's gate-protected publish job stays the single
+    authoritative release creator in automation.
+
+.PARAMETER Repo
+    OWNER/REPO target for the draft release. Optional - defaults to whatever
+    `gh` auto-detects from the checkout's git remote (origin), which is
+    correct in CI and from a normal clone. Pass explicitly to target a fork.
+
 .PARAMETER Clean
     Wipe build/ and dist/ before starting.
 
@@ -43,6 +61,10 @@
 
 .EXAMPLE
     .\qt\scripts\release.ps1 -QtDir C:\Qt\6.11.0\msvc2022_64 -SkipInstaller -Clean
+
+.EXAMPLE
+    # Package locally without touching GitHub:
+    .\qt\scripts\release.ps1 -SkipRelease
 #>
 [CmdletBinding()]
 param(
@@ -56,7 +78,10 @@ param(
     [switch] $SkipBuild,
     [switch] $SkipInstaller,
     [switch] $SkipZip,
-    [switch] $Clean
+    [switch] $SkipRelease,
+    [switch] $Clean,
+
+    [string] $Repo
 )
 
 $ErrorActionPreference = 'Stop'
@@ -325,6 +350,71 @@ if (-not $SkipInstaller) {
             $IssFile
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed (exit $LASTEXITCODE)" }
         Write-Done (Join-Path $DistRoot "Crater-Setup-$Version.exe")
+    }
+}
+
+# ── Draft GitHub release ─────────────────────────────────────────────────────
+# Create (or update) a DRAFT release tagged v$Version and attach the Windows
+# artifacts via the gh CLI. Draft means GitHub does NOT create the git tag
+# until a human clicks Publish, so this never pollutes the tag namespace or
+# main; re-running clobbers the same draft's assets, so it is safe to repeat.
+#
+# CI note: the GitHub Actions Windows build job passes -SkipRelease. The
+# release.yml orchestrator's `publish` job is the single authoritative release
+# creator and only runs once BOTH the Windows and macOS builds pass, so it
+# attaches all four artifacts to one combined draft. If this script also
+# created a release inside the build job it would fire before the tag exists
+# and before macOS has built (leaving partial drafts) and race the
+# orchestrator. Local/standalone runs DO create the draft - that is the point.
+if ($SkipRelease) {
+    Write-Step 'Skipping draft GitHub release (-SkipRelease)'
+} else {
+    $Tag = "v$Version"
+
+    # Only attach the artifacts that were actually produced this run.
+    $ReleaseAssets = @(
+        (Join-Path $DistRoot "Crater-$Version-win64.zip"),
+        (Join-Path $DistRoot "Crater-Setup-$Version.exe")
+    ) | Where-Object { Test-Path $_ }
+
+    $Gh = (Get-Command 'gh' -ErrorAction SilentlyContinue).Source
+
+    if (-not $Gh) {
+        Write-Warning 'GitHub CLI (gh) not found; skipping draft release. Install from https://cli.github.com/ or pass -SkipRelease to silence.'
+    } elseif ($ReleaseAssets.Count -eq 0) {
+        Write-Warning "No release artifacts found in $DistRoot (ZIP and installer both skipped?); skipping draft release."
+    } else {
+        # A logged-out dev box should not fail the whole packaging run, so
+        # treat "not authenticated" as a skip rather than an error. The
+        # try/catch guards PS 5.1's habit of turning a native command's
+        # stderr write into a terminating error under $ErrorActionPreference.
+        try { & $Gh auth status 2>$null | Out-Null } catch { }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "gh is not authenticated (run 'gh auth login'); skipping draft release."
+        } else {
+            $RepoArgs = if ($Repo) { @('--repo', $Repo) } else { @() }
+
+            # `gh release view` finds a draft by tag name even before the git
+            # tag is pushed, so this correctly detects an existing draft.
+            try { & $Gh release view $Tag @RepoArgs 2>$null | Out-Null } catch { }
+            $releaseExists = ($LASTEXITCODE -eq 0)
+
+            if ($releaseExists) {
+                Write-Step "Updating existing draft release $Tag"
+                try { & $Gh release upload $Tag @ReleaseAssets @RepoArgs --clobber } catch { }
+                if ($LASTEXITCODE -ne 0) { throw "gh release upload failed (exit $LASTEXITCODE)" }
+            } else {
+                Write-Step "Creating draft release $Tag"
+                try {
+                    & $Gh release create $Tag @ReleaseAssets @RepoArgs `
+                        --draft `
+                        --title "Crater $Tag" `
+                        --generate-notes
+                } catch { }
+                if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
+            }
+            Write-Done "Draft release $Tag ready ($($ReleaseAssets.Count) asset(s) attached)"
+        }
     }
 }
 

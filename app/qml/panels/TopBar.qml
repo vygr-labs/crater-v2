@@ -339,7 +339,10 @@ Rectangle {
         //
         // Two faces, driven by OutputService.projectionOpen (the authoritative
         // "is the audience window up?" signal — see ProjectionWindow.qml):
-        //   • projection closed → "Go Live": pale-cyan filled commit button.
+        //   • projection closed → "Go Live": pale-cyan filled button that OPENS
+        //                          the audience window. It does NOT push preview
+        //                          to live — committing content is Enter / a
+        //                          double-click (see AppState.openProjector).
         //   • projection open   → "End Live": transparent fill, red outline,
         //                          red label; clicking lowers the projector.
         Rectangle {
@@ -356,13 +359,11 @@ Rectangle {
             // survives both states.
             readonly property bool ending: OutputService.projectionOpen
 
-            // Go Live needs something staged in Preview — a schedule selection
-            // or a library item the operator is staging. End Live is always
-            // actionable: the operator must be able to drop the projector
-            // regardless of what (if anything) is currently staged.
-            enabled: ending
-                  || AppState.selectedScheduleIndex >= 0
-                  || AppState.libraryPreviewItem !== null
+            // Always actionable. Go Live just opens the audience window
+            // (content is committed separately via Enter / double-click), so
+            // there's no "stage something first" gate; End Live must always be
+            // able to drop the projector. The button therefore never disables.
+            enabled: true
 
             // Two surfaces. Go Live: pale-cyan tonal fill — hover lifts toward
             // white, press sinks a shade, disabled darkens flat and leans on
@@ -423,12 +424,13 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: goLiveBtn.enabled ? Qt.PointingHandCursor
                                                : Qt.ArrowCursor
-                // Go Live raises the projector; End Live lowers it. Both route
-                // through AppState so `projectorVisible` stays the single
-                // source of truth (see AppState.goLive / endLive).
+                // Go Live opens the audience window WITHOUT pushing preview to
+                // live (that's Enter / double-click); End Live lowers it. Both
+                // route through AppState so `projectorVisible` stays the single
+                // source of truth (see AppState.openProjector / endLive).
                 onClicked: {
                     if (goLiveBtn.ending) AppState.endLive()
-                    else                  AppState.goLive()
+                    else                  AppState.openProjector()
                 }
             }
         }

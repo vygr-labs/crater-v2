@@ -31,6 +31,13 @@ Item {
     property int    maxPopupHeight: 320
     property int    rowHeight: 34
 
+    // When true, the selected-value button and every dropdown row render in
+    // the font family they name (using each option's *value*, so an imported
+    // font labelled "Inter (imported)" still previews in Inter). Lets the
+    // font-family picker show each typeface inline, no selection required.
+    // Off by default so non-font comboboxes (weight, etc.) are unaffected.
+    property bool   previewFontFamily: false
+
     signal valueSelected(string v)
 
     // 32px tracks Theme.size.controlHeight — the canonical height for
@@ -65,7 +72,7 @@ Item {
             verticalAlignment: Text.AlignVCenter
             text: root.value || root.placeholder
             color: root.value ? Theme.color.textPrimary : Theme.color.textTertiary
-            font.family: Theme.font.family
+            font.family: (root.previewFontFamily && root.value) ? root.value : Theme.font.family
             font.pixelSize: Theme.font.bodySize
             elide: Text.ElideRight
         }
@@ -112,6 +119,20 @@ Item {
         // binding stays live since `root` (and its width) outlive the
         // reparent for as long as the Combobox itself does.
         width: root.width
+        // Vertical position is driven by the anchor properties below (filled
+        // in by _showPopover) rather than a one-shot y, so the box tracks its
+        // OWN height as the filtered list grows / shrinks:
+        //   • opening downward → top pinned just under the button (_anchorTopY).
+        //     A shrinking list simply lifts the bottom edge up — no gap.
+        //   • opening upward (flipped: not enough room below) → BOTTOM pinned
+        //     just above the button (_anchorBottomY); binding y to
+        //     (_anchorBottomY − height) keeps that bottom edge glued to the
+        //     button as height changes. A one-shot y computed at the full list
+        //     height used to leave the box floating far above a 1–2 row result.
+        property bool _flipUp: false
+        property real _anchorTopY: 0
+        property real _anchorBottomY: 0
+        y: _flipUp ? Math.max(8, _anchorBottomY - height) : _anchorTopY
         // Floating-menu surface — matches PopoverMenu / ScheduleDropdown.
         color: Theme.color.bgMenu
         border.color: Theme.color.borderStrong
@@ -270,7 +291,7 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     text: parent._label
                     color: parent._selected ? Theme.color.brand : Theme.color.textPrimary
-                    font.family: Theme.font.family
+                    font.family: root.previewFontFamily ? parent._value : Theme.font.family
                     font.pixelSize: Theme.font.bodySize
                     elide: Text.ElideRight
                 }
@@ -317,22 +338,31 @@ Item {
         dismissArea.width   = win.width
         dismissArea.height  = win.height
 
-        const p = root.mapToItem(win, 0, root.height + 4)
-        let x = p.x
-        let y = p.y
-        // Flip up if there isn't enough room below the button.
-        if (y + popover.height > win.height) {
-            y = p.y - root.height - 4 - popover.height
-        }
-        if (x + popover.width > win.width) x = win.width - popover.width - 8
-        popover.x = Math.max(8, x)
-        popover.y = Math.max(8, y)
-
-        // Reset filter + focus the search field so typing starts narrowing
-        // immediately. Doing this every open keeps the popover stateless
-        // between sessions — the previous open's filter doesn't linger.
+        // Reset the filter BEFORE measuring. popover.height is bound to the
+        // filtered row count, so a filter lingering from a previous open would
+        // shrink it and make the flip-up test below mis-judge whether the full
+        // list fits under the button. (Also keeps the popover stateless between
+        // opens — the previous filter never lingers.)
         searchField.text = ""
         popover._filter = ""
+
+        // Anchor points in window space: just below the button (downward open)
+        // and just above it (flipped open, where the popover's bottom pins).
+        const below = root.mapToItem(win, 0, root.height + 4)
+        const above = root.mapToItem(win, 0, -4)
+        popover._anchorTopY    = below.y
+        popover._anchorBottomY = above.y
+        // Decide direction ONCE, against the full-height popover. Fixing it for
+        // this open avoids the box hopping sides as the operator narrows the
+        // list; the reactive y binding then absorbs the height changes.
+        popover._flipUp = (below.y + popover.height > win.height)
+
+        // Horizontal clamp so a button near the right edge can't push the
+        // popover off-screen. Width is height-independent, so a one-shot x is
+        // fine — no binding needed.
+        let x = below.x
+        if (x + popover.width > win.width) x = win.width - popover.width - 8
+        popover.x = Math.max(8, x)
 
         popover.visible = true
         dismissArea.visible = true

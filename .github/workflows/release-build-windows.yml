@@ -110,10 +110,17 @@ jobs:
         env:
           CMAKE_C_COMPILER_LAUNCHER:   sccache
           CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        # -SkipRelease: the script creates a draft GitHub release by default,
+        # but in CI that job belongs to release.yml's `publish` step, which
+        # runs only after BOTH platforms build and attaches all four artifacts
+        # to one combined draft. Creating a release here would fire before the
+        # tag exists and before macOS finishes, leaving partial drafts and
+        # racing the orchestrator. So we package only and let publish release.
         run: |
           .\scripts\release.ps1 `
             -QtDir $env:QT_ROOT_DIR `
             -VersionOverride '${{ inputs.version }}' `
+            -SkipRelease `
             -Clean
 
       - name: sccache stats

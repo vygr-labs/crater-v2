@@ -27,6 +27,9 @@ struct SettingsService::Impl
     // Render-pipeline mode — see header. "single" is the lower-cost default
     // (NDI mirrors projection); "dual" enables independent NDI scene + theme.
     QString outputMode       = QStringLiteral("single");
+    // Projection window taskbar / Alt-Tab presence — see header. Default true
+    // preserves the standard behavior (own taskbar button + switcher slot).
+    bool    projectionInAltTab = true;
     // Headless NDI renderer toggle — see header. Default true so the QRhi
     // path is the standard production behavior; flipping false drops back to
     // the legacy grabToImage path as a fallback.
@@ -47,6 +50,7 @@ struct SettingsService::Impl
     static constexpr const char* kShowLogo       = "Settings/showLogoByDefault";
     static constexpr const char* kOutputResolution = "Settings/outputResolution";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
+    static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
@@ -66,6 +70,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->showLogoByDef    = s.value(QString::fromLatin1(Impl::kShowLogo),         m_impl->showLogoByDef).toBool();
     m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
+    m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
@@ -82,6 +87,7 @@ bool    SettingsService::reduceMotion() const      { return m_impl->reduceMotion
 bool    SettingsService::showLogoByDefault() const { return m_impl->showLogoByDef; }
 QString SettingsService::outputResolution() const  { return m_impl->outputResolution; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
+bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
@@ -160,6 +166,14 @@ void SettingsService::setOutputMode(const QString& mode)
     m_impl->outputMode = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputMode), normalized);
     emit outputModeChanged();
+}
+
+void SettingsService::setProjectionInAltTab(bool v)
+{
+    if (m_impl->projectionInAltTab == v) return;
+    m_impl->projectionInAltTab = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionInAltTab), v);
+    emit projectionInAltTabChanged();
 }
 
 void SettingsService::setUseHeadlessNdi(bool v)

@@ -187,6 +187,15 @@ Item {
                     errorClearTimer.restart()
                     return
                 }
+
+                // A bundle can carry video backgrounds. Those land via
+                // MediaService::importPathSync, which emits allMediaChanged but
+                // NOT importFinished, so the startup-wired thumbnail sweep never
+                // sees them and the new clips show no poster until the next
+                // launch. Kick the sweep here so imported videos get a
+                // thumbnail right away (it's a no-op for ids already covered).
+                VideoThumbnailer.ensureForAllVideos()
+
                 if (report.mediaWarnings.length > 0
                     || report.fontWarnings.length > 0) {
                     const lines = report.mediaWarnings

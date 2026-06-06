@@ -353,10 +353,17 @@ struct ThemeService::Impl
         , selectById(conn.prepare(QStringLiteral(
             "SELECT id, kind, name, tokens_json, is_builtin FROM themes WHERE id = ?")))
         , insertTheme(conn.prepare(QStringLiteral(
-            "INSERT INTO themes (kind, name, tokens_json, is_builtin, created_at, updated_at) "
-            "VALUES (?, ?, ?, 0, ?, ?)")))
+            // tokens_version = 2 is written explicitly. create()/import always
+            // produce current v2 tokens, but the column DEFAULTs to 1 (V003).
+            // Omitting it tagged every new theme "v1", so the startup
+            // migrateRowsToV2() pass re-ran buildV2FromV1() over already-v2
+            // JSON and clobbered it to a blank default on the NEXT launch.
+            "INSERT INTO themes (kind, name, tokens_json, is_builtin, tokens_version, created_at, updated_at) "
+            "VALUES (?, ?, ?, 0, 2, ?, ?)")))
         , updateTheme(conn.prepare(QStringLiteral(
-            "UPDATE themes SET name = ?, tokens_json = ?, updated_at = ? WHERE id = ?")))
+            // Stamp tokens_version = 2 on every write so an edited row is never
+            // left at the DEFAULT 1 and re-migrated (clobbered) next launch.
+            "UPDATE themes SET name = ?, tokens_json = ?, tokens_version = 2, updated_at = ? WHERE id = ?")))
         , deleteTheme(conn.prepare(QStringLiteral(
             "DELETE FROM themes WHERE id = ? AND is_builtin = 0")))
         , selectFirstBuiltinOfKind(conn.prepare(QStringLiteral(
@@ -411,9 +418,21 @@ struct ThemeService::Impl
             db::Transaction tx(conn);
             const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
             for (const auto& [id, kind, oldJson] : rows) {
-                const QVariantMap v1   = parseTokens(oldJson);
-                const QVariantMap v2   = buildV2FromV1(kind, v1);
-                const QString    json = serializeTokens(v2);
+                const QVariantMap parsed = parseTokens(oldJson);
+
+                // Idempotency guard: a row can carry tokens_version < 2 while
+                // its JSON is ALREADY the v2 node shape — anything written
+                // before tokens_version got stamped on INSERT/UPDATE inherited
+                // the column's DEFAULT 1. Running buildV2FromV1 over v2 JSON
+                // reads absent background/text/layout keys and collapses the
+                // theme to a blank default. So only genuinely-v1 JSON is
+                // rewritten; already-v2 rows are merely re-tagged.
+                const bool alreadyV2 =
+                    parsed.value(QStringLiteral("version")).toInt() >= 2
+                    || parsed.contains(QStringLiteral("nodes"));
+                const QString json = alreadyV2
+                    ? oldJson
+                    : serializeTokens(buildV2FromV1(kind, parsed));
 
                 auto& upd = updateRowToV2;
                 upd.reset();
