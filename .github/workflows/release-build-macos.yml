@@ -81,7 +81,11 @@ jobs:
           target: 'desktop'
           # Universal kit — produces a .app that runs on both arm64 and x64.
           arch: 'clang_64'
-          modules: 'qtmultimedia qtpdf qtwebsockets'
+          # qtshadertools provides Qt6::ShaderTools + the qsb compiler, which
+          # CMakeLists.txt requires for qt_add_shaders (the animated-gradient
+          # .frag → .qsb step). aqt treats it as an optional add-on, so unlike
+          # a full local Qt install it must be requested explicitly here.
+          modules: 'qtmultimedia qtpdf qtwebsockets qtshadertools'
           cache: true
           extra: '--base https://download.qt.io/'
           # Same aqt pin as the Windows job; see comment there.
