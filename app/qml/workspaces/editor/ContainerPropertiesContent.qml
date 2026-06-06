@@ -203,7 +203,10 @@ Column {
                 visible: !root._isGradient
                 label: qsTr("Fill")
                 value: (node && node.style && node.style.backgroundColor) || "#000000"
-                onColorPicked: function(c) { root._setStyle("backgroundColor", c) }
+                // Live during the drag, one undo step on close (see the
+                // live/commit split — the color picker is a drag input).
+                onColorPicked: function(c) { root._liveStyle("backgroundColor", c) }
+                onCommitted:   function(c) { workspace.saveToHistory() }
             }
 
             // ── Gradient fill ─────────────────────────────────────────
@@ -249,10 +252,13 @@ Column {
                                 height: 32
                                 label: qsTr("Stop %1").arg(index + 1)
                                 value: root._stopColorAt(index)
+                                // Live during the drag (commit=false → no
+                                // history); one undo step on close.
                                 onColorPicked: function(c) {
                                     const g = root._gradient(); g.colors[index] = c
-                                    root._writeGradient(g, true)
+                                    root._writeGradient(g, false)
                                 }
+                                onCommitted: function(c) { workspace.saveToHistory() }
                             }
                             IconButton {
                                 anchors.verticalCenter: parent.verticalCenter

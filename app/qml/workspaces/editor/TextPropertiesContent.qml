@@ -124,7 +124,9 @@ Column {
                 anchors.fill: parent
                 label: qsTr("Text")
                 value: (node && node.style && node.style.color) || "#ffffff"
-                onColorPicked: function(c) { root._setStyle("color", c) }
+                // Live during the drag, one undo step on close.
+                onColorPicked: function(c) { root._liveStyle("color", c) }
+                onCommitted:   function(c) { workspace.saveToHistory() }
             }
         }
     }
@@ -338,7 +340,9 @@ Column {
                 opacity: shadowColumn._on ? 1 : 0.45
                 enabled: shadowColumn._on
                 value: (node && node.style && node.style.textShadowColor) || "#000000"
-                onColorPicked: function(c) { root._setStyle("textShadowColor", c) }
+                // Live during the drag, one undo step on close.
+                onColorPicked: function(c) { root._liveStyle("textShadowColor", c) }
+                onCommitted:   function(c) { workspace.saveToHistory() }
             }
         }
     }

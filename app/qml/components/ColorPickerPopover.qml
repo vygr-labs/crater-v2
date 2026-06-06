@@ -8,7 +8,14 @@ Item {
     property string targetValue: "#ffffff"
     visible: false
 
-    signal colorChosen(string hex)
+    signal colorChosen(string hex)   // live, fired on every drag tick
+    signal committed(string hex)     // once, on close, with the final color
+
+    // One-undo-step bookkeeping: the live colorChosen ticks drive the node
+    // during a drag without touching history; `committed` fires a single time
+    // when the picker closes. `_dirty` gates out opens that changed nothing.
+    property bool   _dirty: false
+    property string _last:  ""
 
     width: 0; height: 0    // zero footprint when closed
 
@@ -70,7 +77,11 @@ Item {
             id: picker
             anchors.centerIn: parent
             value: root.targetValue
-            onCommit: function(hex) { root.colorChosen(hex) }
+            onCommit: function(hex) {
+                root._dirty = true
+                root._last  = hex
+                root.colorChosen(hex)
+            }
         }
     }
 
@@ -86,6 +97,8 @@ Item {
     }
 
     function openAt(anchorItem) {
+        root._dirty = false
+        root._last  = ""
         // Walk up to the window root.
         let win = anchorItem
         while (win.parent) win = win.parent
@@ -113,5 +126,11 @@ Item {
         chrome.visible = false
         dismissArea.visible = false
         root._open = false
+        // Snapshot a single undo step for the whole open session — but only if
+        // the color actually changed, so opening then dismissing adds nothing.
+        if (root._dirty) {
+            root._dirty = false
+            root.committed(root._last)
+        }
     }
 }

@@ -61,9 +61,17 @@ Rectangle {
                  v: c.hsvValue,
                  a: c.a }
     }
-    function _syncFromValue() {
+    // Drive the HSV(A) state from a hex string. Does NOT touch `value` — that
+    // is the EXTERNAL input, bound by the popover to the node's color
+    // (targetValue). Assigning `value` here would clobber that binding, so the
+    // picker would freeze on the last-edited color and show it for the NEXT
+    // node you open it on (the node's swatch reads right, but the wheel is
+    // stale). _emit() already pushes edits outward to the node, which
+    // round-trips back through the `value` binding — the picker never needs to
+    // write its own `value`.
+    function _applyHsvaFromHex(hex) {
         _suppressUpdate = true
-        const parsed = _hexToHsva(value)
+        const parsed = _hexToHsva(hex)
         if (parsed) {
             hue = parsed.h
             sat = parsed.s
@@ -72,6 +80,7 @@ Rectangle {
         }
         _suppressUpdate = false
     }
+    function _syncFromValue() { _applyHsvaFromHex(value) }
     function _emit() {
         if (_suppressUpdate) return
         commit(_hsvaToHex(hue, sat, val, alpha))
@@ -83,8 +92,9 @@ Rectangle {
     function _applyHex(t) {
         const c = Qt.color(t)
         if (!c || c.toString() === "") return
-        value = t
-        _syncFromValue()
+        // Drive HSV from the typed hex directly; never assign `value` (see
+        // _applyHsvaFromHex). _emit() pushes the change out to the node.
+        _applyHsvaFromHex(t)
         _emit()
     }
 
@@ -381,8 +391,9 @@ Rectangle {
                             visible: parent._color.length > 0
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                root.value = parent._color
-                                root._syncFromValue()
+                                // Drive HSV from the recent color; never assign
+                                // `value` (keeps the targetValue binding live).
+                                root._applyHsvaFromHex(parent._color)
                                 root._emit()
                             }
                         }

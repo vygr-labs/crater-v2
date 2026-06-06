@@ -24,11 +24,13 @@ Item {
     // on app restart.
     property string kindFilter: "all"
 
-    // Mirror of the user-selected default theme id per kind. Updated on
-    // ThemeService.defaultsChanged so each tile's DEFAULT badge rebinds
-    // without polling defaultFor() on every paint.
+    // Mirror of the per-kind default theme id, cached so each tile's PRIMARY
+    // badge rebinds on ThemeService.defaultsChanged without polling
+    // defaultFor() every paint. The per-kind default IS the primary/audience
+    // theme (resolveItemTheme falls back to it), so the badge that surfaces it
+    // is labelled PRIMARY and the flyout's "Primary HDMI" option writes it.
     // Also refreshed on allThemesChanged because deleting the active default
-    // shifts the resolver to the first built-in of that kind.
+    // shifts the resolver to the next theme of that kind.
     property var _defaultIds: ({ song: 0, scripture: 0, presentation: 0 })
 
     function _refreshDefaults() {
@@ -418,8 +420,6 @@ Item {
             width: grid.cellWidth - 10
             height: grid.cellHeight - 10
 
-            readonly property bool _isActiveDefault:
-                root._defaultIds[modelData.kind] === modelData.id
             // Per-output assignment flags. With the registry refactor each
             // output owns its own per-kind theme slots — a theme is "set
             // for X" when X's slot matching this theme's kind equals this
@@ -432,10 +432,11 @@ Item {
                 target: OutputService
                 function onOutputsChanged() { tileRoot._outputsRev++ }
             }
-            readonly property bool _isPrimary: {
-                _outputsRev
-                return OutputService.themeIdFor("primary", modelData.kind) === modelData.id
-            }
+            // The per-kind default theme. Surfaced as the PRIMARY badge and
+            // toggled by the flyout's "Primary HDMI" option — the default IS
+            // the primary/audience theme, so there's no separate primary pin.
+            readonly property bool _isActiveDefault:
+                root._defaultIds[modelData.kind] === modelData.id
             readonly property bool _isNdi: {
                 _outputsRev
                 return OutputService.themeIdFor("ndi", modelData.kind) === modelData.id
@@ -556,39 +557,19 @@ Item {
                         }
                     }
 
-                    // DEFAULT = the per-kind fallback theme that ships on
-                    // the primary monitor when nothing else is assigned.
-                    // Painted in live-red for the same reason PRIMARY is:
-                    // both badges describe "this is what the audience will
-                    // see by default," and the live-red family is the
-                    // codebase's universal "audience output" signal
-                    // (LivePanel, monitor live indicators, schedule live
-                    // glow). Different word, same idea, same color.
+                    // PRIMARY = the audience-facing live output AND the
+                    // de-facto default theme: resolveItemTheme checks the
+                    // Primary pin before any per-kind fallback, so whatever is
+                    // pinned here is what the audience sees by default. (The
+                    // former separate DEFAULT badge said the same thing in a
+                    // different word — it was folded into this one when the
+                    // "Set as default" menu collapsed into the Primary pin.)
+                    // Painted in live-red so the badge sits in the same
+                    // semantic family as LivePanel's LIVE indicator and the
+                    // schedule's live row glow — "PRIMARY" and "LIVE" should
+                    // read as the same idea at a glance.
                     Rectangle {
                         visible: tileRoot._isActiveDefault
-                        width: defaultLabel.implicitWidth + Theme.space.sm * 2
-                        height: 16
-                        radius: 2
-                        color: Theme.color.live
-
-                        Text {
-                            id: defaultLabel
-                            anchors.centerIn: parent
-                            text: qsTr("DEFAULT")
-                            color: "#ffffff"
-                            font.family: Theme.font.monoFamily
-                            font.pixelSize: 11
-                            font.weight: Theme.font.weightSemiBold
-                            font.letterSpacing: 0.8
-                        }
-                    }
-                    // PRIMARY = the audience-facing live output. Painted in
-                    // live-red so the badge sits in the same semantic family
-                    // as LivePanel's LIVE indicator and the schedule's live
-                    // row glow — "PRIMARY" and "LIVE" should read as the
-                    // same idea at a glance.
-                    Rectangle {
-                        visible: tileRoot._isPrimary
                         width: primaryLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
                         radius: 2
@@ -693,57 +674,57 @@ Item {
                                   plan:      plan
                               })
                           } },
-                        { label: qsTr("Set as default"),
+                        // One parent row that opens a hover-flyout of the three
+                        // outputs, collapsing the former four "Set …" rows.
+                        // "Primary HDMI" IS the default: it writes the per-kind
+                        // default (ThemeService.setDefaultFor), which is what
+                        // resolveItemTheme falls back to for the primary/audience
+                        // output and what the PRIMARY badge reflects. NDI / Stage
+                        // are per-output pins that auto-route by the theme's kind
+                        // into that output's slot. NDI is live only in dual
+                        // output mode (disabled + annotated otherwise, and an
+                        // already-set pin stays clearable); Stage stays Soon
+                        // until multi-output lands in v1.1.
+                        { label: qsTr("Set as default %1 theme").arg(modelData.kind),
                           iconName: "star",
-                          enabled: !tileRoot._isActiveDefault,
-                          action: () => ThemeService.setDefaultFor(modelData.kind, modelData.id) },
-                        { separator: true },
-                        // Per-output assignment. Primary HDMI is always
-                        // live. NDI is live only in dual output mode —
-                        // when single, the menu item is disabled and
-                        // labelled with the dependency so the operator
-                        // knows what to flip. An already-set NDI pin
-                        // remains unsettable from single mode so the
-                        // operator isn't stuck with a stale assignment
-                        // they can't clear. Stage stays Soon until
-                        // multi-output activation lands in v1.1.
-                        // Per-output assignment auto-routes by this
-                        // theme's kind: a song-kind theme lands in the
-                        // output's song slot, scripture into scripture,
-                        // presentation into presentation. The operator
-                        // picks "Set for X" and never thinks about which
-                        // slot — the theme's own kind decides.
-                        { label: tileRoot._isPrimary
-                                ? qsTr("Unset for Primary HDMI")
-                                : qsTr("Set for Primary HDMI"),
-                          iconName: "monitor",
-                          action: () => {
-                              OutputService.setThemeIdFor(
-                                  "primary", modelData.kind,
-                                  tileRoot._isPrimary ? 0 : modelData.id)
-                          } },
-                        { label: tileRoot._isNdi
-                                ? qsTr("Unset for NDI Broadcast")
-                                : (SettingsService.outputMode === "dual"
-                                    ? qsTr("Set for NDI Broadcast")
-                                    : qsTr("Set for NDI Broadcast (requires Dual output mode)")),
-                          iconName: "radio",
-                          enabled: SettingsService.outputMode === "dual"
-                                || tileRoot._isNdi,
-                          action: () => {
-                              OutputService.setThemeIdFor(
-                                  "ndi", modelData.kind,
-                                  tileRoot._isNdi ? 0 : modelData.id)
-                          } },
-                        { label: tileRoot._isStage
-                                ? qsTr("Unset for Stage Monitor (Soon)")
-                                : qsTr("Set for Stage Monitor (Soon)"),
-                          iconName: "tv",
-                          action: () => {
-                              OutputService.setThemeIdFor(
-                                  "stage", modelData.kind,
-                                  tileRoot._isStage ? 0 : modelData.id)
-                          } },
+                          submenu: [
+                              { label: tileRoot._isActiveDefault
+                                      ? qsTr("Unset for Primary HDMI")
+                                      : qsTr("Set for Primary HDMI"),
+                                iconName: "monitor",
+                                action: () => {
+                                    // The default owns the primary output now,
+                                    // so retire any per-output primary pin first
+                                    // — otherwise a pin set in an earlier build
+                                    // (resolution tier 2) would shadow the
+                                    // default (tier 3) we set here.
+                                    OutputService.setThemeIdFor("primary", modelData.kind, 0)
+                                    ThemeService.setDefaultFor(modelData.kind,
+                                        tileRoot._isActiveDefault ? 0 : modelData.id)
+                                } },
+                              { label: tileRoot._isNdi
+                                      ? qsTr("Unset for NDI Broadcast")
+                                      : (SettingsService.outputMode === "dual"
+                                          ? qsTr("Set for NDI Broadcast")
+                                          : qsTr("Set for NDI Broadcast (requires Dual output mode)")),
+                                iconName: "radio",
+                                enabled: SettingsService.outputMode === "dual"
+                                      || tileRoot._isNdi,
+                                action: () => {
+                                    OutputService.setThemeIdFor(
+                                        "ndi", modelData.kind,
+                                        tileRoot._isNdi ? 0 : modelData.id)
+                                } },
+                              { label: tileRoot._isStage
+                                      ? qsTr("Unset for Stage Monitor (Soon)")
+                                      : qsTr("Set for Stage Monitor (Soon)"),
+                                iconName: "tv",
+                                action: () => {
+                                    OutputService.setThemeIdFor(
+                                        "stage", modelData.kind,
+                                        tileRoot._isStage ? 0 : modelData.id)
+                                } }
+                          ] },
                         { separator: true },
                         { label: qsTr("Delete"),     iconName: "trash",
                           destructive: true,
