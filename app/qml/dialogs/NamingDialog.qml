@@ -45,15 +45,24 @@ ModalShell {
                 focus: true
                 onAccepted: confirm()
 
-                // Pre-populate for rename-style invocations. selectAll() puts
-                // the cursor over the existing text so the next keystroke
-                // replaces it — matches the OS-native rename UX.
+                // Pre-populate for rename-style invocations, then grab active
+                // focus. `focus: true` alone is not enough: it only requests
+                // focus within this dialog's scope, but the theme editor's
+                // canvas calls forceActiveFocus() on itself, so without
+                // actively taking focus here the dialog opens with a visible
+                // caret/selection while keystrokes still fire the editor's
+                // window-level shortcuts (and `inputFocused` reads false).
+                // Deferred a tick so it runs after the modal Loader is fully
+                // realized; selectAll() AFTER focusing so the seed stays
+                // highlighted for single-keystroke replace (OS-native rename UX).
                 Component.onCompleted: {
                     const seed = AppState.modalProps.initialValue
-                    if (typeof seed === "string" && seed.length > 0) {
+                    if (typeof seed === "string" && seed.length > 0)
                         text = seed
-                        selectAll()
-                    }
+                    Qt.callLater(() => {
+                        input.forceActiveFocus()
+                        if (input.text.length > 0) input.selectAll()
+                    })
                 }
 
                 Text {

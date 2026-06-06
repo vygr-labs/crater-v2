@@ -467,32 +467,46 @@ Item {
                     autoPlayVideos: false
                 }
 
-                // Theme name in the bottom-left — translucent black backdrop
-                // so it stays readable over any theme background. The kind
-                // glyph moved out of this chip and into the top-left badge
-                // row (see kindBadge below); leaving it here would duplicate
-                // the same signal in two corners.
+                // Theme name in a full-width bottom scrim. Previously a
+                // translucent chip sized to the text — which collided badly with
+                // lower-third themes: their own content text sits at the bottom
+                // of the preview, exactly where the chip was, and bled through
+                // its 63%-opaque backdrop. A full-width vertical gradient (clear
+                // top → opaque bottom) masks whatever the theme renders behind
+                // the name, and the title elides instead of overflowing (then
+                // clipping at) the tile edge on long names. Mirrors MediaTab's
+                // title scrim, kept always-visible since the name is the tile's
+                // primary label. The kind glyph lives in the top-left badge row.
                 Rectangle {
                     anchors.left: parent.left
+                    anchors.right: parent.right
                     anchors.bottom: parent.bottom
-                    anchors.margins: 8
-                    width: nameLabel.implicitWidth + Theme.space.md * 2
-                    height: 22
-                    radius: 3
-                    color: "#000000A0"
+                    anchors.margins: 4
+                    height: 26
+                    radius: 0
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#00000000" }
+                        GradientStop { position: 0.4; color: "#000000A6" }
+                        GradientStop { position: 1.0; color: "#000000FF" }
+                    }
 
                     Text {
                         id: nameLabel
-                        anchors.centerIn: parent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        anchors.bottomMargin: 4
                         text: modelData.name
                         color: "#ffffff"
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
                         font.weight: Theme.font.weightSemiBold
-                        // Black 1px drop shadow under each glyph — keeps the
-                        // title legible even when a theme's background
-                        // pushes through the translucent chip on a light
-                        // scene.
+                        elide: Text.ElideRight
+                        // Per-glyph 1px black drop shadow — keeps the title
+                        // legible even at the lighter top of the scrim and over
+                        // bright theme content.
                         style: Text.Raised
                         styleColor: "#000000"
                     }

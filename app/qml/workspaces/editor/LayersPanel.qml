@@ -132,16 +132,28 @@ Rectangle {
             // expected "edit name" affordance in a layers list) and the
             // right-click "Rename layer" item, so both stay in lock-step.
             function _openRename() {
+                // Capture the node id + workspace NOW, into locals. The
+                // onConfirm closure runs LATER (after the user types + clicks
+                // Save in the modal), by which point this row delegate's
+                // `modelData` context can be torn down or reused by the
+                // ListView — its model rebuilds on nodeDataChanged. A
+                // late-bound `modelData` would then be undefined, so the
+                // callback would throw before NamingDialog.confirm() reaches
+                // closeModal(): the rename half-fails AND the dialog stays
+                // open. Self-contained locals make the callback outlive the row.
+                const nodeId = modelData.id
+                const ws     = workspace
+                const seed   = (modelData.data && modelData.data.layerName)
+                               || nodeId || ""
                 AppState.openModal("naming", {
-                    title:       qsTr("Rename layer"),
-                    placeholder: qsTr("Layer name"),
-                    confirmText: qsTr("Save"),
-                    initialValue: (modelData.data && modelData.data.layerName)
-                                  || modelData.id || "",
-                    onConfirm:   function(name) {
+                    title:        qsTr("Rename layer"),
+                    placeholder:  qsTr("Layer name"),
+                    confirmText:  qsTr("Save"),
+                    initialValue: seed,
+                    onConfirm:    function(name) {
                         if (name && name.length > 0) {
-                            workspace.workingTheme.renameNode(modelData.id, name)
-                            workspace.saveToHistory()
+                            ws.workingTheme.renameNode(nodeId, name)
+                            ws.saveToHistory()
                         }
                     }
                 })
