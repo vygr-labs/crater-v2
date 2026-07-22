@@ -86,7 +86,7 @@ the high-level state; the detailed remaining-work punch-list lives in
 | EasyWorship import                 | `electron/src/backend/scripts/`              | Done |
 | NDI sender                         | `electron/src/backend/ndi/`                  | Working — on-demand mode + non-1080p canvas tuning pending |
 | Strong's concordance + interlinear | `electron/src/backend/database/strongs-*.ts` | Done — packaging (ship DBs beside exe) pending |
-| Song collections                   | —                                            | **Not started** (sidebar buttons are no-op stubs) |
+| Song collections                   | —                                            | Done — many-to-many, sidebar + add-to-collection |
 | Multi-output (stage / dynamic)     | —                                            | v1.1 — registry done, no render window yet |
 | Remote control server              | `electron/src/backend/remote/`               | v1.1 — preview UI only (view-only BrowserCast works) |
 | Auto-update                        | —                                            | v1.1 — external release scripts only |

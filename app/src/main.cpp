@@ -40,6 +40,7 @@
 
 #include "crater/BibleService.h"
 #include "crater/StrongsService.h"
+#include "crater/CollectionService.h"
 #include "crater/Bootstrap.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
@@ -335,6 +336,9 @@ int main(int argc, char* argv[])
     // it unavailable and the tab shows a "data not found" state. No deps.
     crater::StrongsService    strongsService;
     crater::SongService       songService;
+    // Song collections — named groupings over songs.sqlite (its own connection,
+    // separate from SongService's). No construction-order dependency.
+    crater::CollectionService collectionService;
     crater::ScheduleService   scheduleService;
     crater::ThemeService      themeService;
     crater::MediaService      mediaService;
@@ -418,6 +422,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "BibleService",       &bibleService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "StrongsService",     &strongsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SongService",        &songService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "CollectionService",  &collectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",    &scheduleService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",       &themeService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);

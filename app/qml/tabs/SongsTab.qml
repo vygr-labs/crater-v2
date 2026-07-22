@@ -100,8 +100,21 @@ Item {
         // This is the lyrics-FTS bug fix: hits used to skip this filter.
         if (grp === "favorites") {
             result = result.filter(function(s) { return s && s.isFavorite })
+        } else if (grp.indexOf("collection:") === 0) {
+            // A specific collection is selected (id encoded in the group string).
+            // Reading CollectionService.collections here registers the reactive
+            // dependency so membership edits (add/remove) re-run this filter; the
+            // actual member set comes from songIdsFor.
+            void CollectionService.collections   // touch → reactive on collectionsChanged
+            const collId = parseInt(grp.substring("collection:".length))
+            const ids = CollectionService.songIdsFor(collId)
+            let inColl = {}
+            for (let k = 0; k < ids.length; k++) inColl[ids[k]] = true
+            result = result.filter(function(s) { return s && inColl[s.id] })
         } else if (grp === "collections") {
-            // CollectionService deferred; render empty until it lands.
+            // The "My Collections" container row isn't itself a filter (the
+            // sidebar doesn't set it), but guard defensively — show nothing
+            // rather than the whole library.
             result = []
         }
 
@@ -222,6 +235,35 @@ Item {
     function addToScheduleFor(idx) {
         const item = songItemAt(idx)
         if (item) AppState.addItemToSchedule(item)
+    }
+
+    // Submenu for the "Add to Collection…" context-menu item: one row per
+    // collection (adds this song) plus a "New collection…" row that creates one
+    // and drops the song into it. Rebuilt reactively — reading
+    // CollectionService.collections ties the parent menuItems binding to
+    // collectionsChanged so the list stays current.
+    function _collectionSubmenu(songId) {
+        const colls = CollectionService.collections
+        let items = []
+        for (let i = 0; i < colls.length; i++) {
+            const cid = colls[i].id   // per-iteration binding — captured correctly
+            items.push({ label: colls[i].name, iconName: "folder",
+                         action: function() { CollectionService.addSong(cid, songId) } })
+        }
+        if (colls.length > 0) items.push({ separator: true })
+        items.push({ label: qsTr("New collection…"), iconName: "plus",
+                     action: function() {
+                         AppState.openModal("naming", {
+                             title:       qsTr("New collection"),
+                             placeholder: qsTr("Collection name"),
+                             confirmText: qsTr("Create"),
+                             onConfirm:   function(name) {
+                                 const id = CollectionService.create(name)
+                                 if (id > 0) CollectionService.addSong(id, songId)
+                             }
+                         })
+                     } })
+        return items
     }
 
     // ── Top action bar ──────────────────────────────────────────────────
@@ -753,10 +795,17 @@ Item {
                             : qsTr("Add to Favorites"),
                       iconName: modelData.isFavorite ? "heart-off" : "heart",
                       action: function() { SongService.toggleFavorite(modelData.id) } },
-                    // No action — collections are deferred until CollectionService
-                    // lands. Leaving the row in place preserves discoverability
-                    // + electron parity.
-                    { label: qsTr("Add to Collection…"), iconName: "folder" },
+                    { label: qsTr("Add to Collection…"), iconName: "folder",
+                      submenu: root._collectionSubmenu(modelData.id) },
+                    // Only when viewing a specific collection: let the operator
+                    // pull this song back out of it.
+                    ...(root.group.indexOf("collection:") === 0 ? [{
+                        label: qsTr("Remove from Collection"), iconName: "x",
+                        action: function() {
+                            const cid = parseInt(root.group.substring("collection:".length))
+                            CollectionService.removeSong(cid, modelData.id)
+                        }
+                    }] : []),
                     { separator: true },
                     { label: qsTr("Delete Song"), iconName: "trash", kbd: "Del", destructive: true,
                       action: function() {

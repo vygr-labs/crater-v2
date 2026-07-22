@@ -27,13 +27,12 @@ Strong's is now fully shipped end-to-end (engine + UI + projection + packaging +
 - [ ] Dedicated `strongs` theme kind + per-output pinning (currently reuses the scripture theme). Optional.
 - [ ] Minor: Dictionary and Reader share one search box (keyword vs reference), so toggling views leaves stale text.
 
-### Song collections
-No `CollectionService` exists.
-- [ ] `CollectionService` (create / rename / duplicate / destroy).
-- [ ] "My Collections" sidebar group is hardcoded to `count: 0`, `subgroups: []` (`LibrarySidebar.qml:41-58`).
-- [ ] Bottom action strip is `visible: false` pending the service (`LibrarySidebar.qml:286-293`).
-- [ ] "+" new-collection button is a no-op `onClicked: {}` (`LibrarySidebar.qml:334-337`); wire to `AppState.openModal("naming", …)`.
-- [ ] Gear (Rename/Duplicate/Edit/Delete) button is a no-op `onClicked: {}` (`LibrarySidebar.qml:359-361`); open a `PopoverMenu`.
+### Song collections — DONE
+Shipped: `CollectionService` over `collections` + `collection_songs` (V003 migration in songs.sqlite; many-to-many, cascade delete). Favorites stays a separate `is_favorite` flag.
+- [x] `CollectionService` — create / rename / duplicate / destroy / addSong / removeSong / songIdsFor + a `collections` property with counts.
+- [x] Sidebar "My Collections" lists real collections as expandable subgroups; bottom "+ ⚙" strip is live (create + manage the selected collection). Selection encoded as `collection:<id>`.
+- [x] SongsTab filters to a selected collection; song context menu has an "Add to Collection…" submenu + "Remove from Collection".
+- [ ] Optional later: drag-reorder of collections and of songs within a collection (schema has `sort_order`, no UI yet).
 
 ---
 
