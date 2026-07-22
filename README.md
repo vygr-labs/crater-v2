@@ -68,14 +68,25 @@ qt/
 
 ## Porting status
 
-| Subsystem               | Electron source                                | Qt status |
-| ----------------------- | ---------------------------------------------- | --------- |
-| Bible DB + FTS          | `electron/src/backend/database/bible-*.ts`     | Stub      |
-| Song DB + FTS           | `electron/src/backend/database/song*.ts`       | Pending   |
-| Strong's concordance    | `electron/src/backend/database/strongs-*.ts`   | Pending   |
-| Themes                  | `electron/src/backend/database/theme-*.ts`     | Pending   |
-| Schedule                | `electron/src/backend/main.ts` (file-backed)   | Pending   |
-| Projection rendering    | `electron/src/components/app/projection/`      | Pending   |
-| Operator console        | `electron/src/components/app/`                 | Pending   |
-| NDI sender              | `electron/src/backend/ndi/`                    | Pending   |
-| Remote control server   | `electron/src/backend/remote/`                 | Deferred to v1.1 |
+The v1 engine and operator console are largely complete. This table tracks
+the high-level state; the detailed remaining-work punch-list lives in
+[`docs/TODO.md`](docs/TODO.md).
+
+| Subsystem                          | Electron source                              | Qt status |
+| ---------------------------------- | -------------------------------------------- | --------- |
+| Bible DB + FTS                     | `electron/src/backend/database/bible-*.ts`   | Done |
+| Song DB + FTS                      | `electron/src/backend/database/song*.ts`     | Done |
+| Themes + editor + `.craterheme` v2 | `electron/src/backend/database/theme-*.ts`   | Done |
+| Schedule (auto-save, saved sets)   | `electron/src/backend/main.ts` (file-backed) | Done |
+| Media (image / video / PDF)        | `electron/src/backend/database/media*.ts`    | Done |
+| Fonts (system + user import)       | —                                            | Done |
+| Projection rendering + transitions | `electron/src/components/app/projection/`    | Done |
+| Operator console                   | `electron/src/components/app/`               | Done |
+| Multi-monitor detection + routing  | —                                            | Done |
+| EasyWorship import                 | `electron/src/backend/scripts/`              | Done |
+| NDI sender                         | `electron/src/backend/ndi/`                  | Working — on-demand mode + non-1080p canvas tuning pending |
+| Strong's concordance               | `electron/src/backend/database/strongs-*.ts` | **Not started** (tab is a placeholder) |
+| Song collections                   | —                                            | **Not started** (sidebar buttons are no-op stubs) |
+| Multi-output (stage / dynamic)     | —                                            | v1.1 — registry done, no render window yet |
+| Remote control server              | `electron/src/backend/remote/`               | v1.1 — preview UI only (view-only BrowserCast works) |
+| Auto-update                        | —                                            | v1.1 — external release scripts only |
