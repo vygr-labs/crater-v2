@@ -38,23 +38,100 @@ Rectangle {
         expandedGroups = copy
     }
 
+    // ── Collection action-strip helpers (Songs tab) ─────────────────────
+    // The gear operates on the currently-selected collection, encoded as
+    // "collection:<id>" in activeLibraryGroup.songs. Returns { id, name } or
+    // null when the active group isn't a specific collection.
+    function _selectedCollection() {
+        const g = AppState.activeLibraryGroup["songs"] || ""
+        if (g.indexOf("collection:") !== 0) return null
+        const cid = parseInt(g.substring("collection:".length))
+        const colls = CollectionService.collections
+        for (let i = 0; i < colls.length; i++)
+            if (colls[i].id === cid) return { id: colls[i].id, name: colls[i].name }
+        return null
+    }
+
+    function _promptNewCollection() {
+        AppState.openModal("naming", {
+            title:       qsTr("New collection"),
+            placeholder: qsTr("Collection name"),
+            confirmText: qsTr("Create"),
+            onConfirm:   function(name) {
+                const id = CollectionService.create(name)
+                if (id > 0) {
+                    // Expand the container + select the new collection so it's
+                    // immediately visible and active.
+                    let copy = Object.assign({}, root.expandedGroups)
+                    copy["collections"] = true
+                    root.expandedGroups = copy
+                    AppState.setLibraryGroup("songs", "collection:" + id)
+                }
+            }
+        })
+    }
+
+    function _openCollectionMenu(originItem) {
+        const coll = root._selectedCollection()
+        if (!coll) return
+        const items = [
+            { label: qsTr("Rename"), iconName: "edit",
+              action: function() {
+                  AppState.openModal("naming", {
+                      title:        qsTr("Rename collection"),
+                      placeholder:  qsTr("Collection name"),
+                      confirmText:  qsTr("Save"),
+                      initialValue: coll.name,
+                      onConfirm:    function(name) { CollectionService.rename(coll.id, name) }
+                  })
+              } },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { CollectionService.duplicate(coll.id) } },
+            { separator: true },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() {
+                  AppState.openModal("confirm", {
+                      title:       qsTr("Delete collection?"),
+                      body:        qsTr("This removes the collection \"") + coll.name
+                                 + qsTr("\". The songs themselves are not deleted."),
+                      confirmText: qsTr("Delete"),
+                      onConfirm:   function() {
+                          CollectionService.destroy(coll.id)
+                          // Fall back to All Songs if the deleted collection was
+                          // the active filter, so the list isn't stuck on it.
+                          if ((AppState.activeLibraryGroup["songs"] || "") === "collection:" + coll.id)
+                              AppState.setLibraryGroup("songs", "all-songs")
+                      }
+                  })
+              } }
+        ]
+        // Body auto-clamps upward to stay on-screen (PopoverMenu.qml:158).
+        AppState.openContextMenuAt(originItem, 0, originItem.height + 4, items, { menuWidth: 180 })
+    }
+
     readonly property var groups: {
         switch (currentTabKey) {
             case "songs": {
                 const songs = SongService.allSongs
                 const favCount = songs.filter(function(s) { return s.isFavorite }).length
-                // subgroups: collections placeholder. Empty until a
-                // CollectionService lands; the accordion structure is in place
-                // so adding collections is purely a data change downstream.
-                //
-                // All three rows use the folder glyph so the sidebar reads as
-                // a flat list of containers — the heart glyph for Favorites
-                // was visually inconsistent with Collections, which has no
-                // single-noun equivalent.
+                // Real collections drive the "My Collections" subgroups now.
+                // Each carries id "collection:<n>" so the single per-tab group
+                // string (activeLibraryGroup.songs) can encode which collection
+                // is selected — SongsTab parses it back out to filter.
+                const colls = CollectionService.collections
+                let subs = []
+                for (let i = 0; i < colls.length; i++) {
+                    subs.push({ id:       "collection:" + colls[i].id,
+                                iconName: "folder",
+                                label:    colls[i].name,
+                                count:    colls[i].songCount })
+                }
+                // All three top rows use the folder glyph so the sidebar reads
+                // as a flat list of containers.
                 return [
-                    { id: "all-songs",   iconName: "folder", label: qsTr("All Songs"),      count: songs.length, subgroups: [] },
-                    { id: "favorites",   iconName: "folder", label: qsTr("My Favorites"),   count: favCount,     subgroups: [] },
-                    { id: "collections", iconName: "folder", label: qsTr("My Collections"), count: 0,            subgroups: [] }
+                    { id: "all-songs",   iconName: "folder", label: qsTr("All Songs"),      count: songs.length,  subgroups: [] },
+                    { id: "favorites",   iconName: "folder", label: qsTr("My Favorites"),   count: favCount,      subgroups: [] },
+                    { id: "collections", iconName: "folder", label: qsTr("My Collections"), count: colls.length,  subgroups: subs }
                 ]
             }
             case "scripture": {
@@ -246,6 +323,12 @@ Rectangle {
                                 // on click so the operator can drill into collections
                                 // without a separate chevron target.
                                 if (groupBlock.hasSubs) root.toggleExpanded(modelData.id)
+                                // "My Collections" is a pure container, not a filter —
+                                // clicking it only expands/collapses; the individual
+                                // collections below are the real filter targets. Skip
+                                // setting the group so the song list doesn't jump to
+                                // an empty container view.
+                                if (root.currentTabKey === "songs" && modelData.id === "collections") return
                                 if (root.currentTabKey === "media") {
                                     AppState.setMediaGroup(modelData.id)
                                 } else {
@@ -280,17 +363,14 @@ Rectangle {
     // Bottom strip — per-tab quick actions (electron parity:
     // SelectionGroups.tsx ships a `<HStack h={6} bg="gray.800">` at the bottom
     // hosting each tab's `actionMenus`). Songs gets "+ ⚙" for collection
-    // management; other tabs leave the strip invisible until they have actions
-    // worth shipping. The scroll container above adjusts its bottom anchor.
-    //
-    // TODO: Re-enable for the songs tab once CollectionService.{create,
-    //       rename,duplicate,destroy} lands — at that point the + and gear
-    //       below get real onClicked handlers. Hidden today because the
-    //       buttons are no-op stubs and the strip visually duplicates the
-    //       content-pane's "+ ⚙" cluster (same iconography, different scope).
+    // management (create / rename / duplicate / delete); other tabs leave the
+    // strip invisible until they have actions worth shipping. The scroll
+    // container above adjusts its bottom anchor.
     Rectangle {
         id: actionBar
-        visible: false
+        // Songs only: "+" creates a collection, the gear manages the selected
+        // one. Other tabs keep the strip hidden (no actions worth shipping).
+        visible: root.currentTabKey === "songs"
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -311,9 +391,8 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
 
-            // + (new collection) — opens a naming modal once CollectionService
-            // is in place. Today's onClicked is a no-op so the affordance is
-            // present and discoverable but doesn't half-launch a feature.
+            // + (new collection) — opens the naming modal to create one, then
+            // expands + selects it (see root._promptNewCollection).
             Rectangle {
                 width: 36; height: 22
                 radius: 0
@@ -331,18 +410,21 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    // TODO: wire to AppState.openModal("naming", { ... }) once
-                    // CollectionService.create lands.
-                    onClicked: {}
+                    onClicked: root._promptNewCollection()
                 }
             }
 
-            // ⚙ Rename / Duplicate / Edit / Delete — same TODO until
-            // CollectionService.{rename,duplicate,update,destroy} land.
+            // ⚙ Rename / Duplicate / Delete for the selected collection
+            // (root._openCollectionMenu). Dimmed + inert when no collection
+            // is the active filter.
             Rectangle {
+                id: gearBtnRect
                 width: 36; height: 22
                 radius: 0
-                color: gearCollectionMa.containsMouse ? Theme.color.raised : "transparent"
+                // Gear only does something when a specific collection is
+                // selected — dim it otherwise so it reads as inactive.
+                readonly property bool _hasSel: !!root._selectedCollection()
+                color: (_hasSel && gearCollectionMa.containsMouse) ? Theme.color.raised : "transparent"
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
                 AppIcon {
@@ -350,15 +432,14 @@ Rectangle {
                     name: "settings"
                     color: Theme.color.textSecondary
                     size: Theme.icon.sm
+                    opacity: gearBtnRect._hasSel ? 1.0 : 0.4
                 }
                 MouseArea {
                     id: gearCollectionMa
                     anchors.fill: parent
                     hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    // TODO: open a PopoverMenu with Rename/Duplicate/Edit/Delete
-                    // items once CollectionService is available.
-                    onClicked: {}
+                    cursorShape: gearBtnRect._hasSel ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root._openCollectionMenu(gearBtnRect)
                 }
             }
         }
