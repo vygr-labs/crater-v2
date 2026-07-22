@@ -38,3 +38,5 @@ Thumbs.db
 dist/
 packaging/vc_redist.x64.exe
 packaging/bibles.sqlite
+packaging/strongs-dictionary.sqlite
+packaging/strongs-bible.sqlite

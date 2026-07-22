@@ -161,6 +161,17 @@ $BibleDbLocalSource = Join-Path $QtRoot '..\electron\src\assets\default\database
 $BibleDbUrl         = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v1/bibles.sqlite'
 $BibleDbSha256      = 'd86eed30ff7e28f213a06dcc7e6d7439ea3c851756f593a999b110247a7e044c'
 
+# Strong's concordance databases (dictionary lexicon + KJV-with-Strong's).
+# Same fetch/cache/verify pipeline as the Bible DB above — StrongsService
+# (core/src/StrongsService.cpp) looks for them at <exe>/legacy/ alongside
+# bibles.sqlite. Two files, ~19 MB combined; also too large to commit.
+$StrongsDbLocalDir = Join-Path $QtRoot '..\electron\src\assets\default\databases'
+$StrongsDbUrlBase  = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v1'
+$StrongsDbs = @(
+    @{ Name = 'strongs-dictionary.sqlite'; Sha256 = '27890d55e17f15c717509538cc246005600a99938e5f212aa82131a478c89a38' }
+    @{ Name = 'strongs-bible.sqlite';      Sha256 = '8934fdf629865eca7d4d16cbe3ec29d913d03c6b2ef0ec4294484d73232cb2d4' }
+)
+
 # ── Version ────────────────────────────────────────────────────────────────
 $cmakeLists = Get-Content (Join-Path $QtRoot 'CMakeLists.txt') -Raw
 if ($cmakeLists -notmatch 'project\(Crater\s+VERSION\s+([\d.]+)') {
@@ -306,6 +317,33 @@ $LegacyStage = Join-Path $AppStage 'legacy'
 New-Item -ItemType Directory -Force -Path $LegacyStage | Out-Null
 Copy-Item $BibleDbPath (Join-Path $LegacyStage 'bibles.sqlite')
 Write-Done "bibles.sqlite staged to $LegacyStage"
+
+# Strong's databases — same three-tier resolution as the Bible DB above,
+# staged into the same legacy/ dir. The loop keeps the two files DRY.
+Write-Step "Staging Strong's databases"
+foreach ($db in $StrongsDbs) {
+    $dst = Join-Path $PackagingDir $db.Name
+    if (-not (Test-Path $dst)) {
+        $localSrc = Join-Path $StrongsDbLocalDir $db.Name
+        if (Test-Path $localSrc) {
+            Write-Step "Importing $($db.Name) from sibling electron tree"
+            New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
+            Copy-Item $localSrc $dst
+        } else {
+            $url = "$StrongsDbUrlBase/$($db.Name)"
+            Write-Step "Downloading $($db.Name) from $url"
+            New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
+            Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing
+        }
+    }
+    $sha = (Get-FileHash $dst -Algorithm SHA256).Hash.ToLower()
+    if ($sha -ne $db.Sha256) {
+        Remove-Item $dst -Force
+        throw "$($db.Name) SHA-256 mismatch. Expected $($db.Sha256), got $sha. The cached/downloaded file has been removed; rerun to refetch."
+    }
+    Copy-Item $dst (Join-Path $LegacyStage $db.Name)
+}
+Write-Done "Strong's databases staged to $LegacyStage"
 
 # ── VC++ redist ────────────────────────────────────────────────────────────
 if (-not $SkipInstaller) {
