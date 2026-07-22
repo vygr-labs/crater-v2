@@ -35,6 +35,23 @@ No `CollectionService` exists.
 - [ ] "+" new-collection button is a no-op `onClicked: {}` (`LibrarySidebar.qml:334-337`); wire to `AppState.openModal("naming", …)`.
 - [ ] Gear (Rename/Duplicate/Edit/Delete) button is a no-op `onClicked: {}` (`LibrarySidebar.qml:359-361`); open a `PopoverMenu`.
 
+### Global search (command-palette)
+Today search is **per-tab only** — each library tab owns its own `TabSearchBar`
+bound to `AppState.searchText.<tab>` + `AppState.librarySearchMode.<tab>`. There
+is no single entry point that searches *across* libraries. Build one.
+- [ ] Global shortcut (e.g. `Ctrl+K` / `Ctrl+F`) that opens a floating search
+      overlay with a single text input, mounted in `ModalLayer.qml` and driven
+      by new `AppState` state (`globalSearch.open`, `globalSearch.query`).
+- [ ] Fan out the typed query across the existing services and merge results into
+      one grouped, ranked list: Scripture (`BibleService::search`), Songs
+      (`SongService::search`), Strong's (`StrongsService::search`), Media
+      (`MediaService`), Themes (`ThemeService`), Schedule items. Debounce like
+      `ScriptureTab._debouncedQuery` (`ScriptureTab.qml:51-58`).
+- [ ] Grouped results with keyboard nav (↑/↓ across groups, Enter to act) and a
+      per-row primary action: reveal in its tab, add to schedule, or send to
+      Preview/Live. Reuse `SearchHit`/`Song` value types where possible.
+- [ ] Empty / loading / no-result states; remember last query per session.
+
 ---
 
 ## 🟡 Settings that render but do nothing (disabled + "Soon" badge)
@@ -42,7 +59,14 @@ No `CollectionService` exists.
 Each needs backing infrastructure, not just flipping `enabled: true`.
 
 ### Appearance (`app/qml/dialogs/settings/AppearanceSection.qml`)
-- [ ] Theme **Mode** (Light / Dark / Auto), `:57-77` — no light palette exists yet.
+- [x] Theme picker (**Dark / Light / Midnight / Auto**) — DONE. `Theme.qml` now
+      holds a palette registry (`_darkPalette` / `_lightPalette` /
+      `_midnightPalette`) and `Theme.color` is a live binding on the active
+      palette, so every `Theme.color.*` site recolors instantly with no restart.
+      Selection persists via the existing `SettingsService.themeMode`;
+      **Auto** follows the OS via `Qt.styleHints.colorScheme`. Operator-console
+      only (projected slides use their own `.craterheme` themes). Add a theme =
+      add a palette QtObject + one row to `Theme.themes`. (QML-only, no C++.)
 - [ ] **Language** switcher, `:143-156` — no i18n catalog.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
@@ -83,6 +107,30 @@ The interactive remote (go-live / next / prev / blank / search / add-to-schedule
 - [ ] On-demand render mode (latest commit `d08c17c`) ships **off-by-default** (`app/src/NdiRenderer.cpp:349`, toggle `NdiSection.qml:350`) — finish validating, then decide default.
 - [ ] Canvas size **hardcoded 1920×1080** (`NdiRenderer.cpp:32-33`) — the headless path won't render themes whose canvas isn't 1080p. Parameterize.
 - [ ] Two capture paths advertise **different frame rates** — legacy `30000/1001` (`NdiService.cpp:516`) vs headless `60000/1001` (`NdiService.cpp:576`). Reconcile.
+
+### Search quality — Scripture & Songs (greatly improve)
+Both searches work but are minimal: Scripture is an FTS5 **trigram** match over
+`verses.text` (`BibleService::search`, dual-mode reference/FTS in
+`ScriptureTab.qml`), Songs is FTS5 over title+author+lyrics
+(`SongService::search`). Neither ranks, highlights, or scopes usefully. Raise
+both to a "great search" bar:
+- [ ] **Ranked results.** Order by `bm25()` (both FTS tables already support it —
+      `SearchHit.score` exists but isn't used to sort) instead of table order;
+      tune column weights (title/author > lyrics; keep verse ordering as a
+      tie-break).
+- [ ] **Match highlighting.** Return FTS `snippet()`/`highlight()` spans and bold
+      the matched terms in the result rows — and, for Scripture, on the projected
+      slide when "Highlight current verse" lands (`ScriptureSection.qml:76-100`).
+- [ ] **Query operators.** Support quoted phrases, `AND`/`OR`/`NOT`, and prefix
+      (`word*`); today the raw string is passed straight to FTS so a stray quote
+      or operator char can error. Sanitize + expose the operators intentionally.
+- [ ] **Scoping filters.** Scripture: book / testament / translation (search all
+      translations at once, not just the active one). Songs: field-scoped
+      (title-only vs lyrics) + filter by collection/theme once collections land.
+- [ ] **Typo tolerance** for Songs (trigram or edit-distance fallback when FTS
+      returns nothing) so a misspelled title still surfaces.
+- [ ] **Result affordances.** Show the matched lyric section / verse snippet in
+      the row, add sort options, and keep a short recent-search history.
 
 ### Media
 - [ ] Video duration extraction works for new imports, but there's **no backfill**: a video imported before the V004 column (thumbnail already on disk) is skipped by `ensureForAllVideos` (`VideoThumbnailer.cpp:118`), so its duration badge stays hidden. Add a one-time re-probe.
