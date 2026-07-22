@@ -362,7 +362,8 @@ Item {
                 width: parent.width - 80
                 visible: !scene._isClear
                       && !scene._showLogo
-                      && (currentLayer.layerKind === "song" || currentLayer.layerKind === "scripture")
+                      && (currentLayer.layerKind === "song" || currentLayer.layerKind === "scripture"
+                          || currentLayer.layerKind === "strongs")
                       && (!currentLayer.theme || (currentLayer.theme.id || 0) === 0)
                 text: qsTr("Default %1 theme has not been set").arg(currentLayer.layerKind)
                            .toUpperCase()

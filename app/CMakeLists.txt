@@ -153,6 +153,8 @@ qt_add_qml_module(crater
         qml/tabs/SongsTab.qml
         qml/tabs/ScriptureTab.qml
         qml/tabs/StrongsTab.qml
+        qml/tabs/strongs/StrongsDictionaryView.qml
+        qml/tabs/strongs/StrongsReaderView.qml
         qml/tabs/MediaTab.qml
         qml/tabs/ThemesTab.qml
 
