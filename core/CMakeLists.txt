@@ -34,6 +34,7 @@ add_library(crater-core STATIC
     # Services.
     src/Version.cpp
     src/BibleService.cpp
+    src/StrongsService.cpp
     src/SongService.cpp
     src/ScheduleService.cpp
     src/ThemeService.cpp
@@ -50,6 +51,7 @@ add_library(crater-core STATIC
     # without this, AUTOMOC walks .cpp #includes but doesn't always discover
     # headers in `include/` when they're separated from `src/`.
     include/crater/BibleService.h
+    include/crater/StrongsService.h
     include/crater/SongService.h
     include/crater/ScheduleService.h
     include/crater/ThemeService.h
@@ -65,6 +67,10 @@ add_library(crater-core STATIC
     include/crater/value/Book.h
     include/crater/value/Verse.h
     include/crater/value/SearchHit.h
+    include/crater/value/StrongsEntry.h
+    include/crater/value/StrongsWord.h
+    include/crater/value/StrongsBibleVerse.h
+    include/crater/value/StrongsSection.h
     include/crater/value/Song.h
     include/crater/value/SongSection.h
     include/crater/value/SavedSchedule.h

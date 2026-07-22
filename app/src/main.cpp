@@ -39,6 +39,7 @@
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
+#include "crater/StrongsService.h"
 #include "crater/Bootstrap.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
@@ -329,6 +330,10 @@ int main(int argc, char* argv[])
     // app.sqlite but use separate connections, so order is irrelevant. Each
     // service opens its own SQLite connection in its constructor.
     crater::BibleService      bibleService;
+    // Strong's concordance. Opens two READ-ONLY bundled DBs (dictionary +
+    // KJV-with-Strong's) in its ctor; if either is absent the service reports
+    // it unavailable and the tab shows a "data not found" state. No deps.
+    crater::StrongsService    strongsService;
     crater::SongService       songService;
     crater::ScheduleService   scheduleService;
     crater::ThemeService      themeService;
@@ -411,6 +416,7 @@ int main(int argc, char* argv[])
     // Plain Q_OBJECTs registered via qmlRegisterSingletonInstance — main.cpp
     // owns the lifecycle, QML sees them as singletons under the "Crater" URI.
     qmlRegisterSingletonInstance("Crater", 1, 0, "BibleService",       &bibleService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "StrongsService",     &strongsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SongService",        &songService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",    &scheduleService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",       &themeService);

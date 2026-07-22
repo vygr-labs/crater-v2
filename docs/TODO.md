@@ -15,13 +15,14 @@ Line references are anchors, not guarantees — verify against current code befo
 
 ## 🔴 Features not built yet
 
-### Strong's concordance — biggest gap
-No `StrongsService`, no Strong's DB, no migration, no importer.
-- [ ] Concordance DB + migration dir (`core/src/db/migrations/strongs/`) + on-demand data download/import from the Electron dataset.
-- [ ] `StrongsService` (search by number / Greek / Hebrew, fetch definitions).
-- [ ] Wire the standalone tab — `app/qml/tabs/StrongsTab.qml` is currently a ~22-line `EmptyState` placeholder ("placeholder until a real concordance service exists"). The sidebar already lists Greek/Hebrew groups that dead-end here (`app/qml/panels/LibrarySidebar.qml:79-82`).
-- [ ] Strong's-in-Scripture (interlinear): tappable per-word tags + definition panel in `ScriptureTab.qml`. The `showStrongsTab` setting already exists (`core/src/SettingsService.cpp`) but has no rendering site.
-- [ ] Projection render for a selected Strong's definition (Electron: `projection/RenderStrongs.tsx`).
+### Strong's concordance — DONE (packaging pending)
+Shipped: `StrongsService` (`core/src/StrongsService.cpp`) over two read-only bundled DBs (dictionary + KJV-with-Strong's), the `StrongsTab` with a Dictionary view (number/keyword search, language-scoped, full definition) and an interlinear Reader view (tappable Greek/Hebrew word tags → definition), and projection of a selected definition as auto-sized slides (falls back to the scripture theme).
+- [x] `StrongsService` — lookup / search / browse / sections / resolveReference / chapter / tokenize.
+- [x] Dictionary tab view + interlinear Reader view (`app/qml/tabs/strongs/`).
+- [x] Projection render for a selected Strong's definition (`kind:"strongs"`, no-theme gates added).
+- [ ] **Packaging**: ship `strongs-dictionary.sqlite` + `strongs-bible.sqlite` beside the exe (under `<exe>/legacy/`) in the release scripts + CI. Only dev builds currently resolve them (via the electron repo).
+- [ ] Dedicated `strongs` theme kind + per-output pinning (currently reuses the scripture theme). Optional.
+- [ ] Minor: Dictionary and Reader share one search box (keyword vs reference), so toggling views leaves stale text.
 
 ### Song collections
 No `CollectionService` exists.

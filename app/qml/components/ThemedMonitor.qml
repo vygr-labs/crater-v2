@@ -106,7 +106,7 @@ Item {
         && !_isPdf
         && !isClear
         && !showLogo
-        && (_kind === "song" || _kind === "scripture" || _kind === "presentation")
+        && (_kind === "song" || _kind === "scripture" || _kind === "presentation" || _kind === "strongs")
         && (!_theme || (_theme.id || 0) === 0 || _nodes.length === 0)
 
     // ── Theme stage (text-bearing kinds) ────────────────────────────────
