@@ -17,7 +17,70 @@ QtObject {
     // routes through the tokens, so the practical impact is small.
     property real uiScale: SettingsService.fontScale
 
-    readonly property QtObject color: QtObject {
+    // ── Theme selection ─────────────────────────────────────────────────
+    // The operator picks a palette in Appearance > Theme. The chosen id is
+    // persisted in SettingsService.themeMode (backward-compatible: the old
+    // "dark" default is still a valid id). Valid values are any `id` in the
+    // `themes` registry below, plus "auto" (follow the OS light/dark scheme).
+    //
+    // The whole mechanism is a single indirection: every one of the ~880
+    // `Theme.color.<token>` reads across the app routes through `color`
+    // (the active palette QtObject). Because `color` is a binding on
+    // `activeTheme`, flipping the setting swaps the palette object and every
+    // dependent binding re-evaluates live — no restart, and not one call
+    // site changes. Same trick as `uiScale`. To add a theme: add a palette
+    // QtObject below and one row to `themes`. Nothing else to wire.
+    readonly property string themeName: SettingsService.themeMode
+
+    // Live OS color scheme (Qt.ColorScheme.Light / .Dark / .Unknown, Qt 6.5+).
+    // Bound as a property so `activeTheme` re-resolves when the OS flips.
+    readonly property int osColorScheme: Qt.styleHints.colorScheme
+
+    // The concrete resolved theme id — never "auto". Unknown OS scheme falls
+    // back to dark (the safe default).
+    readonly property string activeTheme:
+        themeName === "auto"
+            ? (osColorScheme === Qt.ColorScheme.Light ? "light" : "dark")
+            : themeName
+
+    // Registry the Appearance picker iterates over. `dark` marks whether the
+    // palette is dark-on-light or light-on-dark (used only to render preview
+    // swatches sensibly).
+    readonly property var themes: [
+        { id: "dark",     name: qsTr("Dark"),     dark: true  },
+        { id: "light",    name: qsTr("Light"),    dark: false },
+        { id: "midnight", name: qsTr("Midnight"), dark: true  }
+    ]
+
+    // Active palette. readonly binding on `activeTheme` → re-evaluates (and
+    // thus every `Theme.color.*` consumer re-evaluates) whenever the theme or
+    // the OS scheme changes.
+    readonly property QtObject color: paletteFor(activeTheme)
+
+    // Palette lookup by id. Used by `color` and by the Appearance swatches,
+    // which must preview a palette that isn't currently active. Unknown id →
+    // dark, so a stale/invalid persisted value degrades gracefully.
+    function paletteFor(id) {
+        switch (id) {
+            case "light":    return _lightPalette
+            case "midnight": return _midnightPalette
+            default:         return _darkPalette
+        }
+    }
+
+    // Resolve an id (following "auto") to whether it's a dark palette — for
+    // preview rendering in the picker.
+    function isDarkTheme(id) {
+        var resolved = (id === "auto")
+            ? (osColorScheme === Qt.ColorScheme.Light ? "light" : "dark")
+            : id
+        for (var i = 0; i < themes.length; i++)
+            if (themes[i].id === resolved) return !!themes[i].dark
+        return true
+    }
+
+    // ── Dark palette (default) ──────────────────────────────────────────
+    readonly property QtObject _darkPalette: QtObject {
         // Surfaces — neutral near-blacks aligned with the Electron palette
         // (Tailwind/Radix gray scale). Avoid #000 (harsh, OLED-burn-y).
         readonly property color canvas:        "#111111"   // gray.950
@@ -135,6 +198,120 @@ QtObject {
         readonly property color warning:       "#f0b341"
 
         // Schedule item type tints.
+        readonly property color typeSong:      "#d4a574"
+        readonly property color typeScripture: "#5b9df0"
+        readonly property color typeSermon:    "#c084fc"
+        readonly property color typeVideo:     "#4fc285"
+        readonly property color typeMedia:     "#f0b341"
+        readonly property color typeNote:      "#a3a3b0"
+    }
+
+    // ── Light palette ───────────────────────────────────────────────────
+    // The mirror of `_darkPalette`: same token names, inverted lightness.
+    // Surfaces go light (page = light gray, panels = white, controls =
+    // gray insets — elevation reads via borders/shadow rather than a
+    // brighter fill, since you can't go brighter than white). Text goes
+    // dark. Brand hue is preserved (deep teal reads well on white); only
+    // its *subtle* wash flips from a deep tint to a pale one, and hover/
+    // press darken (emphasis-on-light) instead of lightening. Broadcast +
+    // schedule hues are deepened so they stay legible on light surfaces.
+    readonly property QtObject _lightPalette: QtObject {
+        readonly property color canvas:        "#f4f4f5"   // gray.100 — page
+        readonly property color elevated:      "#ffffff"   // panel surface
+        readonly property color raised:        "#e8e8eb"   // raised control fill
+        readonly property color overlay:       "#ededf0"   // hover wash
+        readonly property color borderSubtle:  "#e4e4e7"   // gray.200 — divider hairline
+        readonly property color borderStrong:  "#c4c4cc"   // gray.300/400 — focused input border
+
+        readonly property color bgSidebar:     "#efeff1"
+        readonly property color bgContent:     "#f7f7f8"
+
+        readonly property color bgMenu:        "#ffffff"   // white menu, lifted by border + shadow
+
+        readonly property color textPrimary:   "#18181b"   // gray.900
+        readonly property color textSecondary: "#52525b"   // gray.600
+        readonly property color textTertiary:  "#71717a"   // gray.500
+        readonly property color textDisabled:  "#a1a1aa"   // gray.400
+        readonly property color textTitle:     "#27272a"   // gray.800
+
+        // Brand hue preserved. Fill (`brand`) + ink identical to dark so the
+        // primary button looks the same on both themes; hover/press darken.
+        readonly property color brand:         "#1A767D"
+        readonly property color brandHover:    "#135E64"   // darken = emphasis on light
+        readonly property color brandPressed:  "#0E4A4F"
+        readonly property color brandSubtle:   "#d6eef0"   // pale cyan — selected-row tint
+        readonly property color brandInk:      "#0a1f25"   // unchanged (fill is unchanged)
+        readonly property color selectionUnfocused: "#d9d9de"   // light gray — selected, pane unfocused
+        readonly property color previewMuted:  "#c8bda6"   // desat warm gold-gray (light)
+        readonly property color liveMuted:     "#d1b0ae"   // desat maroon-gray (light)
+        readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.12)
+
+        readonly property color live:          "#c0392b"   // crimson, legible on white
+        readonly property color liveSubtle:    "#f7dcd9"   // pale red wash
+        readonly property color preview:       "#b8863d"   // deeper champagne — legible on white
+        readonly property color previewSubtle: "#f4ecd9"   // pale gold wash
+        readonly property color goLive:        "#16a34a"   // deeper green for light bg
+        readonly property color goLiveHover:   "#1eb257"
+        readonly property color goLivePressed: "#12833c"
+        readonly property color goLiveInk:     "#f0fff5"   // light ink on the deeper green fill
+        readonly property color success:       "#15803d"
+        readonly property color warning:       "#b45309"
+
+        readonly property color typeSong:      "#b57f43"
+        readonly property color typeScripture: "#2563cc"
+        readonly property color typeSermon:    "#9333ea"
+        readonly property color typeVideo:     "#15803d"
+        readonly property color typeMedia:     "#b45309"
+        readonly property color typeNote:      "#6b6b78"
+    }
+
+    // ── Midnight palette (OLED) ─────────────────────────────────────────
+    // A deeper dark variant for OLED panels / low-light booths. Surfaces
+    // drop to near-black (this theme opts *into* the pure-black look the
+    // default dark theme avoids); text, brand, and broadcast/schedule hues
+    // are carried over from dark unchanged, since they already read well on
+    // black. Only the neutral surface/border stack and the unfocused-
+    // selection gray shift down.
+    readonly property QtObject _midnightPalette: QtObject {
+        readonly property color canvas:        "#050507"
+        readonly property color elevated:      "#0d0d10"
+        readonly property color raised:        "#18181c"
+        readonly property color overlay:       "#202024"
+        readonly property color borderSubtle:  "#1c1c20"
+        readonly property color borderStrong:  "#34343a"
+
+        readonly property color bgSidebar:     "#0a0a0e"
+        readonly property color bgContent:     "#0c0c10"
+
+        readonly property color bgMenu:        "#141418"
+
+        readonly property color textPrimary:   "#e4e4e7"
+        readonly property color textSecondary: "#a1a1aa"
+        readonly property color textTertiary:  "#71717a"
+        readonly property color textDisabled:  "#52525b"
+        readonly property color textTitle:     "#d4d4d8"
+
+        readonly property color brand:         "#1A767D"
+        readonly property color brandHover:    "#3AC8D4"
+        readonly property color brandPressed:  "#135E64"
+        readonly property color brandSubtle:   "#0E2528"
+        readonly property color brandInk:      "#0a1f25"
+        readonly property color selectionUnfocused: "#18181c"   // == raised
+        readonly property color previewMuted:  "#5a5345"
+        readonly property color liveMuted:     "#5a3a3a"
+        readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.18)
+
+        readonly property color live:          "#b13634"
+        readonly property color liveSubtle:    "#2c0f0f"
+        readonly property color preview:       "#cdb78e"
+        readonly property color previewSubtle: "#2a2418"
+        readonly property color goLive:        "#22c55e"
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
+        readonly property color success:       "#4fc285"
+        readonly property color warning:       "#f0b341"
+
         readonly property color typeSong:      "#d4a574"
         readonly property color typeScripture: "#5b9df0"
         readonly property color typeSermon:    "#c084fc"
