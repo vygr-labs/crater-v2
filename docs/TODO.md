@@ -21,7 +21,9 @@ Shipped: `StrongsService` (`core/src/StrongsService.cpp`) over two read-only bun
 - [x] Dictionary tab view + interlinear Reader view (`app/qml/tabs/strongs/`).
 - [x] Projection render for a selected Strong's definition (`kind:"strongs"`, no-theme gates added).
 - [x] **Packaging (scripts + CI)**: release.ps1 / release.sh stage both `strongs-*.sqlite` into `<exe>/legacy/` (three-tier resolve: `packaging/` cache → sibling electron tree → `data-v1` release download, SHA-256 verified); both CI workflows cache them; `.gitignore` updated. Installer picks up `legacy/` automatically.
-- [ ] **Upload the two DBs to the `data-v1` GitHub release** so CI's download fallback works on a cold cache (currently only `bibles.sqlite` is there). SHA-256s are baked into the release scripts: dictionary `27890d55…`, bible `8934fdf6…`.
+- [x] **Uploaded both DBs to the `data-v1` GitHub release** so CI's download fallback works on a cold cache. SHA-256s baked into the release scripts: dictionary `27890d55…`, bible `8934fdf6…`.
+
+Strong's is now fully shipped end-to-end (engine + UI + projection + packaging + CI).
 - [ ] Dedicated `strongs` theme kind + per-output pinning (currently reuses the scripture theme). Optional.
 - [ ] Minor: Dictionary and Reader share one search box (keyword vs reference), so toggling views leaves stale text.
 
