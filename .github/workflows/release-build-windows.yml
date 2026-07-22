@@ -97,6 +97,17 @@ jobs:
           path: packaging/bibles.sqlite
           key: bibles-sqlite-data-v1-${{ runner.os }}
 
+      - name: Cache Strong's databases
+        uses: actions/cache@v4
+        with:
+          # Same key across the Windows + macOS workflows so the data-revision
+          # tag (v1) and the SHA-256s inside the release scripts stay in
+          # lockstep. Both files share one cache entry.
+          path: |
+            packaging/strongs-dictionary.sqlite
+            packaging/strongs-bible.sqlite
+          key: strongs-sqlite-data-v1-${{ runner.os }}
+
       - name: Set up MSVC environment
         # Ninja generator invokes cl.exe directly with no MSBuild; without
         # this, CMake's compiler probe fails (or picks up MinGW from PATH).

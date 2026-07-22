@@ -97,6 +97,14 @@ jobs:
           path: packaging/bibles.sqlite
           key: bibles-sqlite-data-v1-${{ runner.os }}
 
+      - name: Cache Strong's databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            packaging/strongs-dictionary.sqlite
+            packaging/strongs-bible.sqlite
+          key: strongs-sqlite-data-v1-${{ runner.os }}
+
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.10
 

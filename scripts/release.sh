@@ -78,6 +78,16 @@ BIBLE_DB_LOCAL_SOURCE="$QT_ROOT/../electron/src/assets/default/databases/bibles.
 BIBLE_DB_URL='https://github.com/vygr-labs/crater-v2/releases/download/data-v1/bibles.sqlite'
 BIBLE_DB_SHA256='d86eed30ff7e28f213a06dcc7e6d7439ea3c851756f593a999b110247a7e044c'
 
+# Strong's concordance databases — same Release-asset pipeline as the Bible DB.
+# StrongsService (core/src/StrongsService.cpp) looks for them at <exe>/legacy/
+# next to bibles.sqlite. "name:sha256" pairs, iterated in the staging step.
+STRONGS_DB_LOCAL_DIR="$QT_ROOT/../electron/src/assets/default/databases"
+STRONGS_DB_URL_BASE='https://github.com/vygr-labs/crater-v2/releases/download/data-v1'
+STRONGS_DBS=(
+    "strongs-dictionary.sqlite:27890d55e17f15c717509538cc246005600a99938e5f212aa82131a478c89a38"
+    "strongs-bible.sqlite:8934fdf629865eca7d4d16cbe3ec29d913d03c6b2ef0ec4294484d73232cb2d4"
+)
+
 # ── Resolve Qt ─────────────────────────────────────────────────────────────
 # 1. --qt-dir wins.  2. $QT_ROOT_DIR (install-qt-action).  3. common installer
 # paths.  We look for macdeployqt as the sentinel since that's the binary the
@@ -259,6 +269,35 @@ LEGACY_DIR="$APP_BUNDLE/Contents/MacOS/legacy"
 mkdir -p "$LEGACY_DIR"
 cp "$BIBLE_DB_PATH" "$LEGACY_DIR/bibles.sqlite"
 done_msg "bibles.sqlite staged to $LEGACY_DIR"
+
+# ── Stage Strong's DBs ─────────────────────────────────────────────────────
+# Same walk-up target as the Bible DB above, into the same legacy/ dir. The
+# loop keeps the two files (dictionary + KJV-with-Strong's) DRY.
+step "Staging Strong's databases"
+for entry in "${STRONGS_DBS[@]}"; do
+    name="${entry%%:*}"
+    want_sha="${entry##*:}"
+    dst="$PACKAGING_DIR/$name"
+    if [[ ! -f "$dst" ]]; then
+        if [[ -f "$STRONGS_DB_LOCAL_DIR/$name" ]]; then
+            step "Importing $name from sibling electron tree"
+            mkdir -p "$PACKAGING_DIR"
+            cp "$STRONGS_DB_LOCAL_DIR/$name" "$dst"
+        else
+            step "Downloading $name from $STRONGS_DB_URL_BASE/$name"
+            mkdir -p "$PACKAGING_DIR"
+            curl -fSL --retry 3 -o "$dst" "$STRONGS_DB_URL_BASE/$name"
+        fi
+    fi
+    actual_sha=$(shasum -a 256 "$dst" | awk '{print $1}')
+    if [[ "$actual_sha" != "$want_sha" ]]; then
+        rm -f "$dst"
+        echo "$name SHA-256 mismatch. Expected $want_sha, got $actual_sha. The cached/downloaded file has been removed; rerun to refetch." >&2
+        exit 1
+    fi
+    cp "$dst" "$LEGACY_DIR/$name"
+done
+done_msg "Strong's databases staged to $LEGACY_DIR"
 
 # ── Optional codesign ──────────────────────────────────────────────────────
 # If APPLE_DEVELOPER_ID is set (full identity string from `security
