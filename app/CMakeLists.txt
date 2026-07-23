@@ -21,6 +21,11 @@ qt_add_executable(crater
     src/NdiRenderer.h
     src/RichTextHelper.cpp
     src/RichTextHelper.h
+    # UI localization runtime — loads crater_<code>.qm catalogs and swaps the
+    # language live (QTranslator + QQmlEngine::retranslate). App layer because
+    # live retranslation needs the engine; crater-core stays Quick-free (§1).
+    src/TranslationService.cpp
+    src/TranslationService.h
     # PDF page rendering bridge: turns image://pdfpage/<id>?page=...&cx=...
     # URLs into rasterized QImages via crater::MediaService. Sits in the app
     # target rather than crater-core because QQuickAsyncImageProvider is part
@@ -229,6 +234,40 @@ qt_add_resources(crater "appbrand_ico"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/../packaging"
     FILES
         ../packaging/crater.ico
+)
+
+# Bundle the compiled UI translation catalogs (qrc:/i18n/crater_<code>.qm).
+# TranslationService loads the operator's chosen catalog by this resource path
+# and swaps it live. The hand-reviewable sources are app/i18n/crater_<code>.ts;
+# the .qm are produced from them by Qt's lrelease — regenerate after editing a
+# .ts with tools/i18n/build_qm.py (see app/i18n/README.md). English is the
+# source language and intentionally has no catalog (qsTr renders the literals).
+# Any crater_<code>.qm dropped into <AppData>/Crater/translations/ at runtime is
+# also picked up by TranslationService, so more languages need no rebuild.
+qt_add_resources(crater "appi18n"
+    PREFIX "/i18n"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/i18n"
+    FILES
+        i18n/crater_es.qm
+        i18n/crater_pt_BR.qm
+        i18n/crater_fr.qm
+        i18n/crater_de.qm
+        i18n/crater_it.qm
+        i18n/crater_nl.qm
+        i18n/crater_ru.qm
+        i18n/crater_uk.qm
+        i18n/crater_pl.qm
+        i18n/crater_ro.qm
+        i18n/crater_zh_CN.qm
+        i18n/crater_zh_TW.qm
+        i18n/crater_ko.qm
+        i18n/crater_ja.qm
+        i18n/crater_id.qm
+        i18n/crater_fil.qm
+        i18n/crater_sw.qm
+        i18n/crater_hi.qm
+        i18n/crater_vi.qm
+        i18n/crater_ar.qm
 )
 
 target_link_libraries(crater
