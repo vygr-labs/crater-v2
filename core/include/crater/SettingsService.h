@@ -88,6 +88,11 @@ private:
     // activeLibraryGroup.scripture at startup.
     Q_PROPERTY(QString defaultScriptureVersion READ defaultScriptureVersion WRITE setDefaultScriptureVersion NOTIFY defaultScriptureVersionChanged)
     Q_PROPERTY(bool    showVerseNumbers   READ showVerseNumbers   WRITE setShowVerseNumbers   NOTIFY showVerseNumbersChanged)
+    // Render a reference line (book chapter:verse) at the bottom of scripture
+    // slides. A render-time overlay in ProjectionContentLayer honors this
+    // regardless of whether the active theme authored its own reference node,
+    // so the global toggle is always meaningful. Default off.
+    Q_PROPERTY(bool    showScriptureFooter READ showScriptureFooter WRITE setShowScriptureFooter NOTIFY showScriptureFooterChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
     Q_PROPERTY(bool    showSongCcli       READ showSongCcli       WRITE setShowSongCcli       NOTIFY showSongCcliChanged)
@@ -119,6 +124,7 @@ public:
     bool    ndiOnDemand() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
+    bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
     bool    showSongCcli() const;
@@ -138,6 +144,7 @@ public:
     void setNdiOnDemand(bool v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
+    void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
     void setShowSongCcli(bool v);
@@ -158,6 +165,7 @@ signals:
     void ndiOnDemandChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
+    void showScriptureFooterChanged();
     void showStrongsTabChanged();
     void showSongAuthorChanged();
     void showSongCcliChanged();

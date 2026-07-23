@@ -40,6 +40,7 @@ struct SettingsService::Impl
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
     bool    showVerseNums    = true;
+    bool    showScriptureFooter = false;
     bool    showStrongs      = true;
     bool    showSongAuthor   = true;
     bool    showSongCcli     = true;
@@ -64,6 +65,7 @@ struct SettingsService::Impl
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
+    static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
     static constexpr const char* kShowSongCcli   = "Settings/showSongCcli";
@@ -89,6 +91,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
     m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
+    m_impl->showScriptureFooter = s.value(QString::fromLatin1(Impl::kShowScriptureFooter), m_impl->showScriptureFooter).toBool();
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
     m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
     m_impl->showSongCcli   = s.value(QString::fromLatin1(Impl::kShowSongCcli),  m_impl->showSongCcli).toBool();
@@ -111,6 +114,7 @@ bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessN
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
+bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
 bool    SettingsService::showSongCcli() const      { return m_impl->showSongCcli; }
@@ -230,6 +234,14 @@ void SettingsService::setShowVerseNumbers(bool v)
     m_impl->showVerseNums = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kShowVerseNums), v);
     emit showVerseNumbersChanged();
+}
+
+void SettingsService::setShowScriptureFooter(bool v)
+{
+    if (m_impl->showScriptureFooter == v) return;
+    m_impl->showScriptureFooter = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowScriptureFooter), v);
+    emit showScriptureFooterChanged();
 }
 
 void SettingsService::setShowStrongsTab(bool v)
