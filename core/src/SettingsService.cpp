@@ -61,6 +61,9 @@ struct SettingsService::Impl
     bool    highlightSongMatches      = true;
     bool    highlightScriptureMatches = true;
     bool    highlightStrongsMatches   = true;
+    // UI language — "en" is the built-in English source; any other value is a
+    // Qt locale code with a bundled crater_<code>.qm catalog. See header.
+    QString language         = QStringLiteral("en");
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -93,6 +96,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightSongMatches      = "Settings/highlightSongMatches";
     static constexpr const char* kHighlightScriptureMatches = "Settings/highlightScriptureMatches";
     static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
+    static constexpr const char* kLanguage         = "Settings/language";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -127,6 +131,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightSongMatches      = s.value(QString::fromLatin1(Impl::kHighlightSongMatches),      m_impl->highlightSongMatches).toBool();
     m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
     m_impl->highlightStrongsMatches   = s.value(QString::fromLatin1(Impl::kHighlightStrongsMatches),   m_impl->highlightStrongsMatches).toBool();
+    m_impl->language         = s.value(QString::fromLatin1(Impl::kLanguage),         m_impl->language).toString();
 }
 
 SettingsService::~SettingsService() = default;
@@ -158,6 +163,7 @@ bool    SettingsService::showMatchedLyricSnippet() const   { return m_impl->show
 bool    SettingsService::highlightSongMatches() const      { return m_impl->highlightSongMatches; }
 bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
 bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
+QString SettingsService::language() const                { return m_impl->language; }
 
 qreal SettingsService::fontScale() const
 {
@@ -411,6 +417,19 @@ void SettingsService::setHighlightStrongsMatches(bool v)
     m_impl->highlightStrongsMatches = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightStrongsMatches), v);
     emit highlightStrongsMatchesChanged();
+}
+
+void SettingsService::setLanguage(const QString& code)
+{
+    // Normalize empties to the English source sentinel so "" and "en" don't
+    // thrash the persisted value or the change signal. TranslationService is
+    // the consumer — it reacts to setLanguage() by swapping the QTranslator and
+    // retranslating; this setter only owns persistence + the notify.
+    const QString normalized = code.isEmpty() ? QStringLiteral("en") : code;
+    if (m_impl->language == normalized) return;
+    m_impl->language = normalized;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kLanguage), normalized);
+    emit languageChanged();
 }
 
 }  // namespace crater

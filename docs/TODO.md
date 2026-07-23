@@ -88,7 +88,21 @@ Each needs backing infrastructure, not just flipping `enabled: true`.
       layer so a variant is ~5 tokens instead of a full ~45-token copy. Today
       all 14 palettes spell out every token (no inheritance) — fine at this
       count, worth doing before the next wave of variants.
-- [ ] **Language** switcher, `:143-156` — no i18n catalog.
+- [x] **Language** switcher — DONE. Full runtime i18n: the console is authored
+      with `qsTr()` (559 unique strings), harvested via `lupdate` into
+      `app/i18n/crater_<code>.ts` catalogs. `app/src/TranslationService.{h,cpp}`
+      (QML singleton) installs the persisted catalog before first paint and
+      swaps it **live** (`QTranslator` + `QQmlEngine::retranslate()`, no restart);
+      choice persists in `SettingsService.language`. The Appearance picker is a
+      searchable `Combobox` over `TranslationService.availableLanguages`. Ships
+      20 AI/community-assisted languages (es, pt_BR, fr, de, it, nl, ru, uk, pl,
+      ro, zh_CN, zh_TW, ko, ja, id, fil, sw, hi, vi, ar) + English source;
+      untranslated strings fall back to English. Drop-in `crater_<code>.qm` in
+      `<AppData>/Crater/translations/` adds languages with no rebuild. Pipeline +
+      docs in `tools/i18n/` and `app/i18n/README.md`.
+  - [ ] *Follow-up:* full **RTL layout mirroring** (`LayoutMirroring`) for
+        Arabic/Hebrew — text renders RTL today but the console layout is not yet
+        mirrored. Also: auto-detect OS locale on first run; expand the bundled set.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
 - [x] **Highlight current verse** — DONE. `SettingsService.highlightCurrentVerse`
