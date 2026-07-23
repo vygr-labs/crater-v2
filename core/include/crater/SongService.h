@@ -39,9 +39,12 @@ public:
     // empty Song on miss.
     Q_INVOKABLE crater::Song fetchSong(qint64 id);
 
-    // FTS5 search across title + author + lyrics. Returns metadata-only Songs
-    // (no sections). Capped at 100 hits.
-    Q_INVOKABLE QList<crater::Song> search(QString query);
+    // FTS5 search returning metadata-only Songs (no sections), capped at 100,
+    // title-weighted bm25, with a per-hit matched-lyric snippet.
+    //   field == "" / "all" → unified match across title + author + lyrics,
+    //                         plus a typo-tolerant fuzzy fallback when empty.
+    //   field == "lyrics"/"title"/"author" → scoped to that FTS column only.
+    Q_INVOKABLE QList<crater::Song> search(QString query, QString field = {});
 
     // Creates a song with metadata only (no sections). Used by the "+ New Song"
     // flow that names the song first and opens an empty editor afterwards.
