@@ -267,7 +267,8 @@ Item {
                       }
                   })
               } },
-            { label: qsTr("Duplicate"), iconName: "copy" },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { MediaService.duplicate(media.id) } },
             // Display editing — image / video only (fit / crop / loop / mute).
             // "Edit…" opens the full modal; "Fit" is the quick right-click set.
             ...((media.type === "image" || media.type === "video") ? [

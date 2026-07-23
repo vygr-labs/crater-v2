@@ -94,6 +94,15 @@ public:
     // (not the title) as the stable reference for thumbnails and theme nodes.
     Q_INVOKABLE void rename(qint64 id, QString newTitle);
 
+    // Duplicate a media row into an independent copy. The managed file is
+    // copied to a fresh collision-free name (rows must NOT share a file — a
+    // later remove() deletes the file out from under any sharer), a new row is
+    // inserted titled "<title> copy", and all display options (fit / crop /
+    // loop / mute) plus probed duration carry over. Favorite state does not —
+    // a duplicate is a fresh, un-curated item. Returns the new row id, or 0 on
+    // failure (source missing / file copy / INSERT). Emits allMediaChanged.
+    Q_INVOKABLE qint64 duplicate(qint64 id);
+
     // Record probed video metadata. Called by the app-side VideoThumbnailer
     // after it extracts a first frame from the imported video. Images call
     // this with durationMs == 0 (no-op for them).

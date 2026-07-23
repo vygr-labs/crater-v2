@@ -651,6 +651,94 @@ void MediaService::remove(qint64 id)
     }
 }
 
+qint64 MediaService::duplicate(qint64 id)
+{
+    if (!m_impl || id <= 0) return 0;
+
+    // Read the source row, then close the cursor before any write — an open
+    // SELECT pins this connection's snapshot and would fail the INSERT below
+    // (same reason byId() resets eagerly).
+    MediaItem src;
+    try {
+        auto& sel = m_impl->selectById;
+        sel.reset();
+        sel.bind(1, id);
+        if (sel.step()) src = Impl::readRow(sel);
+        sel.reset();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::duplicate() read:" << e.message();
+        return 0;
+    }
+    if (src.id <= 0 || src.path.isEmpty()) return 0;
+
+    // Copy the managed file to a fresh name under the media dir. Two rows must
+    // never point at one file (remove() deletes it), so the copy is mandatory.
+    const QString mediaDir = QDir(db::DbPaths::mediaDir()).absolutePath();
+    const QString dst = QDir::cleanPath(
+        pickDestinationName(mediaDir, QFileInfo(src.path).fileName()));
+    if (!QFile::copy(src.path, dst)) {
+        qWarning().noquote() << "MediaService::duplicate(): file copy failed"
+                             << src.path << "->" << dst;
+        return 0;
+    }
+
+    qint64 newId = 0;
+    try {
+        db::Transaction tx(m_impl->conn);
+
+        auto& ins = m_impl->insertItem;
+        ins.reset();
+        ins.bind(1, dst);
+        ins.bind(2, src.title + QStringLiteral(" copy"));
+        ins.bind(3, src.type);
+        ins.bind(4, QDateTime::currentMSecsSinceEpoch());
+        ins.bind(5, qint64(src.pageCount));
+        ins.step();
+        ins.reset();
+        newId = m_impl->conn.lastInsertRowId();
+
+        // Carry the display options over verbatim (source values are already
+        // sanitized on their own way in, so bind directly).
+        auto& disp = m_impl->setDisplay;
+        disp.reset();
+        disp.bind(1, src.fitMode);
+        disp.bind(2, src.crop.x());
+        disp.bind(3, src.crop.y());
+        disp.bind(4, src.crop.width());
+        disp.bind(5, src.crop.height());
+        disp.bind(6, static_cast<qint64>(src.loopVideo ? 1 : 0));
+        disp.bind(7, static_cast<qint64>(src.muted ? 1 : 0));
+        disp.bind(8, newId);
+        disp.step();
+        disp.reset();
+
+        if (src.durationMs > 0) {
+            auto& meta = m_impl->setMeta;
+            meta.reset();
+            meta.bind(1, src.durationMs);
+            meta.bind(2, newId);
+            meta.step();
+            meta.reset();
+        }
+
+        tx.commit();
+    } catch (const db::Error& e) {
+        QFile::remove(dst);   // roll the staged copy back so we don't leak
+        qWarning().noquote() << "MediaService::duplicate() insert:" << e.message();
+        return 0;
+    }
+
+    // Best-effort thumb copy (videos): thumbs/<id>.jpg is id-keyed, so the new
+    // row would otherwise re-thumbnail. Missing thumb (images) is fine.
+    const QDir thumbs(QDir(db::DbPaths::mediaDir()).filePath(QStringLiteral("thumbs")));
+    const QString srcThumb = thumbs.filePath(QStringLiteral("%1.jpg").arg(src.id));
+    if (QFile::exists(srcThumb))
+        QFile::copy(srcThumb, thumbs.filePath(QStringLiteral("%1.jpg").arg(newId)));
+
+    invalidateCache();
+    return newId;
+}
+
 void MediaService::sweepOrphans()
 {
     if (!m_impl) return;
