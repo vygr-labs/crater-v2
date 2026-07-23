@@ -42,9 +42,6 @@ Item {
         && (item.mediaPath || "").length > 0
     readonly property bool _isPdf:
         _hasItem && _kind === "pdf" && (item.mediaId || 0) > 0
-    readonly property bool _hasCrop:
-        cropRect.x !== 0 || cropRect.y !== 0
-        || cropRect.width !== 1 || cropRect.height !== 1
 
     // ── Reactive theme resolution ───────────────────────────────────────
     // Same revision-bump pattern as ProjectionWindow: bumping the int
@@ -155,46 +152,22 @@ Item {
     // the new "hide text only" clear semantic. Visibility stays gated on
     // showLogo (logo fully replaces the scene) but ignores isClear.
     //
-    // Crop handling: the MediaMonitor below renders the full source when
-    // no crop is staged (the common case). When the LivePanel passes a
-    // non-identity cropRect (operator committed a cropped section), the
-    // mediaMonitor hides and `imageCropOverlay` renders the cropped sub-
-    // region instead. This keeps MediaMonitor a single-purpose "render
-    // this whole file" component without growing crop logic.
+    // Fit / crop / loop / mute all ride on the item map (buildItemFromMedia
+    // → MediaService display columns) and are handled inside MediaMonitor —
+    // image AND video crop, fit resolution (incl. the "default" sentinel), and
+    // per-item loop/force-mute. cropRect is the committed live crop (LivePanel
+    // passes ProjectionService.cropRect); it matches the item's saved crop
+    // once the cropper seeds from it.
     MediaMonitor {
         anchors.fill: parent
-        visible: root._isMedia && !root.showLogo && !(root._kind === "image" && root._hasCrop)
+        visible: root._isMedia && !root.showLogo
         mediaKind: visible ? root._kind : ""
         mediaPath: visible ? (root.item.mediaPath || "") : ""
-        muted: root.muted
-        crop:  false
-    }
-
-    // Cropped-image branch — paints only the operator-selected sub-region
-    // of the image into the monitor. Used by LivePanel to show "the
-    // section being displayed" rather than the full source. PreviewPanel
-    // hides this monitor entirely for croppable media, so this only ever
-    // activates on the live channel.
-    Image {
-        anchors.fill: parent
-        visible: root._isMedia
-                 && root._kind === "image"
-                 && root._hasCrop
-                 && !root.showLogo
-        source: visible ? "file:///" + (root.item.mediaPath || "") : ""
-        asynchronous: true
-        cache: true
-        fillMode: Image.PreserveAspectFit
-        sourceClipRect: {
-            if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
-                return Qt.rect(0, 0, 0, 0)
-            }
-            const c = root.cropRect
-            return Qt.rect(c.x * sourceSize.width,
-                           c.y * sourceSize.height,
-                           c.width  * sourceSize.width,
-                           c.height * sourceSize.height)
-        }
+        fitMode:  root._hasItem ? (root.item.fitMode || "default") : "default"
+        cropRect: root.cropRect
+        loop:     root._hasItem && root.item.loopVideo !== undefined
+                      ? root.item.loopVideo : true
+        muted: root.muted || (root._hasItem && root.item.muted === true)
     }
 
     // ── PDF branch ──────────────────────────────────────────────────────

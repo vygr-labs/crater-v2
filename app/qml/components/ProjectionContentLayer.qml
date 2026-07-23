@@ -159,60 +159,32 @@ Item {
 
     // ── Media-item branch ───────────────────────────────────────────────
     // Renders when layerKind is image/video and a mediaPath is present.
-    // The MediaMonitor handles both kinds via its mediaKind switch. Sits
-    // inside the layer at canvas-native size — when the scene scales the
-    // stage Item this scales with it.
+    // MediaMonitor handles both kinds via its mediaKind switch AND the whole
+    // display-option set (fit mode incl. the "default" sentinel, the crop
+    // sub-region for image + video, per-item loop + force-mute). Sits inside
+    // the layer at canvas-native size — when the scene scales the stage Item
+    // this scales with it.
     MediaMonitor {
         id: mediaItemMonitor
         anchors.fill: parent
         visible: root._isMediaItem && (root.layerKind === "image" || root.layerKind === "video")
         mediaKind: visible ? root.layerKind : ""
         mediaPath: visible ? (root.layerItem.mediaPath || "") : ""
-        // Audio routing: only when this layer is "current" AND its scene
-        // is the primary AND the audience window is actually visible. The
-        // outgoing layer always mutes (audioEnabled set false at transition
-        // kickoff). Keeps the previous-layer video silent during the fade
-        // so two videos never fight for the audio bus.
+        // Fit + crop + loop come off the committed item snapshot. layerCrop is
+        // the go-live crop (identity unless the operator committed a section);
+        // it matches the item's saved crop once the cropper seeds from it.
+        fitMode:  root.layerItem ? (root.layerItem.fitMode || "default") : "default"
+        cropRect: root.layerCrop
+        loop:     (root.layerItem && root.layerItem.loopVideo !== undefined)
+                      ? root.layerItem.loopVideo : true
+        // Audio routing: only when this layer is "current" AND its scene is the
+        // primary AND the audience window is actually visible AND the item
+        // isn't force-muted. The outgoing layer always mutes (audioEnabled set
+        // false at transition kickoff) so two videos never fight for the bus.
         muted: !root.audioEnabled
                || root.outputKind !== "primary"
                || !OutputService.projectionOpen
-        crop: false
-        // Hide when an image carries a non-identity crop — the
-        // imageCropApplier below takes over so the crop happens at the
-        // QML layer (sourceClipRect) rather than re-encoding the source.
-        opacity: (root.layerKind === "image"
-                  && root.layerCrop !== Qt.rect(0, 0, 1, 1)) ? 0 : 1
-    }
-
-    // ── Image crop applier ──────────────────────────────────────────────
-    // For image items with a non-identity crop, render an Image that pulls
-    // only the cropped sub-region into the full layer. sourceClipRect
-    // (Qt 6.6+) crops in source-pixel space — combined with
-    // PreserveAspectFit on a layer-shaped rectangle the cropped region
-    // fills the canvas while keeping its own aspect (any aspect mismatch
-    // letterboxes inside the canvas rather than stretching).
-    Image {
-        id: imageCropApplier
-        anchors.fill: parent
-        visible: root._isMediaItem
-                 && root.layerKind === "image"
-                 && root.layerCrop !== Qt.rect(0, 0, 1, 1)
-        source: visible ? "file:///" + (root.layerItem.mediaPath || "") : ""
-        // mediaItemMonitor has already pulled this URL, so the cache hits
-        // synchronously here.
-        asynchronous: false
-        cache: true
-        fillMode: Image.PreserveAspectFit
-        sourceClipRect: {
-            if (!visible || sourceSize.width <= 0 || sourceSize.height <= 0) {
-                return Qt.rect(0, 0, 0, 0)
-            }
-            const c = root.layerCrop
-            return Qt.rect(c.x * sourceSize.width,
-                           c.y * sourceSize.height,
-                           c.width  * sourceSize.width,
-                           c.height * sourceSize.height)
-        }
+               || (root.layerItem && root.layerItem.muted === true)
     }
 
     // ── PDF page renderer ───────────────────────────────────────────────

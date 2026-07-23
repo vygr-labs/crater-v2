@@ -605,6 +605,54 @@ Rectangle {
                 item: root.selectedItem
                 pageIndex: AppState.previewSubIndex
                 muted: true
+                // Reflect the item's saved crop + fit so the preview is WYSIWYG
+                // against what will project (ThemedMonitor reads fit/loop/mute
+                // off the item map; cropRect it takes here).
+                cropRect: (root.selectedItem && root.selectedItem.cropRect)
+                              ? root.selectedItem.cropRect : Qt.rect(0, 0, 1, 1)
+            }
+
+            // ── Quick fit control (image / video) ───────────────────────
+            // A compact Contain/Cover/Stretch set overlaid bottom-centre for
+            // image/video items — the fast path next to the full Edit… modal.
+            // Persists via MediaService.setFitMode; the Media tab's reactive
+            // re-push refreshes this preview so the change shows immediately.
+            // (PDF nav also lives bottom-centre but is mutually exclusive —
+            // fit is image/video only.)
+            Rectangle {
+                id: fitBar
+                visible: root.selectedItem !== null
+                         && (root.selectedItem.kind === "image"
+                             || root.selectedItem.kind === "video")
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: Theme.space.md
+                width:  fitControl.width + Theme.space.sm * 2
+                height: fitControl.height + Theme.space.xs * 2
+                color: Qt.rgba(0, 0, 0, 0.72)
+                border.color: Theme.color.borderStrong
+                border.width: 1
+                radius: 0
+
+                // Absorb stray clicks on the bar padding.
+                MouseArea { anchors.fill: parent }
+
+                SegmentedControl {
+                    id: fitControl
+                    anchors.centerIn: parent
+                    width: 210
+                    height: 26
+                    options: [
+                        { value: "contain", label: qsTr("Contain") },
+                        { value: "cover",   label: qsTr("Cover") },
+                        { value: "stretch", label: qsTr("Stretch") }
+                    ]
+                    current: root.selectedItem ? root.selectedItem.fitMode : "default"
+                    onChanged: function(v) {
+                        if (root.selectedItem && root.selectedItem.mediaId)
+                            MediaService.setFitMode(root.selectedItem.mediaId, v)
+                    }
+                }
             }
 
             // ── Crop-and-commit surface (PDF) ───────────────────────────

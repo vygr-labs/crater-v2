@@ -20,7 +20,7 @@ MediaPlaybackService::~MediaPlaybackService()
     qDeleteAll(m_byUrl);
 }
 
-int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio)
+int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
 {
     if (sourceUrl.isEmpty()) return -1;
 
@@ -32,13 +32,14 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio)
         e->player = new QMediaPlayer(this);
         e->sink   = new QVideoSink(this);
         e->audio  = new QAudioOutput(this);
+        e->loop   = loop;
 
         e->audio->setMuted(true);        // recomputeAudio sets the real value
         e->audio->setVolume(1.0);
 
         e->player->setVideoSink(e->sink);
         e->player->setAudioOutput(e->audio);
-        e->player->setLoops(QMediaPlayer::Infinite);
+        e->player->setLoops(loop ? QMediaPlayer::Infinite : 1);
 
         // Relay: every frame produced by the primary sink is broadcast to
         // each attached output sink. We capture by URL (not by Entry*) so
@@ -57,6 +58,11 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio)
         e->player->play();
 
         m_byUrl.insert(sourceUrl, e);
+    } else if (e->loop != loop) {
+        // Existing decoder, new subscriber with a different loop preference —
+        // last-writer-wins (see header). Update the shared player in place.
+        e->loop = loop;
+        e->player->setLoops(loop ? QMediaPlayer::Infinite : 1);
     }
 
     const int token = m_nextToken++;
@@ -64,6 +70,14 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio)
     m_tokenToUrl.insert(token, sourceUrl);
     recomputeAudio(*e);
     return token;
+}
+
+void MediaPlaybackService::setLoop(int token, bool loop)
+{
+    Entry* e = entryForToken(token);
+    if (!e || e->loop == loop) return;
+    e->loop = loop;
+    e->player->setLoops(loop ? QMediaPlayer::Infinite : 1);
 }
 
 void MediaPlaybackService::setWantsAudio(int token, bool wantsAudio)
