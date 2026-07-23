@@ -253,14 +253,30 @@ Both FTS5 **trigram** searches (Scripture `BibleService::search`, Songs
       (`ESCAPE '\'`) so they match literally instead of acting as wildcards.
 
 Remaining follow-ups (nice-to-have, not blocking):
+- [ ] **Unified song search — title AND lyrics together.** One song query
+      should match on title, author, AND lyrics at once rather than being siloed
+      by the title/lyrics/author mode toggle, so a title typed while in "lyrics"
+      mode (or a lyric typed in "title" mode) still surfaces. Today only the
+      "lyrics" mode is cross-field (FTS over all three columns); "title" and
+      "author" are field-restricted in-memory JS substring filters
+      (`SongsTab.qml`). Make the default a single unified FTS search, and keep
+      the field toggle only as an optional narrowing filter.
 - [ ] **More scoping.** Scripture book / testament filters; Songs field-scoped
       (title-only vs lyrics) + filter by collection — the title/author modes are
       still in-memory JS substring filters (`SongsTab.qml`), not FTS.
-- [ ] **Typo tolerance** for Songs (edit-distance fallback when FTS returns
-      nothing) so a badly-misspelled title still surfaces. Trigram already gives
-      substring tolerance; this is the last mile.
-- [ ] **Recent-search history** + sort options in the result affordances (the
-      matched-snippet affordance itself is done above).
+- [x] **Typo tolerance** for Songs — DONE. When exact FTS returns nothing,
+      `SongService::search` runs a bounded-Levenshtein fuzzy fallback over song
+      title + author word tokens (`boundedLevenshtein`/`fuzzyScore`), returning
+      the closest matches flagged `Song.fuzzy`. SongsTab labels the set
+      "N similar to …". Runs in the default (cross-field lyrics) mode; the
+      title/author JS-substring modes don't fuzz yet (folded into the unified-
+      search item above).
+- [x] **Recent-search history** — DONE. Session-only per-tab history
+      (`AppState.recentSearches` / `pushRecentSearch`, capped at 8, de-duped),
+      captured when the search box loses focus with a real query, surfaced as a
+      "Recent ⌄" pill in `TabSearchBar` that opens a context menu of past
+      queries (+ Clear). (Sort options — recent/newest/oldest — already exist in
+      the Songs gear menu via `librarySortMode`.)
 - [ ] Highlight the current verse on the **projected slide** once "Highlight
       current verse" lands (`ScriptureSection.qml:76-100`).
 
