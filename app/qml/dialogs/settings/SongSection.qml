@@ -2,15 +2,40 @@ import QtQuick
 import QtQuick.Layouts
 
 // Song — author/CCLI display, auto-advance, default theme.
-// Default-theme picker has no popover yet, and auto-advance has no
-// timer infrastructure — both carry the "Soon" badge.
 Item {
     id: root
 
-    // Local placeholders for Soon-flagged rows. Show author + Show CCLI
-    // read/write SettingsService directly.
-    property bool   autoAdvance: false
-    property string defaultTheme: "Classic Dark"
+    // Local placeholder for the still-Soon auto-advance row (wired next).
+    property bool autoAdvance: false
+
+    // Song-kind themes for the Default-theme picker, rebuilt when the theme
+    // list or the kv-backed per-kind default changes. The picker is a second
+    // entry point to the SAME default ThemesTab's "Set as default" drives, so
+    // it reads/writes ThemeService.defaultFor/setDefaultFor("song") — NOT a
+    // SettingsService key, which would be a competing source of truth. The
+    // default is applied at render time by AppState.resolveItemTheme, so a
+    // change re-renders live projected songs immediately.
+    property int _themeRevision: 0
+    Connections {
+        target: ThemeService
+        function onAllThemesChanged() { root._themeRevision++ }
+        function onDefaultsChanged()  { root._themeRevision++ }
+    }
+    readonly property var _songThemeOptions: {
+        root._themeRevision   // dependency
+        const all = ThemeService.allThemes || []
+        let out = []
+        for (let i = 0; i < all.length; i++) {
+            const t = all[i]
+            if (t && t.kind === "song") out.push({ label: t.name, value: String(t.id) })
+        }
+        return out
+    }
+    readonly property string _songDefaultName: {
+        root._themeRevision   // dependency
+        const t = ThemeService.defaultFor("song")
+        return (t && t.id > 0) ? t.name : ""
+    }
 
     Flickable {
         anchors.fill: parent
@@ -55,25 +80,24 @@ Item {
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Default theme"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Applied to new songs when no theme is set"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                    Text { text: qsTr("Used for songs that don't carry their own theme"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
+                Combobox {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    SelectChip {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: root.defaultTheme
-                        opacity: 0.45
-                        enabled: false
-                        radius: 0
+                    width: 200
+                    // Search only kicks in for long theme lists; a handful of
+                    // themes reads better as a plain list.
+                    searchable: root._songThemeOptions.length > 8
+                    options: root._songThemeOptions
+                    // Combobox shows `value` verbatim and hands the picked
+                    // option's `value` to onValueSelected — so display the
+                    // theme name, resolve the id string on select.
+                    value: root._songDefaultName
+                    placeholder: qsTr("Select theme")
+                    onValueSelected: function(v) {
+                        const id = parseInt(v, 10)
+                        ThemeService.setDefaultFor("song", isNaN(id) ? 0 : id)
                     }
                 }
             }
