@@ -181,7 +181,10 @@ Item {
 
     readonly property var currentVerses: {
         if (mode === "search" && _parserQuery.length > 0) {
-            return BibleService.search(_parserQuery, activeTranslation)
+            // Empty filter → search every imported translation at once; the
+            // hit list then spans versions (each row shows its own chip).
+            const scope = AppState.scriptureSearchAllTranslations ? "" : activeTranslation
+            return BibleService.search(_parserQuery, scope)
         }
         return versesForActiveTranslation
     }
@@ -847,6 +850,17 @@ Item {
                               } },
                             { separator: true }
                         ] : []),
+                        // FTS-search-only: scope toggle across translations.
+                        ...(root.mode === "search" ? [
+                            { label: qsTr("Search all translations"),
+                              iconName: "book",
+                              detail: AppState.scriptureSearchAllTranslations ? "✓" : "",
+                              action: function() {
+                                  AppState.setScriptureSearchAllTranslations(
+                                      !AppState.scriptureSearchAllTranslations)
+                              } },
+                            { separator: true }
+                        ] : []),
                         { label: qsTr("Refresh"), iconName: "refresh-cw" }
                     ]
                     AppState.openContextMenuAt(gearBtn,
@@ -1018,7 +1032,16 @@ Item {
                 anchors.right: refLabel.left
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
-                text: modelData.text || ""
+                // In FTS search mode, bold the matched terms inside the verse
+                // (StyledText). Plain text otherwise so eliding stays cheap and
+                // no escaping is needed on the hot non-search path.
+                readonly property bool _searching:
+                    root.mode === "search" && root._parserQuery.length > 0
+                textFormat: _searching ? Text.StyledText : Text.PlainText
+                text: _searching
+                        ? SearchFormat.markup(modelData.text || "", root._parserQuery,
+                                              Theme.color.brand)
+                        : (modelData.text || "")
                 // Selected: `textTitle` (gray.300) softer-than-textPrimary
                 // tone with semiBold (600) weight bump. Bolder strokes +
                 // softer color = same perceived presence with less raw

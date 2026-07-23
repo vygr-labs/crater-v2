@@ -224,29 +224,45 @@ are solid.
 - [ ] Canvas size **hardcoded 1920×1080** (`NdiRenderer.cpp:32-33`) — the headless path won't render themes whose canvas isn't 1080p. Parameterize.
 - [ ] Two capture paths advertise **different frame rates** — legacy `30000/1001` (`NdiService.cpp:516`) vs headless `60000/1001` (`NdiService.cpp:576`). Reconcile.
 
-### Search quality — Scripture & Songs (greatly improve)
-Both searches work but are minimal: Scripture is an FTS5 **trigram** match over
-`verses.text` (`BibleService::search`, dual-mode reference/FTS in
-`ScriptureTab.qml`), Songs is FTS5 over title+author+lyrics
-(`SongService::search`). Neither ranks, highlights, or scopes usefully. Raise
-both to a "great search" bar:
-- [ ] **Ranked results.** Order by `bm25()` (both FTS tables already support it —
-      `SearchHit.score` exists but isn't used to sort) instead of table order;
-      tune column weights (title/author > lyrics; keep verse ordering as a
-      tie-break).
-- [ ] **Match highlighting.** Return FTS `snippet()`/`highlight()` spans and bold
-      the matched terms in the result rows — and, for Scripture, on the projected
-      slide when "Highlight current verse" lands (`ScriptureSection.qml:76-100`).
-- [ ] **Query operators.** Support quoted phrases, `AND`/`OR`/`NOT`, and prefix
-      (`word*`); today the raw string is passed straight to FTS so a stray quote
-      or operator char can error. Sanitize + expose the operators intentionally.
-- [ ] **Scoping filters.** Scripture: book / testament / translation (search all
-      translations at once, not just the active one). Songs: field-scoped
-      (title-only vs lyrics) + filter by collection/theme once collections land.
-- [ ] **Typo tolerance** for Songs (trigram or edit-distance fallback when FTS
-      returns nothing) so a misspelled title still surfaces.
-- [ ] **Result affordances.** Show the matched lyric section / verse snippet in
-      the row, add sort options, and keep a short recent-search history.
+### Search quality — Scripture & Songs — mostly DONE
+Both FTS5 **trigram** searches (Scripture `BibleService::search`, Songs
+`SongService::search`) were raised to a "great search" bar. The core wins:
+- [x] **Safe query sanitization** — new shared `crater::db::buildFtsQuery`
+      (`core/src/db/FtsQuery.cpp`) turns raw input into a valid FTS5 MATCH:
+      every term becomes a quoted string literal (operator chars inert), sub-3-
+      char terms the trigram tokenizer can't match are dropped, and a small
+      operator set is honored — `"quoted phrases"`, `a OR b`, `-term`/`NOT`.
+      Fixes the whole silent-empty class (`God is love` used to return nothing
+      because `is` zeroed the AND; a stray quote used to be a swallowed syntax
+      error). Wired into both services.
+- [x] **Ranked results.** Songs now use a **title-weighted** `bm25(songs_fts,
+      10, 6, 1)` (title ≫ author ≫ lyrics) instead of equal weights; Scripture
+      was already bm25-ordered. Both `ORDER BY score`.
+- [x] **Match highlighting.** Shared `SearchFormat` singleton
+      (`app/qml/SearchFormat.qml`) bolds matched terms in the verse text, song
+      title/author, and the lyric snippet (`Text.StyledText`). *Note:* the FTS
+      tables are **contentless**, so SQLite's `snippet()`/`highlight()` can't be
+      used — highlight is built from the joined-back text instead.
+- [x] **Matched-lyric snippet.** `Song.snippet` carries a word-boundary excerpt
+      of the first matching lyric line (`SongService::makeSnippet`), shown in the
+      result row in place of the author subtitle for lyrics hits.
+- [x] **Search all translations.** Scripture gear-menu toggle
+      (`AppState.scriptureSearchAllTranslations`) searches every imported version
+      at once; each hit shows its own translation chip.
+- [x] **Strong's LIKE escaping** — `%`/`_` in the query are now escaped
+      (`ESCAPE '\'`) so they match literally instead of acting as wildcards.
+
+Remaining follow-ups (nice-to-have, not blocking):
+- [ ] **More scoping.** Scripture book / testament filters; Songs field-scoped
+      (title-only vs lyrics) + filter by collection — the title/author modes are
+      still in-memory JS substring filters (`SongsTab.qml`), not FTS.
+- [ ] **Typo tolerance** for Songs (edit-distance fallback when FTS returns
+      nothing) so a badly-misspelled title still surfaces. Trigram already gives
+      substring tolerance; this is the last mile.
+- [ ] **Recent-search history** + sort options in the result affordances (the
+      matched-snippet affordance itself is done above).
+- [ ] Highlight the current verse on the **projected slide** once "Highlight
+      current verse" lands (`ScriptureSection.qml:76-100`).
 
 ### Media
 

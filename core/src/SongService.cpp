@@ -4,6 +4,7 @@
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
+#include "db/FtsQuery.h"
 #include "db/Statement.h"
 #include "db/Transaction.h"
 
@@ -118,6 +119,39 @@ QString flattenSectionsForFts(const QVariantList& sections)
     return out;
 }
 
+// Build a short lyric excerpt centered on the first place any search term
+// occurs in the (already flattened, plain-text) lyrics. Case-insensitive.
+// The window is snapped out to whole words and bracketed with ellipses when
+// it doesn't reach the start/end of the lyrics. Returns empty when no term is
+// present (e.g. the FTS hit was on title/author, not lyrics).
+QString makeSnippet(const QString& lyrics, const QStringList& terms, int radius = 44)
+{
+    if (lyrics.isEmpty() || terms.isEmpty()) return QString();
+
+    const QString hay = lyrics.toLower();
+    int matchPos = -1;
+    int matchLen = 0;
+    for (const QString& term : terms) {
+        const int pos = hay.indexOf(term);
+        if (pos >= 0 && (matchPos < 0 || pos < matchPos)) {
+            matchPos = pos;
+            matchLen = term.size();
+        }
+    }
+    if (matchPos < 0) return QString();
+
+    int start = qMax(0, matchPos - radius);
+    int end   = qMin(lyrics.size(), matchPos + matchLen + radius);
+    // Snap to word boundaries so the excerpt never begins/ends mid-word.
+    while (start > 0 && !lyrics.at(start - 1).isSpace()) --start;
+    while (end < lyrics.size() && !lyrics.at(end).isSpace()) ++end;
+
+    QString snip = lyrics.mid(start, end - start).trimmed();
+    if (start > 0)             snip.prepend(QStringLiteral("… "));
+    if (end < lyrics.size())   snip.append(QStringLiteral(" …"));
+    return snip;
+}
+
 }  // namespace
 
 namespace crater {
@@ -169,9 +203,13 @@ struct SongService::Impl
             "SELECT label, kind, lines_json, sort_order "
             "FROM song_sections WHERE song_id = ? ORDER BY sort_order")))
         , searchFts(conn.prepare(QStringLiteral(
+            // Weighted bm25: songs_fts columns are (title, author, lyrics) in
+            // that order, so the weights bias a title hit far above a stray
+            // lyric word and an author hit in between. Without weights a match
+            // buried in verse 3 ranked equal to the song's own title.
             "SELECT DISTINCT s.id, s.title, s.author, s.copyright, s.ccli, "
             "       s.theme_id, s.is_favorite, s.created_at, s.updated_at, "
-            "       bm25(songs_fts) AS score "
+            "       bm25(songs_fts, 10.0, 6.0, 1.0) AS score "
             "FROM songs_fts "
             "JOIN songs s ON s.id = songs_fts.rowid "
             "WHERE songs_fts MATCH ? "
@@ -396,18 +434,33 @@ Song SongService::fetchSong(qint64 id)
 QList<Song> SongService::search(QString query)
 {
     QList<Song> out;
-    if (!m_impl || query.trimmed().isEmpty()) return out;
+    if (!m_impl) return out;
+
+    // Sanitize the raw query into a safe FTS5 MATCH expression (quote every
+    // term, drop sub-3-char words the trigram tokenizer can't match, honor
+    // "phrases"/OR/-exclude). Empty → nothing searchable; skip FTS entirely.
+    const db::FtsQuery fts = db::buildFtsQuery(query);
+    if (fts.isEmpty()) return out;
 
     try {
         auto& stmt = m_impl->searchFts;
         stmt.reset();
-        stmt.bind(1, query);
+        stmt.bind(1, fts.match);
         while (stmt.step()) {
             out.append(m_impl->readSongRow(stmt));
         }
     } catch (const db::Error& e) {
-        // Partial / malformed FTS queries land here; log quietly.
+        // Should be rare now that input is sanitized; log quietly and bail.
         qDebug().noquote() << "SongService::search():" << e.message();
+        return out;
+    }
+
+    // Second pass — attach a matched-lyric snippet to each hit. Run only after
+    // the search cursor drains to SQLITE_DONE (self-releasing its read txn) so
+    // we never interleave two open cursors on the one connection.
+    for (Song& song : out) {
+        const QString lyrics = m_impl->fetchFlattenedLyrics(song.id);
+        song.snippet = makeSnippet(lyrics, fts.terms);
     }
     return out;
 }
