@@ -145,6 +145,16 @@ private:
     Q_PROPERTY(bool    highlightScriptureMatches READ highlightScriptureMatches WRITE setHighlightScriptureMatches NOTIFY highlightScriptureMatchesChanged)
     Q_PROPERTY(bool    highlightStrongsMatches   READ highlightStrongsMatches   WRITE setHighlightStrongsMatches   NOTIFY highlightStrongsMatchesChanged)
 
+    // UI language — the operator-console interface locale. "en" (default) is the
+    // built-in English source; any other value is a Qt locale code (e.g. "es",
+    // "pt_BR", "zh_CN") whose crater_<code>.qm catalog is loaded and installed.
+    // Persisted here so the choice survives restarts and is read once at startup
+    // — before QML loads — so the first paint is already in the chosen language.
+    // The live-swap mechanism (QTranslator + QQmlEngine::retranslate) lives in
+    // the app-layer TranslationService, which owns the engine; this service is
+    // just the persisted source of truth it reads and writes.
+    Q_PROPERTY(QString language           READ language           WRITE setLanguage           NOTIFY languageChanged)
+
 public:
     explicit SettingsService(QObject* parent = nullptr);
     ~SettingsService() override;
@@ -177,6 +187,7 @@ public:
     bool    highlightSongMatches() const;
     bool    highlightScriptureMatches() const;
     bool    highlightStrongsMatches() const;
+    QString language() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -205,6 +216,7 @@ public:
     void setHighlightSongMatches(bool v);
     void setHighlightScriptureMatches(bool v);
     void setHighlightStrongsMatches(bool v);
+    void setLanguage(const QString& code);
 
 signals:
     void themeModeChanged();
@@ -234,6 +246,7 @@ signals:
     void highlightSongMatchesChanged();
     void highlightScriptureMatchesChanged();
     void highlightStrongsMatchesChanged();
+    void languageChanged();
 
 private:
     struct Impl;

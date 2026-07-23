@@ -1,0 +1,25 @@
+{
+  "_comment": "Master table for Crater's bundled UI translations. `code` is the .qm/.ts suffix (crater_<code>.qm) and the value stored in Settings/language. `english`/`native` feed the language picker; `rtl` flags right-to-left scripts. English is the source language (no .qm). Add a language: append here, translate tools/i18n produces crater_<code>.qm, then register it in TranslationService's table + app/CMakeLists.txt.",
+  "languages": [
+    { "code": "es",    "english": "Spanish",                "native": "Español",            "rtl": false },
+    { "code": "pt_BR", "english": "Portuguese (Brazil)",     "native": "Português (Brasil)", "rtl": false },
+    { "code": "fr",    "english": "French",                 "native": "Français",           "rtl": false },
+    { "code": "de",    "english": "German",                 "native": "Deutsch",            "rtl": false },
+    { "code": "it",    "english": "Italian",                "native": "Italiano",           "rtl": false },
+    { "code": "nl",    "english": "Dutch",                  "native": "Nederlands",         "rtl": false },
+    { "code": "ru",    "english": "Russian",                "native": "Русский",            "rtl": false },
+    { "code": "uk",    "english": "Ukrainian",              "native": "Українська",         "rtl": false },
+    { "code": "pl",    "english": "Polish",                 "native": "Polski",             "rtl": false },
+    { "code": "ro",    "english": "Romanian",               "native": "Română",             "rtl": false },
+    { "code": "zh_CN", "english": "Chinese (Simplified)",   "native": "简体中文",            "rtl": false },
+    { "code": "zh_TW", "english": "Chinese (Traditional)",  "native": "繁體中文",            "rtl": false },
+    { "code": "ko",    "english": "Korean",                 "native": "한국어",              "rtl": false },
+    { "code": "ja",    "english": "Japanese",               "native": "日本語",              "rtl": false },
+    { "code": "id",    "english": "Indonesian",             "native": "Bahasa Indonesia",   "rtl": false },
+    { "code": "fil",   "english": "Filipino",               "native": "Filipino",           "rtl": false },
+    { "code": "sw",    "english": "Swahili",                "native": "Kiswahili",          "rtl": false },
+    { "code": "hi",    "english": "Hindi",                  "native": "हिन्दी",              "rtl": false },
+    { "code": "vi",    "english": "Vietnamese",             "native": "Tiếng Việt",         "rtl": false },
+    { "code": "ar",    "english": "Arabic",                 "native": "العربية",            "rtl": true  }
+  ]
+}
