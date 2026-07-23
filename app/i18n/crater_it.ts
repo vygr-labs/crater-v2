@@ -68,8 +68,12 @@
         <translation>Lingua</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Presto</translation>
+        <source>Select language…</source>
+        <translation>Seleziona lingua…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Le traduzioni dell'interfaccia sono assistite da IA e dalla community; l'inglese è la lingua di origine. Il testo mancante torna all'inglese.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Black</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Nessun file di log trovato da inviare.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Il file di log è vuoto.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Runtime NDI non trovato. Installa NDI Tools (ndi.video/tools) oppure imposta NDI_RUNTIME_DIR_V6 / V5 sulla cartella contenente Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Runtime NDI trovato, ma mancano i simboli richiesti — versione SDK incompatibile.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Inizializzazione del runtime NDI non riuscita (set di funzionalità CPU non supportato?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Runtime NDI pronto</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: nessuna finestra di proiezione registrata</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Creazione del mittente NDI non riuscita</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Trasmissione sulla rete locale come "%1"</translation>
     </message>
 </context>
 </TS>
