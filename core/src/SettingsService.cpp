@@ -44,6 +44,7 @@ struct SettingsService::Impl
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
     bool    showVerseNums    = true;
+    bool    highlightVerse   = false;
     bool    showScriptureFooter = false;
     bool    showStrongs      = true;
     bool    showSongAuthor   = true;
@@ -71,6 +72,7 @@ struct SettingsService::Impl
     static constexpr const char* kNdiResolution    = "Settings/ndiResolution";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
+    static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
     static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
@@ -99,6 +101,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->ndiResolution     = s.value(QString::fromLatin1(Impl::kNdiResolution),   m_impl->ndiResolution).toString();
     m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
+    m_impl->highlightVerse   = s.value(QString::fromLatin1(Impl::kHighlightVerse),   m_impl->highlightVerse).toBool();
     m_impl->showScriptureFooter = s.value(QString::fromLatin1(Impl::kShowScriptureFooter), m_impl->showScriptureFooter).toBool();
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
     m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
@@ -124,6 +127,7 @@ QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelForm
 QString SettingsService::ndiResolution() const     { return m_impl->ndiResolution; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
+bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
@@ -270,6 +274,14 @@ void SettingsService::setShowVerseNumbers(bool v)
     m_impl->showVerseNums = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kShowVerseNums), v);
     emit showVerseNumbersChanged();
+}
+
+void SettingsService::setHighlightCurrentVerse(bool v)
+{
+    if (m_impl->highlightVerse == v) return;
+    m_impl->highlightVerse = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightVerse), v);
+    emit highlightCurrentVerseChanged();
 }
 
 void SettingsService::setShowScriptureFooter(bool v)
