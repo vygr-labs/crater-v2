@@ -96,6 +96,13 @@ private:
     // activeLibraryGroup.scripture at startup.
     Q_PROPERTY(QString defaultScriptureVersion READ defaultScriptureVersion WRITE setDefaultScriptureVersion NOTIFY defaultScriptureVersionChanged)
     Q_PROPERTY(bool    showVerseNumbers   READ showVerseNumbers   WRITE setShowVerseNumbers   NOTIFY showVerseNumbersChanged)
+    // Progressive verse highlight. When on, a multi-verse passage is projected
+    // one page per verse — each page shows the whole passage with the current
+    // verse at full brightness and the rest dimmed — so the operator walks the
+    // highlight with the normal slide nav. Read by ScriptureTab at selection
+    // time (it bakes the per-verse pages), so a change applies to the next
+    // projected passage. Default off (it changes multi-verse nav granularity).
+    Q_PROPERTY(bool    highlightCurrentVerse READ highlightCurrentVerse WRITE setHighlightCurrentVerse NOTIFY highlightCurrentVerseChanged)
     // Render a reference line (book chapter:verse) at the bottom of scripture
     // slides. A render-time overlay in ProjectionContentLayer honors this
     // regardless of whether the active theme authored its own reference node,
@@ -134,6 +141,7 @@ public:
     QString ndiResolution() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
+    bool    highlightCurrentVerse() const;
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
@@ -156,6 +164,7 @@ public:
     void setNdiResolution(const QString& v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
+    void setHighlightCurrentVerse(bool v);
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
@@ -179,6 +188,7 @@ signals:
     void ndiResolutionChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
+    void highlightCurrentVerseChanged();
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
     void showSongAuthorChanged();

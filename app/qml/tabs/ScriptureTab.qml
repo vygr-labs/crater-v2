@@ -331,9 +331,39 @@ Item {
         // inherits the same gold/bold styling as the digit — it reads as a
         // numbered marker rather than a bare digit colliding with the verse's
         // first word (and a separate unstyled dot would render plain white).
-        const combined = usable.map(function(v) {
-            return "{color=yellow}**" + v.verse + ".**{/color} " + v.text
-        }).join("  ")
+        // Passage builder — one styled run per verse, joined by two spaces.
+        // activeIndex >= 0 dims every verse except that one (progressive-
+        // highlight mode); -1 leaves them all bright (the default all-on-one-
+        // slide look). Dimming is color-only ({color=gray}) so glyph metrics —
+        // and therefore the binary-search auto-fit size — stay identical across
+        // pages; stepping the highlight never resizes the text. (Note: gray
+        // reads as "dimmed" on the dark backgrounds projection themes almost
+        // always use; a light-background theme would want the inverse.)
+        const composePassage = function(activeIndex) {
+            return usable.map(function(v, j) {
+                const num  = "{color=yellow}**" + v.verse + ".**{/color} "
+                const body = (activeIndex < 0 || j === activeIndex)
+                    ? v.text
+                    : "{color=gray}" + v.text + "{/color}"
+                return num + body
+            }).join("  ")
+        }
+
+        // Progressive highlight (Settings > Scripture > Highlight current verse)
+        // turns the passage into one page per verse — each page shows the whole
+        // passage with that verse lit and the rest dimmed — so the normal slide
+        // nav walks the highlight. Off → a single combined slide (unchanged).
+        // Baked here at selection time, so a settings change applies to the
+        // next projected passage.
+        let pages
+        if (SettingsService.highlightCurrentVerse) {
+            pages = usable.map(function(v, i) {
+                return { label:   v.book + " " + v.chapter + ":" + v.verse,
+                         content: composePassage(i) }
+            })
+        } else {
+            pages = [{ label: _formatVerseRangeTitle(usable), content: composePassage(-1) }]
+        }
 
         const first = usable[0]
         const last  = usable[usable.length - 1]
@@ -345,7 +375,7 @@ Item {
             // _formatCopyText). Distinct from `combined` above, which numbers
             // each verse for the projection slide.
             copyText: _formatCopyText(usable),
-            pages:    [{ label: _formatVerseRangeTitle(usable), content: combined }],
+            pages:    pages,
             scriptureRef: {
                 translationCode: code,
                 book:            first.book,
