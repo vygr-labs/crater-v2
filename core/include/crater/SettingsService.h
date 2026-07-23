@@ -91,6 +91,16 @@ private:
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
     Q_PROPERTY(bool    showSongCcli       READ showSongCcli       WRITE setShowSongCcli       NOTIFY showSongCcliChanged)
+    // Auto-advance — when true, a live song steps to its next slide on a
+    // timer. LivePanel owns the actual QML Timer (it holds the live slide
+    // list + index + clear state); these are just the persisted operator
+    // knobs. Delay is whole seconds; loop wraps past the last slide back to
+    // the first instead of stopping. Unlike the song *default theme* (which
+    // is ThemeService's kv-backed per-kind default), these have no other
+    // home, so they live here.
+    Q_PROPERTY(bool    autoAdvance             READ autoAdvance             WRITE setAutoAdvance             NOTIFY autoAdvanceChanged)
+    Q_PROPERTY(int     autoAdvanceDelaySeconds READ autoAdvanceDelaySeconds WRITE setAutoAdvanceDelaySeconds NOTIFY autoAdvanceDelaySecondsChanged)
+    Q_PROPERTY(bool    autoAdvanceLoop         READ autoAdvanceLoop         WRITE setAutoAdvanceLoop         NOTIFY autoAdvanceLoopChanged)
 
 public:
     explicit SettingsService(QObject* parent = nullptr);
@@ -112,6 +122,9 @@ public:
     bool    showStrongsTab() const;
     bool    showSongAuthor() const;
     bool    showSongCcli() const;
+    bool    autoAdvance() const;
+    int     autoAdvanceDelaySeconds() const;
+    bool    autoAdvanceLoop() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -128,6 +141,9 @@ public:
     void setShowStrongsTab(bool v);
     void setShowSongAuthor(bool v);
     void setShowSongCcli(bool v);
+    void setAutoAdvance(bool v);
+    void setAutoAdvanceDelaySeconds(int v);
+    void setAutoAdvanceLoop(bool v);
 
 signals:
     void themeModeChanged();
@@ -145,6 +161,9 @@ signals:
     void showStrongsTabChanged();
     void showSongAuthorChanged();
     void showSongCcliChanged();
+    void autoAdvanceChanged();
+    void autoAdvanceDelaySecondsChanged();
+    void autoAdvanceLoopChanged();
 
 private:
     struct Impl;

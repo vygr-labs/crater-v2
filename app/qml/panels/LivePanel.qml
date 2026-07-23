@@ -42,6 +42,63 @@ Rectangle {
         (AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
         || (AppState.liveScheduleIndex >= 0 && liveItem !== null)
 
+    // ── Auto-advance ────────────────────────────────────────────────────
+    // Steps a live, multi-slide item to its next page on a timer, honoring
+    // the Settings > Song > Auto-advance preferences. Only songs (and any
+    // future multi-page text kind) qualify — single-slide media/scripture
+    // have pages.length <= 1 and are skipped. Blanking (AppState.isClear)
+    // pauses it. The timer is re-armed for a FULL delay after every page
+    // change (manual OR automatic) via _syncAutoAdvance(), so a manual jump
+    // never gets a truncated interval and a resumed song starts fresh. We
+    // drive start/stop imperatively rather than binding `running` because a
+    // bound `running` can't coexist with the restart() we need for re-arming.
+    Timer {
+        id: autoAdvanceTimer
+        interval: Math.max(1, SettingsService.autoAdvanceDelaySeconds) * 1000
+        repeat: true
+        onTriggered: {
+            const last = root.pages.length - 1
+            if (last < 1) { autoAdvanceTimer.stop(); return }
+            if (AppState.liveSubIndex < last) {
+                AppState.liveSubIndex = AppState.liveSubIndex + 1
+                ProjectionService.setPage(AppState.liveSubIndex)
+            } else if (SettingsService.autoAdvanceLoop) {
+                AppState.liveSubIndex = 0
+                ProjectionService.setPage(AppState.liveSubIndex)
+            } else {
+                autoAdvanceTimer.stop()   // reached the end, nothing to loop to
+            }
+        }
+    }
+
+    function _syncAutoAdvance() {
+        const last = root.pages.length - 1
+        const shouldRun = SettingsService.autoAdvance
+                       && root.isLive
+                       && last >= 1
+                       && !AppState.isClear
+                       && (SettingsService.autoAdvanceLoop || AppState.liveSubIndex < last)
+        if (shouldRun) autoAdvanceTimer.restart()   // (re)arm a fresh full interval
+        else           autoAdvanceTimer.stop()
+    }
+
+    // Re-sync on every input that gates or paces the timer. liveSubIndex
+    // firing here (from either a manual jump or the timer's own advance) is
+    // what re-arms the full delay for the next slide.
+    onPagesChanged:  _syncAutoAdvance()
+    onIsLiveChanged: _syncAutoAdvance()
+    Connections {
+        target: SettingsService
+        function onAutoAdvanceChanged()             { root._syncAutoAdvance() }
+        function onAutoAdvanceDelaySecondsChanged() { root._syncAutoAdvance() }
+        function onAutoAdvanceLoopChanged()         { root._syncAutoAdvance() }
+    }
+    Connections {
+        target: AppState
+        function onIsClearChanged()      { root._syncAutoAdvance() }
+        function onLiveSubIndexChanged() { root._syncAutoAdvance() }
+    }
+
     // ── Header ──────────────────────────────────────────────────────────
     Item {
         id: header
