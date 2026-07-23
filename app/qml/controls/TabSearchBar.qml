@@ -29,7 +29,7 @@ Item {
 
     readonly property string tabKey: AppState.tabKeys[AppState.activeTab]
     readonly property string mode:
-        tabKey === "songs"     ? (AppState.librarySearchMode.songs     || "lyrics")
+        tabKey === "songs"     ? (AppState.librarySearchMode.songs     || "all")
       : tabKey === "scripture" ? (AppState.librarySearchMode.scripture || "reference")
       : tabKey === "media"     ? (AppState.librarySearchMode.media     || "title")
                                : ""
@@ -42,16 +42,17 @@ Item {
     // AppState.librarySortMode now — keeping them out of this dropdown stops
     // "Sort by Newest" from hijacking the input placeholder.
     readonly property var songModes: [
-        { id: "title",   label: qsTr("Title"),  icon: "search",    placeholder: qsTr("Search by title…") },
-        { id: "lyrics",  label: qsTr("Lyrics"), icon: "file-text", placeholder: qsTr("Search in lyrics…") },
-        { id: "author",  label: qsTr("Author"), icon: "user",      placeholder: qsTr("Search by author…") }
+        { id: "all",     label: qsTr("All"),    icon: "list-music", placeholder: qsTr("Search songs…") },
+        { id: "title",   label: qsTr("Title"),  icon: "search",     placeholder: qsTr("Search by title…") },
+        { id: "lyrics",  label: qsTr("Lyrics"), icon: "file-text",  placeholder: qsTr("Search in lyrics…") },
+        { id: "author",  label: qsTr("Author"), icon: "user",       placeholder: qsTr("Search by author…") }
     ]
 
     function songMode(id) {
         for (let i = 0; i < songModes.length; i++) {
             if (songModes[i].id === id) return songModes[i]
         }
-        return songModes[1]   // lyrics default
+        return songModes[0]   // "all" (unified) default
     }
 
     // ── Scripture reference-input sub-mode ──────────────────────────────
