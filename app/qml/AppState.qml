@@ -547,7 +547,7 @@ QtObject {
     // gear made the placeholder read "Filter newest songs…", which surprised
     // operators who just wanted to sort. Two slots → two intents, no collision.
     property var librarySearchMode: ({
-        "songs":     "lyrics",
+        "songs":     "all",
         "scripture": "reference",
         "media":     "title"
     })
