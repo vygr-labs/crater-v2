@@ -68,8 +68,12 @@
         <translation>Limbă</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>În curând</translation>
+        <source>Select language…</source>
+        <translation>Selectați limba…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Traducerile interfeței sunt realizate cu ajutorul AI și al comunității; limba sursă este engleza. Textul lipsă revine la engleză.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Black</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Nu a fost găsit niciun fișier jurnal de trimis.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Fișierul jurnal este gol.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Nu s-a găsit mediul de execuție NDI. Instalați NDI Tools (ndi.video/tools) sau setați NDI_RUNTIME_DIR_V6 / V5 către directorul care conține Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Mediul de execuție NDI a fost găsit, dar lipsesc simboluri necesare — versiune SDK incompatibilă.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Inițializarea mediului de execuție NDI a eșuat (set de funcții CPU neacceptat?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Mediul de execuție NDI este gata</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: nicio fereastră de proiecție înregistrată</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Crearea expeditorului NDI a eșuat</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Difuzare pe rețeaua locală ca „%1”</translation>
     </message>
 </context>
 </TS>

@@ -81,6 +81,10 @@ private:
     // missing .qm — the UI stays/falls back to English either way).
     bool loadCatalog(const QString& code);
 
+    // Best available catalog for the OS UI language, or "" if we ship none for
+    // it. Used only on first run (before the operator has picked a language).
+    QString detectSystemLanguage() const;
+
     void onLanguageSettingChanged();
 
     struct Impl;

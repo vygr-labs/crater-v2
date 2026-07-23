@@ -10,6 +10,7 @@
 #include <QQmlEngine>
 #include <QSet>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QTranslator>
 #include <QVariantMap>
 
@@ -214,13 +215,65 @@ bool TranslationService::loadCatalog(const QString& code)
     return ok;
 }
 
+QString TranslationService::detectSystemLanguage() const
+{
+    // Codes we actually ship a catalog for.
+    QSet<QString> avail;
+    const QVariantList langs = availableLanguages();
+    for (const QVariant& v : langs)
+        avail.insert(v.toMap().value(QStringLiteral("code")).toString());
+
+    // uiLanguages() is the operator's ordered preference list, most-preferred
+    // first — e.g. {"es-ES","es","en-US","en"} or {"zh-Hans-CN","zh-Hans","zh"}.
+    const QStringList prefs = QLocale::system().uiLanguages();
+    for (const QString& raw : prefs) {
+        QString tag = raw;
+        tag.replace(QLatin1Char('-'), QLatin1Char('_'));
+        const QString low = tag.toLower();
+        const QString lang = tag.section(QLatin1Char('_'), 0, 0);
+
+        // Chinese: route script/region to our two catalogs (Simplified default).
+        if (lang == QLatin1String("zh")) {
+            const bool trad = low.contains(QLatin1String("hant"))
+                           || low.contains(QLatin1String("_tw"))
+                           || low.contains(QLatin1String("_hk"))
+                           || low.contains(QLatin1String("_mo"));
+            if (trad && avail.contains(QStringLiteral("zh_TW"))) return QStringLiteral("zh_TW");
+            if (!trad && avail.contains(QStringLiteral("zh_CN"))) return QStringLiteral("zh_CN");
+            continue;
+        }
+
+        // Exact region match first (e.g. pt_BR), then language-only (e.g. fr).
+        if (avail.contains(tag))  return tag;
+        if (avail.contains(lang)) return lang;
+    }
+    return {};  // no catalog for the OS language — caller keeps English
+}
+
 void TranslationService::applyPersistedLanguage()
 {
-    const QString code = currentLanguage();
+    QString code = currentLanguage();
+
+    // First run — the operator hasn't chosen a language yet: adopt the OS UI
+    // language if we ship a catalog for it (otherwise the persisted "en" holds).
+    const bool firstRun = m_impl->settings && !m_impl->settings->hasExplicitLanguage();
+    if (firstRun) {
+        const QString detected = detectSystemLanguage();
+        if (!detected.isEmpty())
+            code = detected;
+    }
+
     loadCatalog(code);
     m_impl->appliedCode = code.isEmpty() ? QStringLiteral("en") : code;
     // No retranslate — QML hasn't loaded yet; the first paint reads the
     // freshly-installed catalog.
+
+    // Remember a first-run detection so later launches are stable. Done AFTER
+    // appliedCode is set, so the languageChanged this emits is a no-op here
+    // (onLanguageSettingChanged sees norm == appliedCode) instead of kicking a
+    // premature retranslate before QML has even loaded.
+    if (firstRun && code != QLatin1String("en") && m_impl->settings)
+        m_impl->settings->setLanguage(code);
 }
 
 void TranslationService::setLanguage(const QString& code)
