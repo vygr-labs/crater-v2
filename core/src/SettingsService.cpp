@@ -53,6 +53,9 @@ struct SettingsService::Impl
     bool    autoAdvance      = false;
     int     autoAdvanceDelay = 20;
     bool    autoAdvanceLoop  = false;
+    // "contain" (letterbox) is the safe default — it never crops content the
+    // operator might not know is being clipped. Cover/stretch are opt-in.
+    QString mediaDefaultFit  = QStringLiteral("contain");
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -80,6 +83,7 @@ struct SettingsService::Impl
     static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
     static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
     static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
+    static constexpr const char* kMediaDefaultFit = "Settings/mediaDefaultFit";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -109,6 +113,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->autoAdvance      = s.value(QString::fromLatin1(Impl::kAutoAdvance),      m_impl->autoAdvance).toBool();
     m_impl->autoAdvanceDelay = s.value(QString::fromLatin1(Impl::kAutoAdvanceDelay), m_impl->autoAdvanceDelay).toInt();
     m_impl->autoAdvanceLoop  = s.value(QString::fromLatin1(Impl::kAutoAdvanceLoop),  m_impl->autoAdvanceLoop).toBool();
+    m_impl->mediaDefaultFit = s.value(QString::fromLatin1(Impl::kMediaDefaultFit), m_impl->mediaDefaultFit).toString();
 }
 
 SettingsService::~SettingsService() = default;
@@ -135,6 +140,7 @@ bool    SettingsService::showSongCcli() const      { return m_impl->showSongCcli
 bool    SettingsService::autoAdvance() const             { return m_impl->autoAdvance; }
 int     SettingsService::autoAdvanceDelaySeconds() const { return m_impl->autoAdvanceDelay; }
 bool    SettingsService::autoAdvanceLoop() const         { return m_impl->autoAdvanceLoop; }
+QString SettingsService::mediaDefaultFit() const   { return m_impl->mediaDefaultFit; }
 
 qreal SettingsService::fontScale() const
 {
@@ -341,6 +347,21 @@ void SettingsService::setAutoAdvanceLoop(bool v)
     m_impl->autoAdvanceLoop = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvanceLoop), v);
     emit autoAdvanceLoopChanged();
+}
+
+void SettingsService::setMediaDefaultFit(const QString& v)
+{
+    // Guard against arbitrary writes from QML — only the three real fit tokens
+    // are accepted; anything else collapses to "contain" so a stray value can
+    // never leave media un-renderable. "default" is intentionally rejected here
+    // (this IS the default; a media item pointing at it would loop forever).
+    const QString normalized =
+        (v == QStringLiteral("cover") || v == QStringLiteral("stretch"))
+            ? v : QStringLiteral("contain");
+    if (m_impl->mediaDefaultFit == normalized) return;
+    m_impl->mediaDefaultFit = normalized;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaDefaultFit), normalized);
+    emit mediaDefaultFitChanged();
 }
 
 }  // namespace crater

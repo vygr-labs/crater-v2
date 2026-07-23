@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QRectF>
 #include <QString>
 #include <QtQmlIntegration>
 
@@ -17,6 +18,12 @@ namespace crater {
 //
 // `pageCount` is meaningful only for PDFs (set to QPdfDocument::pageCount()
 // at import time). Images and videos carry the default 1.
+//
+// Display options (V009__media_display.sql) let the operator pin how each
+// image/video frames on the projection output — see the column comments in
+// that migration. `fitMode` "default" defers to SettingsService.mediaDefaultFit;
+// `cropRect` is a normalized 0..1 sub-region applied before fit ({0,0,1,1} =
+// whole frame). `loopVideo`/`muted` are video-only.
 struct MediaItem
 {
     Q_GADGET
@@ -29,6 +36,10 @@ struct MediaItem
     Q_PROPERTY(qint64  addedAt    MEMBER addedAt)
     Q_PROPERTY(qint64  durationMs MEMBER durationMs)
     Q_PROPERTY(int     pageCount  MEMBER pageCount)
+    Q_PROPERTY(QString fitMode    MEMBER fitMode)
+    Q_PROPERTY(QRectF  cropRect   MEMBER crop)
+    Q_PROPERTY(bool    loopVideo  MEMBER loopVideo)
+    Q_PROPERTY(bool    muted      MEMBER muted)
 
 public:
     qint64  id         = 0;
@@ -39,6 +50,10 @@ public:
     qint64  addedAt    = 0;   // unix epoch ms
     qint64  durationMs = 0;   // video clip length in ms; 0 for images / not yet probed
     int     pageCount  = 1;   // PDF page count; 1 for images/videos
+    QString fitMode    = QStringLiteral("default");  // default|contain|cover|stretch
+    QRectF  crop       = QRectF(0, 0, 1, 1);         // normalized 0..1 crop sub-region
+    bool    loopVideo  = true;                        // video: restart at end
+    bool    muted      = false;                       // video: force-mute
 };
 
 }  // namespace crater
