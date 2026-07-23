@@ -36,6 +36,7 @@
 #include "NdiService.h"
 #include "PdfPageImageProvider.h"
 #include "RichTextHelper.h"
+#include "TranslationService.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
@@ -502,6 +503,19 @@ int main(int argc, char* argv[])
             QCoreApplication::exit(-1);
         },
         Qt::QueuedConnection);
+
+    // ─── UI language ────────────────────────────────────────────────────
+    // Install the operator's chosen translation catalog BEFORE loadFromModule
+    // so the very first paint is already localized (no retranslate needed
+    // pre-load). TranslationService also owns the LIVE switch: writing
+    // SettingsService.language — or calling TranslationService.setLanguage() —
+    // swaps the QTranslator and calls engine.retranslate(), re-evaluating every
+    // qsTr() binding across the console with no restart. Must come after the
+    // engine exists (it holds the engine to retranslate) and before QML loads
+    // (so the singleton resolves and the catalog is already installed).
+    crater::TranslationService translationService(&app, &engine, &settingsService);
+    translationService.applyPersistedLanguage();
+    qmlRegisterSingletonInstance("Crater", 1, 0, "TranslationService", &translationService);
 
     // Register the PDF image provider BEFORE loading QML so any binding
     // hit during component creation can already resolve image://pdfpage/...

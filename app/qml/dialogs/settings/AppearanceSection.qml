@@ -1,19 +1,14 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Appearance — theme, font size, motion preferences.
+// Appearance — theme, font size, motion preferences, and UI language.
 // Wired rows read/write SettingsService directly (no local mirror). The
 // Theme picker writes SettingsService.themeMode (an id in Theme.themes, or
 // "auto"); Theme.qml swaps the active palette live off that value. The
-// Language row is still Soon-flagged (no i18n catalog yet) and keeps a
-// local placeholder so its disabled control renders a sensible selection.
+// Language picker drives TranslationService — it installs the chosen
+// crater_<code>.qm catalog and retranslates the whole console live, no restart.
 Item {
     id: root
-
-    // Placeholder for the still-Soon Language row — the disabled control
-    // shows this without ever writing back. Moves to SettingsService once an
-    // i18n catalog exists.
-    property string language:  "en-US"
 
     // Theme options split into a compact default set (Dark / Light / Midnight
     // + Auto — a single row) and an on-demand "More" set (everything else).
@@ -194,31 +189,63 @@ Item {
             // ── LOCALE ───────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Locale") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+            // Language picker — swaps the console UI language LIVE, no restart.
+            // TranslationService.availableLanguages lists English, every bundled
+            // translated catalog, and any crater_<code>.qm dropped into the user
+            // translations folder. Picking a row writes the choice through
+            // SettingsService.language; TranslationService reinstalls the
+            // QTranslator and retranslates every qsTr binding on the spot. The
+            // native + English label ("Español (Spanish)") keeps rows findable by
+            // typing either name in the dropdown's search field.
+            Item {
+                id: langRow
+                Layout.fillWidth: true
+                Layout.preferredHeight: 56
+
+                readonly property var langs: TranslationService.availableLanguages
+                readonly property string currentCode: TranslationService.currentLanguage
+
+                function labelForCode(code) {
+                    for (var i = 0; i < langs.length; i++)
+                        if (langs[i].code === code) return langs[i].label
+                    return code
+                }
+                function codeForLabel(label) {
+                    for (var i = 0; i < langs.length; i++)
+                        if (langs[i].label === label) return langs[i].code
+                    return "en"
+                }
+
                 Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                        text: qsTr("Language"); color: Theme.color.textPrimary
                        font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
                        font.weight: Theme.font.weightMedium }
 
-                Row {
+                Combobox {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    SelectChip {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: "English (en-US)"
-                        opacity: 0.45
-                        enabled: false
-                        radius: 0
+                    width: 240
+                    searchable: true
+                    placeholder: qsTr("Select language…")
+                    options: langRow.langs.map(function(l) { return l.label })
+                    value: langRow.labelForCode(langRow.currentCode)
+                    onValueSelected: function(label) {
+                        TranslationService.setLanguage(langRow.codeForLabel(label))
                     }
                 }
+            }
+
+            // Honest note: everything past English is machine-assisted, so
+            // operators expect the occasional rough edge and know English is
+            // authoritative. Untranslated strings fall back to English.
+            Text {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.space.xs
+                text: qsTr("Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                wrapMode: Text.WordWrap
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
