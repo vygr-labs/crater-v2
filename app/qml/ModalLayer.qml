@@ -51,6 +51,13 @@ Item {
         sourceComponent: ImportDialog { }
     }
 
+    // ── Media edit (per-item fit / crop / loop / mute) ──────────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "mediaEdit"
+        sourceComponent: MediaEditDialog { }
+    }
+
     // ── Export theme (.craterheme v2 confirmation, ARCHITECTURE.md §10.3) ─
     Loader {
         anchors.fill: parent

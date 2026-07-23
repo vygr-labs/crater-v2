@@ -138,16 +138,25 @@ QtObject {
         libraryPreviewItem = null
     }
 
-    // Route a go-live through the crop-aware overload for image / PDF items
-    // so a staged crop (previewCropRect, mirrored from the Preview cropper)
-    // survives EVERY entry point — Enter, the TopBar Go Live button,
-    // schedule double-click, Ctrl+L. Text kinds use the plain overload,
-    // which resets the crop to full-frame (correct — they have no crop
-    // concept, and the reset stops a stale media crop from leaking onto a
-    // text render).
+    // Route a go-live through the crop-aware overload for media items so a
+    // crop survives EVERY entry point — Enter, the TopBar Go Live button,
+    // schedule double-click, Ctrl+L. Two crop sources by kind:
+    //   • PDF   — the transient Preview cropper (previewCropRect), framed
+    //             ad-hoc per go-live.
+    //   • image/video — the item's SAVED crop (item.cropRect, set in the media
+    //             edit modal and persisted per item). There is no transient
+    //             image/video cropper, so the saved rect is authoritative;
+    //             reading previewCropRect here would leak a stale PDF crop.
+    // Text kinds use the plain overload, which resets the crop to full-frame
+    // (correct — they have no crop concept, and the reset stops a stale media
+    // crop from leaking onto a text render).
     function _projectItemLive(item, page) {
-        if (item && (item.kind === "image" || item.kind === "pdf")) {
+        if (!item) { ProjectionService.goLive(item, page); return }
+        if (item.kind === "pdf") {
             ProjectionService.goLiveWithCrop(item, page, previewCropRect)
+        } else if (item.kind === "image" || item.kind === "video") {
+            ProjectionService.goLiveWithCrop(item, page,
+                                             item.cropRect || Qt.rect(0, 0, 1, 1))
         } else {
             ProjectionService.goLive(item, page)
         }

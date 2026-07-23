@@ -44,7 +44,10 @@ Item {
         mediaKind: (root.active && root._hasPath) ? root._kind : ""
         mediaPath: (root.active && root._hasPath) ? root._path : ""
         muted: true
-        crop:  false
+        // Logos always letterbox on the black matte above — a fixed "contain"
+        // regardless of the operator's global media-fit default, so a logo is
+        // never cropped or stretched.
+        fitMode: "contain"
     }
 
     // Fallback when no logo path is configured. Sized as a fraction of

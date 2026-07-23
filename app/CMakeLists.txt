@@ -165,6 +165,7 @@ qt_add_qml_module(crater
         qml/dialogs/NamingDialog.qml
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
+        qml/dialogs/MediaEditDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
 
@@ -174,6 +175,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/ProjectionSection.qml
         qml/dialogs/settings/ScriptureSection.qml
         qml/dialogs/settings/SongSection.qml
+        qml/dialogs/settings/MediaSection.qml
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml

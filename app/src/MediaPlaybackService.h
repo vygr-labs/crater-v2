@@ -60,8 +60,15 @@ public:
     explicit MediaPlaybackService(QObject* parent = nullptr);
     ~MediaPlaybackService() override;
 
-    Q_INVOKABLE int  acquire(QString sourceUrl, bool wantsAudio);
+    // `loop` sets whether the shared player restarts at end (true, the
+    // historical always-loop behavior) or plays once and holds the last frame
+    // (false). It's a property of the per-URL Entry, so when two subscribers
+    // of the SAME file disagree, the most recent acquire/setLoop wins — a rare
+    // collision (a file used simultaneously as a foreground media item and a
+    // theme-video background). Theme backgrounds always pass true.
+    Q_INVOKABLE int  acquire(QString sourceUrl, bool wantsAudio, bool loop = true);
     Q_INVOKABLE void setWantsAudio(int token, bool wantsAudio);
+    Q_INVOKABLE void setLoop(int token, bool loop);
     Q_INVOKABLE void release(int token);
 
     Q_INVOKABLE void attachOutput(int token, QVideoSink* outSink);
@@ -79,6 +86,7 @@ private:
         QAudioOutput*                 audio  = nullptr;
         QList<Subscriber>             subs;
         QList<QPointer<QVideoSink>>   outputs;
+        bool                          loop   = true;   // last-writer-wins per URL
     };
 
     Entry* entryForToken(int token) const;
