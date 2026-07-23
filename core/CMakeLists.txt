@@ -15,6 +15,7 @@ add_library(crater-core STATIC
     src/db/Transaction.cpp
     src/db/Migrator.cpp
     src/db/DbPaths.cpp
+    src/db/FtsQuery.cpp
 
     # Bundle layer — stored-only ZIP for .craterheme v2 (ARCHITECTURE.md §10).
     src/bundle/Crc32.cpp

@@ -55,6 +55,7 @@ set_source_files_properties(
     qml/LucideIcons.qml
     qml/Workspaces.qml
     qml/AppState.qml
+    qml/SearchFormat.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -68,6 +69,7 @@ qt_add_qml_module(crater
         qml/Theme.qml
         qml/LucideIcons.qml
         qml/Workspaces.qml
+        qml/SearchFormat.qml
         qml/ModalLayer.qml
         qml/ProjectionWindow.qml
         qml/NdiCanvas.qml

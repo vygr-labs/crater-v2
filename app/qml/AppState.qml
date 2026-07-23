@@ -662,6 +662,16 @@ QtObject {
         scriptureInputMode = mode
     }
 
+    // FTS search scope: when false (default) scripture search is scoped to the
+    // active translation; when true it searches across every imported
+    // translation at once (each hit carries its own translation chip).
+    // Session-only, flipped from the scripture gear menu.
+    property bool scriptureSearchAllTranslations: false
+
+    function setScriptureSearchAllTranslations(on) {
+        scriptureSearchAllTranslations = !!on
+    }
+
     // Last view mode the song editor was in. Re-opened editors should
     // land in the operator's last choice rather than always defaulting to
     // structured — a raw-mode user shouldn't have to flip the toggle on

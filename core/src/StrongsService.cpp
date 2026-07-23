@@ -200,8 +200,13 @@ struct StrongsService::Impl
                 "SELECT relativeOrder, word, data FROM dictionary "
                 "WHERE word = ?1 LIMIT 1"));
             dictSearch = dictConn->prepare(QStringLiteral(
+                // ESCAPE '\' so a literal % or _ typed by the user (escaped in
+                // C++ before binding) matches literally instead of acting as a
+                // LIKE wildcard. ?2 is the language pattern (H%/G%/%) — its
+                // wildcards are intentional and carry no backslashes.
                 "SELECT relativeOrder, word, data FROM dictionary "
-                "WHERE (data LIKE ?1 OR word LIKE ?1) AND word LIKE ?2 "
+                "WHERE (data LIKE ?1 ESCAPE '\\' OR word LIKE ?1 ESCAPE '\\') "
+                "  AND word LIKE ?2 "
                 "ORDER BY relativeOrder LIMIT 100"));
             dictBrowse = dictConn->prepare(QStringLiteral(
                 "SELECT relativeOrder, word, data FROM dictionary "
@@ -333,9 +338,16 @@ QList<StrongsEntry> StrongsService::search(QString query, QString language)
     QList<StrongsEntry> out;
     if (!m_impl || !m_impl->dictConn) return out;
     try {
+        // Escape LIKE metacharacters in the user term (backslash first) so a
+        // typed % / _ is literal, matching the ESCAPE '\' clause in dictSearch.
+        QString esc = q;
+        esc.replace(QLatin1Char('\\'), QStringLiteral("\\\\"))
+           .replace(QLatin1Char('%'),  QStringLiteral("\\%"))
+           .replace(QLatin1Char('_'),  QStringLiteral("\\_"));
+
         auto& stmt = m_impl->dictSearch;
         stmt.reset();
-        stmt.bind(1, QStringLiteral("%") + q + QStringLiteral("%"));  // %kw%
+        stmt.bind(1, QStringLiteral("%") + esc + QStringLiteral("%"));  // %kw%
         stmt.bind(2, languagePattern(language));
         while (stmt.step()) out.append(m_impl->entryFromRow(stmt));
     } catch (const db::Error& e) {

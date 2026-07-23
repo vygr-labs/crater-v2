@@ -80,9 +80,10 @@ Item {
         // the index; everything else starts from the full library.
         let result = []
         if (m === "lyrics" && q.length > 0) {
-            // FTS5 (unicode61 tokenizer) is case-insensitive, so the
-            // lowercased debounced query yields the same matches as the
-            // raw input did.
+            // FTS5 over songs_fts. SongService sanitizes the query (quotes each
+            // term, drops sub-3-char words, honors "phrases"/OR/-exclude),
+            // ranks with a title-weighted bm25, and attaches a matched-lyric
+            // snippet to each hit. Matches title + author + lyrics.
             result = SongService.search(q)
         } else if (m === "title" && q.length > 0) {
             result = all.filter(function(s) {
@@ -140,7 +141,9 @@ Item {
                 author:     s.author || "",
                 isFavorite: s.isFavorite,
                 ccli:       s.ccli || "",
-                themeId:    s.themeId || 0
+                themeId:    s.themeId || 0,
+                // Matched-lyric excerpt (lyrics-FTS hits only; empty otherwise).
+                snippet:    s.snippet || ""
             })
         }
         return out
@@ -736,8 +739,15 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
 
+                // A query is active — bold the matched terms in title/subtitle.
+                readonly property bool _hasQuery: root._debouncedQuery.length > 0
+
                 Text {
-                    text: modelData.title
+                    textFormat: parent._hasQuery ? Text.StyledText : Text.PlainText
+                    text: parent._hasQuery
+                            ? SearchFormat.markup(modelData.title, root._debouncedQuery,
+                                                  Theme.color.brand)
+                            : modelData.title
                     color: songRow._selected ? Theme.color.textPrimary
                                              : Theme.color.textTitle
                     font.family: Theme.font.family
@@ -748,11 +758,14 @@ Item {
                     width: parent.width
                 }
                 Text {
-                    // Combined author + CCLI subtitle. Each part is
-                    // independently suppressible via Appearance settings;
-                    // " · " separator only appears when both survive.
-                    visible: text.length > 0
-                    text: {
+                    // Subtitle. For a lyrics-search hit we show the matched
+                    // lyric excerpt (which is far more useful than the author
+                    // while scanning results); otherwise the usual author +
+                    // CCLI line. Each part is independently suppressible via
+                    // Appearance settings; " · " only appears when both survive.
+                    readonly property string _base: {
+                        if ((modelData.snippet || "").length > 0)
+                            return modelData.snippet
                         const parts = []
                         if (modelData.author && modelData.author.length > 0)
                             parts.push(modelData.author)
@@ -761,6 +774,11 @@ Item {
                             parts.push("CCLI " + modelData.ccli)
                         return parts.join(" · ")
                     }
+                    visible: _base.length > 0
+                    textFormat: parent._hasQuery ? Text.StyledText : Text.PlainText
+                    text: parent._hasQuery
+                            ? SearchFormat.markup(_base, root._debouncedQuery, Theme.color.brand)
+                            : _base
                     color: songRow._selected ? Theme.color.textSecondary
                                              : Theme.color.textTertiary
                     font.family: Theme.font.family

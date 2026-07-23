@@ -3,6 +3,7 @@
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
+#include "db/FtsQuery.h"
 #include "db/Statement.h"
 #include "db/Transaction.h"
 #include "import/CanonicalBibleBooks.h"
@@ -296,14 +297,20 @@ QList<SearchHit> BibleService::search(QString query, QString translationCodeFilt
 {
     QList<SearchHit> out;
     if (!m_impl) return out;
-    if (query.trimmed().isEmpty()) return out;
+
+    // Transform the raw query into a safe FTS5 MATCH expression: neutralize
+    // operator chars, drop sub-3-char terms the trigram tokenizer can't match,
+    // honor "phrases" / OR / -exclude. Empty → nothing searchable, bail before
+    // touching FTS (an empty MATCH is itself a syntax error).
+    const db::FtsQuery fts = db::buildFtsQuery(query);
+    if (fts.isEmpty()) return out;
 
     try {
         db::Statement* stmt = translationCodeFilter.isEmpty()
                                 ? &m_impl->searchAll
                                 : &m_impl->searchScoped;
         stmt->reset();
-        stmt->bind(1, query);
+        stmt->bind(1, fts.match);
         if (!translationCodeFilter.isEmpty()) {
             stmt->bind(2, translationCodeFilter);
         }
