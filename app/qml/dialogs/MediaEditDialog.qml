@@ -20,7 +20,7 @@ ModalShell {
     id: root
 
     dialogWidth: 780
-    dialogHeight: 660
+    dialogHeight: 700
     title: qsTr("Edit media")
 
     // Resolved once — the modal IS the editor, so the row can't change out
@@ -45,21 +45,39 @@ ModalShell {
         anchors.margins: Theme.space.lg
 
         // ── Footer (declared first so controls can anchor above it) ──────
-        Row {
+        // Duplicate sits apart on the left; the primary Cancel/Save pair keeps
+        // the bottom-right corner it always occupies.
+        Item {
             id: footer
             anchors.bottom: parent.bottom
+            anchors.left: parent.left
             anchors.right: parent.right
-            spacing: Theme.space.sm
+            height: 40
 
             GhostButton {
-                text: qsTr("Cancel")
-                onClicked: AppState.closeModal()
-            }
-            PrimaryButton {
-                variant: "brand"
-                text: qsTr("Save")
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                iconName: "copy"
+                text: qsTr("Duplicate")
                 enabled: root._valid
-                onClicked: root._save()
+                onClicked: root._duplicate()
+            }
+
+            Row {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.space.sm
+
+                GhostButton {
+                    text: qsTr("Cancel")
+                    onClicked: AppState.closeModal()
+                }
+                PrimaryButton {
+                    variant: "brand"
+                    text: qsTr("Save")
+                    enabled: root._valid
+                    onClicked: root._save()
+                }
             }
         }
 
@@ -71,6 +89,51 @@ ModalShell {
             anchors.bottom: footer.top
             anchors.bottomMargin: Theme.space.lg
             spacing: Theme.space.md
+
+            // Title (inline rename — no room to stack the separate naming modal
+            // on top of this one; the app is single-modal).
+            Item {
+                width: parent.width
+                height: 40
+                Text {
+                    id: titleLabel
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Title")
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
+                    font.weight: Theme.font.weightMedium
+                }
+                Rectangle {
+                    anchors.left: titleLabel.right
+                    anchors.leftMargin: Theme.space.lg
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 36
+                    color: Theme.color.canvas
+                    border.color: titleInput.activeFocus ? Theme.color.brand
+                                                         : Theme.color.borderStrong
+                    border.width: 1
+                    Behavior on border.color {
+                        ColorAnimation { duration: Theme.motion.instant }
+                    }
+                    TextInput {
+                        id: titleInput
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space.md
+                        anchors.rightMargin: Theme.space.md
+                        verticalAlignment: TextInput.AlignVCenter
+                        clip: true
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        selectByMouse: true
+                        text: root._valid ? root.media.title : ""
+                        onAccepted: root._save()
+                    }
+                }
+            }
 
             // Fit mode
             Item {
@@ -229,10 +292,28 @@ ModalShell {
         }
     }
 
-    function _save() {
-        if (!_valid) { AppState.closeModal(); return }
+    // Commit the working set (fit / crop / loop / mute + title) to the row.
+    function _persist() {
         MediaService.setDisplayOptions(media.id, fitMode, cropper.cropRect,
                                        loopVideo, muteAudio)
+        const t = titleInput.text.trim()
+        if (t.length > 0 && t !== media.title)
+            MediaService.rename(media.id, t)
+    }
+
+    function _save() {
+        if (!_valid) { AppState.closeModal(); return }
+        _persist()
+        AppState.closeModal()
+    }
+
+    // Duplicate = save-then-copy: the edits you see are committed to the
+    // original first, so the new "<title> copy" carries the same framing and
+    // nothing is lost. Large videos copy synchronously — a brief pause.
+    function _duplicate() {
+        if (!_valid) { AppState.closeModal(); return }
+        _persist()
+        MediaService.duplicate(media.id)
         AppState.closeModal()
     }
 }
