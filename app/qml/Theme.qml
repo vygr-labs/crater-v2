@@ -47,9 +47,12 @@ QtObject {
     // palette is dark-on-light or light-on-dark (used only to render preview
     // swatches sensibly).
     readonly property var themes: [
-        { id: "dark",     name: qsTr("Dark"),     dark: true  },
-        { id: "light",    name: qsTr("Light"),    dark: false },
-        { id: "midnight", name: qsTr("Midnight"), dark: true  }
+        { id: "dark",         name: qsTr("Dark"),          dark: true  },
+        { id: "light",        name: qsTr("Light"),         dark: false },
+        { id: "midnight",     name: qsTr("Midnight"),      dark: true  },
+        { id: "highContrast", name: qsTr("High Contrast"), dark: true  },
+        { id: "dusk",         name: qsTr("Dusk"),          dark: true  },
+        { id: "sepia",        name: qsTr("Sepia"),         dark: false }
     ]
 
     // Active palette. readonly binding on `activeTheme` → re-evaluates (and
@@ -62,9 +65,12 @@ QtObject {
     // dark, so a stale/invalid persisted value degrades gracefully.
     function paletteFor(id) {
         switch (id) {
-            case "light":    return _lightPalette
-            case "midnight": return _midnightPalette
-            default:         return _darkPalette
+            case "light":        return _lightPalette
+            case "midnight":     return _midnightPalette
+            case "highContrast": return _highContrastPalette
+            case "dusk":         return _duskPalette
+            case "sepia":        return _sepiaPalette
+            default:             return _darkPalette
         }
     }
 
@@ -351,6 +357,216 @@ QtObject {
         readonly property color typeVideo:     "#4fc285"
         readonly property color typeMedia:     "#f0b341"
         readonly property color typeNote:      "#a3a3b0"
+    }
+
+    // ── High Contrast palette (accessibility) ───────────────────────────
+    // Not a mood — a capability. Pure-black surfaces, near-white text at
+    // every tier (even textTertiary clears AA), 2px-worthy borders (border
+    // stack pushed far brighter than the other darks so dividers/focus rings
+    // are unmistakable), and maximally-saturated broadcast/accent hues. For
+    // low-vision operators and for bright/sunlit rooms where the standard
+    // Dark washes out. Brand flips to bright cyan-on-black with pure-black
+    // ink so the primary button hits ~14:1. Every text tier and accent here
+    // is chosen to clear WCAG AA (most clear AAA) on `canvas`.
+    readonly property QtObject _highContrastPalette: QtObject {
+        readonly property color canvas:        "#000000"
+        readonly property color elevated:      "#0a0a0a"
+        readonly property color raised:        "#1a1a1a"
+        readonly property color overlay:       "#262626"   // hover wash — must be seen
+        readonly property color borderSubtle:  "#6b6b6b"   // dividers pushed bright — visibility over subtlety
+        readonly property color borderStrong:  "#ffffff"   // focus ring = pure white
+
+        readonly property color bgSidebar:     "#000000"
+        readonly property color bgContent:     "#050505"
+
+        readonly property color bgMenu:        "#0d0d0d"
+
+        readonly property color textPrimary:   "#ffffff"   // 21:1
+        readonly property color textSecondary: "#e4e4e4"   // ~17:1 — kept bright, no gray dropout
+        readonly property color textTertiary:  "#c2c2c2"   // ~12:1 — even tertiary stays legible
+        readonly property color textDisabled:  "#8a8a8a"   // ~5.6:1 — disabled still readable
+        readonly property color textTitle:     "#ffffff"
+
+        // Bright cyan on black; black ink on the fill (~14:1). Hover lifts
+        // brighter, press darkens. brandInk is pure black (the fill is a
+        // light hue in every state here).
+        readonly property color brand:         "#22d3ee"   // cyan.400
+        readonly property color brandHover:    "#67e8f9"   // cyan.300
+        readonly property color brandPressed:  "#06b6d4"   // cyan.500
+        readonly property color brandSubtle:   "#0d4c52"   // deep cyan — selected row, white text clears AA
+        readonly property color brandInk:      "#000000"   // black ink on bright-cyan fills
+        readonly property color selectionUnfocused: "#3a3a3a"   // clearly-not-black neutral
+        readonly property color cueRailIdle:    "#141414"
+        readonly property color cueRailHover:   "#242424"
+        readonly property color cueRailPreview: "#5c4a1e"   // active — saturated gold
+        readonly property color cueRailLive:    "#5c1a18"   // active — saturated crimson
+        readonly property color langHebrew:     "#67b0ff"   // bright blue
+        readonly property color langGreek:      "#5ee88a"   // bright green
+        readonly property color previewMuted:  "#8a7a4a"
+        readonly property color liveMuted:     "#8a4a4a"
+        readonly property color rowHoverBrand: Qt.rgba(34/255, 211/255, 238/255, 0.22)
+
+        readonly property color live:          "#ff4d4d"   // bright red
+        readonly property color liveSubtle:    "#3a0d0d"
+        readonly property color preview:       "#e6c260"   // bright gold
+        readonly property color previewSubtle: "#332a12"
+        readonly property color goLive:        "#2ee66a"   // bright green
+        readonly property color goLiveHover:   "#5cff8f"
+        readonly property color goLivePressed: "#1fcc5a"
+        readonly property color goLiveInk:     "#000000"
+        readonly property color success:       "#3ae67f"
+        readonly property color warning:       "#ffc93a"
+
+        readonly property color typeSong:      "#ffc266"
+        readonly property color typeScripture: "#66b0ff"
+        readonly property color typeSermon:    "#d29bff"
+        readonly property color typeVideo:     "#5ee88a"
+        readonly property color typeMedia:     "#ffc93a"
+        readonly property color typeNote:      "#c2c2c2"
+    }
+
+    // ── Dusk palette (warm low-blue dark) ───────────────────────────────
+    // The warm sibling of Dark. Neutrals shift from blue-black to brown-black
+    // and text is a warm off-white rather than cool gray — a low-blue-light
+    // surface that preserves dark adaptation in a dim booth and is easier on
+    // the eyes across a long rehearsal. Brand (cyan) and the go-live green
+    // are intentionally NOT warmed: brand identity and the traffic-light "go"
+    // semantic are fixed points. Warmth lives entirely in the neutral stack,
+    // the text, and the broadcast red/gold — where it reinforces the
+    // champagne-preview / crimson-live pairing rather than fighting it.
+    readonly property QtObject _duskPalette: QtObject {
+        readonly property color canvas:        "#14110d"   // warm near-black
+        readonly property color elevated:      "#1c1813"
+        readonly property color raised:        "#2a2419"
+        readonly property color overlay:       "#2f281c"
+        readonly property color borderSubtle:  "#2a2419"
+        readonly property color borderStrong:  "#453b2a"
+
+        readonly property color bgSidebar:     "#18140d"
+        readonly property color bgContent:     "#1a160f"
+
+        readonly property color bgMenu:        "#1f1a12"
+
+        readonly property color textPrimary:   "#ede4d3"   // warm off-white — no clinical white glare
+        readonly property color textSecondary: "#b5a892"
+        readonly property color textTertiary:  "#8a7f6b"
+        readonly property color textDisabled:  "#5f5747"
+        readonly property color textTitle:     "#e0d6c3"
+
+        // Brand carried over from Dark unchanged so brandInk (dark) stays
+        // correct on the bright brandHover hover/selection fills.
+        readonly property color brand:         "#1A767D"
+        readonly property color brandHover:    "#3AC8D4"
+        readonly property color brandPressed:  "#135E64"
+        // Selected-row wash warmed off the cool deep-cyan the other darks use:
+        // the brand teal nudged toward the warm-black surface so it reads as a
+        // deep teal-green rather than a cold cyan patch. Same rationale as
+        // Sepia — stays cool-family (clear of Preview-gold / Live-red) but sits
+        // in the warm palette; the accent bar keeps full `brand` teal.
+        // Pitched deeper/more saturated than a straight warm-nudge so the
+        // FOCUSED selection out-reads `selectionUnfocused` (#2a2419) — an
+        // earlier value sat below it and the active row looked fainter than an
+        // inactive one.
+        readonly property color brandSubtle:   "#173b31"
+        readonly property color brandInk:      "#0a1f25"
+        readonly property color selectionUnfocused: "#2a2419"   // == raised (warm)
+        readonly property color cueRailIdle:    "#1a160f"
+        readonly property color cueRailHover:   "#221c12"
+        readonly property color cueRailPreview: "#4a3d28"   // warm gold — native to dusk
+        readonly property color cueRailLive:    "#4d1918"
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
+        readonly property color previewMuted:  "#5a5345"
+        readonly property color liveMuted:     "#5a3a3a"
+        readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.18)
+
+        readonly property color live:          "#c14a42"   // warm-leaning crimson
+        readonly property color liveSubtle:    "#301410"
+        readonly property color preview:       "#d9bd85"   // warm champagne
+        readonly property color previewSubtle: "#2e2617"
+        readonly property color goLive:        "#22c55e"   // green stays semantic
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
+        readonly property color success:       "#4fc285"
+        readonly property color warning:       "#f0b341"
+
+        readonly property color typeSong:      "#e0b073"
+        readonly property color typeScripture: "#6fa8e6"
+        readonly property color typeSermon:    "#c99cf0"
+        readonly property color typeVideo:     "#6bbf8f"
+        readonly property color typeMedia:     "#f0b341"
+        readonly property color typeNote:      "#a89e88"
+    }
+
+    // ── Sepia palette (warm light / parchment) ──────────────────────────
+    // The warm sibling of Light. Surfaces are warm parchment off-white
+    // instead of clinical gray-white, text is a warm dark brown rather than
+    // near-black — kinder for long scripture-reading sessions and a nod to
+    // Crater's warm-gold heritage / scripture-parchment lineage (see the
+    // brand notes in _darkPalette). Same inversion rules as Light: elevation
+    // reads through borders/shadow, brand hue preserved (teal on cream),
+    // hover/press darken, broadcast + schedule hues deepened for legibility
+    // on a light surface.
+    readonly property QtObject _sepiaPalette: QtObject {
+        readonly property color canvas:        "#ebe3d0"   // parchment page
+        readonly property color elevated:      "#f5efe0"   // panel — warm off-white
+        readonly property color raised:        "#e2d8c0"
+        readonly property color overlay:       "#e8dfc9"
+        readonly property color borderSubtle:  "#d8cdb2"
+        readonly property color borderStrong:  "#b8a988"
+
+        readonly property color bgSidebar:     "#e6ddc8"
+        readonly property color bgContent:     "#f0e9d8"
+
+        readonly property color bgMenu:        "#f5efe0"
+
+        readonly property color textPrimary:   "#3a3226"   // warm dark brown
+        readonly property color textSecondary: "#5f5442"
+        readonly property color textTertiary:  "#847661"
+        readonly property color textDisabled:  "#a89a80"
+        readonly property color textTitle:     "#2e2820"
+
+        readonly property color brand:         "#1A767D"   // teal reads well on cream
+        readonly property color brandHover:    "#135E64"   // darken = emphasis on light
+        readonly property color brandPressed:  "#0E4A4F"
+        // Selected-row wash. Kept in the cool/teal brand family (NOT warmed to
+        // gold/tan) on purpose: a warm selection on parchment drifts toward the
+        // Preview-gold / Warning-amber hues and starts reading as channel state
+        // rather than "selected." But the pale mint clashed on cream, so this is
+        // the brand teal dissolved ~18% into the parchment canvas — a muted sage
+        // that belongs on the surface. The 2px selected-row accent bar stays
+        // full `brand` teal to carry brand identity.
+        readonly property color brandSubtle:   "#c5cfc1"   // brand-in-parchment — sage selection wash
+        readonly property color brandInk:      "#0a1f25"
+        readonly property color selectionUnfocused: "#ddd2ba"   // warm gray — selected, unfocused
+        readonly property color cueRailIdle:    "#ddd2b8"
+        readonly property color cueRailHover:   "#d6cab0"
+        readonly property color cueRailPreview: "#e4cf9a"   // active — deeper gold
+        readonly property color cueRailLive:    "#e8bcae"   // active — deeper red
+        readonly property color langHebrew:     "#1d4ed8"   // deep blue on cream
+        readonly property color langGreek:      "#15803d"   // deep green on cream
+        readonly property color previewMuted:  "#c2b184"
+        readonly property color liveMuted:     "#cba9a0"
+        readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.12)
+
+        readonly property color live:          "#b23a2c"   // crimson, legible on cream
+        readonly property color liveSubtle:    "#f0d9d0"
+        readonly property color preview:       "#a6742f"   // deep amber, legible on cream
+        readonly property color previewSubtle: "#f0e4c8"
+        readonly property color goLive:        "#16a34a"   // deeper green for light bg
+        readonly property color goLiveHover:   "#1eb257"
+        readonly property color goLivePressed: "#12833c"
+        readonly property color goLiveInk:     "#f0fff5"
+        readonly property color success:       "#15803d"
+        readonly property color warning:       "#b45309"
+
+        readonly property color typeSong:      "#9c6b32"
+        readonly property color typeScripture: "#2563cc"
+        readonly property color typeSermon:    "#8b30d9"
+        readonly property color typeVideo:     "#15803d"
+        readonly property color typeMedia:     "#a15c08"
+        readonly property color typeNote:      "#6b6152"
     }
 
     readonly property QtObject space: QtObject {

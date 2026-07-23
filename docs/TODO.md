@@ -66,6 +66,19 @@ Each needs backing infrastructure, not just flipping `enabled: true`.
       **Auto** follows the OS via `Qt.styleHints.colorScheme`. Operator-console
       only (projected slides use their own `.craterheme` themes). Add a theme =
       add a palette QtObject + one row to `Theme.themes`. (QML-only, no C++.)
+- [x] **Tier 1 extra themes** — DONE. Added **High Contrast** (accessibility:
+      pure-black surfaces, AA/AAA text at every tier, bright saturated accents,
+      cyan-on-black brand), **Dusk** (warm low-blue dark for dim booths /
+      long rehearsals), and **Sepia** (warm parchment light for long reads,
+      ties to the warm-gold heritage). Same mechanism — one palette QtObject +
+      one `Theme.themes` row each. Picker `Flow` wraps to 6 swatches unchanged.
+- [ ] **Tier 2/3 extra themes** (backlog, taste-driven — build on request):
+      *Tier 2 established palettes* — Nord, Solarized Dark/Light, Gruvbox,
+      Dracula. *Tier 3 brand-hue variants* — Royal Purple, Amber/Gold,
+      Ecclesial Blue (keep the neutral dark stack, swap only the brand hue).
+      Prereq for Tier 3 to be cheap: add a base-palette + per-theme override
+      layer so a variant is ~5 tokens instead of a full ~45-token copy;
+      today every palette spells out all 45 tokens (no inheritance).
 - [ ] **Language** switcher, `:143-156` — no i18n catalog.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
