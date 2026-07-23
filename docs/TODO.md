@@ -100,9 +100,26 @@ Each needs backing infrastructure, not just flipping `enabled: true`.
       untranslated strings fall back to English. Drop-in `crater_<code>.qm` in
       `<AppData>/Crater/translations/` adds languages with no rebuild. Pipeline +
       docs in `tools/i18n/` and `app/i18n/README.md`.
-  - [ ] *Follow-up:* full **RTL layout mirroring** (`LayoutMirroring`) for
-        Arabic/Hebrew — text renders RTL today but the console layout is not yet
-        mirrored. Also: auto-detect OS locale on first run; expand the bundled set.
+  - [x] *Auto-detect OS language on first run* — DONE.
+        `TranslationService::detectSystemLanguage()` matches
+        `QLocale::system().uiLanguages()` to a shipped catalog (exact region →
+        language-only → Chinese script/region routing); adopted before first
+        paint on a fresh install and persisted. `SettingsService.hasExplicitLanguage()`
+        distinguishes first run from an explicit English choice.
+  - [ ] **RTL layout mirroring (Arabic / Hebrew)** — own PR, multi-day; NOT a
+        flag flip. Arabic text already renders RTL inside its fields, but the
+        console layout is LTR. Plan: gate `LayoutMirroring.enabled` +
+        `childrenInherit` on the active locale's RTL flag (auto-mirrors anchors /
+        `Row` / positioners / Layouts — ~60–70%), then hand-fix what it doesn't
+        touch: window-level popovers (`PopoverMenu` / `Combobox` / context menu
+        position via manual `mapToItem` + `x`), directional icons (chevrons /
+        arrows), hardcoded `Text.AlignLeft/Right`, and gradient / drop-shadow
+        directions. The absolute-positioned theme-editor canvas likely stays LTR
+        by design. Requires Arabic visual QA across ~54 QML files.
+  - [ ] *Smaller i18n follow-ups:* expand the bundled language set; optional
+        `QLocale::setDefault()` on switch so numbers / dates localize too; a few
+        strings use a bare `%2` plural hack (`"Delete %1 item%2?"`) that other
+        languages can't pluralize — needs a real plural form.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
 - [x] **Highlight current verse** — DONE. `SettingsService.highlightCurrentVerse`
