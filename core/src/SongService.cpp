@@ -15,7 +15,9 @@
 #include <QSet>
 #include <QtConcurrent>
 
+#include <algorithm>
 #include <optional>
+#include <vector>
 
 namespace {
 
@@ -150,6 +152,87 @@ QString makeSnippet(const QString& lyrics, const QStringList& terms, int radius 
     if (start > 0)             snip.prepend(QStringLiteral("… "));
     if (end < lyrics.size())   snip.append(QStringLiteral(" …"));
     return snip;
+}
+
+// ── Typo-tolerant fuzzy fallback ────────────────────────────────────────────
+// Used only when exact FTS returns nothing: fuzzy-match the query words
+// against a song's title/author word tokens so a misspelled title still
+// surfaces. All strings here are short (query words, title/author tokens), so
+// the bounded edit-distance stays cheap even across a few thousand songs.
+
+// Bounded Levenshtein: returns the edit distance, or maxDist+1 as soon as it's
+// provably greater (row-minimum prune + length prune), so no full DP is paid
+// for obviously-distant pairs.
+int boundedLevenshtein(const QString& a, const QString& b, int maxDist)
+{
+    const int la = a.size(), lb = b.size();
+    if (qAbs(la - lb) > maxDist) return maxDist + 1;
+    if (la == 0) return lb <= maxDist ? lb : maxDist + 1;
+    if (lb == 0) return la <= maxDist ? la : maxDist + 1;
+
+    std::vector<int> prev(lb + 1), curr(lb + 1);
+    for (int j = 0; j <= lb; ++j) prev[j] = j;
+    for (int i = 1; i <= la; ++i) {
+        curr[0] = i;
+        int rowMin = curr[0];
+        const QChar ca = a.at(i - 1);
+        for (int j = 1; j <= lb; ++j) {
+            const int cost = (ca == b.at(j - 1)) ? 0 : 1;
+            curr[j] = std::min({ prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost });
+            if (curr[j] < rowMin) rowMin = curr[j];
+        }
+        if (rowMin > maxDist) return maxDist + 1;
+        std::swap(prev, curr);
+    }
+    return prev[lb] <= maxDist ? prev[lb] : maxDist + 1;
+}
+
+// Split into lowercased alphanumeric word tokens (punctuation/space delimit).
+QStringList wordTokens(const QString& s)
+{
+    QStringList out;
+    QString cur;
+    for (const QChar& c : s) {
+        if (c.isLetterOrNumber()) {
+            cur.append(c.toLower());
+        } else if (!cur.isEmpty()) {
+            out.append(cur);
+            cur.clear();
+        }
+    }
+    if (!cur.isEmpty()) out.append(cur);
+    return out;
+}
+
+// Max edit distance tolerated for a query word of the given length. Short
+// words get 0 (a 1-char slip on a 3-letter word matches half the dictionary);
+// longer words scale up.
+int termThreshold(int len)
+{
+    if (len <= 3)  return 0;
+    if (len <= 5)  return 1;
+    if (len <= 8)  return 2;
+    return 3;
+}
+
+// Score a candidate: every query term must fuzzily match some token, else the
+// candidate is rejected (returns -1). Otherwise returns the summed distance —
+// lower is a closer match.
+int fuzzyScore(const QStringList& qterms, const QStringList& tokens)
+{
+    int total = 0;
+    for (const QString& q : qterms) {
+        const int thr = termThreshold(q.size());
+        int best = thr + 1;
+        for (const QString& t : tokens) {
+            const int d = boundedLevenshtein(q, t, thr);
+            if (d < best) best = d;
+            if (best == 0) break;
+        }
+        if (best > thr) return -1;
+        total += best;
+    }
+    return total;
 }
 
 }  // namespace
@@ -461,6 +544,37 @@ QList<Song> SongService::search(QString query)
     for (Song& song : out) {
         const QString lyrics = m_impl->fetchFlattenedLyrics(song.id);
         song.snippet = makeSnippet(lyrics, fts.terms);
+    }
+
+    // Typo-tolerant fallback: exact FTS found nothing, so fuzzy-match the query
+    // words against song title + author tokens (metadata only — cheap, and the
+    // title is what operators misspell). allSongs() is cached; this pass only
+    // runs on the otherwise-empty path.
+    if (out.isEmpty()) {
+        QStringList qterms;
+        for (const QString& w : wordTokens(query)) {
+            if (w.size() >= 3) qterms.append(w);
+        }
+        if (!qterms.isEmpty()) {
+            struct Scored { int score; Song song; };
+            std::vector<Scored> scored;
+            const QList<Song> all = allSongs();
+            for (const Song& s : all) {
+                QStringList tokens = wordTokens(s.title);
+                tokens += wordTokens(s.author);
+                const int sc = fuzzyScore(qterms, tokens);
+                if (sc >= 0) scored.push_back({ sc, s });
+            }
+            std::stable_sort(scored.begin(), scored.end(),
+                             [](const Scored& a, const Scored& b) { return a.score < b.score; });
+            constexpr int kFuzzyCap = 25;
+            const int n = std::min<int>(static_cast<int>(scored.size()), kFuzzyCap);
+            for (int i = 0; i < n; ++i) {
+                Song s = scored[i].song;
+                s.fuzzy = true;
+                out.append(std::move(s));
+            }
+        }
     }
     return out;
 }
