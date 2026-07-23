@@ -169,25 +169,46 @@ Item {
     }
 
     // ── Image branch (cropped) ──────────────────────────────────────────
-    // sourceClipRect (Qt 6.6+) crops in source-pixel space; combined with the
-    // fit fillMode the cropped region maps onto the monitor (contain letterboxes
-    // any aspect mismatch, cover fills + clips, stretch distorts). Decoded at
-    // natural size so the clip coordinates read the true source dimensions.
+    // sourceClipRect (Qt 6.6+) crops in source-PIXEL space, so the normalized
+    // cropRect must be scaled by the source's NATURAL dimensions. Those can't be
+    // read off the visible Image itself: once sourceClipRect is set, Image's
+    // sourceSize reports the CLIPPED pixmap size (Qt returns the loaded pixmap's
+    // size when sourceSize is unset), not the natural size — feeding that back
+    // into the clip math shrinks the rect on every reload until it collapses to
+    // nothing (a black frame). So a hidden, un-clipped probe Image carries the
+    // true natural size and the visible Image clips against that. Combined with
+    // the fit fillMode the cropped region maps onto the monitor (contain
+    // letterboxes any aspect mismatch, cover fills + clips, stretch distorts).
     Component {
         id: imageCropComp
-        Image {
-            source: "file:///" + root.mediaPath
-            fillMode: root._imgFill()
-            asynchronous: true
-            cache: true
-            sourceClipRect: {
-                if (sourceSize.width <= 0 || sourceSize.height <= 0)
-                    return Qt.rect(0, 0, 0, 0)
-                const c = root.cropRect
-                return Qt.rect(c.x * sourceSize.width,
-                               c.y * sourceSize.height,
-                               c.width  * sourceSize.width,
-                               c.height * sourceSize.height)
+        Item {
+            // Natural-size probe: no sourceSize cap, no clip, never painted. Its
+            // implicit size IS the source's true pixel dimensions.
+            Image {
+                id: cropProbe
+                source: "file:///" + root.mediaPath
+                asynchronous: true
+                cache: true
+                visible: false
+            }
+            Image {
+                anchors.fill: parent
+                source: "file:///" + root.mediaPath
+                fillMode: root._imgFill()
+                asynchronous: true
+                cache: true
+                // Stay dark until the probe reports the natural size — the first
+                // paint before the clip is computable would otherwise flash the
+                // whole uncropped frame, briefly wrong on a live projection.
+                visible: cropProbe.status === Image.Ready
+                sourceClipRect: {
+                    const nw = cropProbe.implicitWidth
+                    const nh = cropProbe.implicitHeight
+                    if (nw <= 0 || nh <= 0) return Qt.rect(0, 0, 0, 0)
+                    const c = root.cropRect
+                    return Qt.rect(c.x * nw, c.y * nh,
+                                   c.width * nw, c.height * nh)
+                }
             }
         }
     }
