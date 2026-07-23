@@ -47,12 +47,22 @@ QtObject {
     // palette is dark-on-light or light-on-dark (used only to render preview
     // swatches sensibly).
     readonly property var themes: [
-        { id: "dark",         name: qsTr("Dark"),          dark: true  },
-        { id: "light",        name: qsTr("Light"),         dark: false },
-        { id: "midnight",     name: qsTr("Midnight"),      dark: true  },
-        { id: "highContrast", name: qsTr("High Contrast"), dark: true  },
-        { id: "dusk",         name: qsTr("Dusk"),          dark: true  },
-        { id: "sepia",        name: qsTr("Sepia"),         dark: false }
+        { id: "dark",           name: qsTr("Dark"),            dark: true  },
+        { id: "light",          name: qsTr("Light"),           dark: false },
+        { id: "midnight",       name: qsTr("Midnight"),        dark: true  },
+        { id: "highContrast",   name: qsTr("High Contrast"),   dark: true  },
+        { id: "dusk",           name: qsTr("Dusk"),            dark: true  },
+        { id: "sepia",          name: qsTr("Sepia"),           dark: false },
+        // Tier 2 — established third-party palettes
+        { id: "nord",           name: qsTr("Nord"),            dark: true  },
+        { id: "solarizedDark",  name: qsTr("Solarized Dark"),  dark: true  },
+        { id: "solarizedLight", name: qsTr("Solarized Light"), dark: false },
+        { id: "gruvbox",        name: qsTr("Gruvbox"),         dark: true  },
+        { id: "dracula",        name: qsTr("Dracula"),         dark: true  },
+        // Tier 3 — brand-hue variants of Dark
+        { id: "royalPurple",    name: qsTr("Royal Purple"),    dark: true  },
+        { id: "amber",          name: qsTr("Amber"),           dark: true  },
+        { id: "ecclesialBlue",  name: qsTr("Ecclesial Blue"),  dark: true  }
     ]
 
     // Active palette. readonly binding on `activeTheme` → re-evaluates (and
@@ -65,12 +75,20 @@ QtObject {
     // dark, so a stale/invalid persisted value degrades gracefully.
     function paletteFor(id) {
         switch (id) {
-            case "light":        return _lightPalette
-            case "midnight":     return _midnightPalette
-            case "highContrast": return _highContrastPalette
-            case "dusk":         return _duskPalette
-            case "sepia":        return _sepiaPalette
-            default:             return _darkPalette
+            case "light":          return _lightPalette
+            case "midnight":       return _midnightPalette
+            case "highContrast":   return _highContrastPalette
+            case "dusk":           return _duskPalette
+            case "sepia":          return _sepiaPalette
+            case "nord":           return _nordPalette
+            case "solarizedDark":  return _solarizedDarkPalette
+            case "solarizedLight": return _solarizedLightPalette
+            case "gruvbox":        return _gruvboxPalette
+            case "dracula":        return _draculaPalette
+            case "royalPurple":    return _royalPurplePalette
+            case "amber":          return _amberPalette
+            case "ecclesialBlue":  return _ecclesialBluePalette
+            default:               return _darkPalette
         }
     }
 
@@ -567,6 +585,452 @@ QtObject {
         readonly property color typeVideo:     "#15803d"
         readonly property color typeMedia:     "#a15c08"
         readonly property color typeNote:      "#6b6152"
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Tier 2 — established third-party palettes
+    //  Faithful ports of well-known editor themes. Each keeps its own
+    //  neutral stack and text ramp; only the *broadcast* semantics (live =
+    //  red, goLive = green, preview = warm) and the contrast-aware primary
+    //  ink are held fixed so the console still reads the same regardless of
+    //  skin. brandInk stays a DARK ink in every palette: PrimaryButton auto-
+    //  picks white on a deep brand fill (hslLightness < 0.45) and only falls
+    //  back to brandInk on a bright fill (the brand or its brandHover) — so
+    //  each brand/brandHover is pushed clear of the ~0.45 mushy middle.
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── Nord (arctic, blue-gray dark) ───────────────────────────────────
+    // Polar Night surfaces + Snow Storm text + a Frost cyan brand (nord8).
+    // Frost is a *light* hue, so the primary button carries dark ink on it.
+    // Aurora supplies the broadcast/schedule accents (red/yellow/green/
+    // orange/purple).
+    readonly property QtObject _nordPalette: QtObject {
+        readonly property color canvas:        "#2e3440"   // nord0
+        readonly property color elevated:      "#333a47"
+        readonly property color raised:        "#3b4252"   // nord1
+        readonly property color overlay:       "#434c5e"   // nord2 — hover wash
+        readonly property color borderSubtle:  "#3b4252"   // nord1
+        readonly property color borderStrong:  "#4c566a"   // nord3
+        readonly property color bgSidebar:     "#2b303b"
+        readonly property color bgContent:     "#2e3440"
+        readonly property color bgMenu:        "#373e4c"
+        readonly property color textPrimary:   "#eceff4"   // nord6
+        readonly property color textSecondary: "#d8dee9"   // nord4
+        readonly property color textTertiary:  "#8b97ac"
+        readonly property color textDisabled:  "#667085"
+        readonly property color textTitle:     "#e5e9f0"   // nord5
+        readonly property color brand:         "#88c0d0"   // nord8 frost — light hue → dark ink
+        readonly property color brandHover:    "#9fd0dd"
+        readonly property color brandPressed:  "#6ba3b5"
+        readonly property color brandSubtle:   "#35505a"   // deep frost wash — selected row
+        readonly property color brandInk:      "#1c2a30"
+        readonly property color selectionUnfocused: "#3b4252"   // == nord1
+        readonly property color cueRailIdle:    "#333a47"
+        readonly property color cueRailHover:   "#3d4552"
+        readonly property color cueRailPreview: "#4d4531"
+        readonly property color cueRailLive:    "#4d2f33"
+        readonly property color langHebrew:     "#81a1c1"   // nord9
+        readonly property color langGreek:      "#a3be8c"   // nord14
+        readonly property color previewMuted:  "#6b6353"
+        readonly property color liveMuted:     "#6b4a4e"
+        readonly property color rowHoverBrand: Qt.rgba(136/255, 192/255, 208/255, 0.14)
+        readonly property color live:          "#bf616a"   // nord11
+        readonly property color liveSubtle:    "#3a2427"
+        readonly property color preview:       "#ebcb8b"   // nord13
+        readonly property color previewSubtle: "#3a3323"
+        readonly property color goLive:        "#a3be8c"   // nord14 — light green → dark ink
+        readonly property color goLiveHover:   "#b5cca0"
+        readonly property color goLivePressed: "#8fac78"
+        readonly property color goLiveInk:     "#1a2416"
+        readonly property color success:       "#a3be8c"
+        readonly property color warning:       "#ebcb8b"
+        readonly property color typeSong:      "#d08770"   // nord12
+        readonly property color typeScripture: "#81a1c1"   // nord9
+        readonly property color typeSermon:    "#b48ead"   // nord15
+        readonly property color typeVideo:     "#a3be8c"   // nord14
+        readonly property color typeMedia:     "#ebcb8b"   // nord13
+        readonly property color typeNote:      "#9aa5b8"
+    }
+
+    // ── Solarized Dark (Ethan Schoonover) ───────────────────────────────
+    // base03 surfaces + base0/base1 text. Brand is Solarized cyan (deep
+    // enough for white auto-ink, and it keeps Crater's teal identity). The
+    // whole neutral stack is teal-tinted, so the selection wash is pushed to
+    // a brighter, more saturated cyan to still read against it.
+    readonly property QtObject _solarizedDarkPalette: QtObject {
+        readonly property color canvas:        "#002b36"   // base03
+        readonly property color elevated:      "#073642"   // base02
+        readonly property color raised:        "#0a4653"
+        readonly property color overlay:       "#0e4d5b"
+        readonly property color borderSubtle:  "#073642"   // base02
+        readonly property color borderStrong:  "#17505d"
+        readonly property color bgSidebar:     "#00252e"
+        readonly property color bgContent:     "#002b36"
+        readonly property color bgMenu:        "#063a46"
+        readonly property color textPrimary:   "#a7b3b3"
+        readonly property color textSecondary: "#839496"   // base0
+        readonly property color textTertiary:  "#657b83"   // base00
+        readonly property color textDisabled:  "#495a60"
+        readonly property color textTitle:     "#c1cbca"
+        readonly property color brand:         "#2aa198"   // cyan — deep → white auto-ink
+        readonly property color brandHover:    "#3cb9af"
+        readonly property color brandPressed:  "#1f8177"
+        readonly property color brandSubtle:   "#155c54"   // brighter cyan wash over the teal neutrals
+        readonly property color brandInk:      "#002b30"
+        readonly property color selectionUnfocused: "#0f4e56"
+        readonly property color cueRailIdle:    "#063a46"
+        readonly property color cueRailHover:   "#0a4653"
+        readonly property color cueRailPreview: "#3f3a1a"
+        readonly property color cueRailLive:    "#45201f"
+        readonly property color langHebrew:     "#268bd2"   // blue
+        readonly property color langGreek:      "#859900"   // green
+        readonly property color previewMuted:  "#6b6440"
+        readonly property color liveMuted:     "#6b4340"
+        readonly property color rowHoverBrand: Qt.rgba(42/255, 161/255, 152/255, 0.16)
+        readonly property color live:          "#dc322f"   // red
+        readonly property color liveSubtle:    "#3a1615"
+        readonly property color preview:       "#c49a2e"   // yellow, lifted for card legibility
+        readonly property color previewSubtle: "#332c12"
+        readonly property color goLive:        "#859900"   // green — dark olive → light ink
+        readonly property color goLiveHover:   "#96ab0a"
+        readonly property color goLivePressed: "#6f8000"
+        readonly property color goLiveInk:     "#f2f7e2"
+        readonly property color success:       "#859900"
+        readonly property color warning:       "#b58900"
+        readonly property color typeSong:      "#cb4b16"   // orange
+        readonly property color typeScripture: "#268bd2"   // blue
+        readonly property color typeSermon:    "#6c71c4"   // violet
+        readonly property color typeVideo:     "#859900"   // green
+        readonly property color typeMedia:     "#b58900"   // yellow
+        readonly property color typeNote:      "#839496"   // base0
+    }
+
+    // ── Solarized Light (Ethan Schoonover) ──────────────────────────────
+    // base3 parchment surfaces + base01/base02 text. Same cyan brand as the
+    // dark variant (deep teal reads well on cream); hover/press darken for
+    // emphasis-on-light, and the selection wash flips to a pale sage-cyan.
+    readonly property QtObject _solarizedLightPalette: QtObject {
+        readonly property color canvas:        "#eee8d5"   // base2
+        readonly property color elevated:      "#fdf6e3"   // base3
+        readonly property color raised:        "#e6dfc8"
+        readonly property color overlay:       "#e9e2cc"
+        readonly property color borderSubtle:  "#ddd6c1"
+        readonly property color borderStrong:  "#c4bda8"
+        readonly property color bgSidebar:     "#e9e3cf"
+        readonly property color bgContent:     "#f5eeda"
+        readonly property color bgMenu:        "#fdf6e3"
+        readonly property color textPrimary:   "#3d4d4a"
+        readonly property color textSecondary: "#586e75"   // base01
+        readonly property color textTertiary:  "#7d8c8c"
+        readonly property color textDisabled:  "#a8b3ac"
+        readonly property color textTitle:     "#002b36"   // base03
+        readonly property color brand:         "#2aa198"   // cyan — deep → white auto-ink
+        readonly property color brandHover:    "#1f8177"   // darken = emphasis on light
+        readonly property color brandPressed:  "#196a62"
+        readonly property color brandSubtle:   "#cfe4de"   // pale sage-cyan selection wash
+        readonly property color brandInk:      "#002b30"
+        readonly property color selectionUnfocused: "#ddd6c1"
+        readonly property color cueRailIdle:    "#e2dbc5"
+        readonly property color cueRailHover:   "#dcd5be"
+        readonly property color cueRailPreview: "#e8d7a0"
+        readonly property color cueRailLive:    "#ecc9b5"
+        readonly property color langHebrew:     "#268bd2"   // blue
+        readonly property color langGreek:      "#5b7300"   // deep green on cream
+        readonly property color previewMuted:  "#b3a778"
+        readonly property color liveMuted:     "#c2a29a"
+        readonly property color rowHoverBrand: Qt.rgba(42/255, 161/255, 152/255, 0.12)
+        readonly property color live:          "#cb2f2c"   // red, legible on cream
+        readonly property color liveSubtle:    "#f2dcd6"
+        readonly property color preview:       "#a97e12"   // deep gold on cream
+        readonly property color previewSubtle: "#f2e8c8"
+        readonly property color goLive:        "#6a8000"   // deep olive green for cream
+        readonly property color goLiveHover:   "#789000"
+        readonly property color goLivePressed: "#566800"
+        readonly property color goLiveInk:     "#f2f7e2"
+        readonly property color success:       "#5b7300"
+        readonly property color warning:       "#b58900"
+        readonly property color typeSong:      "#b5551a"   // orange, deeper
+        readonly property color typeScripture: "#1f6fb0"   // blue, deeper
+        readonly property color typeSermon:    "#5559b0"   // violet, deeper
+        readonly property color typeVideo:     "#5b7300"   // green
+        readonly property color typeMedia:     "#a97e12"   // gold
+        readonly property color typeNote:      "#6c7a7a"
+    }
+
+    // ── Gruvbox (retro warm dark) ───────────────────────────────────────
+    // bg0/bg1 surfaces + fg1 warm-cream text. Brand is Gruvbox's muted
+    // blue-teal (#458588) — deep enough for white auto-ink and closest in
+    // spirit to Crater's teal. Bright Gruvbox accents drive broadcast +
+    // schedule tints.
+    readonly property QtObject _gruvboxPalette: QtObject {
+        readonly property color canvas:        "#282828"   // bg0
+        readonly property color elevated:      "#32302f"   // bg0_s
+        readonly property color raised:        "#3c3836"   // bg1
+        readonly property color overlay:       "#504945"   // bg2 — hover wash
+        readonly property color borderSubtle:  "#3c3836"   // bg1
+        readonly property color borderStrong:  "#504945"   // bg2
+        readonly property color bgSidebar:     "#242423"
+        readonly property color bgContent:     "#282828"
+        readonly property color bgMenu:        "#363433"
+        readonly property color textPrimary:   "#ebdbb2"   // fg1
+        readonly property color textSecondary: "#d5c4a1"   // fg2
+        readonly property color textTertiary:  "#a89984"   // fg4
+        readonly property color textDisabled:  "#7c6f64"   // bg4
+        readonly property color textTitle:     "#fbf1c7"   // fg0
+        readonly property color brand:         "#458588"   // gruvbox blue/teal — deep → white auto-ink
+        readonly property color brandHover:    "#83a598"   // gruvbox bright blue lift
+        readonly property color brandPressed:  "#366b6e"
+        readonly property color brandSubtle:   "#2f4442"   // deep teal wash — selected row
+        readonly property color brandInk:      "#16211f"
+        readonly property color selectionUnfocused: "#3c3836"   // == bg1
+        readonly property color cueRailIdle:    "#333130"
+        readonly property color cueRailHover:   "#3c3836"
+        readonly property color cueRailPreview: "#4a3f24"
+        readonly property color cueRailLive:    "#4a2620"
+        readonly property color langHebrew:     "#83a598"   // bright blue
+        readonly property color langGreek:      "#b8bb26"   // bright green
+        readonly property color previewMuted:  "#6b5f42"
+        readonly property color liveMuted:     "#6b4038"
+        readonly property color rowHoverBrand: Qt.rgba(69/255, 133/255, 136/255, 0.18)
+        readonly property color live:          "#fb4934"   // bright red
+        readonly property color liveSubtle:    "#3a1a15"
+        readonly property color preview:       "#fabd2f"   // bright yellow-gold
+        readonly property color previewSubtle: "#3a2f14"
+        readonly property color goLive:        "#b8bb26"   // bright lime — light → dark ink
+        readonly property color goLiveHover:   "#c9cc3a"
+        readonly property color goLivePressed: "#9a9d1e"
+        readonly property color goLiveInk:     "#1e2410"
+        readonly property color success:       "#b8bb26"
+        readonly property color warning:       "#fabd2f"
+        readonly property color typeSong:      "#fe8019"   // orange
+        readonly property color typeScripture: "#83a598"   // blue
+        readonly property color typeSermon:    "#d3869b"   // purple
+        readonly property color typeVideo:     "#8ec07c"   // aqua
+        readonly property color typeMedia:     "#fabd2f"   // yellow
+        readonly property color typeNote:      "#a89984"   // fg4
+    }
+
+    // ── Dracula (vibrant purple dark) ───────────────────────────────────
+    // #282a36 surfaces + #f8f8f2 text + the signature purple brand (#bd93f9,
+    // a light hue → dark ink). Dracula's own selection color (#44475a) is
+    // reused verbatim for the unfocused-selection gray.
+    readonly property QtObject _draculaPalette: QtObject {
+        readonly property color canvas:        "#282a36"   // background
+        readonly property color elevated:      "#2f3240"
+        readonly property color raised:        "#383b4a"
+        readonly property color overlay:       "#3e4154"   // hover wash
+        readonly property color borderSubtle:  "#383b4a"
+        readonly property color borderStrong:  "#4d5066"
+        readonly property color bgSidebar:     "#24262f"
+        readonly property color bgContent:     "#282a36"
+        readonly property color bgMenu:        "#343746"
+        readonly property color textPrimary:   "#f8f8f2"   // foreground
+        readonly property color textSecondary: "#b8bcd0"
+        readonly property color textTertiary:  "#8b8fb0"
+        readonly property color textDisabled:  "#6272a4"   // comment
+        readonly property color textTitle:     "#ffffff"
+        readonly property color brand:         "#bd93f9"   // purple — light hue → dark ink
+        readonly property color brandHover:    "#cbaafb"
+        readonly property color brandPressed:  "#a577e8"
+        readonly property color brandSubtle:   "#3d3357"   // deep purple wash — selected row
+        readonly property color brandInk:      "#1e1630"
+        readonly property color selectionUnfocused: "#44475a"   // Dracula's own selection color
+        readonly property color cueRailIdle:    "#313442"
+        readonly property color cueRailHover:   "#3a3d4d"
+        readonly property color cueRailPreview: "#4a4326"
+        readonly property color cueRailLive:    "#4a2630"
+        readonly property color langHebrew:     "#8be9fd"   // cyan
+        readonly property color langGreek:      "#50fa7b"   // green
+        readonly property color previewMuted:  "#6b6452"
+        readonly property color liveMuted:     "#6b4550"
+        readonly property color rowHoverBrand: Qt.rgba(189/255, 147/255, 249/255, 0.14)
+        readonly property color live:          "#ff5555"   // red
+        readonly property color liveSubtle:    "#3d1c1c"
+        readonly property color preview:       "#f1fa8c"   // yellow
+        readonly property color previewSubtle: "#35371c"
+        readonly property color goLive:        "#50fa7b"   // green — light → dark ink
+        readonly property color goLiveHover:   "#6ffb92"
+        readonly property color goLivePressed: "#3ee066"
+        readonly property color goLiveInk:     "#0d2614"
+        readonly property color success:       "#50fa7b"
+        readonly property color warning:       "#ffb86c"   // orange
+        readonly property color typeSong:      "#ffb86c"   // orange
+        readonly property color typeScripture: "#8be9fd"   // cyan
+        readonly property color typeSermon:    "#bd93f9"   // purple
+        readonly property color typeVideo:     "#50fa7b"   // green
+        readonly property color typeMedia:     "#f1fa8c"   // yellow
+        readonly property color typeNote:      "#6272a4"   // comment
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  Tier 3 — brand-hue variants of Dark
+    //  These keep Dark's exact neutral stack, text ramp, broadcast, and
+    //  schedule tints, and swap ONLY the brand family (brand / brandHover /
+    //  brandPressed / brandSubtle / brandInk / rowHoverBrand). The brand is
+    //  chosen deep enough (hslLightness < 0.45) that the primary button
+    //  auto-picks white ink on it; brandHover lifts to a bright tint so the
+    //  ink flips to the dark brandInk on hover — the same white→dark flip the
+    //  default Dark theme already does with its cyan brand.
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── Royal Purple ────────────────────────────────────────────────────
+    // Deep violet brand (violet-800) on Dark's neutrals. There's a mild hue
+    // kinship with the purple `typeSermon` schedule tag, but they never share
+    // a surface (chrome/selection vs a small list tag), so the reads stay
+    // separable.
+    readonly property QtObject _royalPurplePalette: QtObject {
+        readonly property color canvas:        "#111111"
+        readonly property color elevated:      "#18181b"
+        readonly property color raised:        "#27272a"
+        readonly property color overlay:       "#2a2a28"
+        readonly property color borderSubtle:  "#27272a"
+        readonly property color borderStrong:  "#3f3f46"
+        readonly property color bgSidebar:     "#14141a"
+        readonly property color bgContent:     "#16161a"
+        readonly property color bgMenu:        "#1a1a1d"
+        readonly property color textPrimary:   "#e4e4e7"
+        readonly property color textSecondary: "#a1a1aa"
+        readonly property color textTertiary:  "#71717a"
+        readonly property color textDisabled:  "#52525b"
+        readonly property color textTitle:     "#d4d4d8"
+        readonly property color brand:         "#5b21b6"   // violet-800 — deep → white auto-ink
+        readonly property color brandHover:    "#a78bfa"   // violet-400 bright lift → dark ink
+        readonly property color brandPressed:  "#4c1d95"   // violet-900
+        readonly property color brandSubtle:   "#2c2148"   // deep violet wash — selected row
+        readonly property color brandInk:      "#1c1030"
+        readonly property color selectionUnfocused: "#27272a"
+        readonly property color cueRailIdle:    "#1c1c20"
+        readonly property color cueRailHover:   "#22222a"
+        readonly property color cueRailPreview: "#4a3d28"
+        readonly property color cueRailLive:    "#4d1918"
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
+        readonly property color previewMuted:  "#5a5345"
+        readonly property color liveMuted:     "#5a3a3a"
+        readonly property color rowHoverBrand: Qt.rgba(139/255, 92/255, 246/255, 0.16)
+        readonly property color live:          "#b13634"
+        readonly property color liveSubtle:    "#2c0f0f"
+        readonly property color preview:       "#cdb78e"
+        readonly property color previewSubtle: "#2a2418"
+        readonly property color goLive:        "#22c55e"
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
+        readonly property color success:       "#4fc285"
+        readonly property color warning:       "#f0b341"
+        readonly property color typeSong:      "#d4a574"
+        readonly property color typeScripture: "#5b9df0"
+        readonly property color typeSermon:    "#c084fc"
+        readonly property color typeVideo:     "#4fc285"
+        readonly property color typeMedia:     "#f0b341"
+        readonly property color typeNote:      "#a3a3b0"
+    }
+
+    // ── Amber / Gold ────────────────────────────────────────────────────
+    // Rich goldenrod brand on Dark's neutrals — the warmest variant, and the
+    // one with the most semantic tension: the gold selection accent shares a
+    // temperature with Preview champagne, Warning amber, and the song/media
+    // schedule tags. Kept deliberately deeper and more saturated than the
+    // pale champagne Preview so the *selection* read stays distinct, but this
+    // is the Tier-3 variant to drop first if the warm hues start to blur.
+    readonly property QtObject _amberPalette: QtObject {
+        readonly property color canvas:        "#111111"
+        readonly property color elevated:      "#18181b"
+        readonly property color raised:        "#27272a"
+        readonly property color overlay:       "#2a2a28"
+        readonly property color borderSubtle:  "#27272a"
+        readonly property color borderStrong:  "#3f3f46"
+        readonly property color bgSidebar:     "#14141a"
+        readonly property color bgContent:     "#16161a"
+        readonly property color bgMenu:        "#1a1a1d"
+        readonly property color textPrimary:   "#e4e4e7"
+        readonly property color textSecondary: "#a1a1aa"
+        readonly property color textTertiary:  "#71717a"
+        readonly property color textDisabled:  "#52525b"
+        readonly property color textTitle:     "#d4d4d8"
+        readonly property color brand:         "#d4a017"   // goldenrod — light → dark ink
+        readonly property color brandHover:    "#eab308"   // amber-500 bright lift
+        readonly property color brandPressed:  "#a67d0f"
+        readonly property color brandSubtle:   "#3d3115"   // deep amber wash — selected row
+        readonly property color brandInk:      "#241a02"
+        readonly property color selectionUnfocused: "#27272a"
+        readonly property color cueRailIdle:    "#1c1c20"
+        readonly property color cueRailHover:   "#22222a"
+        readonly property color cueRailPreview: "#4a3d28"
+        readonly property color cueRailLive:    "#4d1918"
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
+        readonly property color previewMuted:  "#5a5345"
+        readonly property color liveMuted:     "#5a3a3a"
+        readonly property color rowHoverBrand: Qt.rgba(212/255, 160/255, 23/255, 0.16)
+        readonly property color live:          "#b13634"
+        readonly property color liveSubtle:    "#2c0f0f"
+        readonly property color preview:       "#cdb78e"
+        readonly property color previewSubtle: "#2a2418"
+        readonly property color goLive:        "#22c55e"
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
+        readonly property color success:       "#4fc285"
+        readonly property color warning:       "#f0b341"
+        readonly property color typeSong:      "#d4a574"
+        readonly property color typeScripture: "#5b9df0"
+        readonly property color typeSermon:    "#c084fc"
+        readonly property color typeVideo:     "#4fc285"
+        readonly property color typeMedia:     "#f0b341"
+        readonly property color typeNote:      "#a3a3b0"
+    }
+
+    // ── Ecclesial Blue ──────────────────────────────────────────────────
+    // Deep royal-blue brand (blue-800) on Dark's neutrals — a calm, liturgical
+    // blue. brandHover lifts to blue-400; that light blue coincides with the
+    // langHebrew / scripture blues, but again never on the same surface.
+    readonly property QtObject _ecclesialBluePalette: QtObject {
+        readonly property color canvas:        "#111111"
+        readonly property color elevated:      "#18181b"
+        readonly property color raised:        "#27272a"
+        readonly property color overlay:       "#2a2a28"
+        readonly property color borderSubtle:  "#27272a"
+        readonly property color borderStrong:  "#3f3f46"
+        readonly property color bgSidebar:     "#14141a"
+        readonly property color bgContent:     "#16161a"
+        readonly property color bgMenu:        "#1a1a1d"
+        readonly property color textPrimary:   "#e4e4e7"
+        readonly property color textSecondary: "#a1a1aa"
+        readonly property color textTertiary:  "#71717a"
+        readonly property color textDisabled:  "#52525b"
+        readonly property color textTitle:     "#d4d4d8"
+        readonly property color brand:         "#1e40af"   // blue-800 — deep → white auto-ink
+        readonly property color brandHover:    "#60a5fa"   // blue-400 bright lift → dark ink
+        readonly property color brandPressed:  "#1e3a8a"   // blue-900
+        readonly property color brandSubtle:   "#182a4d"   // deep blue wash — selected row
+        readonly property color brandInk:      "#0b1633"
+        readonly property color selectionUnfocused: "#27272a"
+        readonly property color cueRailIdle:    "#1c1c20"
+        readonly property color cueRailHover:   "#22222a"
+        readonly property color cueRailPreview: "#4a3d28"
+        readonly property color cueRailLive:    "#4d1918"
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
+        readonly property color previewMuted:  "#5a5345"
+        readonly property color liveMuted:     "#5a3a3a"
+        readonly property color rowHoverBrand: Qt.rgba(59/255, 130/255, 246/255, 0.16)
+        readonly property color live:          "#b13634"
+        readonly property color liveSubtle:    "#2c0f0f"
+        readonly property color preview:       "#cdb78e"
+        readonly property color previewSubtle: "#2a2418"
+        readonly property color goLive:        "#22c55e"
+        readonly property color goLiveHover:   "#3ad273"
+        readonly property color goLivePressed: "#1cae54"
+        readonly property color goLiveInk:     "#0a1f10"
+        readonly property color success:       "#4fc285"
+        readonly property color warning:       "#f0b341"
+        readonly property color typeSong:      "#d4a574"
+        readonly property color typeScripture: "#5b9df0"
+        readonly property color typeSermon:    "#c084fc"
+        readonly property color typeVideo:     "#4fc285"
+        readonly property color typeMedia:     "#f0b341"
+        readonly property color typeNote:      "#a3a3b0"
     }
 
     readonly property QtObject space: QtObject {

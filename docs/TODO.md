@@ -72,13 +72,21 @@ Each needs backing infrastructure, not just flipping `enabled: true`.
       long rehearsals), and **Sepia** (warm parchment light for long reads,
       ties to the warm-gold heritage). Same mechanism — one palette QtObject +
       one `Theme.themes` row each. Picker `Flow` wraps to 6 swatches unchanged.
-- [ ] **Tier 2/3 extra themes** (backlog, taste-driven — build on request):
-      *Tier 2 established palettes* — Nord, Solarized Dark/Light, Gruvbox,
-      Dracula. *Tier 3 brand-hue variants* — Royal Purple, Amber/Gold,
-      Ecclesial Blue (keep the neutral dark stack, swap only the brand hue).
-      Prereq for Tier 3 to be cheap: add a base-palette + per-theme override
-      layer so a variant is ~5 tokens instead of a full ~45-token copy;
-      today every palette spells out all 45 tokens (no inheritance).
+- [x] **Tier 2/3 extra themes** — DONE. Added all eight as full 45-token
+      palette QtObjects (+ registry row + `paletteFor()` case each). *Tier 2
+      established palettes*: **Nord** (frost-cyan brand), **Solarized
+      Dark/Light** (cyan brand, kept for teal continuity), **Gruvbox** (muted
+      blue-teal brand), **Dracula** (purple brand). *Tier 3 brand-hue variants
+      of Dark* (Dark's neutrals, only the brand family swapped): **Royal
+      Purple** (violet-800), **Amber** (goldenrod), **Ecclesial Blue**
+      (blue-800). Picker now shows 14 swatches + Auto; the `Flow` wraps.
+      Note: **Amber** is the one to watch — its gold selection accent shares a
+      temperature with Preview champagne / Warning amber; drop it first if the
+      warm hues blur.
+- [ ] *Deferred refactor (not blocking):* base-palette + per-theme override
+      layer so a variant is ~5 tokens instead of a full ~45-token copy. Today
+      all 14 palettes spell out every token (no inheritance) — fine at this
+      count, worth doing before the next wave of variants.
 - [ ] **Language** switcher, `:143-156` — no i18n catalog.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
