@@ -348,7 +348,7 @@ Item {
                                 Text {
                                     anchors.bottom: parent.bottom
                                     text: modelData.text
-                                    color: tok._tag ? Theme.color.textPrimary : "#d4d4d8"
+                                    color: tok._tag ? Theme.color.textPrimary : Theme.color.textTitle
                                     font.family: Theme.font.family
                                     font.pixelSize: Math.round(16 * Theme.uiScale)
                                     font.underline: tok._tag
@@ -357,7 +357,7 @@ Item {
                                     visible: tok._tag
                                     anchors.top: parent.top
                                     text: modelData.ref.length > 1 ? modelData.ref.substring(1) : ""
-                                    color: modelData.language === "hebrew" ? "#60a5fa" : "#4ade80"
+                                    color: modelData.language === "hebrew" ? Theme.color.langHebrew : Theme.color.langGreek
                                     font.family: Theme.font.monoFamily
                                     font.pixelSize: Math.round(9 * Theme.uiScale)
                                     font.weight: Theme.font.weightBold

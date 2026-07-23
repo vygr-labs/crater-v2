@@ -213,7 +213,9 @@ Item {
                             id: liveText
                             anchors.centerIn: parent
                             text: "LIVE"
-                            color: Theme.color.brandInk
+                            // White on the crimson `live` pill — matches the
+                            // LivePanel LIVE indicator. (Was `brandInk`.)
+                            color: "#ffffff"
                             font.family: Theme.font.monoFamily
                             font.pixelSize: 11
                             font.weight: Theme.font.weightBold

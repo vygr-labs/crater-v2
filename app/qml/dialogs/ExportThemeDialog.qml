@@ -244,7 +244,7 @@ ModalShell {
                                 visible: root._isFontIncluded(modelData.family)
                                 anchors.centerIn: parent
                                 name: "check"
-                                color: Theme.color.brandInk
+                                color: "#ffffff"   // check on the deep-teal box
                                 size: 12
                             }
                         }

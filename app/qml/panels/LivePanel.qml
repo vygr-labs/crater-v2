@@ -242,9 +242,9 @@ Rectangle {
                     anchors.bottomMargin: 1
                     width: 32
 
-                    color: card.isActive && card._paneFocused ? "#4d1918"
-                                                              : card.isHover  ? "#22222a"
-                                                                              : "#1c1c20"
+                    color: card.isActive && card._paneFocused ? Theme.color.cueRailLive
+                                                              : card.isHover  ? Theme.color.cueRailHover
+                                                                              : Theme.color.cueRailIdle
                     
                     Text {
                         anchors.centerIn: parent
@@ -297,9 +297,9 @@ Rectangle {
                     anchors.rightMargin: 1
                     anchors.topMargin:   1
 
-                    color: card.isActive && card._paneFocused ? "#4d1918"
-                                                              : card.isHover  ? "#22222a"
-                                                                              : "#1c1c20"
+                    color: card.isActive && card._paneFocused ? Theme.color.cueRailLive
+                                                              : card.isHover  ? Theme.color.cueRailHover
+                                                                              : Theme.color.cueRailIdle
                     
                     Text {
                         anchors.fill: parent
