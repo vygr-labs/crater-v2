@@ -68,8 +68,12 @@
         <translation>भाषा</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>जल्द आ रहा है</translation>
+        <source>Select language…</source>
+        <translation>भाषा चुनें…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>इंटरफ़ेस अनुवाद AI और समुदाय की सहायता से किए जाते हैं; अंग्रेज़ी मूल भाषा है। अनुपलब्ध टेक्स्ट अंग्रेज़ी में दिखाया जाएगा।</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>ब्लैक</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>भेजने के लिए कोई लॉग फ़ाइल नहीं मिली।</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>लॉग फ़ाइल खाली है।</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>NDI रनटाइम नहीं मिला। NDI Tools (ndi.video/tools) इंस्टॉल करें या NDI_RUNTIME_DIR_V6 / V5 को उस डायरेक्टरी पर सेट करें जिसमें Processing.NDI.Lib.x64.dll मौजूद हो।</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>NDI रनटाइम मिला, लेकिन आवश्यक सिंबल गायब हैं — असंगत SDK संस्करण।</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>NDI रनटाइम प्रारंभ करने में विफल (असमर्थित CPU फीचर सेट?)।</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>NDI रनटाइम तैयार है</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: कोई प्रोजेक्शन विंडो पंजीकृत नहीं है</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>NDI प्रेषक बनाने में विफल</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>स्थानीय नेटवर्क पर "%1" के रूप में प्रसारण हो रहा है</translation>
     </message>
 </context>
 </TS>

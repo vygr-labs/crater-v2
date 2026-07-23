@@ -188,6 +188,10 @@ public:
     bool    highlightScriptureMatches() const;
     bool    highlightStrongsMatches() const;
     QString language() const;
+    // True once the operator has explicitly chosen a UI language (the key
+    // exists in QSettings). False on a fresh install — TranslationService uses
+    // this to decide whether to adopt the OS language on first run.
+    bool    hasExplicitLanguage() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);

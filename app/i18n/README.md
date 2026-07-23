@@ -38,8 +38,8 @@ catalog; `qsTr()` renders the literals directly.
 Everything is driven from `tools/i18n/` (`languages.json` is the master list).
 
 ```sh
-# 1. Harvest translatable strings from the QML into the template.
-lupdate -locations none -no-obsolete -recursive app/qml -ts app/i18n/crater_template.ts
+# 1. Harvest translatable strings from QML (qsTr) + C++ (tr) into the template.
+lupdate -locations none -no-obsolete -recursive app/qml app/src -ts app/i18n/crater_template.ts
 
 # 2. Flatten the template to the unique source list.
 python tools/i18n/extract_sources.py app/i18n/crater_template.ts app/i18n/_sources.json
@@ -59,6 +59,13 @@ python tools/i18n/build_qm.py            # add --lrelease <path> if not on PATH
 `{code, english, native, rtl}` row to `kKnownLangs` in
 `app/src/TranslationService.cpp`, list `i18n/crater_<code>.qm` in
 `app/CMakeLists.txt`, provide a `_map_<code>.json`, then run steps 4–5.
+
+**To add a handful of new strings** (e.g. after new `qsTr()`/`tr()` calls)
+without re-translating everything: run steps 1–2, translate only the new
+strings into `app/i18n/_map_addendum.json` shaped as
+`{ "<english>": { "es": "…", …, "ar": "…" } }`, then
+`python tools/i18n/apply_addendum.py` (folds them into every `_map_<code>.json`)
+and run steps 4–5.
 
 **To fix a translation by hand:** edit `crater_<code>.ts` directly (in Qt
 Linguist or a text editor) and run step 5.

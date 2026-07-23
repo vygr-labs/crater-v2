@@ -68,8 +68,12 @@
         <translation>语言</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>即将推出</translation>
+        <source>Select language…</source>
+        <translation>选择语言…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>界面翻译由 AI 与社区共同完成；源语言为英语。缺失的文本将显示为英语。</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>特黑</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>未找到可发送的日志文件。</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>日志文件为空。</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>未找到 NDI 运行时。请安装 NDI Tools（ndi.video/tools），或将 NDI_RUNTIME_DIR_V6 / V5 设置为包含 Processing.NDI.Lib.x64.dll 的目录。</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>已找到 NDI 运行时，但缺少所需符号 — SDK 版本不兼容。</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>NDI 运行时初始化失败（CPU 功能集不受支持？）。</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>NDI 运行时已就绪</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI：未注册投影窗口</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>NDI 发送端创建失败</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>以“%1”在本地网络广播</translation>
     </message>
 </context>
 </TS>

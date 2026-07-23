@@ -68,8 +68,12 @@
         <translation>Taal</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Binnenkort</translation>
+        <source>Select language…</source>
+        <translation>Taal selecteren…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Interfacevertalingen worden ondersteund door AI en de community; Engels is de brontaal. Ontbrekende tekst valt terug op Engels.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Zwart</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Er is geen logbestand gevonden om te verzenden.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Het logbestand is leeg.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>NDI-runtime niet gevonden. Installeer NDI Tools (ndi.video/tools) of stel NDI_RUNTIME_DIR_V6 / V5 in op de map met Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>NDI-runtime gevonden, maar vereiste symbolen ontbreken — incompatibele SDK-versie.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Initialisatie van NDI-runtime mislukt (niet-ondersteunde CPU-functieset?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>NDI-runtime gereed</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: geen projectievenster geregistreerd</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Aanmaken van NDI-zender mislukt</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Uitzenden op het lokale netwerk als "%1"</translation>
     </message>
 </context>
 </TS>

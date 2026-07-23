@@ -68,8 +68,12 @@
         <translation>Język</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Wkrótce</translation>
+        <source>Select language…</source>
+        <translation>Wybierz język…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Tłumaczenia interfejsu powstają przy pomocy AI i społeczności; językiem źródłowym jest angielski. Brakujący tekst wyświetla się po angielsku.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Czarna</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Nie znaleziono pliku dziennika do wysłania.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Plik dziennika jest pusty.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Nie znaleziono środowiska uruchomieniowego NDI. Zainstaluj NDI Tools (ndi.video/tools) lub ustaw NDI_RUNTIME_DIR_V6 / V5 na katalog zawierający Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Znaleziono środowisko uruchomieniowe NDI, ale brakuje wymaganych symboli — niezgodna wersja SDK.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Nie udało się zainicjować środowiska uruchomieniowego NDI (nieobsługiwany zestaw funkcji CPU?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Środowisko uruchomieniowe NDI gotowe</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: nie zarejestrowano okna projekcji</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Nie udało się utworzyć nadawcy NDI</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Nadawanie w sieci lokalnej jako „%1”</translation>
     </message>
 </context>
 </TS>
