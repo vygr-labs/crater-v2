@@ -7,10 +7,9 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    // Local placeholder for the still-Soon highlight-current-verse row (wired
-    // next). The wired rows (defaultScriptureVersion, showVerseNumbers,
-    // showScriptureFooter, showStrongsTab) read/write SettingsService directly.
-    property bool   highlightCurrentVerse: true
+    // All rows read/write SettingsService directly (defaultScriptureVersion,
+    // showVerseNumbers, highlightCurrentVerse, showScriptureFooter,
+    // showStrongsTab).
 
     Flickable {
         anchors.fill: parent
@@ -75,27 +74,11 @@ Item {
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Highlight current verse"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Brighten the verse on display"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                    Text { text: qsTr("Step a multi-verse passage one verse at a time, dimming the rest"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    ToggleSwitch {
-                        anchors.verticalCenter: parent.verticalCenter
-                        value: root.highlightCurrentVerse
-                        opacity: 0.45
-                        enabled: false
-                        onToggled: { }
-                    }
-                }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.highlightCurrentVerse
+                    onToggled: SettingsService.highlightCurrentVerse = !SettingsService.highlightCurrentVerse }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
