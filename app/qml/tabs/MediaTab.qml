@@ -137,7 +137,16 @@ Item {
             pages:     pages,
             mediaId:   m.id,
             mediaPath: m.path,
-            pageCount: m.pageCount
+            pageCount: m.pageCount,
+            // Per-item display options (MediaService V009). These ride on the
+            // item snapshot into ProjectionService.currentItem so the render
+            // layer (MediaMonitor) applies fit / crop / loop / mute without any
+            // extra lookup. cropRect seeds the Preview cropper so the saved
+            // framing is what goes live by default.
+            fitMode:   m.fitMode,
+            cropRect:  m.cropRect,
+            loopVideo: m.loopVideo,
+            muted:     m.muted
         }
     }
 
@@ -259,6 +268,25 @@ Item {
                   })
               } },
             { label: qsTr("Duplicate"), iconName: "copy" },
+            // Display editing — image / video only (fit / crop / loop / mute).
+            // "Edit…" opens the full modal; "Fit" is the quick right-click set.
+            ...((media.type === "image" || media.type === "video") ? [
+                { label: qsTr("Edit…"), iconName: "sliders",
+                  action: function() {
+                      AppState.openModal("mediaEdit", { mediaId: media.id })
+                  } },
+                { label: qsTr("Fit"), iconName: "maximize",
+                  submenu: [
+                      { label: qsTr("Default"), detail: media.fitMode === "default" ? "✓" : "",
+                        action: function() { MediaService.setFitMode(media.id, "default") } },
+                      { label: qsTr("Contain"), detail: media.fitMode === "contain" ? "✓" : "",
+                        action: function() { MediaService.setFitMode(media.id, "contain") } },
+                      { label: qsTr("Cover"),   detail: media.fitMode === "cover"   ? "✓" : "",
+                        action: function() { MediaService.setFitMode(media.id, "cover") } },
+                      { label: qsTr("Stretch"), detail: media.fitMode === "stretch" ? "✓" : "",
+                        action: function() { MediaService.setFitMode(media.id, "stretch") } }
+                  ] }
+            ] : []),
             { separator: true },
             { label: qsTr("Add to Schedule"), iconName: "plus",
               action: function() { root.addToScheduleFor(idx) } },

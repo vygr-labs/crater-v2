@@ -249,6 +249,30 @@ both to a "great search" bar:
       the row, add sort options, and keep a short recent-search history.
 
 ### Media
+
+#### Image / video display options — DONE
+Per-item presentation for projected image/video items, plus an app-wide default.
+- [x] **Persistence** (`V009__media_display.sql`): `fit_mode`, `crop_x/y/w/h`,
+      `loop_video`, `muted` columns on `media`; surfaced on `MediaItem` and set
+      via `MediaService.setFitMode` / `setDisplayOptions`.
+- [x] **Fit mode** — Contain / Cover / Stretch (+ a "Default" sentinel that
+      follows the global `SettingsService.mediaDefaultFit`). Resolved and applied
+      inside `MediaMonitor` for image AND video across all surfaces (projection
+      scene, Preview/Live mini-monitors, logo).
+- [x] **Crop** — a saved normalized rect per item (was "deferred" for images);
+      images clip via `Image.sourceClipRect`, video via a clipped/scaled
+      `VideoOutput` (Qt 6 has no video source-clip). Edited in the new **Edit
+      media** modal (crop against the still/first-frame poster). Applied at
+      go-live through `item.cropRect` → `goLiveWithCrop`.
+- [x] **Video loop / mute** — per item; loop threads through the shared
+      `MediaPlaybackService` (per-URL, last-writer-wins), mute ORs into the audio
+      routing.
+- [x] **UI** — new **Settings ▸ Media** pane (global default fit); Media-tile
+      right-click **Edit…** + **Fit ▸** quick submenu; a compact Contain/Cover/
+      Stretch bar in the Preview panel. *Caveat: cropped-video aspect is only
+      exact when the crop matches the clip's aspect (the 16:9-locked cropper on
+      16:9 footage); an off-aspect crop of off-aspect footage distorts slightly.*
+
 - [ ] Video duration extraction works for new imports, but there's **no backfill**: a video imported before the V004 column (thumbnail already on disk) is skipped by `ensureForAllVideos` (`VideoThumbnailer.cpp:118`), so its duration badge stays hidden. Add a one-time re-probe.
 
 ### Tests
