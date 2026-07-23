@@ -28,6 +28,10 @@ struct Song
     Q_PROPERTY(qint64                 createdAt   MEMBER createdAt)
     Q_PROPERTY(qint64                 updatedAt   MEMBER updatedAt)
     Q_PROPERTY(QList<crater::SongSection> sections MEMBER sections)
+    // Search-only: a short excerpt of the lyric line that matched the query,
+    // with word-boundary ellipses. Empty for non-search Songs and for hits
+    // whose match fell in the title/author rather than the lyrics.
+    Q_PROPERTY(QString                snippet     MEMBER snippet)
 
 public:
     qint64                 id         = 0;
@@ -40,6 +44,7 @@ public:
     qint64                 createdAt  = 0;
     qint64                 updatedAt  = 0;
     QList<SongSection>     sections;
+    QString                snippet;
 };
 
 }  // namespace crater
