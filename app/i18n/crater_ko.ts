@@ -68,8 +68,12 @@
         <translation>언어</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>곧 지원</translation>
+        <source>Select language…</source>
+        <translation>언어 선택…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>인터페이스 번역은 AI와 커뮤니티의 도움을 받아 제공되며, 원본 언어는 영어입니다. 번역이 없는 텍스트는 영어로 표시됩니다.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>블랙</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>전송할 로그 파일을 찾을 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>로그 파일이 비어 있습니다.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>NDI 런타임을 찾을 수 없습니다. NDI Tools(ndi.video/tools)를 설치하거나 NDI_RUNTIME_DIR_V6 / V5를 Processing.NDI.Lib.x64.dll이 있는 디렉터리로 설정하세요.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>NDI 런타임을 찾았지만 필요한 심볼이 없습니다 — 호환되지 않는 SDK 버전입니다.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>NDI 런타임 초기화에 실패했습니다(지원되지 않는 CPU 기능 집합일 수 있음).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>NDI 런타임 준비 완료</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: 등록된 프로젝션 창이 없습니다</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>NDI 송신기 생성에 실패했습니다</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>로컬 네트워크에서 "%1"(으)로 방송 중</translation>
     </message>
 </context>
 </TS>

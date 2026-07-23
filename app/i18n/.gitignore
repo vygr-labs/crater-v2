@@ -3,5 +3,4 @@
 # crater_<code>.ts catalogs; the committed runtime catalogs are the
 # crater_<code>.qm the app bundles. Everything below is disposable scaffolding.
 crater_template.ts
-_sources.json
-_map_*.json
+_*.json

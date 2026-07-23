@@ -68,8 +68,12 @@
         <translation>Ngôn ngữ</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Sắp có</translation>
+        <source>Select language…</source>
+        <translation>Chọn ngôn ngữ…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Bản dịch giao diện được hỗ trợ bởi AI và cộng đồng; tiếng Anh là ngôn ngữ gốc. Văn bản còn thiếu sẽ hiển thị bằng tiếng Anh.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Đen</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Không tìm thấy tệp nhật ký nào để gửi.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Tệp nhật ký trống.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Không tìm thấy runtime NDI. Hãy cài đặt NDI Tools (ndi.video/tools) hoặc đặt NDI_RUNTIME_DIR_V6 / V5 trỏ đến thư mục chứa Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Đã tìm thấy runtime NDI nhưng thiếu các ký hiệu cần thiết — phiên bản SDK không tương thích.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Khởi tạo runtime NDI thất bại (bộ tính năng CPU không được hỗ trợ?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Runtime NDI đã sẵn sàng</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: chưa có cửa sổ trình chiếu nào được đăng ký</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Tạo trình gửi NDI thất bại</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Đang phát trên mạng cục bộ với tên "%1"</translation>
     </message>
 </context>
 </TS>

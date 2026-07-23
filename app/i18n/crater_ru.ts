@@ -68,8 +68,12 @@
         <translation>Язык</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Скоро</translation>
+        <source>Select language…</source>
+        <translation>Выбрать язык…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Переводы интерфейса выполняются с помощью ИИ и сообщества; исходный язык — английский. При отсутствии перевода используется английский текст.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Чёрный</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Файл журнала для отправки не найден.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Файл журнала пуст.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Среда выполнения NDI не найдена. Установите NDI Tools (ndi.video/tools) или укажите в NDI_RUNTIME_DIR_V6 / V5 папку, содержащую Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Среда выполнения NDI найдена, но отсутствуют необходимые символы — несовместимая версия SDK.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Не удалось инициализировать среду выполнения NDI (неподдерживаемый набор функций ЦП?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Среда выполнения NDI готова</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: окно проекции не зарегистрировано</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Не удалось создать отправитель NDI</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Трансляция в локальной сети как «%1»</translation>
     </message>
 </context>
 </TS>

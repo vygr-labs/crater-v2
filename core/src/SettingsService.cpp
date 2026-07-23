@@ -164,6 +164,7 @@ bool    SettingsService::highlightSongMatches() const      { return m_impl->high
 bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
 bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
 QString SettingsService::language() const                { return m_impl->language; }
+bool    SettingsService::hasExplicitLanguage() const     { return m_impl->settings.contains(QString::fromLatin1(Impl::kLanguage)); }
 
 qreal SettingsService::fontScale() const
 {

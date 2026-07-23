@@ -68,8 +68,12 @@
         <translation>Lugha</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Hivi Karibuni</translation>
+        <source>Select language…</source>
+        <translation>Chagua lugha…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Tafsiri za kiolesura zinasaidiwa na AI na jamii; Kiingereza ndicho lugha chanzi. Maandishi yanayokosekana yatarudi kwa Kiingereza.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Nyeusi</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Hakuna faili la kumbukumbu lililopatikana la kutuma.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Faili la kumbukumbu ni tupu.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Runtime ya NDI haikupatikana. Sakinisha NDI Tools (ndi.video/tools) au weka NDI_RUNTIME_DIR_V6 / V5 kwenye saraka yenye Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Runtime ya NDI imepatikana lakini alama zinazohitajika hazipo — toleo la SDK halilingani.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Uanzishaji wa runtime ya NDI umeshindwa (huenda seti ya vipengele vya CPU haitumiki?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Runtime ya NDI iko tayari</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: hakuna dirisha la uonyeshaji lililosajiliwa</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Uundaji wa mtumaji wa NDI umeshindwa</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Inatangaza kwenye mtandao wa ndani kama "%1"</translation>
     </message>
 </context>
 </TS>

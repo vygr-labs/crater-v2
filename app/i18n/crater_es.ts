@@ -68,8 +68,12 @@
         <translation>Idioma</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Próximamente</translation>
+        <source>Select language…</source>
+        <translation>Seleccionar idioma…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Las traducciones de la interfaz cuentan con la ayuda de IA y de la comunidad; el inglés es el idioma de origen. El texto faltante recurre al inglés.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Negra</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>No se encontró ningún archivo de registro para enviar.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>El archivo de registro está vacío.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>No se encontró el runtime de NDI. Instale NDI Tools (ndi.video/tools) o defina NDI_RUNTIME_DIR_V6 / V5 con la carpeta que contiene Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Se encontró el runtime de NDI, pero faltan símbolos requeridos — versión de SDK incompatible.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Error al inicializar el runtime de NDI (¿conjunto de funciones de CPU no compatible?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Runtime de NDI listo</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: no hay ninguna ventana de proyección registrada</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Error al crear el emisor de NDI</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Transmitiendo en la red local como "%1"</translation>
     </message>
 </context>
 </TS>

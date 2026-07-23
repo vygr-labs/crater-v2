@@ -68,8 +68,12 @@
         <translation>言語</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>近日公開</translation>
+        <source>Select language…</source>
+        <translation>言語を選択…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>インターフェースの翻訳はAIとコミュニティの支援によるもので、原文の言語は英語です。未翻訳のテキストは英語で表示されます。</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>ブラック</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>送信するログファイルが見つかりませんでした。</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>ログファイルが空です。</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>NDIランタイムが見つかりません。NDI Tools（ndi.video/tools）をインストールするか、NDI_RUNTIME_DIR_V6 / V5 に Processing.NDI.Lib.x64.dll を含むディレクトリを設定してください。</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>NDIランタイムは見つかりましたが、必要なシンボルが不足しています — SDKバージョンに互換性がありません。</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>NDIランタイムの初期化に失敗しました（サポートされていないCPU機能セットの可能性があります）。</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>NDIランタイムの準備ができました</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: 登録されている投影ウィンドウがありません</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>NDI送信元の作成に失敗しました</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>ローカルネットワークで「%1」として配信中</translation>
     </message>
 </context>
 </TS>

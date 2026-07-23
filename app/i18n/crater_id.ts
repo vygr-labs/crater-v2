@@ -68,8 +68,12 @@
         <translation>Bahasa</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Segera</translation>
+        <source>Select language…</source>
+        <translation>Pilih bahasa…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Terjemahan antarmuka dibantu oleh AI dan komunitas; bahasa sumbernya adalah bahasa Inggris. Teks yang belum diterjemahkan akan kembali ke bahasa Inggris.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Black</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Tidak ada file log yang ditemukan untuk dikirim.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>File log kosong.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Runtime NDI tidak ditemukan. Instal NDI Tools (ndi.video/tools) atau atur NDI_RUNTIME_DIR_V6 / V5 ke direktori yang berisi Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Runtime NDI ditemukan, tetapi simbol yang diperlukan tidak ada — versi SDK tidak kompatibel.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Inisialisasi runtime NDI gagal (set fitur CPU tidak didukung?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Runtime NDI siap</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: tidak ada jendela proyeksi yang terdaftar</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Pembuatan pengirim NDI gagal</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Menyiarkan di jaringan lokal sebagai "%1"</translation>
     </message>
 </context>
 </TS>

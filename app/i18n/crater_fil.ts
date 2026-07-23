@@ -68,8 +68,12 @@
         <translation>Wika</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>Malapit na</translation>
+        <source>Select language…</source>
+        <translation>Pumili ng wika…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>Ang mga pagsasalin ng interface ay tinutulungan ng AI at ng komunidad; Ingles ang pinagmulang wika. Ang mga nawawalang teksto ay babalik sa Ingles.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>Black</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>Walang nahanap na log file na ipapadala.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>Walang laman ang log file.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>Hindi natagpuan ang NDI runtime. I-install ang NDI Tools (ndi.video/tools) o itakda ang NDI_RUNTIME_DIR_V6 / V5 sa direktoryong naglalaman ng Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>Natagpuan ang NDI runtime ngunit kulang ang kinakailangang mga simbolo — hindi tugmang bersyon ng SDK.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>Nabigo ang pagsisimula ng NDI runtime (hindi suportadong CPU feature set?).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>Handa na ang NDI runtime</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: walang nakarehistrong proyeksyon na window</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>Nabigo ang paglikha ng tagapagpadala ng NDI</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>Nagbo-broadcast sa lokal na network bilang "%1"</translation>
     </message>
 </context>
 </TS>

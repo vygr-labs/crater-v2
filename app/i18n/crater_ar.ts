@@ -68,8 +68,12 @@
         <translation>اللغة</translation>
     </message>
     <message>
-        <source>Soon</source>
-        <translation>قريبًا</translation>
+        <source>Select language…</source>
+        <translation>اختر اللغة…</translation>
+    </message>
+    <message>
+        <source>Interface translations are AI- and community-assisted; English is the source language. Missing text falls back to English.</source>
+        <translation>ترجمات الواجهة بمساعدة الذكاء الاصطناعي والمجتمع؛ اللغة الإنجليزية هي اللغة المصدر. النص المفقود يُعرض بالإنجليزية.</translation>
     </message>
 </context>
 <context>
@@ -2816,6 +2820,48 @@
     <message>
         <source>Black</source>
         <translation>أسود</translation>
+    </message>
+</context>
+<context>
+    <name>crater::LogReportService</name>
+    <message>
+        <source>No log file was found to send.</source>
+        <translation>لم يتم العثور على ملف سجل لإرساله.</translation>
+    </message>
+    <message>
+        <source>The log file is empty.</source>
+        <translation>ملف السجل فارغ.</translation>
+    </message>
+</context>
+<context>
+    <name>crater::NdiService</name>
+    <message>
+        <source>NDI runtime not found. Install NDI Tools (ndi.video/tools) or set NDI_RUNTIME_DIR_V6 / V5 to the directory containing Processing.NDI.Lib.x64.dll.</source>
+        <translation>لم يتم العثور على وقت تشغيل NDI. ثبّت NDI Tools (ndi.video/tools) أو اضبط NDI_RUNTIME_DIR_V6 / V5 على المجلد الذي يحتوي على Processing.NDI.Lib.x64.dll.</translation>
+    </message>
+    <message>
+        <source>NDI runtime found but required symbols missing — incompatible SDK version.</source>
+        <translation>تم العثور على وقت تشغيل NDI لكن الرموز المطلوبة مفقودة — إصدار SDK غير متوافق.</translation>
+    </message>
+    <message>
+        <source>NDI runtime initialisation failed (unsupported CPU feature set?).</source>
+        <translation>فشل تهيئة وقت تشغيل NDI (ربما مجموعة ميزات المعالج CPU غير مدعومة؟).</translation>
+    </message>
+    <message>
+        <source>NDI runtime ready</source>
+        <translation>وقت تشغيل NDI جاهز</translation>
+    </message>
+    <message>
+        <source>NDI: no projection window registered</source>
+        <translation>NDI: لا توجد نافذة عرض مسجَّلة</translation>
+    </message>
+    <message>
+        <source>NDI sender creation failed</source>
+        <translation>فشل إنشاء مرسل NDI</translation>
+    </message>
+    <message>
+        <source>Broadcasting on local network as "%1"</source>
+        <translation>البث على الشبكة المحلية باسم "%1"</translation>
     </message>
 </context>
 </TS>
