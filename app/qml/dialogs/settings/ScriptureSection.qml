@@ -7,11 +7,10 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    // Local placeholders for the Soon-flagged rows below. The wired rows
-    // (defaultScriptureVersion, showVerseNumbers, showStrongsTab) read/write
-    // SettingsService directly.
+    // Local placeholder for the still-Soon highlight-current-verse row (wired
+    // next). The wired rows (defaultScriptureVersion, showVerseNumbers,
+    // showScriptureFooter, showStrongsTab) read/write SettingsService directly.
     property bool   highlightCurrentVerse: true
-    property bool   showBookChapterFooter: false
 
     Flickable {
         anchors.fill: parent
@@ -105,25 +104,9 @@ Item {
                     Text { text: qsTr("Show book:chapter in footer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Render a reference line at the bottom of the slide"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    ToggleSwitch {
-                        anchors.verticalCenter: parent.verticalCenter
-                        value: root.showBookChapterFooter
-                        opacity: 0.45
-                        enabled: false
-                        onToggled: { }
-                    }
-                }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.showScriptureFooter
+                    onToggled: SettingsService.showScriptureFooter = !SettingsService.showScriptureFooter }
             }
 
             // ── TABS ─────────────────────────────────────────────────────
