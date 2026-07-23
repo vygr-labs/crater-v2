@@ -128,6 +128,23 @@ Item {
         return layerItem.title || layerItem.reference || ""
     }
 
+    // Composed "Book chapter:verse[-verse]" for the optional footer overlay.
+    // Prefers the structured scriptureRef (drops the translation parenthetical
+    // the title carries) and falls back to the title/reference.
+    readonly property string _footerText: {
+        if (layerKind !== "scripture" || !layerItem) return ""
+        const r = layerItem.scriptureRef
+        if (r && r.book) {
+            let s = r.book + " " + r.chapter
+            if (r.verseStart) {
+                s += ":" + r.verseStart
+                if (r.verseEnd && r.verseEnd !== r.verseStart) s += "-" + r.verseEnd
+            }
+            return s
+        }
+        return _refText
+    }
+
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
@@ -249,5 +266,33 @@ Item {
         passiveFadeMs:  root.passiveFadeMs
         // Live output runs full motion (gradients animate, videos play).
         autoPlayVideos: true
+    }
+
+    // ── Scripture reference footer (global toggle) ──────────────────────
+    // A render-time reference line, drawn on TOP of the theme regardless of
+    // whether the theme authored its own reference node, so Settings >
+    // Scripture > "Show book:chapter in footer" is always honored. Neutral
+    // white-with-outline styling reads on both light and dark theme
+    // backgrounds; sizes/positions relative to the (scaled) layer so it
+    // tracks the output resolution. Hidden when blanked, matching the text
+    // clear fade.
+    Text {
+        id: scriptureFooter
+        visible: root.layerKind === "scripture"
+                 && SettingsService.showScriptureFooter
+                 && !ProjectionService.isClear
+                 && text.length > 0
+        text: root._footerText
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Math.round(root.height * 0.045)
+        color: "#ffffff"
+        style: Text.Outline
+        styleColor: "#cc000000"
+        font.family: Theme.font.family
+        font.pixelSize: Math.max(12, Math.round(root.height * 0.030))
+        font.weight: Theme.font.weightSemiBold
+        opacity: 0.92
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
     }
 }
