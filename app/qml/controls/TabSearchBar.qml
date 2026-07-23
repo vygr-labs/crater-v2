@@ -568,6 +568,10 @@ Item {
                     // Re-apply the controlled-mode segment selection on focus
                     // (clicking outside dismisses the selection on most OSes).
                     if (root.isControlledMode) root._ctrlApplySelection()
+                } else {
+                    // Losing focus with a real query → remember it. Captures the
+                    // common "typed a search, then acted on a result" flow.
+                    AppState.pushRecentSearch(root.tabKey, text)
                 }
             }
 
@@ -762,6 +766,75 @@ Item {
                 onClicked: {
                     AppState.setSearch(root.tabKey, "")
                     inputField.forceActiveFocus()
+                }
+            }
+        }
+
+        // Recent-searches pill — appears left of the shortcut chip when the
+        // box is empty and this tab has a history. Opens the shared context-
+        // menu overlay (renders at window level, so no clipping by the bar),
+        // each entry re-runs that query; a footer clears the history.
+        Rectangle {
+            id: recentBtn
+            readonly property var _recents: AppState.recentSearchesFor(root.tabKey)
+            visible: inputField.text.length === 0
+                  && !root.isControlledMode
+                  && _recents.length > 0
+            anchors.right: hintChip.left
+            anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            height: 18
+            width: recentRow.implicitWidth + 12
+            radius: 0
+            color: recentMa.containsMouse ? Theme.color.overlay : Theme.color.elevated
+            border.color: Theme.color.borderSubtle
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+            Row {
+                id: recentRow
+                anchors.centerIn: parent
+                spacing: 3
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Recent")
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: 11
+                }
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "chevron-down"
+                    color: Theme.color.textTertiary
+                    size: Theme.icon.tiny
+                }
+            }
+
+            MouseArea {
+                id: recentMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    const rec = AppState.recentSearchesFor(root.tabKey)
+                    const items = []
+                    for (let i = 0; i < rec.length; i++) {
+                        const q = rec[i]
+                        items.push({ label: q, iconName: "search",
+                                     action: function() {
+                                         AppState.setSearch(root.tabKey, q)
+                                         inputField.forceActiveFocus()
+                                     } })
+                    }
+                    if (items.length === 0) return
+                    items.push({ separator: true })
+                    items.push({ label: qsTr("Clear recent searches"), iconName: "x",
+                                 action: function() {
+                                     AppState.clearRecentSearches(root.tabKey)
+                                 } })
+                    AppState.openContextMenuAt(recentBtn, recentBtn.width,
+                        recentBtn.height + 6, items,
+                        { menuWidth: 240, dx: -(240 - recentBtn.width) })
                 }
             }
         }

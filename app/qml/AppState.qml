@@ -672,6 +672,44 @@ QtObject {
         scriptureSearchAllTranslations = !!on
     }
 
+    // ── Recent searches (per tab, session-only) ─────────────────────────────
+    // A short most-recent-first history of committed queries per library tab,
+    // surfaced as suggestions when the search box is focused and empty. Not
+    // persisted (mirrors scriptureInputMode); a SettingsService slot can back
+    // it later. Capped so the suggestion row stays compact.
+    property var recentSearches: ({
+        "songs": [], "scripture": [], "strongs": [], "media": []
+    })
+
+    readonly property int recentSearchLimit: 8
+
+    function recentSearchesFor(tabKey) {
+        return recentSearches[tabKey] || []
+    }
+
+    function pushRecentSearch(tabKey, text) {
+        var t = (text || "").trim()
+        if (t.length < 3) return
+        var cur = recentSearches[tabKey] || []
+        // De-dupe case-insensitively, newest first.
+        var next = [t]
+        var tl = t.toLowerCase()
+        for (var i = 0; i < cur.length && next.length < recentSearchLimit; i++) {
+            if (cur[i].toLowerCase() !== tl) next.push(cur[i])
+        }
+        var copy = {}
+        for (var k in recentSearches) copy[k] = recentSearches[k]
+        copy[tabKey] = next
+        recentSearches = copy
+    }
+
+    function clearRecentSearches(tabKey) {
+        var copy = {}
+        for (var k in recentSearches) copy[k] = recentSearches[k]
+        copy[tabKey] = []
+        recentSearches = copy
+    }
+
     // Last view mode the song editor was in. Re-opened editors should
     // land in the operator's last choice rather than always defaulting to
     // structured — a raw-mode user shouldn't have to flip the toggle on
