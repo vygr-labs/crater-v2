@@ -36,6 +36,10 @@ struct SettingsService::Impl
     bool    useHeadlessNdi   = true;
     // Off by default — opt-in low-CPU path for static broadcasts. See header.
     bool    ndiOnDemand      = false;
+    // NDI broadcast format + resolution. Defaults reproduce the pre-existing
+    // fixed path exactly (BGRA, native 1080p render).
+    QString ndiPixelFormat   = QStringLiteral("bgra");
+    QString ndiResolution    = QStringLiteral("native");
     // KJV is the translation that ships with every install, so it's the safe
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
@@ -63,6 +67,8 @@ struct SettingsService::Impl
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
+    static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
+    static constexpr const char* kNdiResolution    = "Settings/ndiResolution";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
@@ -89,6 +95,8 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
+    m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
+    m_impl->ndiResolution     = s.value(QString::fromLatin1(Impl::kNdiResolution),   m_impl->ndiResolution).toString();
     m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
     m_impl->showScriptureFooter = s.value(QString::fromLatin1(Impl::kShowScriptureFooter), m_impl->showScriptureFooter).toBool();
@@ -112,6 +120,8 @@ QString SettingsService::outputMode() const        { return m_impl->outputMode; 
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
+QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
+QString SettingsService::ndiResolution() const     { return m_impl->ndiResolution; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
@@ -218,6 +228,32 @@ void SettingsService::setNdiOnDemand(bool v)
     m_impl->ndiOnDemand = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiOnDemand), v);
     emit ndiOnDemandChanged();
+}
+
+void SettingsService::setNdiPixelFormat(const QString& v)
+{
+    // Guard against arbitrary writes from QML — anything outside the three
+    // known formats collapses to "bgra" so a stray value can't feed an
+    // unhandled FourCC into the sender.
+    const QString n = v.toLower();
+    const QString normalized =
+        (n == QStringLiteral("bgrx") || n == QStringLiteral("uyvy")) ? n
+                                                                     : QStringLiteral("bgra");
+    if (m_impl->ndiPixelFormat == normalized) return;
+    m_impl->ndiPixelFormat = normalized;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiPixelFormat), normalized);
+    emit ndiPixelFormatChanged();
+}
+
+void SettingsService::setNdiResolution(const QString& v)
+{
+    const QString n = v.toLower();
+    const QString normalized =
+        (n == QStringLiteral("720p")) ? n : QStringLiteral("native");
+    if (m_impl->ndiResolution == normalized) return;
+    m_impl->ndiResolution = normalized;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiResolution), normalized);
+    emit ndiResolutionChanged();
 }
 
 void SettingsService::setDefaultScriptureVersion(const QString& code)

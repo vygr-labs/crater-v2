@@ -2,6 +2,7 @@
 #include "NdiAbi.h"
 #include "NdiRenderer.h"
 
+#include <QByteArray>
 #include <QDebug>
 #include <QImage>
 #include <QLibrary>
@@ -11,6 +12,7 @@
 #include <QQuickWindow>
 #include <QSettings>
 #include <QSharedPointer>
+#include <QSize>
 #include <QStringList>
 #include <QTimer>
 
@@ -67,6 +69,17 @@ struct NdiService::Impl
     // slot[0] safely (NDI no longer holds it).
     QImage frameBuffers[2];
     int    activeBuffer = 0;
+
+    // Broadcast format, resolved from Settings at start() (mirrors the
+    // useHeadlessNdi read). fourCC is the direct 32-bit format for the
+    // BGRA/BGRX paths; packUyvy switches to the 4:2:2 packer, which writes
+    // into uyvyBuffers[activeBuffer] — a second ping-pong pair so the buffer
+    // NDI's async send still references stays alive (dst.bits() is not the
+    // UYVY data). targetSize, when valid, downscales each frame before send.
+    NDIlib_FourCC_video_type_e ndiFourCC = NDIlib_FourCC_video_type_BGRA;
+    bool       packUyvy  = false;
+    QSize      targetSize;               // invalid → native (no downscale)
+    QByteArray uyvyBuffers[2];
 
     // In-flight throttle for the async grab path. Set true when a
     // grabToImage() request is dispatched; cleared in the completion
@@ -354,6 +367,26 @@ bool NdiService::start()
     m_impl->activeBuffer    = 0;       // reset ping-pong
     m_impl->captureInFlight = false;   // ensure clean slate after a previous stop
 
+    // Resolve broadcast format + resolution from Settings (same direct-
+    // QSettings read as useHeadlessNdi above, for the same reason). Snapshot
+    // into m_impl so the frame builders don't re-read per frame; a change
+    // applies on the next broadcast (re)start. Unknown values fall back to
+    // the original fixed path (BGRA, native).
+    {
+        const QString fmt = QSettings()
+            .value(QStringLiteral("Settings/ndiPixelFormat"), QStringLiteral("bgra"))
+            .toString().toLower();
+        m_impl->packUyvy  = (fmt == QStringLiteral("uyvy"));
+        m_impl->ndiFourCC = (fmt == QStringLiteral("bgrx"))
+                                ? NDIlib_FourCC_video_type_BGRX
+                                : NDIlib_FourCC_video_type_BGRA;
+
+        const QString res = QSettings()
+            .value(QStringLiteral("Settings/ndiResolution"), QStringLiteral("native"))
+            .toString().toLower();
+        m_impl->targetSize = (res == QStringLiteral("720p")) ? QSize(1280, 720) : QSize();
+    }
+
     if (useHeadless) {
         // Subscribe to the renderer's frame stream. The connection handle
         // lets stop() disconnect cleanly without affecting other QObject
@@ -425,6 +458,8 @@ void NdiService::stop()
     // Release the held buffers — NDI no longer references them.
     m_impl->frameBuffers[0] = QImage();
     m_impl->frameBuffers[1] = QImage();
+    m_impl->uyvyBuffers[0]  = QByteArray();
+    m_impl->uyvyBuffers[1]  = QByteArray();
 
     m_impl->sending       = false;
     m_impl->usingHeadless = false;
@@ -509,33 +544,101 @@ void NdiService::captureFrame()
         // receivers stay locked on the source instead of timing out.
         if (m_impl->blank) dst.fill(Qt::transparent);
 
-        NDIlib_video_frame_v2_t frame = {};
-        frame.xres                  = dst.width();
-        frame.yres                  = dst.height();
-        frame.FourCC                = NDIlib_FourCC_video_type_BGRA;
-        frame.frame_rate_N          = 30000;
-        frame.frame_rate_D          = 1001;   // 29.97 — NTSC-friendly receivers
-        frame.picture_aspect_ratio  = dst.height() > 0
-            ? float(dst.width()) / float(dst.height())
-            : 16.0f / 9.0f;
-        frame.frame_format_type     = NDIlib_frame_format_type_progressive;
-        frame.timecode              = 0;       // 0 = "synthesise on receive"
-        frame.p_data                = dst.bits();
-        frame.line_stride_in_bytes  = dst.bytesPerLine();
-        frame.p_metadata            = nullptr;
-        frame.timestamp             = 0;
-
-        // Prefer async send when the runtime exposes it. Async returns
-        // after queueing — the UI thread doesn't pay for the previous
-        // frame's network transmission. Falls back to sync send on
-        // older SDKs (the optional-symbol resolution earlier handles
-        // whether async is available).
-        if (m_impl->fn_send_video_async) {
-            m_impl->fn_send_video_async(m_impl->sender, &frame);
-        } else {
-            m_impl->fn_send_video(m_impl->sender, &frame);
-        }
+        // Apply the configured resolution + pixel format and send. 30000/1001
+        // (29.97) is the legacy grab path's advertised rate.
+        sendResolvedFrame(dst, 30000, 1001);
     }, Qt::SingleShotConnection);
+}
+
+// Pack an ARGB32 (little-endian: byte order B,G,R,A) image into UYVY 4:2:2.
+// Two horizontal pixels share one U/V pair (averaged); each keeps its own
+// luma. BT.709 limited-range coefficients (video range 16–235 luma), scaled
+// by 256. UYVY byte order per pixel-pair: U, Y0, V, Y1.
+static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
+{
+    const int w = img.width();
+    const int h = img.height();
+    if (w <= 0 || h <= 0) { out.clear(); return; }
+    const int stride = w * 2;                 // 2 bytes per pixel
+    out.resize(stride * h);                   // no-op once capacity is reached
+    auto* dstBase = reinterpret_cast<uint8_t*>(out.data());
+
+    auto clamp8 = [](int v) -> uint8_t {
+        return uint8_t(v < 0 ? 0 : (v > 255 ? 255 : v));
+    };
+
+    for (int y = 0; y < h; ++y) {
+        const uchar* src = img.constScanLine(y);
+        uint8_t* d = dstBase + y * stride;
+        for (int x = 0; x < w; x += 2) {
+            const int b0 = src[4 * x + 0];
+            const int g0 = src[4 * x + 1];
+            const int r0 = src[4 * x + 2];
+            const int x1 = (x + 1 < w) ? (x + 1) : x;   // clamp odd last column
+            const int b1 = src[4 * x1 + 0];
+            const int g1 = src[4 * x1 + 1];
+            const int r1 = src[4 * x1 + 2];
+
+            const int y0 = clamp8((( 47 * r0 + 157 * g0 + 16 * b0) >> 8) + 16);
+            const int y1 = clamp8((( 47 * r1 + 157 * g1 + 16 * b1) >> 8) + 16);
+            const int ra = (r0 + r1) >> 1, ga = (g0 + g1) >> 1, ba = (b0 + b1) >> 1;
+            const int u  = clamp8(((-26 * ra -  87 * ga + 112 * ba) >> 8) + 128);
+            const int v  = clamp8((( 112 * ra - 102 * ga -  10 * ba) >> 8) + 128);
+
+            d[0] = uint8_t(u);
+            d[1] = uint8_t(y0);
+            d[2] = uint8_t(v);
+            d[3] = uint8_t(y1);
+            d += 4;
+        }
+    }
+}
+
+void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
+{
+    // Optional downscale, written back into the SAME ping-pong slot so the
+    // pixels p_data points at stay alive until NDI releases them.
+    if (m_impl->targetSize.isValid()
+        && (dst.width()  != m_impl->targetSize.width()
+         || dst.height() != m_impl->targetSize.height())) {
+        dst = dst.scaled(m_impl->targetSize.width(), m_impl->targetSize.height(),
+                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+
+    NDIlib_video_frame_v2_t frame = {};
+    frame.xres                  = dst.width();
+    frame.yres                  = dst.height();
+    frame.frame_rate_N          = rateN;
+    frame.frame_rate_D          = rateD;
+    frame.picture_aspect_ratio  = dst.height() > 0
+        ? float(dst.width()) / float(dst.height())
+        : 16.0f / 9.0f;
+    frame.frame_format_type     = NDIlib_frame_format_type_progressive;
+    frame.timecode              = 0;       // 0 = "synthesise on receive"
+    frame.p_metadata            = nullptr;
+    frame.timestamp             = 0;
+
+    if (m_impl->packUyvy) {
+        QByteArray& buf = m_impl->uyvyBuffers[m_impl->activeBuffer];
+        packArgb32ToUyvy(dst, buf);
+        frame.FourCC               = NDIlib_FourCC_video_type_UYVY;
+        frame.p_data               = reinterpret_cast<uint8_t*>(buf.data());
+        frame.line_stride_in_bytes = dst.width() * 2;
+    } else {
+        // BGRA or BGRX — identical 32-bit layout; only the FourCC (whether
+        // the alpha byte is honored) differs. dst is ARGB32 → B,G,R,A bytes.
+        frame.FourCC               = m_impl->ndiFourCC;
+        frame.p_data               = dst.bits();
+        frame.line_stride_in_bytes = dst.bytesPerLine();
+    }
+
+    // Prefer async send when the runtime exposes it (returns after queueing);
+    // fall back to sync on older SDKs.
+    if (m_impl->fn_send_video_async) {
+        m_impl->fn_send_video_async(m_impl->sender, &frame);
+    } else {
+        m_impl->fn_send_video(m_impl->sender, &frame);
+    }
 }
 
 void NdiService::onHeadlessFrame(const QImage& image)
@@ -563,33 +666,11 @@ void NdiService::onHeadlessFrame(const QImage& image)
     // without breaking the stream.
     if (m_impl->blank) dst.fill(Qt::transparent);
 
-    NDIlib_video_frame_v2_t frame = {};
-    frame.xres                  = dst.width();
-    frame.yres                  = dst.height();
-    frame.FourCC                = NDIlib_FourCC_video_type_BGRA;
-    // Advertise 60000/1001 (≈59.94 NTSC 60) so receivers play smoothly
-    // at the headless renderer's native rate. Adaptive demotion to 30
-    // Hz still produces valid video — NDI just sees slower delivery
-    // against the advertised rate and tags frames with proportional
-    // timecodes. Receivers handle the gap correctly because clock_video
-    // was set to true at sender create time.
-    frame.frame_rate_N          = 60000;
-    frame.frame_rate_D          = 1001;
-    frame.picture_aspect_ratio  = dst.height() > 0
-        ? float(dst.width()) / float(dst.height())
-        : 16.0f / 9.0f;
-    frame.frame_format_type     = NDIlib_frame_format_type_progressive;
-    frame.timecode              = 0;       // 0 = "synthesise on receive"
-    frame.p_data                = dst.bits();
-    frame.line_stride_in_bytes  = dst.bytesPerLine();
-    frame.p_metadata            = nullptr;
-    frame.timestamp             = 0;
-
-    if (m_impl->fn_send_video_async) {
-        m_impl->fn_send_video_async(m_impl->sender, &frame);
-    } else {
-        m_impl->fn_send_video(m_impl->sender, &frame);
-    }
+    // Apply the configured resolution + pixel format and send. 60000/1001
+    // (≈59.94) is the headless renderer's advertised rate — see below on why
+    // advertising 60 is fine even when adaptive demotion drops delivery to 30.
+    // Receivers handle the gap because clock_video was set true at create.
+    sendResolvedFrame(dst, 60000, 1001);
 }
 
 void NdiService::tallyLoop()
