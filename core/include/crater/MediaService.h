@@ -99,6 +99,20 @@ public:
     // this with durationMs == 0 (no-op for them).
     Q_INVOKABLE void setVideoMeta(qint64 id, qint64 durationMs);
 
+    // ── Per-item display options (V009__media_display.sql) ────────────────
+    // How the item frames on the projection output. See MediaItem's display
+    // fields and the migration comments. Invalid tokens sanitize to "default"
+    // (follow the global SettingsService.mediaDefaultFit).
+    //
+    // setFitMode is the light-touch path for the right-click "Fit ▸" menu and
+    // the Preview-panel segmented control — it changes only fit_mode.
+    // setDisplayOptions writes the whole display set in one row update, used by
+    // the media edit modal's Save (crop + fit + loop + mute together). The crop
+    // rect is clamped into the unit square with a non-degenerate size.
+    Q_INVOKABLE void setFitMode(qint64 id, QString mode);
+    Q_INVOKABLE void setDisplayOptions(qint64 id, QString fitMode, QRectF crop,
+                                       bool loopVideo, bool muted);
+
     // Look up a single media item by id. Returns an empty MediaItem (id == 0)
     // on miss. Used by container theme nodes that reference a background
     // image/video by id rather than carrying the path inline.
