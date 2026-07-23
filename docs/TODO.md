@@ -91,16 +91,42 @@ Each needs backing infrastructure, not just flipping `enabled: true`.
 - [ ] **Language** switcher, `:143-156` — no i18n catalog.
 
 ### Scripture (`app/qml/dialogs/settings/ScriptureSection.qml`)
-- [ ] **Highlight current verse**, `:76-100` — no verse-rendering site to highlight.
-- [ ] **Show book:chapter in footer**, `:103-127` — no slide-footer rendering.
+- [x] **Highlight current verse** — DONE. `SettingsService.highlightCurrentVerse`
+      (default off). When on, `ScriptureTab.buildItemFromVerses` bakes a
+      multi-verse passage into one page per verse (whole passage shown, active
+      verse bright, rest dimmed `{color=gray}`), so the existing slide nav walks
+      the highlight — no `ProjectionService`/render-layer change. Dimming is
+      color-only so the auto-fit size is stable across pages.
+- [x] **Show book:chapter in footer** — DONE. `SettingsService.showScriptureFooter`
+      (default off) + a render-time reference-line overlay in
+      `ProjectionContentLayer` (composed from `scriptureRef`), drawn on top of
+      the theme so it's honored regardless of theme authoring; hides when blanked.
 
 ### Song (`app/qml/dialogs/settings/SongSection.qml`)
-- [ ] **Default theme** picker, `:55-79` — needs a theme popover (shared `SelectChip` dropdown is itself a "future wire-up").
-- [ ] **Auto-advance slides**, `:84-108` — no timer infrastructure.
+- [x] **Default theme** picker — DONE. A `Combobox` bound to
+      `ThemeService.defaultFor/setDefaultFor("song")` — the existing kv-backed
+      per-kind default (a second entry point to ThemesTab's "Set as default"),
+      not a new `SettingsService` key.
+- [x] **Auto-advance slides** — DONE. `SettingsService.autoAdvance` /
+      `autoAdvanceDelaySeconds` / `autoAdvanceLoop`; a `Timer` in `LivePanel`
+      re-arms a full delay on each page change and is gated on a live,
+      multi-slide, non-blanked item. Delay + stop/loop controls added.
 
 ### NDI (`app/qml/dialogs/settings/NdiSection.qml`)
-- [ ] **Quality / format** selector, `:204-227` — fixed to Native BGRA for v1.
-- [ ] **Include audio**, `:231-254` — no audio tap.
+- [x] **Quality / format** selector — DONE. `SettingsService.ndiPixelFormat`
+      (bgra/bgrx/uyvy) + `ndiResolution` (native/720p), read by `NdiService` at
+      broadcast start. Both frame builders route through `sendResolvedFrame()`:
+      BGRA/BGRX direct, a BT.709 UYVY 4:2:2 packer (second ping-pong buffer),
+      and an optional `scaled()` downscale. Format/Resolution pickers replace
+      the disabled chip. *UYVY color path is unverified on a real receiver.*
+- [ ] **Include audio**, `:231-254` — **deferred (large, not a toggle).** No PCM
+      tap exists: QtMultimedia's `QAudioOutput` is playback-only (no sample
+      callback / probe), and the NDI wrapper (`NdiAbi.h`) has no audio ABI. Needs
+      (a) mechanical NDI audio-frame ABI + `clock_audio=true`, and (b) a real
+      capture subsystem — either re-architecting `MediaPlaybackService` audio
+      onto a `QAudioSink`/`QIODevice` we own, or Windows WASAPI loopback. Scope
+      also needs defining (today only foreground video on the open primary output
+      makes sound; theme-video backgrounds are muted). Row stays "Soon".
 
 ---
 
