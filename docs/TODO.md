@@ -253,14 +253,14 @@ Both FTS5 **trigram** searches (Scripture `BibleService::search`, Songs
       (`ESCAPE '\'`) so they match literally instead of acting as wildcards.
 
 Remaining follow-ups (nice-to-have, not blocking):
-- [ ] **Unified song search — title AND lyrics together.** One song query
-      should match on title, author, AND lyrics at once rather than being siloed
-      by the title/lyrics/author mode toggle, so a title typed while in "lyrics"
-      mode (or a lyric typed in "title" mode) still surfaces. Today only the
-      "lyrics" mode is cross-field (FTS over all three columns); "title" and
-      "author" are field-restricted in-memory JS substring filters
-      (`SongsTab.qml`). Make the default a single unified FTS search, and keep
-      the field toggle only as an optional narrowing filter.
+- [x] **Unified song search — title AND lyrics together — DONE.** New **All**
+      mode (now the default) in the Songs search dropdown runs one unified FTS
+      match across title + author + lyrics (title-weighted bm25 + snippet + the
+      typo-tolerant fuzzy fallback). The old "lyrics" mode — which was silently
+      cross-field — is now genuinely lyrics-scoped via an FTS column filter
+      (`SongService::search(query, field)` → `{lyrics}:(…)`). Title/Author stay
+      as optional narrowing substring filters. Follow-up below still covers
+      routing Title/Author through FTS for ranking + fuzzy.
 - [ ] **More scoping.** Scripture book / testament filters; Songs field-scoped
       (title-only vs lyrics) + filter by collection — the title/author modes are
       still in-memory JS substring filters (`SongsTab.qml`), not FTS.

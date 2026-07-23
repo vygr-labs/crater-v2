@@ -4,8 +4,9 @@ import QtQuick.Controls.Basic
 // Songs tab — full library experience matching the Electron desktop app:
 //
 //   • Search bar lives in the sidebar (TabSearchBar) with a mode dropdown
-//     (title / lyrics / author / recent / oldest / newest). FTS5 is used
-//     for the lyrics mode via SongService.search.
+//     (all / title / lyrics / author). FTS5 (SongService.search) backs the
+//     "all" unified search and the lyrics-scoped search; title/author are
+//     in-memory substring filters.
 //   • Top action bar inside this tab carries the song count, the "+" button
 //     to create a new song, and a gear menu (sort, refresh, etc.).
 //   • Single click on a row sets fluid focus and pushes the song to the
@@ -46,7 +47,7 @@ Item {
     }
     onQueryChanged: queryDebounce.restart()
 
-    readonly property string mode:   AppState.librarySearchMode.songs || "lyrics"
+    readonly property string mode:   AppState.librarySearchMode.songs || "all"
     // Sort dimension is independent of filter mode — picking "Sort by Newest"
     // from the gear no longer changes the input placeholder. "none" means
     // natural ordering (title-COLLATE-NOCASE as returned by SongService).
@@ -79,12 +80,14 @@ Item {
         // Step 1 — choose the base set. Lyrics-FTS produces its own list from
         // the index; everything else starts from the full library.
         let result = []
-        if (m === "lyrics" && q.length > 0) {
+        if ((m === "all" || m === "lyrics") && q.length > 0) {
             // FTS5 over songs_fts. SongService sanitizes the query (quotes each
             // term, drops sub-3-char words, honors "phrases"/OR/-exclude),
             // ranks with a title-weighted bm25, and attaches a matched-lyric
-            // snippet to each hit. Matches title + author + lyrics.
-            result = SongService.search(q)
+            // snippet. "all" = unified across title + author + lyrics (with a
+            // typo-tolerant fuzzy fallback); "lyrics" = scoped to the lyrics
+            // column only.
+            result = SongService.search(q, m === "lyrics" ? "lyrics" : "")
         } else if (m === "title" && q.length > 0) {
             result = all.filter(function(s) {
                 return s && (s.title || "").toLowerCase().indexOf(q) !== -1
@@ -902,12 +905,13 @@ Item {
         }
         // Schedule → library sync. When the operator clicks a song row in the
         // schedule pane, scroll the library to that song so what's selected in
-        // both panes agrees. Skipped in lyrics-FTS mode because the active
-        // query may filter the song out of view — chasing it would be confusing
-        // (and electron skips for the same reason — SongSelection.tsx:427).
+        // both panes agrees. Skipped in the FTS-filtered modes ("all"/"lyrics")
+        // because the active query may filter the song out of view — chasing it
+        // would be confusing (electron skips for the same reason —
+        // SongSelection.tsx:427).
         function onSyncSongFromSchedule(songId) {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
-            if (root.mode === "lyrics" && root.query.length > 0) return
+            if ((root.mode === "all" || root.mode === "lyrics") && root.query.length > 0) return
             if (!songId) return
             for (let i = 0; i < root.filteredSongs.length; i++) {
                 if (root.filteredSongs[i].id === songId) {

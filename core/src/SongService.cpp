@@ -514,10 +514,17 @@ Song SongService::fetchSong(qint64 id)
     return s;
 }
 
-QList<Song> SongService::search(QString query)
+QList<Song> SongService::search(QString query, QString field)
 {
     QList<Song> out;
     if (!m_impl) return out;
+
+    // Unified by default; a specific FTS column when scoped (Lyrics mode, etc.).
+    const bool unified = field.isEmpty() || field == QLatin1String("all");
+    const bool scoped  = !unified
+        && (field == QLatin1String("title")
+         || field == QLatin1String("author")
+         || field == QLatin1String("lyrics"));
 
     // Sanitize the raw query into a safe FTS5 MATCH expression (quote every
     // term, drop sub-3-char words the trigram tokenizer can't match, honor
@@ -525,10 +532,16 @@ QList<Song> SongService::search(QString query)
     const db::FtsQuery fts = db::buildFtsQuery(query);
     if (fts.isEmpty()) return out;
 
+    // Column-scope the whole expression when a single field is requested:
+    // `{lyrics}:(…)` restricts every term to that column of the FTS index.
+    const QString matchExpr = scoped
+        ? (QLatin1Char('{') + field + QStringLiteral("}:(") + fts.match + QLatin1Char(')'))
+        : fts.match;
+
     try {
         auto& stmt = m_impl->searchFts;
         stmt.reset();
-        stmt.bind(1, fts.match);
+        stmt.bind(1, matchExpr);
         while (stmt.step()) {
             out.append(m_impl->readSongRow(stmt));
         }
@@ -549,8 +562,9 @@ QList<Song> SongService::search(QString query)
     // Typo-tolerant fallback: exact FTS found nothing, so fuzzy-match the query
     // words against song title + author tokens (metadata only — cheap, and the
     // title is what operators misspell). allSongs() is cached; this pass only
-    // runs on the otherwise-empty path.
-    if (out.isEmpty()) {
+    // runs on the otherwise-empty path, and only for a unified search (fuzzing
+    // title/author while the user explicitly scoped to Lyrics would be wrong).
+    if (out.isEmpty() && unified) {
         QStringList qterms;
         for (const QString& w : wordTokens(query)) {
             if (w.size() >= 3) qterms.append(w);
