@@ -5,8 +5,22 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    // Local placeholder for the still-Soon auto-advance row (wired next).
-    property bool autoAdvance: false
+    // Delay presets (seconds) for the auto-advance picker.
+    readonly property var _delayOptions: [
+        { label: qsTr("5 seconds"),  value: "5"  },
+        { label: qsTr("10 seconds"), value: "10" },
+        { label: qsTr("15 seconds"), value: "15" },
+        { label: qsTr("20 seconds"), value: "20" },
+        { label: qsTr("30 seconds"), value: "30" },
+        { label: qsTr("45 seconds"), value: "45" },
+        { label: qsTr("60 seconds"), value: "60" }
+    ]
+    readonly property string _delayLabel: {
+        const s = String(SettingsService.autoAdvanceDelaySeconds)
+        for (let i = 0; i < _delayOptions.length; i++)
+            if (_delayOptions[i].value === s) return _delayOptions[i].label
+        return qsTr("%1 seconds").arg(s)
+    }
 
     // Song-kind themes for the Default-theme picker, rebuilt when the theme
     // list or the kv-backed per-kind default changes. The picker is a second
@@ -105,30 +119,52 @@ Item {
             // ── PLAYBACK ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Playback") }
 
+            // Master toggle. LivePanel owns the actual advance Timer and gates
+            // it on a live, multi-slide item — this just flips the preference.
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Auto-advance slides"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
                     Text { text: qsTr("Move to next slide automatically after a delay"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.autoAdvance
+                    onToggled: SettingsService.autoAdvance = !SettingsService.autoAdvance }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Delay + loop — dimmed and inert until auto-advance is on.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                opacity: SettingsService.autoAdvance ? 1.0 : 0.45
+                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                       text: qsTr("Advance after"); color: Theme.color.textPrimary
+                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
+                       font.weight: Theme.font.weightMedium }
+                Combobox {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
-
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    ToggleSwitch {
-                        anchors.verticalCenter: parent.verticalCenter
-                        value: root.autoAdvance
-                        opacity: 0.45
-                        enabled: false
-                        onToggled: { }
+                    width: 160
+                    enabled: SettingsService.autoAdvance
+                    searchable: false
+                    options: root._delayOptions
+                    value: root._delayLabel
+                    onValueSelected: function(v) {
+                        const n = parseInt(v, 10)
+                        if (!isNaN(n)) SettingsService.autoAdvanceDelaySeconds = n
                     }
                 }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                opacity: SettingsService.autoAdvance ? 1.0 : 0.45
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Loop at end"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Return to the first slide instead of stopping"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    enabled: SettingsService.autoAdvance
+                    value: SettingsService.autoAdvanceLoop
+                    onToggled: SettingsService.autoAdvanceLoop = !SettingsService.autoAdvanceLoop }
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }

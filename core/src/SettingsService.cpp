@@ -43,6 +43,10 @@ struct SettingsService::Impl
     bool    showStrongs      = true;
     bool    showSongAuthor   = true;
     bool    showSongCcli     = true;
+    // Auto-advance defaults: off, 20 s between slides, no looping.
+    bool    autoAdvance      = false;
+    int     autoAdvanceDelay = 20;
+    bool    autoAdvanceLoop  = false;
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -63,6 +67,9 @@ struct SettingsService::Impl
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
     static constexpr const char* kShowSongCcli   = "Settings/showSongCcli";
+    static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
+    static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
+    static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -85,6 +92,9 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
     m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
     m_impl->showSongCcli   = s.value(QString::fromLatin1(Impl::kShowSongCcli),  m_impl->showSongCcli).toBool();
+    m_impl->autoAdvance      = s.value(QString::fromLatin1(Impl::kAutoAdvance),      m_impl->autoAdvance).toBool();
+    m_impl->autoAdvanceDelay = s.value(QString::fromLatin1(Impl::kAutoAdvanceDelay), m_impl->autoAdvanceDelay).toInt();
+    m_impl->autoAdvanceLoop  = s.value(QString::fromLatin1(Impl::kAutoAdvanceLoop),  m_impl->autoAdvanceLoop).toBool();
 }
 
 SettingsService::~SettingsService() = default;
@@ -104,6 +114,9 @@ bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNum
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
 bool    SettingsService::showSongCcli() const      { return m_impl->showSongCcli; }
+bool    SettingsService::autoAdvance() const             { return m_impl->autoAdvance; }
+int     SettingsService::autoAdvanceDelaySeconds() const { return m_impl->autoAdvanceDelay; }
+bool    SettingsService::autoAdvanceLoop() const         { return m_impl->autoAdvanceLoop; }
 
 qreal SettingsService::fontScale() const
 {
@@ -241,6 +254,33 @@ void SettingsService::setShowSongCcli(bool v)
     m_impl->showSongCcli = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kShowSongCcli), v);
     emit showSongCcliChanged();
+}
+
+void SettingsService::setAutoAdvance(bool v)
+{
+    if (m_impl->autoAdvance == v) return;
+    m_impl->autoAdvance = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvance), v);
+    emit autoAdvanceChanged();
+}
+
+void SettingsService::setAutoAdvanceDelaySeconds(int v)
+{
+    // Clamp to a sane broadcast range: a stray 0 would spin the timer with
+    // no gap, and an absurd value would strand the operator on one slide.
+    const int clamped = qBound(1, v, 600);
+    if (m_impl->autoAdvanceDelay == clamped) return;
+    m_impl->autoAdvanceDelay = clamped;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvanceDelay), clamped);
+    emit autoAdvanceDelaySecondsChanged();
+}
+
+void SettingsService::setAutoAdvanceLoop(bool v)
+{
+    if (m_impl->autoAdvanceLoop == v) return;
+    m_impl->autoAdvanceLoop = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvanceLoop), v);
+    emit autoAdvanceLoopChanged();
 }
 
 }  // namespace crater
