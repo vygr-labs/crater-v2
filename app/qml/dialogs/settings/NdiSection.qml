@@ -62,15 +62,18 @@ Item {
                         name: !NdiService.available ? "alert-triangle"
                             : NdiService.sending    ? "radio"
                                                     : "info"
+                        // When sending, the band fills with the deep brand teal,
+                        // so the ink must be contrast-aware (white on a deep fill,
+                        // brandInk only on a bright one) — same rule as PrimaryButton.
                         color: !NdiService.available ? Theme.color.live
-                             : NdiService.sending    ? Theme.color.brandInk
+                             : NdiService.sending    ? (Theme.color.brand.hslLightness > 0.45 ? Theme.color.brandInk : "#ffffff")
                                                      : Theme.color.brand
                         size: Theme.icon.sm
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: NdiService.diagnostic
-                        color: NdiService.sending ? Theme.color.brandInk
+                        color: NdiService.sending ? (Theme.color.brand.hslLightness > 0.45 ? Theme.color.brandInk : "#ffffff")
                                                   : Theme.color.textPrimary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
