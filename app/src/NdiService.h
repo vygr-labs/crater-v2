@@ -137,6 +137,11 @@ private:
     // buffer stays valid until next send" contract is honored across
     // both paths.
     void onHeadlessFrame(const QImage& image);
+    // Shared tail of both capture paths: applies the configured resolution
+    // downscale + pixel format (BGRA/BGRX direct, or a UYVY pack) to the
+    // just-filled ping-pong buffer `dst` and issues the async/sync send.
+    // rateN/rateD carry each path's advertised frame rate.
+    void sendResolvedFrame(QImage& dst, int rateN, int rateD);
     // Dedicated worker thread body. Sits inside the NDI runtime's
     // blocking get_tally call and posts state changes back to the
     // GUI thread via QMetaObject::invokeMethod with Qt::QueuedConnection.

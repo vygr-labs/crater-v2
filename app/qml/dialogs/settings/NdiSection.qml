@@ -3,14 +3,31 @@ import QtQuick.Layouts
 
 // NDI — Network Device Interface broadcast output.
 // Wired to NdiService: dynamic loading at startup, real send pipeline.
-// Quality + audio knobs stay Soon for v1 — quality is fixed at the
-// projection window's native resolution and BGRA / 29.97 fps; audio
-// is a Phase-3 follow-up (see NdiService.h header comment).
+// Pixel-format + resolution are live (persisted in SettingsService, read by
+// NdiService at broadcast start). Audio stays Soon — it needs a capture
+// subsystem, not a toggle (no PCM tap exists; see NdiService.h header).
 Item {
     id: root
 
-    property string quality:      "Native"
+    // Still-Soon audio row placeholder (deferred — needs a capture subsystem).
     property bool   includeAudio: false
+
+    // Pixel-format + resolution options. `value` is the SettingsService enum
+    // string; NdiService maps it to a FourCC / target size at start().
+    readonly property var _formatOptions: [
+        { label: qsTr("BGRA — full color + alpha"), value: "bgra" },
+        { label: qsTr("BGRX — opaque"),             value: "bgrx" },
+        { label: qsTr("UYVY — low bandwidth"),      value: "uyvy" }
+    ]
+    readonly property var _resolutionOptions: [
+        { label: qsTr("Native (1080p)"),  value: "native" },
+        { label: qsTr("720p (1280×720)"), value: "720p" }
+    ]
+    function _labelFor(opts, val) {
+        for (let i = 0; i < opts.length; i++)
+            if (opts[i].value === val) return opts[i].label
+        return opts.length > 0 ? opts[0].label : ""
+    }
 
     Flickable {
         anchors.fill: parent
@@ -206,27 +223,34 @@ Item {
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Quality"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Resolution + format of the broadcast stream"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                    Text { text: qsTr("Pixel format"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("UYVY halves bandwidth; applies on next broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
                 }
-                Row {
+                Combobox {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.space.md
+                    width: 220
+                    searchable: false
+                    options: root._formatOptions
+                    value: root._labelFor(root._formatOptions, SettingsService.ndiPixelFormat)
+                    onValueSelected: function(v) { SettingsService.ndiPixelFormat = v }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-                    Badge {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Soon")
-                        background: Theme.color.overlay
-                        foreground: Theme.color.textTertiary
-                    }
-                    SelectChip {
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: qsTr("Native BGRA")
-                        opacity: 0.45
-                        enabled: false
-                        radius: 0
-                    }
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Resolution"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Downscale the broadcast; applies on next broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                Combobox {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 220
+                    searchable: false
+                    options: root._resolutionOptions
+                    value: root._labelFor(root._resolutionOptions, SettingsService.ndiResolution)
+                    onValueSelected: function(v) { SettingsService.ndiResolution = v }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
