@@ -143,11 +143,19 @@ Item {
                 ccli:       s.ccli || "",
                 themeId:    s.themeId || 0,
                 // Matched-lyric excerpt (lyrics-FTS hits only; empty otherwise).
-                snippet:    s.snippet || ""
+                snippet:    s.snippet || "",
+                // True when this came from the typo-tolerant fuzzy fallback.
+                fuzzy:      s.fuzzy || false
             })
         }
         return out
     }
+
+    // The current result set came from the typo-tolerant fuzzy fallback
+    // (SongService returns fuzzy hits only when exact FTS found nothing, so
+    // the whole set is uniform — testing the first row is enough).
+    readonly property bool _resultsAreFuzzy:
+        filteredSongs.length > 0 && filteredSongs[0].fuzzy === true
 
     readonly property int fluidIndex: AppState.libraryFluidIndex.songs
 
@@ -290,7 +298,13 @@ Item {
                 const n = root.filteredSongs.length
                 const noun = n === 1 ? qsTr("song") : qsTr("songs")
                 const q = AppState.searchText.songs || ""
-                return n + " " + noun + (q.length > 0 ? qsTr(" matching \"") + q + "\"" : "")
+                if (q.length === 0) return n + " " + noun
+                // Fuzzy fallback: exact search found nothing, these are the
+                // closest title/author matches — label them as such so the
+                // operator knows they're approximate.
+                if (root._resultsAreFuzzy)
+                    return n + " " + noun + qsTr(" similar to \"") + q + "\""
+                return n + " " + noun + qsTr(" matching \"") + q + "\""
             }
             color: Theme.color.textTertiary
             font.family: Theme.font.family

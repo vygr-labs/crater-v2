@@ -32,6 +32,10 @@ struct Song
     // with word-boundary ellipses. Empty for non-search Songs and for hits
     // whose match fell in the title/author rather than the lyrics.
     Q_PROPERTY(QString                snippet     MEMBER snippet)
+    // Search-only: true when this row came from the typo-tolerant fuzzy
+    // fallback (exact FTS found nothing) rather than an exact match. Lets the
+    // UI label the set as "similar results".
+    Q_PROPERTY(bool                   fuzzy       MEMBER fuzzy)
 
 public:
     qint64                 id         = 0;
@@ -45,6 +49,7 @@ public:
     qint64                 updatedAt  = 0;
     QList<SongSection>     sections;
     QString                snippet;
+    bool                   fuzzy      = false;
 };
 
 }  // namespace crater
