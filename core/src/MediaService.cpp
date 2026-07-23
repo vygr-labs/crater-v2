@@ -18,6 +18,7 @@
 #include <QUrl>
 #include <QtConcurrent>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -211,21 +212,28 @@ struct MediaService::Impl
     db::Statement toggleFav;
     db::Statement renameItem;
     db::Statement setMeta;
+    db::Statement setFit;
+    db::Statement setDisplay;
 
     // Cached allMedia() — invalidated on every mutation.
     std::optional<QList<MediaItem>> cachedAll;
 
+    // The full column list, shared by selectAll / selectById so their readRow
+    // indices stay in lock-step. Display columns (V009) trail the original
+    // eight so pre-V009 index positions are untouched.
+    static constexpr auto kColumns =
+        "id, path, title, type, is_favorite, added_at, duration_ms, page_count, "
+        "fit_mode, crop_x, crop_y, crop_w, crop_h, loop_video, muted";
+
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("MediaService"))
         , selectAll(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at, duration_ms, page_count "
-            "FROM media ORDER BY added_at DESC")))
+            "SELECT %1 FROM media ORDER BY added_at DESC").arg(QLatin1String(kColumns))))
         , insertItem(conn.prepare(QStringLiteral(
             "INSERT INTO media (path, title, type, is_favorite, added_at, duration_ms, page_count) "
             "VALUES (?, ?, ?, 0, ?, 0, ?)")))
         , selectById(conn.prepare(QStringLiteral(
-            "SELECT id, path, title, type, is_favorite, added_at, duration_ms, page_count "
-            "FROM media WHERE id = ?")))
+            "SELECT %1 FROM media WHERE id = ?").arg(QLatin1String(kColumns))))
         , deleteItem(conn.prepare(QStringLiteral(
             "DELETE FROM media WHERE id = ?")))
         , toggleFav(conn.prepare(QStringLiteral(
@@ -234,19 +242,29 @@ struct MediaService::Impl
             "UPDATE media SET title = ? WHERE id = ?")))
         , setMeta(conn.prepare(QStringLiteral(
             "UPDATE media SET duration_ms = ? WHERE id = ?")))
+        , setFit(conn.prepare(QStringLiteral(
+            "UPDATE media SET fit_mode = ? WHERE id = ?")))
+        , setDisplay(conn.prepare(QStringLiteral(
+            "UPDATE media SET fit_mode = ?, crop_x = ?, crop_y = ?, crop_w = ?, "
+            "crop_h = ?, loop_video = ?, muted = ? WHERE id = ?")))
     {}
 
     static MediaItem readRow(db::Statement& s)
     {
         MediaItem m;
-        m.id         = s.columnInt64(0);
-        m.path       = s.columnText (1);
-        m.title      = s.columnText (2);
-        m.type       = s.columnText (3);
-        m.isFavorite = s.columnInt  (4) != 0;
-        m.addedAt    = s.columnInt64(5);
-        m.durationMs = s.columnInt64(6);
-        m.pageCount  = s.columnInt  (7);
+        m.id         = s.columnInt64 (0);
+        m.path       = s.columnText  (1);
+        m.title      = s.columnText  (2);
+        m.type       = s.columnText  (3);
+        m.isFavorite = s.columnInt   (4) != 0;
+        m.addedAt    = s.columnInt64 (5);
+        m.durationMs = s.columnInt64 (6);
+        m.pageCount  = s.columnInt   (7);
+        m.fitMode    = s.columnText  (8);
+        m.crop       = QRectF(s.columnDouble(9),  s.columnDouble(10),
+                              s.columnDouble(11), s.columnDouble(12));
+        m.loopVideo  = s.columnInt   (13) != 0;
+        m.muted      = s.columnInt   (14) != 0;
         return m;
     }
 };
@@ -754,6 +772,73 @@ void MediaService::toggleFavorite(qint64 id)
         invalidateCache();
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::toggleFavorite():" << e.message();
+    }
+}
+
+namespace {
+// Accept only the four known fit tokens; anything else (including "default")
+// falls back to "default" so a stray value never lands in the DB and the
+// render layer's default-resolution path stays meaningful.
+QString sanitizeFit(const QString& mode)
+{
+    if (mode == QStringLiteral("contain") || mode == QStringLiteral("cover")
+        || mode == QStringLiteral("stretch")) {
+        return mode;
+    }
+    return QStringLiteral("default");
+}
+
+// Clamp a normalized crop rect into the unit square with a non-degenerate
+// size — mirrors ProjectionService's clamp so a bad rect can never persist.
+QRectF sanitizeCrop(QRectF c)
+{
+    double x = std::clamp(c.x(), 0.0, 1.0);
+    double y = std::clamp(c.y(), 0.0, 1.0);
+    double w = std::clamp(c.width(),  0.0, 1.0 - x);
+    double h = std::clamp(c.height(), 0.0, 1.0 - y);
+    // Snap a degenerate/near-empty rect back to the whole frame.
+    if (w < 0.01 || h < 0.01) return QRectF(0, 0, 1, 1);
+    return QRectF(x, y, w, h);
+}
+}  // namespace
+
+void MediaService::setFitMode(qint64 id, QString mode)
+{
+    if (!m_impl || id <= 0) return;
+    try {
+        auto& s = m_impl->setFit;
+        s.reset();
+        s.bind(1, sanitizeFit(mode));
+        s.bind(2, id);
+        s.step();
+        s.reset();
+        invalidateCache();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::setFitMode():" << e.message();
+    }
+}
+
+void MediaService::setDisplayOptions(qint64 id, QString fitMode, QRectF crop,
+                                     bool loopVideo, bool muted)
+{
+    if (!m_impl || id <= 0) return;
+    const QRectF c = sanitizeCrop(crop);
+    try {
+        auto& s = m_impl->setDisplay;
+        s.reset();
+        s.bind(1, sanitizeFit(fitMode));
+        s.bind(2, c.x());
+        s.bind(3, c.y());
+        s.bind(4, c.width());
+        s.bind(5, c.height());
+        s.bind(6, static_cast<qint64>(loopVideo ? 1 : 0));
+        s.bind(7, static_cast<qint64>(muted ? 1 : 0));
+        s.bind(8, id);
+        s.step();
+        s.reset();
+        invalidateCache();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::setDisplayOptions():" << e.message();
     }
 }
 

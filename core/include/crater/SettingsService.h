@@ -121,6 +121,14 @@ private:
     Q_PROPERTY(bool    autoAdvance             READ autoAdvance             WRITE setAutoAdvance             NOTIFY autoAdvanceChanged)
     Q_PROPERTY(int     autoAdvanceDelaySeconds READ autoAdvanceDelaySeconds WRITE setAutoAdvanceDelaySeconds NOTIFY autoAdvanceDelaySecondsChanged)
     Q_PROPERTY(bool    autoAdvanceLoop         READ autoAdvanceLoop         WRITE setAutoAdvanceLoop         NOTIFY autoAdvanceLoopChanged)
+    // Global default fit mode for projected image / video media items:
+    // "contain" (default — letterbox, whole frame visible), "cover" (fill the
+    // canvas, overflow cropped), or "stretch" (fill exactly, aspect ignored).
+    // Applies to any media item whose own fit_mode is "default" (MediaItem's
+    // per-item override wins otherwise). The render layer resolves the effective
+    // fit; this is only the fallback. Default "contain" reproduces the prior
+    // always-letterbox behavior so existing installs look unchanged.
+    Q_PROPERTY(QString mediaDefaultFit    READ mediaDefaultFit    WRITE setMediaDefaultFit    NOTIFY mediaDefaultFitChanged)
 
 public:
     explicit SettingsService(QObject* parent = nullptr);
@@ -149,6 +157,7 @@ public:
     bool    autoAdvance() const;
     int     autoAdvanceDelaySeconds() const;
     bool    autoAdvanceLoop() const;
+    QString mediaDefaultFit() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -172,6 +181,7 @@ public:
     void setAutoAdvance(bool v);
     void setAutoAdvanceDelaySeconds(int v);
     void setAutoAdvanceLoop(bool v);
+    void setMediaDefaultFit(const QString& v);
 
 signals:
     void themeModeChanged();
@@ -196,6 +206,7 @@ signals:
     void autoAdvanceChanged();
     void autoAdvanceDelaySecondsChanged();
     void autoAdvanceLoopChanged();
+    void mediaDefaultFitChanged();
 
 private:
     struct Impl;
