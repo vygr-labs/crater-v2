@@ -79,6 +79,13 @@ Item {
     // is committed through a non-crop-aware code path.
     signal interacted()
 
+    // Optional seed for the crop rectangle. The media edit modal passes the
+    // item's SAVED crop so the operator edits their existing framing rather
+    // than starting from the whole frame. Identity {0,0,1,1} (the default)
+    // reproduces the historical "start at full page" behavior, so callers that
+    // don't set it (PreviewPanel) are unaffected. Applied once at construction.
+    property rect initialCrop: Qt.rect(0, 0, 1, 1)
+
     // ── Crop state — normalized 0..1 within the painted page ────────────
     // Defaults to the whole page. Deliberately NOT reset on item / page
     // change: the operator asked to keep one persistent rectangle they can
@@ -87,6 +94,13 @@ Item {
     property real _normY: 0
     property real _normW: 1
     property real _normH: 1
+
+    Component.onCompleted: {
+        _normX = initialCrop.x
+        _normY = initialCrop.y
+        _normW = initialCrop.width
+        _normH = initialCrop.height
+    }
 
     on_NormXChanged: cropChanged()
     on_NormYChanged: cropChanged()
@@ -102,8 +116,12 @@ Item {
     // ── Source surface ──────────────────────────────────────────────────
     // One Image element; the source URL switches by kind. Images load the
     // file directly (matches MediaMonitor); PDFs route through the
-    // image://pdfpage/ provider. Both PreserveAspectFit so the whole page
-    // is visible — the crop rectangle, not the viewport, is what projects.
+    // image://pdfpage/ provider; videos crop against their first-frame poster
+    // (VideoThumbnailer) — a still stands in for the clip so the crop math is
+    // the same as an image, and the normalized rect applies to the live video
+    // at render (MediaMonitor's clipped/scaled VideoOutput). All PreserveAspectFit
+    // so the whole frame is visible — the crop rectangle, not the viewport, is
+    // what projects.
     Image {
         id: sourceImage
         anchors.fill: parent
@@ -126,6 +144,16 @@ Item {
                     ? "image://pdfpage/" + Number(root.item.mediaId).toString()
                       + "?page=" + Math.max(0, root.pageIndex)
                     : ""
+            }
+            if (k === "video") {
+                // readyCounter dependency flips the poster in the moment the
+                // worker finishes extracting the first frame (same pattern as
+                // MediaTab's tiles). No thumb yet → "" (black surface; the
+                // operator can still draw a crop against the 16:9 bounds).
+                const _ = VideoThumbnailer.readyCounter
+                const p = root.item.mediaId
+                    ? VideoThumbnailer.thumbnailPathFor(Number(root.item.mediaId)) : ""
+                return p.length > 0 ? "file:///" + p : ""
             }
             return ""
         }

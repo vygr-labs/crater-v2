@@ -17,6 +17,7 @@ ModalShell {
         { id: "projection",    label: qsTr("Projection"),     iconName: "monitor" },
         { id: "scripture",     label: qsTr("Scripture"),      iconName: "book-open" },
         { id: "song",          label: qsTr("Song"),           iconName: "music" },
+        { id: "media",         label: qsTr("Media"),          iconName: "image" },
         { id: "remoteControl", label: qsTr("Remote Control"), iconName: "tv" },
         { id: "ndi",           label: qsTr("NDI"),            iconName: "radio" },
         { id: "diagnostics",   label: qsTr("Diagnostics"),    iconName: "info" }
@@ -99,6 +100,7 @@ ModalShell {
                         case "projection":    return projectionComp
                         case "scripture":     return scriptureComp
                         case "song":          return songComp
+                        case "media":         return mediaComp
                         case "remoteControl": return remoteComp
                         case "ndi":           return ndiComp
                         case "diagnostics":   return diagnosticsComp
@@ -148,6 +150,7 @@ ModalShell {
     Component { id: projectionComp; ProjectionSection    { } }
     Component { id: scriptureComp;  ScriptureSection     { } }
     Component { id: songComp;       SongSection          { } }
+    Component { id: mediaComp;      MediaSection         { } }
     Component { id: remoteComp;     RemoteControlSection { } }
     Component { id: ndiComp;        NdiSection           { } }
     Component { id: diagnosticsComp; DiagnosticsSection   { } }
