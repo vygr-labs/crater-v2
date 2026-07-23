@@ -5,9 +5,10 @@ feature-complete for a v1 core (Bible, Songs, Themes + editor, Schedule,
 Media, Fonts, Projection + transitions, multi-monitor routing, NDI, and the
 operator console are all done). What remains splits into: a couple of
 genuinely-unbuilt features, a set of settings toggles that render but do
-nothing yet ("Soon"), v1.1-deferred items, and tuning/loose ends.
+nothing yet ("Soon"), v1.1-deferred items, tuning/loose ends, and a
+forward-looking competitive-parity roadmap (what ProPresenter has that we don't).
 
-Status legend: 🔴 unbuilt feature · 🟡 UI exists but inert · 🔵 v1.1 deferred · 🟢 works, rough edge
+Status legend: 🔴 unbuilt feature · 🟡 UI exists but inert · 🔵 v1.1 deferred · 🟢 works, rough edge · 🟣 v2 / competitive parity
 
 Line references are anchors, not guarantees — verify against current code before starting an item.
 
@@ -118,6 +119,75 @@ The interactive remote (go-live / next / prev / blank / search / add-to-schedule
 
 ### Auto-update
 - [ ] No `UpdateService` / in-app updater. Updates are manual via `scripts/release.{ps1,sh}` + the CI release workflow only.
+
+---
+
+## 🟣 Competitive gaps vs ProPresenter (v2 / market-parity roadmap)
+
+Forward-looking, beyond the v1/v1.1 punch-list above: features ProPresenter (the
+incumbent) ships that Crater does not. Core slide-driving is already at rough
+parity (Bible, Songs, Themes + editor, Schedule, Media, transitions, NDI out,
+operator console) — the gaps are mostly **production / integration**, not
+presentation. Ordered by how much a real church deployment feels each one.
+
+Several PP features already have a home above and are **not** repeated here:
+Stage Display → *Multi-output* (§🔵), interactive phone control → *Phone
+remote-control server* (§🔵), in-app updates → *Auto-update* (§🔵), cross-library
+search → *Global search* (§🔴), verse highlight / book:chapter footer /
+auto-advance → *Scripture & Song settings* (§🟡).
+
+### Tier 1 — biggest deployment blockers
+- [ ] **Planning Center Online + CCLI SongSelect integration.** Import service
+      plans from PCO and pull song lyrics legally from SongSelect, with CCLI
+      usage reporting. The single biggest "why we bought ProPresenter" feature
+      for US churches. New `PlanningCenterService` / `SongSelectService` (OAuth +
+      REST), mapping imports onto the existing `ScheduleService` + `SongService`.
+- [ ] **Props / lower-thirds / overlay layer.** A persistent overlay drawn
+      *above* the current slide and toggled independently — logos, name tags,
+      sponsor bugs, "baby in the nursery" banners — without disturbing what's
+      live. New always-on output layer in `ProjectionScene.qml` + a Props
+      library/tab; distinct from the theme/content layer.
+- [ ] **Timers, clocks & live messages.** Countdown-to-service loops, count-up
+      timers, wall clocks, and free-text messages pushed to the projection /
+      stage screens on the fly. Feeds naturally into the Stage Display work.
+
+### Tier 2 — strong differentiators
+- [ ] **Live video input as a source.** Bring a camera / NDI / Syphon feed in as
+      a slide background or full-screen source. Today NDI and `BrowserCastService`
+      are **output-only** — nothing comes in. Needs a capture/input path
+      (`QMediaCaptureSession` / NDI receiver) surfaced as a media source.
+- [ ] **Multiple independent outputs + masks / edge-blend / warp.** Drive several
+      screens with *different* content, plus screen-shaping for projection
+      mapping. Builds on the existing `OutputService` registry (already models
+      >2 outputs) once the Multi-output windows (§🔵) land.
+- [ ] **Built-in recording & streaming.** Record the program output to disk and
+      stream to RTMP / YouTube / Facebook. No capture pipeline exists today.
+- [ ] **MIDI / macros / triggers / "Looks."** Hardware (MIDI) control, macro
+      recording, and one-tap multi-layer output presets ("Looks"). Absent.
+- [ ] **Audio bin / playlists / background audio.** A managed audio library
+      separate from video (walk-in music, stingers). Crater plays a video's own
+      track via `MediaPlaybackService` but has no audio-only library or playlist.
+
+### Tier 3 — nice-to-have / scripted-service features
+- [ ] **Song arrangements.** Multiple reorderable verse/chorus arrangements per
+      song (the LyricsDSL already models sections; an arrangement is an ordered
+      sequence over them + a picker). Confirm against the current `SongService`
+      before starting.
+- [ ] **Multi-language / dual-translation lines.** Two translations or languages
+      rendered on one slide at once (e.g. native + English).
+- [ ] **Timeline / SMPTE timecode sync** for fully scripted, time-locked services.
+- [ ] **Network sync between operator machines** (master/follower), so a backup
+      or secondary station mirrors live state. Crater is single-machine.
+- [ ] **Free-form multi-object slide editor** — arbitrary text boxes + shapes +
+      multiple media per slide. Crater is template/theme-driven, not free
+      composition; a large editor rework, listed for completeness.
+- [ ] **Chord charts** on the stage / musician display.
+
+**Where Crater already leads PP:** the **Strong's concordance + interlinear
+reader** has no real ProPresenter equivalent — a genuine differentiator for
+study-heavy churches. NDI output is built-in (PP tiers some outputs behind
+paid editions), and the `.craterheme` theme editor + projection transitions
+are solid.
 
 ---
 
