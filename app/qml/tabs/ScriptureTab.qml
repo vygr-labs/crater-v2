@@ -993,7 +993,10 @@ Item {
                 // tone with semiBold (600) weight bump. Bolder strokes +
                 // softer color = same perceived presence with less raw
                 // luminance, addressing the eye-strain from pure white.
-                color: verseRow._highlighted ? Theme.color.textTitle : "#d4d4d8"   // gray.300
+                // textTitle both ways — highlight is carried by the weight
+                // bump + accent bar below, not the text colour. (Was a
+                // hardcoded gray.300 that stayed light-on-white in light mode.)
+                color: Theme.color.textTitle
                 font.family: Theme.font.family
                 // Scales with the operator's Font size setting via Theme.uiScale.
                 // The literal 17 is the baseline pixel size (slightly larger

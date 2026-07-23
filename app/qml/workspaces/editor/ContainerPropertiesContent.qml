@@ -333,7 +333,7 @@ Column {
                                 anchors.centerIn: parent
                                 visible: animateRow._on
                                 name: "check"; size: Theme.icon.sm
-                                color: Theme.color.brandInk
+                                color: "#ffffff"   // check on the deep-teal box
                             }
                         }
                         Text {
@@ -410,7 +410,7 @@ Column {
                             anchors.centerIn: parent
                             visible: root._isCard
                             name: "check"; size: Theme.icon.sm
-                            color: Theme.color.brandInk
+                            color: "#ffffff"   // check on the deep-teal box
                         }
                     }
                     Text {

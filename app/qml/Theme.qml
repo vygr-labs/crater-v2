@@ -157,6 +157,21 @@ QtObject {
         // convention. Bound at row sites via gating like:
         //   color: _selected ? (_paneFocused ? brandSubtle : selectionUnfocused) : ...
         readonly property color selectionUnfocused: "#27272a"   // == raised
+        // Production-cue card rails — the Preview/Live index column + header
+        // band. Idle/hover are neutral insets a step off the card body; the
+        // active state carries the channel tint (champagne for Preview,
+        // crimson for Live). Split into tokens so the light palette can
+        // invert them — these were hardcoded near-blacks that rendered as
+        // dark bars on the white light-mode cards.
+        readonly property color cueRailIdle:    "#1c1c20"
+        readonly property color cueRailHover:   "#22222a"
+        readonly property color cueRailPreview: "#4a3d28"   // active — warm gold
+        readonly property color cueRailLive:    "#4d1918"   // active — deep crimson
+        // Strong's interlinear language tags (the superscript ref numbers).
+        // Blue = Hebrew, green = Greek. Themed so they stay legible on the
+        // light reader surface — the dark values are too pale on white.
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
         // Channel-mute tokens — Preview gold and Live red desaturated for
         // when their panel doesn't currently own focus. Keep a hint of
         // channel identity (warm-tinted gray vs cool-tinted gray) so the
@@ -242,6 +257,16 @@ QtObject {
         readonly property color brandSubtle:   "#d6eef0"   // pale cyan — selected-row tint
         readonly property color brandInk:      "#0a1f25"   // unchanged (fill is unchanged)
         readonly property color selectionUnfocused: "#d9d9de"   // light gray — selected, pane unfocused
+        // Cue rails inverted for light: neutral light-grays a step darker
+        // than the card body (`raised`/`overlay`), and the active states a
+        // deeper, more saturated tint than the pale channel washes so the
+        // dark active digit reads and the L-frame still lifts.
+        readonly property color cueRailIdle:    "#dadadf"
+        readonly property color cueRailHover:   "#d5d5db"
+        readonly property color cueRailPreview: "#e7d3a6"   // active — warm gold, deeper than previewSubtle
+        readonly property color cueRailLive:    "#eec3bd"   // active — red, deeper than liveSubtle
+        readonly property color langHebrew:     "#1d4ed8"   // deep blue, legible on white
+        readonly property color langGreek:      "#15803d"   // deep green, legible on white
         readonly property color previewMuted:  "#c8bda6"   // desat warm gold-gray (light)
         readonly property color liveMuted:     "#d1b0ae"   // desat maroon-gray (light)
         readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.12)
@@ -297,6 +322,14 @@ QtObject {
         readonly property color brandSubtle:   "#0E2528"
         readonly property color brandInk:      "#0a1f25"
         readonly property color selectionUnfocused: "#18181c"   // == raised
+        // Cue rails — darker than midnight's `raised` (#18181c) so the frame
+        // recedes; active tints carry over from dark (read fine on black).
+        readonly property color cueRailIdle:    "#101014"
+        readonly property color cueRailHover:   "#17171c"
+        readonly property color cueRailPreview: "#4a3d28"
+        readonly property color cueRailLive:    "#4d1918"
+        readonly property color langHebrew:     "#60a5fa"
+        readonly property color langGreek:      "#4ade80"
         readonly property color previewMuted:  "#5a5345"
         readonly property color liveMuted:     "#5a3a3a"
         readonly property color rowHoverBrand: Qt.rgba(26/255, 118/255, 125/255, 0.18)

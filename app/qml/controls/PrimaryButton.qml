@@ -35,10 +35,18 @@ Rectangle {
         variant === "live"        ? Theme.color.goLivePressed
       : variant === "destructive" ? Qt.darker(Theme.color.live, 1.12)
                                   : Theme.color.brandPressed
+    // Brand-variant ink auto-adapts to the *resolved* fill luminance: the
+    // deep teal `brand` rest fill (and the light theme's deeper hover/press)
+    // take a white ink, while the dark theme's bright `brandHover` fill on
+    // hover keeps the dark `brandInk` — the polarity `brandInk` is designed
+    // for elsewhere. Reading `root.color` tracks the animated fill, so
+    // contrast holds through the hover transition too. Previously the deep
+    // `brand` fill always got dark `brandInk` (~2.8:1 — the "dark text on
+    // dark cyan" the light-mode buttons showed); white on it is ~5.3:1.
     readonly property color _ink:
         variant === "live"        ? Theme.color.goLiveInk
       : variant === "destructive" ? "#ffffff"
-                                  : Theme.color.brandInk
+      : (root.color.hslLightness > 0.45 ? Theme.color.brandInk : "#ffffff")
 
     implicitHeight: 36
     implicitWidth: contentRow.implicitWidth + Theme.space.xl * 2
