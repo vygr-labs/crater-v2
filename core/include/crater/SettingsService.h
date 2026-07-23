@@ -82,6 +82,14 @@ private:
     // the next broadcast (re)start (same as useHeadlessNdi). No effect on the
     // legacy grabToImage path.
     Q_PROPERTY(bool    ndiOnDemand        READ ndiOnDemand        WRITE setNdiOnDemand        NOTIFY ndiOnDemandChanged)
+    // NDI broadcast pixel format — "bgra" (default, full 32-bit + alpha),
+    // "bgrx" (32-bit, alpha ignored/opaque), or "uyvy" (4:2:2, ~half the
+    // bandwidth, CPU pack per frame). And render resolution sent — "native"
+    // (the 1920×1080 render) or "720p" (downscaled 1280×720). NdiService
+    // reads both from QSettings at broadcast start (same lifecycle as
+    // useHeadlessNdi), so a change applies on the next (re)start.
+    Q_PROPERTY(QString ndiPixelFormat     READ ndiPixelFormat     WRITE setNdiPixelFormat     NOTIFY ndiPixelFormatChanged)
+    Q_PROPERTY(QString ndiResolution      READ ndiResolution      WRITE setNdiResolution      NOTIFY ndiResolutionChanged)
     // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
     // in the same uppercase form BibleService::translations() reports and the
     // scripture sidebar displays; AppState lowercases it to seed
@@ -122,6 +130,8 @@ public:
     bool    projectionInAltTab() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
+    QString ndiPixelFormat() const;
+    QString ndiResolution() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    showScriptureFooter() const;
@@ -142,6 +152,8 @@ public:
     void setProjectionInAltTab(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
+    void setNdiPixelFormat(const QString& v);
+    void setNdiResolution(const QString& v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setShowScriptureFooter(bool v);
@@ -163,6 +175,8 @@ signals:
     void projectionInAltTabChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();
+    void ndiPixelFormatChanged();
+    void ndiResolutionChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void showScriptureFooterChanged();
