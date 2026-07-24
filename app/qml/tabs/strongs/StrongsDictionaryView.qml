@@ -156,6 +156,16 @@ Item {
                     width: list.width - Theme.size.scrollBar
                     height: 52
 
+                    // Bold the matched query terms in the lemma / definition
+                    // when there's a query and the operator hasn't turned
+                    // Strong's highlighting off (Settings › Search). Strong's had
+                    // no highlight before; this brings it in line with Songs and
+                    // Scripture. A Strong's-number query (e.g. "H430") simply
+                    // finds nothing to bold in the prose — harmless.
+                    readonly property bool _colorize:
+                        root.debouncedQuery.length > 0
+                        && SettingsService.highlightStrongsMatches
+
                     readonly property bool _sel: list.currentIndex === index
                     readonly property bool _isLive:
                         ProjectionService.contentKind === "strongs"
@@ -232,7 +242,7 @@ Item {
 
                         Text {
                             width: parent.width
-                            text: {
+                            readonly property string _primary: {
                                 if (modelData.lemma && modelData.lemma.length > 0) {
                                     return modelData.transliteration.length > 0
                                         ? modelData.lemma + "   " + modelData.transliteration
@@ -242,6 +252,10 @@ Item {
                                     ? modelData.transliteration
                                     : modelData.word
                             }
+                            textFormat: entryRow._colorize ? Text.StyledText : Text.PlainText
+                            text: entryRow._colorize
+                                    ? SearchFormat.markup(_primary, root.debouncedQuery, Theme.color.brand)
+                                    : _primary
                             color: entryRow._sel ? Theme.color.textPrimary : Theme.color.textTitle
                             font.family: Theme.font.family
                             font.pixelSize: 15
@@ -249,9 +263,13 @@ Item {
                             elide: Text.ElideRight
                         }
                         Text {
-                            visible: text.length > 0
+                            readonly property string _def: modelData.definition || ""
+                            visible: _def.length > 0
                             width: parent.width
-                            text: modelData.definition || ""
+                            textFormat: entryRow._colorize ? Text.StyledText : Text.PlainText
+                            text: entryRow._colorize
+                                    ? SearchFormat.markup(_def, root.debouncedQuery, Theme.color.brand)
+                                    : _def
                             color: entryRow._sel ? Theme.color.textSecondary : Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: 13
@@ -417,6 +435,19 @@ Item {
                     onLinkActivated: function(link) {
                         if (link.indexOf("#d") === 0)
                             AppState.setSearch("strongs", link.substring(2))
+                    }
+
+                    // Pointing-hand cursor while hovering a cross-reference link
+                    // (the blue #dG71 anchors). acceptedButtons: NoButton lets
+                    // presses fall through to onLinkActivated and drags reach the
+                    // Flickable for scrolling; hover still reaches defText, so
+                    // hoveredLink stays accurate and the cursor is a hand only
+                    // over an actual link, an arrow over plain definition text.
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.NoButton
+                        cursorShape: defText.hoveredLink.length > 0
+                                     ? Qt.PointingHandCursor : Qt.ArrowCursor
                     }
                 }
             }
