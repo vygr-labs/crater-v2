@@ -58,9 +58,33 @@ existing `Q_INVOKABLE` searches, so it inherits any ranking work from the
       persisted). Defaults differ by type. Every row also exposes all actions as
       buttons; `Enter` = primary, `Ctrl+Enter` = Go Live, `Shift+Enter` = Schedule.
 - [x] Empty / no-result states; last query remembered per session.
+- [x] **Reveal + Preview + lyric targeting.** Acting on a song/scripture hit now
+      *also* reveals and highlights its row in the Songs/Scripture tab, not just
+      one pane. For songs the detail pane's lyric sections are selectable (the
+      matched verse is pre-selected; click / `Tab` / `Shift+Tab` / double-click to
+      retarget) and Enter stages that exact section into Preview — jumped to and
+      highlighted — via `AppState.pushLibraryPreview(item, page)`. The palette
+      also animates in **and** out (`ModalShell` scale+fade; `ModalLayer` keeps it
+      mounted through the exit via a `closed()` signal, respecting Reduce Motion).
 - [ ] Follow-ups: fuzzy/typo-tolerant matching; a "recent searches" row; include
-      current **schedule items** as a searchable group; select-and-highlight the
-      revealed row (today reveal seeds the tab's search box / sync signal).
+      current **schedule items** as a searchable group.
+
+### Onboarding & shortcut discoverability — not built
+Nothing today teaches a new operator the app, and its power features are
+invisible: `Ctrl+K` global search, `Ctrl+L` go-live, the Preview / Live /
+Schedule arrow-key navigation, and the palette's `Ctrl+Enter` / `Shift+Enter`
+modifiers are undiscoverable — you only know them if you've read the code.
+- [ ] **In-app tutorial / first-run walkthrough.** A guided onboarding tour
+      (coach-marks or a step-through) that introduces the console on first launch
+      — Library tabs, Schedule, the Preview → Live flow, Themes — with a way to
+      re-open it later (a Help entry). Gate it on a persisted "seen" flag (a
+      `SettingsService` bool, mirroring `hasExplicitLanguage()`).
+- [ ] **Keyboard-shortcut reference.** A discoverable cheat-sheet of every
+      shortcut — a `?` / `Ctrl+/` overlay and/or a Settings ▸ Shortcuts page — so
+      operators can actually find `Ctrl+K` and friends. Today shortcuts are
+      scattered across `Main.qml` `Shortcut`s and per-view `Keys` handlers;
+      consider centralizing them into one registry so the sheet can't drift out
+      of sync with what the keys really do.
 
 ---
 
