@@ -340,10 +340,19 @@ QFuture<void> BibleService::rebuildFtsIndex()
             // across threads (SQLITE_OPEN_FULLMUTEX is belt-and-suspenders).
             db::Connection conn(db::DbPaths::biblesDbPath());
             db::Transaction tx(conn);
-            conn.exec(QStringLiteral("DELETE FROM verses_fts"));
+            // verses_fts is contentless (content=''), which rejects a plain
+            // DELETE — 'delete-all' is the only clear. Verse text is
+            // apostrophe-stripped on the way in (ASCII ' + curly char(8217)) so
+            // the index matches the apostrophe-normalised query in
+            // crater::db::buildFtsQuery. Same normalisation as the
+            // ElectronDataImporter and the bibles V002 re-index migration.
+            conn.exec(QStringLiteral(
+                "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
-                "SELECT v.id, v.text, b.name, t.code "
+                "SELECT v.id, "
+                "       replace(replace(v.text, '''', ''), char(8217), ''), "
+                "       b.name, t.code "
                 "FROM verses v "
                 "JOIN books        b ON b.id = v.book_id "
                 "JOIN translations t ON t.id = v.translation_id"));

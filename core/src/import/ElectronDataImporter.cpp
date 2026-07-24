@@ -237,8 +237,16 @@ void importBibleData(db::Connection& legacy,
         db::Transaction tx(target);
         target.exec(QStringLiteral("DELETE FROM verses_fts"));
         target.exec(QStringLiteral(
+            // Apostrophe-strip verse text at index time (ASCII ' + curly
+            // char(8217)) so the trigram index matches the apostrophe-normalised
+            // query in crater::db::buildFtsQuery — a stray or missing quote
+            // never zeroes a search. Mirrors BibleService::rebuildFtsIndex and
+            // the bibles V002 re-index migration (which covers installs that
+            // imported before this normalisation existed).
             "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
-            "SELECT v.id, v.text, b.name, t.code "
+            "SELECT v.id, "
+            "       replace(replace(v.text, '''', ''), char(8217), ''), "
+            "       b.name, t.code "
             "FROM verses v "
             "JOIN books b        ON b.id = v.book_id "
             "JOIN translations t ON t.id = v.translation_id"));
