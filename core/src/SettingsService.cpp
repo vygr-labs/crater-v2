@@ -56,6 +56,11 @@ struct SettingsService::Impl
     // "contain" (letterbox) is the safe default — it never crops content the
     // operator might not know is being clipped. Cover/stretch are opt-in.
     QString mediaDefaultFit  = QStringLiteral("contain");
+    // Library search presentation — all default ON (unchanged out-of-box).
+    bool    showMatchedLyricSnippet   = true;
+    bool    highlightSongMatches      = true;
+    bool    highlightScriptureMatches = true;
+    bool    highlightStrongsMatches   = true;
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -84,6 +89,10 @@ struct SettingsService::Impl
     static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
     static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
     static constexpr const char* kMediaDefaultFit = "Settings/mediaDefaultFit";
+    static constexpr const char* kShowMatchedLyricSnippet   = "Settings/showMatchedLyricSnippet";
+    static constexpr const char* kHighlightSongMatches      = "Settings/highlightSongMatches";
+    static constexpr const char* kHighlightScriptureMatches = "Settings/highlightScriptureMatches";
+    static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -114,6 +123,10 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->autoAdvanceDelay = s.value(QString::fromLatin1(Impl::kAutoAdvanceDelay), m_impl->autoAdvanceDelay).toInt();
     m_impl->autoAdvanceLoop  = s.value(QString::fromLatin1(Impl::kAutoAdvanceLoop),  m_impl->autoAdvanceLoop).toBool();
     m_impl->mediaDefaultFit = s.value(QString::fromLatin1(Impl::kMediaDefaultFit), m_impl->mediaDefaultFit).toString();
+    m_impl->showMatchedLyricSnippet   = s.value(QString::fromLatin1(Impl::kShowMatchedLyricSnippet),   m_impl->showMatchedLyricSnippet).toBool();
+    m_impl->highlightSongMatches      = s.value(QString::fromLatin1(Impl::kHighlightSongMatches),      m_impl->highlightSongMatches).toBool();
+    m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
+    m_impl->highlightStrongsMatches   = s.value(QString::fromLatin1(Impl::kHighlightStrongsMatches),   m_impl->highlightStrongsMatches).toBool();
 }
 
 SettingsService::~SettingsService() = default;
@@ -141,6 +154,10 @@ bool    SettingsService::autoAdvance() const             { return m_impl->autoAd
 int     SettingsService::autoAdvanceDelaySeconds() const { return m_impl->autoAdvanceDelay; }
 bool    SettingsService::autoAdvanceLoop() const         { return m_impl->autoAdvanceLoop; }
 QString SettingsService::mediaDefaultFit() const   { return m_impl->mediaDefaultFit; }
+bool    SettingsService::showMatchedLyricSnippet() const   { return m_impl->showMatchedLyricSnippet; }
+bool    SettingsService::highlightSongMatches() const      { return m_impl->highlightSongMatches; }
+bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
+bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
 
 qreal SettingsService::fontScale() const
 {
@@ -362,6 +379,38 @@ void SettingsService::setMediaDefaultFit(const QString& v)
     m_impl->mediaDefaultFit = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaDefaultFit), normalized);
     emit mediaDefaultFitChanged();
+}
+
+void SettingsService::setShowMatchedLyricSnippet(bool v)
+{
+    if (m_impl->showMatchedLyricSnippet == v) return;
+    m_impl->showMatchedLyricSnippet = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowMatchedLyricSnippet), v);
+    emit showMatchedLyricSnippetChanged();
+}
+
+void SettingsService::setHighlightSongMatches(bool v)
+{
+    if (m_impl->highlightSongMatches == v) return;
+    m_impl->highlightSongMatches = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightSongMatches), v);
+    emit highlightSongMatchesChanged();
+}
+
+void SettingsService::setHighlightScriptureMatches(bool v)
+{
+    if (m_impl->highlightScriptureMatches == v) return;
+    m_impl->highlightScriptureMatches = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightScriptureMatches), v);
+    emit highlightScriptureMatchesChanged();
+}
+
+void SettingsService::setHighlightStrongsMatches(bool v)
+{
+    if (m_impl->highlightStrongsMatches == v) return;
+    m_impl->highlightStrongsMatches = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightStrongsMatches), v);
+    emit highlightStrongsMatchesChanged();
 }
 
 }  // namespace crater

@@ -163,9 +163,11 @@ qt_add_resources(crater-core "crater_migrations"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/src/db/migrations"
     FILES
         src/db/migrations/bibles/V001__init.sql
+        src/db/migrations/bibles/V002__fts_apostrophe_normalize.sql
         src/db/migrations/songs/V001__init.sql
         src/db/migrations/songs/V002__fts_marker_strip.sql
         src/db/migrations/songs/V003__collections.sql
+        src/db/migrations/songs/V004__fts_apostrophe_normalize.sql
         src/db/migrations/app/V001__init.sql
         src/db/migrations/app/V002__media.sql
         src/db/migrations/app/V003__theme_nodes.sql
