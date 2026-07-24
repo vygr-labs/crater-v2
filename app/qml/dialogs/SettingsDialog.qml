@@ -103,6 +103,7 @@ ModalShell {
                         case "song":          return songComp
                         case "search":        return searchComp
                         case "media":         return mediaComp
+                        case "search":        return searchComp
                         case "remoteControl": return remoteComp
                         case "ndi":           return ndiComp
                         case "diagnostics":   return diagnosticsComp

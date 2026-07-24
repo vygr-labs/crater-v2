@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <QString>
+#include <QVariantMap>
 
 #include <memory>
 
@@ -129,6 +131,19 @@ private:
     // fit; this is only the fallback. Default "contain" reproduces the prior
     // always-letterbox behavior so existing installs look unchanged.
     Q_PROPERTY(QString mediaDefaultFit    READ mediaDefaultFit    WRITE setMediaDefaultFit    NOTIFY mediaDefaultFitChanged)
+    // Per-result-type primary action for the global search palette (Ctrl+K).
+    // Maps a result type ("scripture" | "songs" | "strongs" | "media" |
+    // "themes") to what its Enter/click fires: "preview" (stage into the
+    // Preview pane, nothing projected), "reveal" (jump to the item in its
+    // library tab), or "golive" (project immediately). Persisted as one JSON
+    // object under Settings/globalSearchActions; the getter fills defaults for
+    // any type the operator hasn't overridden, so QML always sees a complete
+    // map. Defaults deliberately differ by type — projectable content
+    // (scripture/songs/media) stages to Preview so nothing hits the screen by
+    // accident, while lookup/manage types (strongs/themes) reveal in-tab. The
+    // property is read-only from QML; writes go through setGlobalSearchAction()
+    // so each change is validated and only touches one type.
+    Q_PROPERTY(QVariantMap globalSearchActions READ globalSearchActions NOTIFY globalSearchActionsChanged)
 
     // ── Library search presentation ──────────────────────────────────────
     // How the library tabs present FTS search results. All default ON so the
@@ -192,6 +207,7 @@ public:
     // exists in QSettings). False on a fresh install — TranslationService uses
     // this to decide whether to adopt the OS language on first run.
     bool    hasExplicitLanguage() const;
+    QVariantMap globalSearchActions() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -222,6 +238,12 @@ public:
     void setHighlightStrongsMatches(bool v);
     void setLanguage(const QString& code);
 
+    // Set the global-search primary action for one result type. `type` and
+    // `action` are validated against the known sets; unknown values are ignored
+    // so a stray QML write can't persist a garbage mapping. Emits
+    // globalSearchActionsChanged only when the mapping actually changes.
+    Q_INVOKABLE void setGlobalSearchAction(const QString& type, const QString& action);
+
 signals:
     void themeModeChanged();
     void fontSizeChanged();
@@ -251,6 +273,7 @@ signals:
     void highlightScriptureMatchesChanged();
     void highlightStrongsMatchesChanged();
     void languageChanged();
+    void globalSearchActionsChanged();
 
 private:
     struct Impl;
