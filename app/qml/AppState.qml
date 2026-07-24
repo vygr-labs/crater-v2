@@ -849,4 +849,96 @@ QtObject {
         // index and clears any active library-preview override.
         selectScheduleItem(ScheduleService.currentItems.length - 1)
     }
+
+    // ─── Global search (command palette, Ctrl+K) ─────────────────────────
+    // A cross-library search overlay. Driven through the modal stack
+    // (activeModal === "globalSearch") so Escape-to-close and the ModalLayer
+    // z-order come for free. The query lives here rather than inside the
+    // overlay so it survives close/re-open within a session ("remember last
+    // query"); it is deliberately session-only, never persisted.
+    property string globalSearchQuery: ""
+
+    function openGlobalSearch() {
+        // Don't stack the palette on top of another modal (settings, editor):
+        // the Ctrl+K shortcut is already gated on activeModal === "", but keep
+        // the guard so programmatic callers can't wedge the modal stack.
+        if (activeModal !== "" && activeModal !== "globalSearch") return
+        openModal("globalSearch", {})
+    }
+
+    function closeGlobalSearch() {
+        if (activeModal === "globalSearch") closeModal()
+    }
+
+    // Resolve a library tabKey to its live tab index. tabKeys shifts when the
+    // Strong's tab is hidden, so an index can't be hard-coded. Returns -1 when
+    // the tab isn't currently present (e.g. a Strong's hit while the tab is
+    // off — the caller falls back to a no-op reveal).
+    function tabIndexFor(tabKey) {
+        const keys = tabKeys
+        for (let i = 0; i < keys.length; i++)
+            if (keys[i] === tabKey) return i
+        return -1
+    }
+
+    // Reveal a global-search result in its own library tab: switch tabs, then
+    // surface the item — jump the scripture / song lists via the existing
+    // schedule-sync signals, or seed the filter-based tabs' search box so the
+    // list narrows to the hit. Closes the palette so focus lands in the tab.
+    //
+    // `result` is the overlay's row shape:
+    //   { type, title, item, scriptureRef?, songId?, revealQuery? }
+    // where `type` is both the SettingsService action key AND the library
+    // tabKey (the two vocabularies share the same strings).
+    function revealResult(result) {
+        if (!result) return
+        closeGlobalSearch()
+        const idx = tabIndexFor(result.type)
+        if (idx >= 0) setActiveTab(idx)
+        if (result.type === "scripture" && result.scriptureRef) {
+            const r = result.scriptureRef
+            setLibraryGroup("scripture", String(r.translationCode || "").toLowerCase())
+            syncScriptureFromSchedule(r.book, r.chapter, r.verse, r.translationCode || "")
+        } else if (result.type === "songs" && result.songId) {
+            syncSongFromSchedule(result.songId)
+        } else if (result.revealQuery !== undefined) {
+            setSearch(result.type, result.revealQuery)
+        }
+    }
+
+    // Fire a global-search result's action. With no override, the per-type
+    // primary from SettingsService.globalSearchActions applies (what Enter /
+    // row-click does); the row's secondary buttons pass an explicit override
+    // ("preview" | "reveal" | "golive" | "schedule").
+    function runGlobalSearchAction(result, actionOverride) {
+        if (!result) return
+        let action = actionOverride || ""
+        if (action === "") {
+            const map = SettingsService.globalSearchActions || ({})
+            action = map[result.type] || "reveal"
+        }
+        // Themes carry no projectable content — preview / golive have nothing
+        // to stage, so they collapse to reveal.
+        if (result.type === "themes" && (action === "preview" || action === "golive"))
+            action = "reveal"
+
+        if (action === "reveal") { revealResult(result); return }
+
+        // The projectable actions need the built canonical schedule-item. If a
+        // row somehow lacks one, fall back to revealing it rather than no-op.
+        const item = result.item
+        if (!item) { revealResult(result); return }
+
+        if (action === "golive") {
+            closeGlobalSearch()
+            pushLibraryLive(item)
+        } else if (action === "schedule") {
+            // Keep the palette open so the operator can queue several items in
+            // a row without re-opening it each time.
+            addItemToSchedule(item)
+        } else { // "preview"
+            closeGlobalSearch()
+            pushLibraryPreview(item)
+        }
+    }
 }

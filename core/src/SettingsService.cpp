@@ -1,8 +1,47 @@
 #include "crater/SettingsService.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
+#include <QStringList>
 
 namespace crater {
+
+namespace {
+
+// Global-search palette validation + defaults, kept in one place so the ctor
+// read, the getter's default fill, and setGlobalSearchAction() agree on what a
+// legal (type, action) pair is.
+const QStringList& gsTypes()
+{
+    static const QStringList t{ QStringLiteral("scripture"), QStringLiteral("songs"),
+                                QStringLiteral("strongs"),   QStringLiteral("media"),
+                                QStringLiteral("themes") };
+    return t;
+}
+
+bool gsIsAction(const QString& a)
+{
+    return a == QLatin1String("preview")
+        || a == QLatin1String("reveal")
+        || a == QLatin1String("golive");
+}
+
+// Defaults deliberately differ by type — see the header note. Projectable
+// content stages to Preview (safe: nothing hits the projector by accident);
+// lookup/manage types reveal in their tab.
+QVariantMap gsDefaults()
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("scripture"), QStringLiteral("preview"));
+    m.insert(QStringLiteral("songs"),     QStringLiteral("preview"));
+    m.insert(QStringLiteral("media"),     QStringLiteral("preview"));
+    m.insert(QStringLiteral("strongs"),   QStringLiteral("reveal"));
+    m.insert(QStringLiteral("themes"),    QStringLiteral("reveal"));
+    return m;
+}
+
+}  // namespace
 
 struct SettingsService::Impl
 {
@@ -64,6 +103,9 @@ struct SettingsService::Impl
     // UI language — "en" is the built-in English source; any other value is a
     // Qt locale code with a bundled crater_<code>.qm catalog. See header.
     QString language         = QStringLiteral("en");
+    // Per-type global-search actions. Seeded with gsDefaults() then overlaid
+    // with any persisted overrides at construction, so it's always complete.
+    QVariantMap globalSearchActions;
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -97,6 +139,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightScriptureMatches = "Settings/highlightScriptureMatches";
     static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
     static constexpr const char* kLanguage         = "Settings/language";
+    static constexpr const char* kGlobalSearchActions = "Settings/globalSearchActions";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -132,6 +175,22 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
     m_impl->highlightStrongsMatches   = s.value(QString::fromLatin1(Impl::kHighlightStrongsMatches),   m_impl->highlightStrongsMatches).toBool();
     m_impl->language         = s.value(QString::fromLatin1(Impl::kLanguage),         m_impl->language).toString();
+
+    // Global-search actions: start from the per-type defaults, then overlay any
+    // persisted overrides. Each override is validated so a hand-edited or
+    // stale registry value can't seed an unknown type/action into the map.
+    m_impl->globalSearchActions = gsDefaults();
+    {
+        const QString raw = s.value(QString::fromLatin1(Impl::kGlobalSearchActions)).toString();
+        if (!raw.isEmpty()) {
+            const QJsonObject obj = QJsonDocument::fromJson(raw.toUtf8()).object();
+            for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
+                const QString action = it.value().toString();
+                if (gsTypes().contains(it.key()) && gsIsAction(action))
+                    m_impl->globalSearchActions.insert(it.key(), action);
+            }
+        }
+    }
 }
 
 SettingsService::~SettingsService() = default;
@@ -165,6 +224,7 @@ bool    SettingsService::highlightScriptureMatches() const { return m_impl->high
 bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
 QString SettingsService::language() const                { return m_impl->language; }
 bool    SettingsService::hasExplicitLanguage() const     { return m_impl->settings.contains(QString::fromLatin1(Impl::kLanguage)); }
+QVariantMap SettingsService::globalSearchActions() const { return m_impl->globalSearchActions; }
 
 qreal SettingsService::fontScale() const
 {
@@ -431,6 +491,20 @@ void SettingsService::setLanguage(const QString& code)
     m_impl->language = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kLanguage), normalized);
     emit languageChanged();
+}
+
+void SettingsService::setGlobalSearchAction(const QString& type, const QString& action)
+{
+    // Validate both halves — an unknown type or action is dropped rather than
+    // persisted, so the map QML reads can only ever hold legal pairs.
+    if (!gsTypes().contains(type) || !gsIsAction(action)) return;
+    if (m_impl->globalSearchActions.value(type).toString() == action) return;
+    m_impl->globalSearchActions.insert(type, action);
+    // Persist the whole map as one compact JSON object under a single key.
+    const QJsonObject obj = QJsonObject::fromVariantMap(m_impl->globalSearchActions);
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kGlobalSearchActions),
+                              QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
+    emit globalSearchActionsChanged();
 }
 
 }  // namespace crater
