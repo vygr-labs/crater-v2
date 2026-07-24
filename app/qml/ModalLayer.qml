@@ -73,10 +73,19 @@ Item {
     }
 
     // ── Global search (command palette, Ctrl+K) ─────────────────────────
+    // Unlike the other modals, the palette animates OUT: keepAlive holds the
+    // Loader active past the activeModal flip until the overlay's closed()
+    // signal fires (its exit animation has finished), then it tears down.
     Loader {
+        id: globalSearchLoader
         anchors.fill: parent
-        active: AppState.activeModal === "globalSearch"
-        sourceComponent: GlobalSearchOverlay { }
+        active: AppState.activeModal === "globalSearch" || keepAlive
+        property bool keepAlive: false
+        onActiveChanged: if (active) keepAlive = true
+        sourceComponent: GlobalSearchOverlay {
+            show: AppState.activeModal === "globalSearch"
+            onClosed: globalSearchLoader.keepAlive = false
+        }
     }
 
     // ── Context menu (right-click, gear menus, etc.) ────────────────────
