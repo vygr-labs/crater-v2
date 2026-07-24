@@ -72,6 +72,13 @@ Item {
         sourceComponent: ScheduleDropdownPopover { }
     }
 
+    // ── Global search (command palette, Ctrl+K) ─────────────────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "globalSearch"
+        sourceComponent: GlobalSearchOverlay { }
+    }
+
     // ── Context menu (right-click, gear menus, etc.) ────────────────────
     Loader {
         anchors.fill: parent

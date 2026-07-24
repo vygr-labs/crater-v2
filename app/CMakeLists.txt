@@ -76,6 +76,7 @@ qt_add_qml_module(crater
         qml/Workspaces.qml
         qml/SearchFormat.qml
         qml/ModalLayer.qml
+        qml/GlobalSearchOverlay.qml
         qml/ProjectionWindow.qml
         qml/NdiCanvas.qml
 
