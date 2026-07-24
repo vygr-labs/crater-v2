@@ -411,16 +411,27 @@ ModalShell {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    FieldLabel { text: qsTr("Background") }
-                    SegmentedControl {
+                    FieldLabel { text: qsTr("Theme") }
+                    RowLayout {
                         Layout.fillWidth: true
-                        options: [
-                            { value: "none",  label: qsTr("None") },
-                            { value: "dim",   label: qsTr("Dim") },
-                            { value: "solid", label: qsTr("Solid") }
-                        ]
-                        current: LiveMessages.background
-                        onChanged: LiveMessages.background = v
+                        spacing: Theme.space.sm
+                        Combobox {
+                            Layout.fillWidth: true
+                            searchable: false
+                            options: LiveOverlayStyles.presetOptions
+                            value: LiveOverlayStyles.assignedLabel(root.pendingMode)
+                            onValueSelected: function(v) {
+                                LiveOverlayStyles.applyPreset(root.pendingMode, v)
+                            }
+                        }
+                        GhostButton {
+                            text: qsTr("Customize…")
+                            onClicked: {
+                                AppState.closeModal()
+                                AppState.settingsSection = "overlay"
+                                AppState.openModal("settings", {})
+                            }
+                        }
                     }
                 }
             }
@@ -458,7 +469,7 @@ ModalShell {
                         clock24h:            LiveMessages.clock24h
                         clockShowSeconds:    LiveMessages.clockShowSeconds
                         position:            LiveMessages.position
-                        background:          LiveMessages.background
+                        style:               LiveOverlayStyles.styleFor(root.pendingMode)
                     }
                 }
 

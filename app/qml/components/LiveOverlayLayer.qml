@@ -1,25 +1,25 @@
 import QtQuick
+import QtQuick.Effects
 import Crater
 
 // LiveOverlayLayer — renders the live timer / clock / message overlay from
-// LiveMessages onto whatever surface hosts it. Mounted inside ProjectionScene's
-// canvas `stage`, so a single instance each paints the audience window and the
-// NDI canvas; the in-dialog preview mounts a second instance at a small size.
+// LiveMessages, styled by the per-type theme in LiveOverlayStyles. Mounted
+// inside ProjectionScene's canvas `stage` (paints audience + NDI); the style
+// editor and the Timers dialog mount preview instances at small sizes.
 //
 // Resolution-independent: every size is a fraction of this item's own height,
-// so the SAME component looks right at 1080p on the projector and at ~180px in
-// the control dialog's preview box. That's also why the inputs below default to
-// the LiveMessages singleton but can be overridden — the dialog rebinds them to
-// its *pending* config so the preview shows exactly what "Show" will push,
-// while the projection instances keep the live singleton bindings.
+// so the SAME component looks right at 1080p and in a small preview box. Inputs
+// default to the live singletons but are overridable — the editors rebind them
+// to pending content / a pending style so a preview matches "Show" exactly.
 //
-// The per-tick clock lives here (a QtObject singleton can't own a Timer). Both
-// projection copies tick independently off Date.now(); a sub-second skew
-// between them is invisible at seconds resolution.
+// Content (mode/message/timers) comes from LiveMessages; placement (position)
+// too; the LOOK (text fill incl. gradient, effect, background) comes from the
+// resolved `style`. The per-tick clock lives here (a QtObject singleton can't
+// own a Timer); both projection copies tick independently off Date.now().
 Item {
     id: layer
 
-    // ── Inputs (default: the live singleton; overridable for preview) ────
+    // ── Content inputs ──────────────────────────────────────────────────
     property string mode:                LiveMessages.mode
     property string message:             LiveMessages.message
     property double countdownTargetMs:   LiveMessages.countdownTargetMs
@@ -32,15 +32,17 @@ Item {
     property bool   clock24h:            LiveMessages.clock24h
     property bool   clockShowSeconds:    LiveMessages.clockShowSeconds
     property string position:            LiveMessages.position
-    property string background:          LiveMessages.background
+
+    // ── Look ────────────────────────────────────────────────────────────
+    // Resolved per-type style; re-resolves when the mode changes or the
+    // operator edits that type's theme (styleFor reads LiveOverlayStyles state).
+    property var  style: LiveOverlayStyles.styleFor(mode)
+    property bool animate: !SettingsService.reduceMotion
 
     readonly property bool _active: mode !== ""
-    readonly property real  _h: height
+    readonly property real _h: height
 
-    // ── Clock ───────────────────────────────────────────────────────────
-    // nowMs is bumped by the Timer; every displayed value binds through it so
-    // the digits advance. Only runs for the ticking modes (a static message
-    // needs no clock).
+    // ── Clock tick ──────────────────────────────────────────────────────
     property double nowMs: 0
     Component.onCompleted: layer.nowMs = Date.now()
     Timer {
@@ -52,25 +54,16 @@ Item {
     }
 
     // ── Derived values ──────────────────────────────────────────────────
-    // ceil for the countdown so it reads "05:00" on start (not "04:59") and
-    // only hits 00:00 at true zero. Count-up floors — elapsed seconds.
     readonly property int _countdownSec: Math.ceil((countdownTargetMs - nowMs) / 1000)
     readonly property double _countupMs:
         countupAccumMs + (countupRunning ? Math.max(0, nowMs - countupStartMs) : 0)
-
-    // Whether the primary line is currently rendering message text (message
-    // mode, or a finished countdown configured to swap to its end message) —
-    // drives font sizing/weight so wrapped prose isn't set at digit scale.
     readonly property bool _showingMessage:
         mode === "message"
         || (mode === "countdown" && _countdownSec <= 0 && countdownEndMode === "message")
 
     function _clockText() {
         var d = new Date(nowMs)
-        var h = d.getHours()
-        var m = d.getMinutes()
-        var s = d.getSeconds()
-        var suffix = ""
+        var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds(), suffix = ""
         if (!clock24h) {
             suffix = h >= 12 ? " PM" : " AM"
             h = h % 12
@@ -80,20 +73,17 @@ Item {
         if (clockShowSeconds) t += ":" + LiveMessages.pad2(s)
         return t + suffix
     }
-
     function _primaryText() {
         switch (mode) {
         case "message": return message
         case "clock":   return _clockText()
         case "countup": return LiveMessages.fmtDuration(_countupMs / 1000)
         case "countdown":
-            if (_countdownSec <= 0 && countdownEndMode === "message")
-                return countdownEndMessage
+            if (_countdownSec <= 0 && countdownEndMode === "message") return countdownEndMessage
             return LiveMessages.fmtDuration(Math.max(0, _countdownSec))
         }
         return ""
     }
-
     function _captionText() {
         if (mode === "countdown") {
             if (_countdownSec <= 0 && countdownEndMode === "message") return ""
@@ -101,6 +91,7 @@ Item {
         }
         return ""
     }
+    function _cased(t) { return (style && style.uppercase) ? String(t).toUpperCase() : t }
 
     // ── Sizing ──────────────────────────────────────────────────────────
     readonly property real _primarySize: {
@@ -109,6 +100,17 @@ Item {
         return Math.max(11, _h * frac)
     }
     readonly property real _captionSize: Math.max(9, _h * 0.05)
+    readonly property int  _fontWeight: (style && style.fontWeight) || Theme.font.weightBold
+    readonly property real _letterSpacing: (style && style.letterSpacing)
+        ? style.letterSpacing * _primarySize / 40 : 0
+    readonly property bool _fillGradient: style && style.textFillType === "gradient"
+
+    // ── Effect (shadow / glow) ──────────────────────────────────────────
+    readonly property string _effect: (style && style.effect) || "none"
+    readonly property color  _effectColor: (style && style.effectColor) || "#000000"
+    readonly property bool   _effectOn: _effect === "shadow" || _effect === "glow"
+    readonly property real   _effBlur: _effect === "glow" ? 0.6 : 0.28
+    readonly property real   _effOffY: _effect === "glow" ? 0 : Math.max(1, _primarySize * 0.03)
 
     // ── Show / hide fade ────────────────────────────────────────────────
     opacity: _active ? 1.0 : 0.0
@@ -118,15 +120,19 @@ Item {
     }
 
     // ── Backdrop ────────────────────────────────────────────────────────
-    // none  → transparent (text floats; the outline keeps it legible)
-    // dim   → half-black scrim (content stays faintly visible behind)
-    // solid → opaque near-black (full takeover — the countdown-loop look)
+    readonly property string _bg: (style && style.background) || "dim"
     Rectangle {
         anchors.fill: parent
-        color: layer.background === "solid" ? "#0a0a0c" : "#000000"
-        opacity: layer.background === "solid" ? 1.0
-               : layer.background === "dim"   ? 0.5
-                                              : 0.0
+        color: layer._bg === "solid" ? (layer.style.backgroundColor || "#0a0a0c") : "#000000"
+        opacity: layer._bg === "solid" ? 1.0 : layer._bg === "dim" ? 0.5 : 0.0
+    }
+    Loader {
+        anchors.fill: parent
+        active: layer._bg === "gradient"
+        sourceComponent: GradientFill {
+            spec: layer.style ? layer.style.backgroundGradient : ({})
+            animate: layer.animate
+        }
     }
 
     // ── Text block ──────────────────────────────────────────────────────
@@ -139,40 +145,86 @@ Item {
          : layer.position === "bottom" ? layer._h * 0.90 - height
                                        : (layer._h - height) / 2
 
-        Text {
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            text: layer._primaryText()
-            visible: text.length > 0
-            color: "#ffffff"
-            font.family: Theme.font.family
-            font.pixelSize: layer._primarySize
-            font.weight: layer._showingMessage ? Theme.font.weightSemiBold
-                                               : Theme.font.weightBold
-            wrapMode: Text.Wrap
-            maximumLineCount: 4
-            elide: Text.ElideRight
-            // Outline so "none"-backdrop text stays readable over any live
-            // content; harmless on dim/solid. Mirrors ProjectionScene's
-            // scriptureFooter / noThemeText legibility treatment.
-            style: Text.Outline
-            styleColor: "#000000"
+        // Primary line. A hidden reference Text always measures the layout so
+        // the gradient variant (which fills its box) gets the exact glyph
+        // height; the solid variant IS that same reference Text made visible.
+        Item {
+            id: primaryHost
+            width: block.width
+            height: refText.contentHeight
+            visible: refText.text.length > 0
+
+            Text {
+                id: refText
+                width: parent.width
+                text: layer._cased(layer._primaryText())
+                visible: !layer._fillGradient
+                color: (layer.style && layer.style.textColor) || "#ffffff"
+                horizontalAlignment: Text.AlignHCenter
+                font.family: Theme.font.family
+                font.pixelSize: layer._primarySize
+                font.weight: layer._fontWeight
+                font.letterSpacing: layer._letterSpacing
+                wrapMode: Text.Wrap
+                maximumLineCount: 4
+                elide: Text.ElideRight
+                layer.enabled: !layer._fillGradient && layer._effectOn
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: layer._effectColor
+                    shadowBlur: layer._effBlur
+                    shadowVerticalOffset: layer._effOffY
+                    shadowHorizontalOffset: 0
+                    autoPaddingEnabled: true
+                }
+            }
+
+            GradientText {
+                anchors.fill: parent
+                visible: layer._fillGradient
+                text: layer._cased(layer._primaryText())
+                spec: layer.style ? layer.style.textGradient : ({})
+                animate: layer.animate
+                fontFamily: Theme.font.family
+                fontPixelSize: layer._primarySize
+                fontWeight: layer._fontWeight
+                letterSpacing: layer._letterSpacing
+                wrapMode: Text.Wrap
+                maximumLineCount: 4
+                layer.enabled: layer._fillGradient && layer._effectOn
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: layer._effectColor
+                    shadowBlur: layer._effBlur
+                    shadowVerticalOffset: layer._effOffY
+                    shadowHorizontalOffset: 0
+                    autoPaddingEnabled: true
+                }
+            }
         }
 
+        // Caption (solid, always — a small supporting line under a countdown).
         Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            text: layer._captionText()
+            text: layer._cased(layer._captionText())
             visible: text.length > 0
-            color: "#f0f0f0"
+            color: (layer.style && layer.style.textColor) || "#ffffff"
+            opacity: 0.85
             font.family: Theme.font.family
             font.pixelSize: layer._captionSize
             font.weight: Theme.font.weightMedium
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
-            style: Text.Outline
-            styleColor: "#000000"
+            layer.enabled: layer._effectOn
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: layer._effectColor
+                shadowBlur: 0.25
+                shadowVerticalOffset: Math.max(1, layer._captionSize * 0.06)
+                autoPaddingEnabled: true
+            }
         }
     }
 }

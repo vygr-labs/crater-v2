@@ -1,18 +1,16 @@
 import QtQuick
 import Crater
 
-// Animated gradient fill — renders a linear / radial / conic / mesh gradient
-// through a single fragment shader (qml/shaders/gradient.frag, compiled to
-// qrc:/crater/shaders/gradient.frag.qsb). Mounted as a container background
-// layer by NodeRenderer when a node's data.fill.type is "gradient"; also
-// reusable by the editor canvas and theme tiles.
+// Animated gradient fill — renders a linear / radial / conic / mesh / reflected
+// / diamond gradient through a single fragment shader (qml/shaders/gradient.frag,
+// compiled to qrc:/crater/shaders/gradient.frag.qsb). Mounted as a container
+// background layer by NodeRenderer when a node's data.fill.type is "gradient",
+// masked by GradientText to fill text, and used by the gradient editor preview.
 //
-// `spec` is the container's data.fill.gradient map:
-//   { style:  "linear" | "radial" | "conic" | "mesh",
-//     colors: ["#…", …],   // 2..6 stops
-//     angle:  0..360,        // degrees (linear direction / conic offset)
-//     speed:  number }       // flow-rate multiplier
-// Every field has a safe default so a half-set spec still renders.
+// `spec` is the canonical gradient spec (see GradientPresets.qml):
+//   { style, stops:[{color,pos}], angle, speed, animate, finish }
+// Legacy specs shaped { colors:[…] } (no positions) still render — normalize()
+// upgrades them to evenly-positioned stops, so existing themes are unchanged.
 //
 // `animate` gates the per-frame clock. Callers pass false for static surfaces
 // (ThemePreview thumbnails) and when SettingsService.reduceMotion is on, so the
@@ -23,45 +21,53 @@ Item {
     property var  spec: ({})
     property bool animate: true
 
-    // Default: deep blue → violet → magenta — a calm worship-background palette
-    // that reads well behind white lyric text. Used until the operator picks
-    // their own stops.
-    readonly property var _colors: (spec && spec.colors && spec.colors.length >= 1)
-        ? spec.colors
-        : ["#1e3a8a", "#7c3aed", "#db2777"]
-    readonly property int _count: Math.max(2, Math.min(6, _colors.length))
-    readonly property int _type: {
-        switch (spec && spec.style) {
-            case "linear": return 0
-            case "radial": return 1
-            case "conic":  return 2
-            default:       return 3   // mesh
+    // Normalized once — positioned stops, valid style/angle/finish.
+    readonly property var  _n:     GradientPresets.normalize(spec)
+    readonly property var  _stops: _n.stops
+    readonly property int  _count: Math.max(2, Math.min(6, _stops.length))
+    readonly property int  _type: {
+        switch (_n.style) {
+            case "radial":    return 1
+            case "conic":     return 2
+            case "mesh":      return 3
+            case "reflected": return 4
+            case "diamond":   return 5
+            default:          return 0   // linear
         }
     }
-    readonly property real _angleRad: ((spec && spec.angle) || 0) * Math.PI / 180
-    readonly property real _speed: (spec && spec.speed !== undefined) ? spec.speed : 1.0
+    readonly property int  _finish: _n.finish === "glossy" ? 1
+                                  : _n.finish === "matte"  ? 2 : 0
+    readonly property real _angleRad: ((_n.angle) || 0) * Math.PI / 180
+    readonly property real _speed: _n.speed
 
-    // Final flow gate: the surface must allow animation (live/edit, not a
-    // thumbnail, reduceMotion off) AND this gradient must opt in. spec.animate
-    // defaults to true (only an explicit false stops it), so older gradients
-    // keep flowing.
-    readonly property bool _flow: animate && (!spec || spec.animate !== false)
+    // Only the periodic styles (conic / mesh) consume `time`; a static linear/
+    // radial/reflected/diamond gradient runs no FrameAnimation at all.
+    readonly property bool _flow: animate && (_n.animate !== false)
+                               && (_type === 2 || _type === 3)
 
     ShaderEffect {
         id: fx
         anchors.fill: parent
         fragmentShader: "qrc:/crater/shaders/gradient.frag.qsb"
 
-        // Up to six stops. Unused slots fall back to color0 so every uniform is
-        // a valid color; the shader ignores them past colorCount.
-        property color color0: root._colors[0] !== undefined ? root._colors[0] : "#000000"
-        property color color1: root._colors[1] !== undefined ? root._colors[1] : color0
-        property color color2: root._colors[2] !== undefined ? root._colors[2] : color0
-        property color color3: root._colors[3] !== undefined ? root._colors[3] : color0
-        property color color4: root._colors[4] !== undefined ? root._colors[4] : color0
-        property color color5: root._colors[5] !== undefined ? root._colors[5] : color0
+        // Up to six stops. Unused color slots fall back to color0; unused
+        // offsets to 1.0 (never read past colorCount, but every uniform must
+        // be valid).
+        property color color0: root._stops[0] !== undefined ? root._stops[0].color : "#000000"
+        property color color1: root._stops[1] !== undefined ? root._stops[1].color : color0
+        property color color2: root._stops[2] !== undefined ? root._stops[2].color : color0
+        property color color3: root._stops[3] !== undefined ? root._stops[3].color : color0
+        property color color4: root._stops[4] !== undefined ? root._stops[4].color : color0
+        property color color5: root._stops[5] !== undefined ? root._stops[5].color : color0
+        property real  offset0: root._stops[0] !== undefined ? root._stops[0].pos : 0.0
+        property real  offset1: root._stops[1] !== undefined ? root._stops[1].pos : 1.0
+        property real  offset2: root._stops[2] !== undefined ? root._stops[2].pos : 1.0
+        property real  offset3: root._stops[3] !== undefined ? root._stops[3].pos : 1.0
+        property real  offset4: root._stops[4] !== undefined ? root._stops[4].pos : 1.0
+        property real  offset5: root._stops[5] !== undefined ? root._stops[5].pos : 1.0
         property int   colorCount:   root._count
         property int   gradientType: root._type
+        property int   finish:       root._finish
         property real  angle:        root._angleRad
         property real  time:         0
 

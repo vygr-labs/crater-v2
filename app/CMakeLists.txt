@@ -57,6 +57,8 @@ set_source_files_properties(
     qml/AppState.qml
     qml/SearchFormat.qml
     qml/LiveMessages.qml
+    qml/GradientPresets.qml
+    qml/LiveOverlayStyles.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -72,6 +74,8 @@ qt_add_qml_module(crater
         qml/Workspaces.qml
         qml/SearchFormat.qml
         qml/LiveMessages.qml
+        qml/GradientPresets.qml
+        qml/LiveOverlayStyles.qml
         qml/ModalLayer.qml
         qml/ProjectionWindow.qml
         qml/NdiCanvas.qml
@@ -111,6 +115,9 @@ qt_add_qml_module(crater
         qml/components/ThemePreview.qml
         qml/components/LogoView.qml
         qml/components/LiveOverlayLayer.qml
+        qml/components/GradientText.qml
+        qml/components/GradientBar.qml
+        qml/components/GradientEditor.qml
         qml/components/LyricSectionEditor.qml
         qml/components/LyricsToolbar.qml
         qml/components/ColorPicker.qml
@@ -183,6 +190,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/SongSection.qml
         qml/dialogs/settings/SearchSection.qml
         qml/dialogs/settings/MediaSection.qml
+        qml/dialogs/settings/OverlaySection.qml
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml

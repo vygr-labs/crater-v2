@@ -180,24 +180,38 @@ auto-advance → *Scripture & Song settings* (§🟡).
         **count-up** stopwatch (pause / resume / reset while live), **wall
         clock** (12/24h, optional seconds), and free-text **message** (with
         built-in quick-message presets).
-  - [x] One positionable overlay — position (top / center / bottom) ×
-        background (none / dim / solid), so the same mechanism does a
-        message-over-live-content banner *and* a full-screen countdown-loop.
-  - [x] Pure-QML: `LiveMessages` singleton (state + control fns) →
-        `LiveOverlayLayer` mounted in `ProjectionScene`'s canvas stage, so one
-        instance each renders on the audience window and the NDI canvas. No
-        core/C++ change, no `ProjectionService` change.
+  - [x] One positionable overlay — position (top / center / bottom); the rest
+        of the look is the per-type **theme** (below), so the same mechanism
+        does a message-over-content banner *and* a full-screen countdown-loop.
+  - [x] `LiveMessages` singleton (state + control fns) → `LiveOverlayLayer`
+        mounted in `ProjectionScene`'s canvas stage, so one instance each
+        renders on the audience window and the NDI canvas. `ProjectionService`
+        untouched.
   - [x] Operator control: `LiveMessagesDialog` (TopBar **Timer** button /
-        **Ctrl+M**) with a live preview that reuses `LiveOverlayLayer`; style +
-        clock-format tweaks retune the live overlay instantly, content commits
-        on **Show**. Button lights up while an overlay is on screen.
-  - Follow-ups: persist message presets + preferred style via `SettingsService`
-    (currently session-only, mirroring `scriptureInputMode` et al.); mirror the
-    overlay into the operator **Live** monitor for at-console feedback; optional
-    accent colour / theme-driven styling; per-output targeting once the Stage
-    Display / multi-output windows land (the layer already renders per-output).
-    Also lays groundwork for the **Props / lower-thirds** item above (a shared
-    above-content overlay layer now exists in `ProjectionScene`).
+        **Ctrl+M**) with a live preview that reuses `LiveOverlayLayer`; a
+        per-mode **Theme** picker; content commits on **Show**.
+  - [x] **Per-type themes + a professional gradient system.** Each type
+        (countdown/countup/clock/message) resolves to a style — font weight /
+        uppercase / spacing, text fill (solid *or* gradient), effect
+        (shadow/glow), background (none/dim/solid/gradient) — edited in a
+        friendly **Settings → Overlay** page. `LiveOverlayStyles` singleton +
+        curated overlay presets, persisted as a JSON blob in
+        `SettingsService.liveOverlayThemes` (no theme-table row / DB migration).
+  - [x] **Gradient engine upgrade (shared, reusable).** `gradient.frag` gained
+        per-stop **positions**, **reflected** + **diamond** styles, and a
+        **glossy/matte finish** pass; `GradientFill` speaks the new
+        positioned-stop spec (back-compatible with `{colors}`); new
+        `GradientText` fills glyphs with a gradient (glossy digits).
+        `GradientPresets` (curated gradients + one-color **harmony** generator +
+        colour math) + a friendly **`GradientEditor`** (preset gallery, draggable
+        **`GradientBar`** stops, glossy/matte toggle, style + direction, harmony).
+  - Follow-ups: **backport the `GradientEditor` into the main Theme Editor's
+    container fills** (Q2 "overlays first" — the engine is already shared);
+    the **"open in full Theme Editor" escape hatch** for overlays (Q1 "Both",
+    deferred); font-family picker + gradient-per-corner; mirror the overlay into
+    the operator **Live** monitor for at-console feedback; per-output targeting
+    once Stage Display lands. Also lays groundwork for the **Props / lower-thirds**
+    item above (a shared above-content overlay layer now exists in `ProjectionScene`).
 
 ### Tier 2 — strong differentiators
 - [ ] **Live video input as a source.** Bring a camera / NDI / Syphon feed in as

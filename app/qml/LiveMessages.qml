@@ -74,14 +74,11 @@ QtObject {
     property bool clock24h: false
     property bool clockShowSeconds: false
 
-    // ── Style ───────────────────────────────────────────────────────────
-    // position   — where the text block sits on the canvas.
-    // background — the full-canvas backdrop behind it:
-    //   "none"  floats over live content (outlined text stays legible),
-    //   "dim"   darkens the whole screen so the text pops (content faint),
-    //   "solid" fully replaces content — the pre-service countdown-loop look.
+    // ── Placement ───────────────────────────────────────────────────────
+    // Where the text block sits on the canvas. The rest of the look (text
+    // fill incl. gradient, effect, background) is the per-type theme resolved
+    // by LiveOverlayStyles — see [[live-timers-worktree]] / OverlaySection.
     property string position: "center"     // "top" | "center" | "bottom"
-    property string background: "solid"    // "none" | "dim" | "solid"
 
     // ── Control functions ───────────────────────────────────────────────
     // Each sets the relevant config and flips `mode`, which the render layer

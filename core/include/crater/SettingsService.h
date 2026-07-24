@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantMap>
 
 #include <memory>
 
@@ -145,6 +146,15 @@ private:
     Q_PROPERTY(bool    highlightScriptureMatches READ highlightScriptureMatches WRITE setHighlightScriptureMatches NOTIFY highlightScriptureMatchesChanged)
     Q_PROPERTY(bool    highlightStrongsMatches   READ highlightStrongsMatches   WRITE setHighlightStrongsMatches   NOTIFY highlightStrongsMatchesChanged)
 
+    // ── Live overlay themes (timers / clock / messages) ──────────────────
+    // Per-type appearance for the live overlay, keyed by overlay type
+    // ("countdown"/"countup"/"clock"/"message") → a style map (font, text fill
+    // incl. gradient spec, effect, background). Persisted as a JSON blob
+    // (nested maps/lists), so the operator's custom overlay looks survive
+    // restarts — no theme-table row / DB migration needed. This service only
+    // persists the blob; LiveOverlayStyles / LiveOverlayLayer own its meaning.
+    Q_PROPERTY(QVariantMap liveOverlayThemes READ liveOverlayThemes WRITE setLiveOverlayThemes NOTIFY liveOverlayThemesChanged)
+
 public:
     explicit SettingsService(QObject* parent = nullptr);
     ~SettingsService() override;
@@ -177,6 +187,7 @@ public:
     bool    highlightSongMatches() const;
     bool    highlightScriptureMatches() const;
     bool    highlightStrongsMatches() const;
+    QVariantMap liveOverlayThemes() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -205,6 +216,7 @@ public:
     void setHighlightSongMatches(bool v);
     void setHighlightScriptureMatches(bool v);
     void setHighlightStrongsMatches(bool v);
+    void setLiveOverlayThemes(const QVariantMap& v);
 
 signals:
     void themeModeChanged();
@@ -234,6 +246,7 @@ signals:
     void highlightSongMatchesChanged();
     void highlightScriptureMatchesChanged();
     void highlightStrongsMatchesChanged();
+    void liveOverlayThemesChanged();
 
 private:
     struct Impl;

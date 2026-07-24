@@ -1,5 +1,6 @@
 #include "crater/SettingsService.h"
 
+#include <QJsonDocument>
 #include <QSettings>
 
 namespace crater {
@@ -61,6 +62,9 @@ struct SettingsService::Impl
     bool    highlightSongMatches      = true;
     bool    highlightScriptureMatches = true;
     bool    highlightStrongsMatches   = true;
+    // Live overlay themes — nested per-type style maps, empty until the
+    // operator customizes. Stored as a JSON string (see key below).
+    QVariantMap liveOverlayThemes;
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -93,6 +97,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightSongMatches      = "Settings/highlightSongMatches";
     static constexpr const char* kHighlightScriptureMatches = "Settings/highlightScriptureMatches";
     static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
+    static constexpr const char* kLiveOverlayThemes         = "Settings/liveOverlayThemes";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -127,6 +132,16 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightSongMatches      = s.value(QString::fromLatin1(Impl::kHighlightSongMatches),      m_impl->highlightSongMatches).toBool();
     m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
     m_impl->highlightStrongsMatches   = s.value(QString::fromLatin1(Impl::kHighlightStrongsMatches),   m_impl->highlightStrongsMatches).toBool();
+    // Live overlay themes persist as a compact JSON object string. A malformed
+    // or non-object blob (older build, hand-edit) degrades to an empty map so
+    // the render side just falls back to its built-in defaults.
+    {
+        const QString blob = s.value(QString::fromLatin1(Impl::kLiveOverlayThemes)).toString();
+        if (!blob.isEmpty()) {
+            const QJsonDocument doc = QJsonDocument::fromJson(blob.toUtf8());
+            if (doc.isObject()) m_impl->liveOverlayThemes = doc.object().toVariantMap();
+        }
+    }
 }
 
 SettingsService::~SettingsService() = default;
@@ -158,6 +173,7 @@ bool    SettingsService::showMatchedLyricSnippet() const   { return m_impl->show
 bool    SettingsService::highlightSongMatches() const      { return m_impl->highlightSongMatches; }
 bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
 bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
+QVariantMap SettingsService::liveOverlayThemes() const     { return m_impl->liveOverlayThemes; }
 
 qreal SettingsService::fontScale() const
 {
@@ -411,6 +427,18 @@ void SettingsService::setHighlightStrongsMatches(bool v)
     m_impl->highlightStrongsMatches = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightStrongsMatches), v);
     emit highlightStrongsMatchesChanged();
+}
+
+void SettingsService::setLiveOverlayThemes(const QVariantMap& v)
+{
+    if (m_impl->liveOverlayThemes == v) return;
+    m_impl->liveOverlayThemes = v;
+    // Serialize the (possibly nested) map to a compact JSON string so it
+    // round-trips through the QSettings backend regardless of platform.
+    const QJsonDocument doc = QJsonDocument::fromVariant(v);
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kLiveOverlayThemes),
+                              QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+    emit liveOverlayThemesChanged();
 }
 
 }  // namespace crater
