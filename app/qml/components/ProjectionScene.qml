@@ -396,6 +396,20 @@ Item {
                     }
                 }
             }
+
+            // ── Live overlay: timers / clock / messages ─────────────────
+            // Topmost layer, above content AND logo, so an operator message
+            // or a pre-service countdown is always visible. Reads the
+            // LiveMessages singleton directly — deliberately orthogonal to
+            // ProjectionService.currentItem, so it survives page changes,
+            // go-live, clear and the logo toggle (the same independence the
+            // logo has). Because this lives inside the shared canvas stage,
+            // one instance each renders it on the audience window and the
+            // NDI canvas.
+            LiveOverlayLayer {
+                id: liveOverlay
+                anchors.fill: parent
+            }
         }
     }
 }

@@ -313,6 +313,17 @@ Rectangle {
             }
         }
 
+        // Timers, clock & live messages. Opens the control dialog; the button
+        // lights up (active) while an overlay is on screen so the operator has
+        // a persistent at-a-glance indicator without opening the dialog.
+        GhostButton {
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "clock"
+            text: qsTr("Timer")
+            active: LiveMessages.active
+            onClicked: AppState.openModal("liveMessages", {})
+        }
+
         GhostButton {
             anchors.verticalCenter: parent.verticalCenter
             iconName: "image"

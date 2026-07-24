@@ -568,6 +568,19 @@ ApplicationWindow {
     // (ScriptureTab / SongsTab / MediaTab) handles via its
     // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
     Shortcut { sequence: "Ctrl+T"; onActivated: AppState.libraryAddToSchedule() }
+    // Ctrl+M = open/close the Timers & Messages control (the live overlay:
+    // countdowns, count-up, clock, free-text messages). "M for Message."
+    // Gated like the other modal toggles so it never fights a workspace or a
+    // different open dialog; pressing it again while the dialog is up closes it.
+    Shortcut {
+        sequence: "Ctrl+M"
+        enabled: AppState.workspaceMode === ""
+              && (AppState.activeModal === "" || AppState.activeModal === "liveMessages")
+        onActivated: {
+            if (AppState.activeModal === "liveMessages") AppState.closeModal()
+            else                                         AppState.openModal("liveMessages", {})
+        }
+    }
 
     // Save the working schedule. Updates the currently loaded saved row if
     // there is one; otherwise prompts the operator for a name (Save As).
