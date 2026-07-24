@@ -204,9 +204,31 @@ auto-advance → *Scripture & Song settings* (§🟡).
       sponsor bugs, "baby in the nursery" banners — without disturbing what's
       live. New always-on output layer in `ProjectionScene.qml` + a Props
       library/tab; distinct from the theme/content layer.
-- [ ] **Timers, clocks & live messages.** Countdown-to-service loops, count-up
-      timers, wall clocks, and free-text messages pushed to the projection /
-      stage screens on the fly. Feeds naturally into the Stage Display work.
+- **Timers, clocks & live messages — DONE (v1).** A live overlay pushed to the
+      projection (audience + NDI) on the fly, orthogonal to the live item so it
+      survives page changes / go-live / clear / logo (like the logo layer).
+  - [x] Four modes: **countdown** (by duration *or* to a wall-clock time),
+        **count-up** stopwatch (pause / resume / reset while live), **wall
+        clock** (12/24h, optional seconds), and free-text **message** (with
+        built-in quick-message presets).
+  - [x] One positionable overlay — position (top / center / bottom) ×
+        background (none / dim / solid), so the same mechanism does a
+        message-over-live-content banner *and* a full-screen countdown-loop.
+  - [x] Pure-QML: `LiveMessages` singleton (state + control fns) →
+        `LiveOverlayLayer` mounted in `ProjectionScene`'s canvas stage, so one
+        instance each renders on the audience window and the NDI canvas. No
+        core/C++ change, no `ProjectionService` change.
+  - [x] Operator control: `LiveMessagesDialog` (TopBar **Timer** button /
+        **Ctrl+M**) with a live preview that reuses `LiveOverlayLayer`; style +
+        clock-format tweaks retune the live overlay instantly, content commits
+        on **Show**. Button lights up while an overlay is on screen.
+  - Follow-ups: persist message presets + preferred style via `SettingsService`
+    (currently session-only, mirroring `scriptureInputMode` et al.); mirror the
+    overlay into the operator **Live** monitor for at-console feedback; optional
+    accent colour / theme-driven styling; per-output targeting once the Stage
+    Display / multi-output windows land (the layer already renders per-output).
+    Also lays groundwork for the **Props / lower-thirds** item above (a shared
+    above-content overlay layer now exists in `ProjectionScene`).
 
 ### Tier 2 — strong differentiators
 - [ ] **Live video input as a source.** Bring a camera / NDI / Syphon feed in as

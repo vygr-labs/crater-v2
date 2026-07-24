@@ -61,6 +61,7 @@ set_source_files_properties(
     qml/Workspaces.qml
     qml/AppState.qml
     qml/SearchFormat.qml
+    qml/LiveMessages.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -75,6 +76,7 @@ qt_add_qml_module(crater
         qml/LucideIcons.qml
         qml/Workspaces.qml
         qml/SearchFormat.qml
+        qml/LiveMessages.qml
         qml/ModalLayer.qml
         qml/ProjectionWindow.qml
         qml/NdiCanvas.qml
@@ -113,6 +115,7 @@ qt_add_qml_module(crater
         qml/components/ThemedMonitor.qml
         qml/components/ThemePreview.qml
         qml/components/LogoView.qml
+        qml/components/LiveOverlayLayer.qml
         qml/components/LyricSectionEditor.qml
         qml/components/LyricsToolbar.qml
         qml/components/ColorPicker.qml
@@ -175,6 +178,7 @@ qt_add_qml_module(crater
         qml/dialogs/MediaEditDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
+        qml/dialogs/LiveMessagesDialog.qml
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml
