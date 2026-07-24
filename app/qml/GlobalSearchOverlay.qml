@@ -54,6 +54,14 @@ ModalShell {
     property string shownQuery: ""
     property int    currentIndex: 0
 
+    // Which lyric section (verse / chorus) of the focused song the operator has
+    // singled out to stage. -1 means "auto" — fall back to the section that
+    // actually matched the query (matchedSectionIndex). Reset whenever the
+    // focused row changes so each song starts on its matched verse, not a stale
+    // index carried over from the previous row.
+    property int selectedSectionIndex: -1
+    onCurrentIndexChanged: selectedSectionIndex = -1
+
     readonly property var currentRow:
         (currentIndex >= 0 && currentIndex < flatRows.length) ? flatRows[currentIndex] : null
 
@@ -64,6 +72,66 @@ ModalShell {
         (currentRow && currentRow.type === "songs" && currentRow.source)
             ? SongService.fetchSong(currentRow.source.id)
             : null
+
+    // ── Song lyric-section targeting ──────────────────────────────────────
+    // The palette lets the operator pick WHICH verse/chorus of a song to stage
+    // and defaults to the one the query matched, so pressing Enter opens Preview
+    // on the right slide. These helpers also translate a song's raw section
+    // index into the Preview pane's page index, which skips sections that have
+    // no lyric lines (mirroring PreviewPanel's content filter).
+
+    readonly property int sectionCount:
+        (currentFullSong && currentFullSong.sections) ? currentFullSong.sections.length : 0
+
+    // First section whose lyrics contain the query (whole phrase preferred, then
+    // any query word); 0 when nothing matches, so a song always has a target.
+    function matchedSectionIndex(song, q) {
+        if (!song || !song.sections) return 0
+        const lq = String(q || "").toLowerCase().trim()
+        if (lq.length === 0) return 0
+        for (let i = 0; i < song.sections.length; i++) {
+            const sec = song.sections[i]
+            if (sec && sec.lines && sec.lines.join("\n").toLowerCase().indexOf(lq) !== -1)
+                return i
+        }
+        const words = lq.split(/\s+/).filter(function(w) { return w.length >= 2 })
+        for (let i = 0; i < song.sections.length; i++) {
+            const sec = song.sections[i]
+            if (!sec || !sec.lines) continue
+            const joined = sec.lines.join("\n").toLowerCase()
+            for (let w = 0; w < words.length; w++)
+                if (joined.indexOf(words[w]) !== -1) return i
+        }
+        return 0
+    }
+
+    // Concrete section for the focused song: the operator's explicit pick if
+    // any, else the matched section.
+    function effectiveSectionIndex() {
+        if (!currentFullSong) return 0
+        if (selectedSectionIndex >= 0) return selectedSectionIndex
+        return matchedSectionIndex(currentFullSong, shownQuery)
+    }
+
+    // Raw section index -> Preview page index (lyric-bearing sections before it).
+    function sectionToPreviewPage(song, sectionIdx) {
+        if (!song || !song.sections) return 0
+        let page = 0
+        for (let i = 0; i < sectionIdx && i < song.sections.length; i++) {
+            const sec = song.sections[i]
+            if (sec && sec.lines && sec.lines.length > 0) page++
+        }
+        return page
+    }
+
+    // Tab / Shift+Tab within the focused song's sections. Clamped, not wrapped.
+    function moveSection(delta) {
+        if (!currentFullSong || sectionCount <= 1) return
+        let n = effectiveSectionIndex() + delta
+        if (n < 0) n = 0
+        if (n > sectionCount - 1) n = sectionCount - 1
+        selectedSectionIndex = n
+    }
 
     // ── Canonical schedule-item builders (mirror the per-tab builders) ────
 
@@ -169,6 +237,11 @@ ModalShell {
         } else if (row.type === "songs") {
             r.songId = row.source.id
             r.revealQuery = row.title
+            // The Preview slide to open on: the matched / operator-selected
+            // lyric section. Only meaningful for the focused row, whose full
+            // song (with sections) is loaded — other rows stage from page 0.
+            if (currentFullSong && currentFullSong.id === row.source.id)
+                r.page = sectionToPreviewPage(currentFullSong, effectiveSectionIndex())
             if (needItem) r.item = buildSongItem(SongService.fetchSong(row.source.id))
         } else if (row.type === "media") {
             r.revealQuery = row.title
@@ -398,6 +471,14 @@ ModalShell {
                         root.moveSelection(-1); event.accepted = true
                     } else if (event.key === Qt.Key_Down) {
                         root.moveSelection(1); event.accepted = true
+                    } else if (event.key === Qt.Key_Tab) {
+                        // Tab / Shift+Tab step through the focused song's lyric
+                        // sections (Left/Right stay free for text-cursor edits).
+                        // A no-op unless a multi-section song is focused.
+                        root.moveSection((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Backtab) {
+                        root.moveSection(-1); event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         if (!root.currentRow) { event.accepted = true; return }
                         if (event.modifiers & Qt.ControlModifier)
@@ -658,33 +739,77 @@ ModalShell {
                             }
 
                             // Song lyrics — every section, so the operator can
-                            // confirm they've got the right song.
+                            // confirm the song AND pick which verse to stage.
+                            // The matched (or explicitly selected) section wears
+                            // the gold "staged" chrome so it's clear what Enter
+                            // will open in Preview; click a section to retarget,
+                            // double-click to stage it straight away.
                             Repeater {
                                 model: (root.currentRow && root.currentRow.type === "songs"
                                         && root.currentFullSong)
                                        ? root.currentFullSong.sections : []
-                                delegate: Column {
+                                delegate: Rectangle {
+                                    id: secRect
+                                    required property int index
                                     required property var modelData
                                     width: detailBody.width
-                                    spacing: 1
-                                    bottomPadding: Theme.space.sm
-                                    Text {
-                                        visible: modelData.label && modelData.label.length > 0
-                                        text: modelData.label
-                                        color: Theme.color.textTertiary
-                                        font.family: Theme.font.family
-                                        font.pixelSize: Theme.font.smallSize
-                                        font.weight: Theme.font.weightSemiBold
+                                    height: secCol.implicitHeight + Theme.space.sm * 2
+                                    readonly property bool selected: root.effectiveSectionIndex() === index
+                                    color: selected ? Theme.color.previewSubtle
+                                         : secMa.containsMouse ? Theme.color.overlay
+                                         : "transparent"
+                                    border.color: selected ? Theme.color.previewMuted : "transparent"
+                                    border.width: 1
+
+                                    // Left accent rail on the staged section.
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: 2
+                                        visible: secRect.selected
+                                        color: Theme.color.preview
                                     }
-                                    Text {
-                                        width: parent.width
-                                        wrapMode: Text.WordWrap
-                                        text: (modelData.lines && modelData.lines.length > 0)
-                                              ? modelData.lines.join("\n") : ""
-                                        color: Theme.color.textPrimary
-                                        font.family: Theme.font.family
-                                        font.pixelSize: Theme.font.bodySize
-                                        lineHeight: 1.2
+
+                                    Column {
+                                        id: secCol
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.leftMargin: Theme.space.sm
+                                        anchors.rightMargin: Theme.space.sm
+                                        anchors.topMargin: Theme.space.sm
+                                        spacing: 1
+                                        Text {
+                                            visible: secRect.modelData.label && secRect.modelData.label.length > 0
+                                            text: secRect.modelData.label
+                                            color: secRect.selected ? Theme.color.preview : Theme.color.textTertiary
+                                            font.family: Theme.font.family
+                                            font.pixelSize: Theme.font.smallSize
+                                            font.weight: Theme.font.weightSemiBold
+                                        }
+                                        Text {
+                                            width: parent.width
+                                            wrapMode: Text.WordWrap
+                                            text: (secRect.modelData.lines && secRect.modelData.lines.length > 0)
+                                                  ? secRect.modelData.lines.join("\n") : ""
+                                            color: Theme.color.textPrimary
+                                            font.family: Theme.font.family
+                                            font.pixelSize: Theme.font.bodySize
+                                            lineHeight: 1.2
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: secMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.selectedSectionIndex = secRect.index
+                                        onDoubleClicked: {
+                                            root.selectedSectionIndex = secRect.index
+                                            root.activateCurrent()
+                                        }
                                     }
                                 }
                             }
@@ -776,10 +901,15 @@ ModalShell {
                 anchors.left: parent.left
                 anchors.leftMargin: Theme.space.lg
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("↑↓ Navigate   ·   ↵ Primary   ·   Ctrl+↵ Go Live   ·   Shift+↵ Schedule   ·   Esc Close")
+                // Surface the ⇥ verse-switcher hint only when a multi-section
+                // song is focused — it's meaningless for every other row.
+                text: (root.currentRow && root.currentRow.type === "songs" && root.sectionCount > 1)
+                      ? qsTr("↑↓ Navigate   ·   ⇥ Verse   ·   ↵ Primary   ·   Ctrl+↵ Go Live   ·   Shift+↵ Schedule   ·   Esc Close")
+                      : qsTr("↑↓ Navigate   ·   ↵ Primary   ·   Ctrl+↵ Go Live   ·   Shift+↵ Schedule   ·   Esc Close")
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
+                elide: Text.ElideRight
             }
         }
     }
