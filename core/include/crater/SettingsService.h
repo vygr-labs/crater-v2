@@ -130,6 +130,21 @@ private:
     // always-letterbox behavior so existing installs look unchanged.
     Q_PROPERTY(QString mediaDefaultFit    READ mediaDefaultFit    WRITE setMediaDefaultFit    NOTIFY mediaDefaultFitChanged)
 
+    // ── Library search presentation ──────────────────────────────────────
+    // How the library tabs present FTS search results. All default ON so the
+    // out-of-box experience is unchanged; operators who find the highlight or
+    // the lyric excerpt distracting can quiet each surface independently.
+    //
+    // showMatchedLyricSnippet — Songs only: swap the author subtitle for the
+    // matched-lyric excerpt on a lyrics hit (and let the row grow to fit it).
+    // highlight{Song,Scripture,Strongs}Matches — bold/accent the matched terms
+    // in that tab's results. Per-tab because operators reasonably want the
+    // colour in one library but not another.
+    Q_PROPERTY(bool    showMatchedLyricSnippet   READ showMatchedLyricSnippet   WRITE setShowMatchedLyricSnippet   NOTIFY showMatchedLyricSnippetChanged)
+    Q_PROPERTY(bool    highlightSongMatches      READ highlightSongMatches      WRITE setHighlightSongMatches      NOTIFY highlightSongMatchesChanged)
+    Q_PROPERTY(bool    highlightScriptureMatches READ highlightScriptureMatches WRITE setHighlightScriptureMatches NOTIFY highlightScriptureMatchesChanged)
+    Q_PROPERTY(bool    highlightStrongsMatches   READ highlightStrongsMatches   WRITE setHighlightStrongsMatches   NOTIFY highlightStrongsMatchesChanged)
+
 public:
     explicit SettingsService(QObject* parent = nullptr);
     ~SettingsService() override;
@@ -158,6 +173,10 @@ public:
     int     autoAdvanceDelaySeconds() const;
     bool    autoAdvanceLoop() const;
     QString mediaDefaultFit() const;
+    bool    showMatchedLyricSnippet() const;
+    bool    highlightSongMatches() const;
+    bool    highlightScriptureMatches() const;
+    bool    highlightStrongsMatches() const;
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
@@ -182,6 +201,10 @@ public:
     void setAutoAdvanceDelaySeconds(int v);
     void setAutoAdvanceLoop(bool v);
     void setMediaDefaultFit(const QString& v);
+    void setShowMatchedLyricSnippet(bool v);
+    void setHighlightSongMatches(bool v);
+    void setHighlightScriptureMatches(bool v);
+    void setHighlightStrongsMatches(bool v);
 
 signals:
     void themeModeChanged();
@@ -207,6 +230,10 @@ signals:
     void autoAdvanceDelaySecondsChanged();
     void autoAdvanceLoopChanged();
     void mediaDefaultFitChanged();
+    void showMatchedLyricSnippetChanged();
+    void highlightSongMatchesChanged();
+    void highlightScriptureMatchesChanged();
+    void highlightStrongsMatchesChanged();
 
 private:
     struct Impl;

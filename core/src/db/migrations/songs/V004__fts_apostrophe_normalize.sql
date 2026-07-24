@@ -1,0 +1,20 @@
+-- Songs schema v4 — clear songs_fts so it rebuilds with apostrophe-normalised
+-- content on first launch after this upgrade.
+--
+-- Search quality: the FTS5 trigram tokenizer treats an apostrophe as an
+-- ordinary character, so "God's" indexes trigrams containing the quote and a
+-- query for "gods" (or a typo'd "i's love") would silently miss. Starting in
+-- this commit both sides strip apostrophes: the query in crater::db::
+-- buildFtsQuery, and the indexed content via replace(replace(x,'''',''),
+-- char(8217),'') wrapped around every FTS column in SongService's insert /
+-- delete / rebuild statements.
+--
+-- Existing rows were indexed WITH apostrophes, so they must be re-indexed.
+-- Same mechanism as V002: clear the index here; SongService's constructor
+-- detects an empty songs_fts alongside a non-empty songs table and fires a
+-- sync rebuildFtsIndex() that repopulates with the now apostrophe-stripped
+-- content. Bounded by song count (typically <500) — well under a second.
+--
+-- 'delete-all', not plain DELETE: songs_fts is a contentless FTS5 table
+-- (content=''), which rejects DELETE. This is the only way to clear it.
+INSERT INTO songs_fts(songs_fts) VALUES('delete-all');

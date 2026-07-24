@@ -325,8 +325,18 @@ void EasyWorshipImporter::run(QStringList dbFiles, bool skipDuplicates)
                 "INSERT INTO song_sections (song_id, label, kind, lines_json, "
                 "sort_order) VALUES (?, ?, ?, ?, ?)"));
             auto insFts = target.prepare(QStringLiteral(
+                // Apostrophe-strip title/author/lyrics at index time (ASCII ' +
+                // curly char(8217)) so EasyWorship-imported songs match the
+                // apostrophe-normalised query and the identical normalisation
+                // SongService's upsert / delete / rebuild apply. A mismatch
+                // here would corrupt the contentless songs_fts index the first
+                // time such a song is edited (the 'delete' would subtract
+                // stripped tokens that were never inserted). rowid stays bare.
                 "INSERT INTO songs_fts (rowid, title, author, lyrics) "
-                "VALUES (?, ?, ?, ?)"));
+                "VALUES (?, "
+                "        replace(replace(?, '''', ''), char(8217), ''), "
+                "        replace(replace(?, '''', ''), char(8217), ''), "
+                "        replace(replace(?, '''', ''), char(8217), ''))"));
 
             int processed = 0;
             int imported  = 0;

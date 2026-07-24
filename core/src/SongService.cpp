@@ -314,8 +314,20 @@ struct SongService::Impl
             // `+`, `{`, `}` as ordinary chars and degrade bm25 ranking. Title
             // and author are SELECTed inline — they're plain text already.
             // Binds: 1 = flattened lyrics, 2 = song id.
+            //
+            // Every FTS column is wrapped in replace(replace(x,'''',''),
+            // char(8217),'') to strip ASCII + curly apostrophes at index time.
+            // The trigram tokenizer treats a quote as an ordinary char, so this
+            // keeps the index in step with the apostrophe-normalised query
+            // (crater::db::buildFtsQuery). The SAME expression MUST wrap
+            // deleteFtsForSong and the rebuild below — a contentless FTS5
+            // 'delete' subtracts the tokens it's given, so any mismatch between
+            // insert-time and delete-time normalisation corrupts the index.
             "INSERT INTO songs_fts (rowid, title, author, lyrics) "
-            "SELECT s.id, s.title, COALESCE(s.author, ''), ? "
+            "SELECT s.id, "
+            "       replace(replace(s.title, '''', ''), char(8217), ''), "
+            "       replace(replace(COALESCE(s.author, ''), '''', ''), char(8217), ''), "
+            "       replace(replace(?, '''', ''), char(8217), '') "
             "FROM songs s WHERE s.id = ?")))
         , deleteFtsForSong(conn.prepare(QStringLiteral(
             // songs_fts is a CONTENTLESS FTS5 table (content=''), so a plain
@@ -330,8 +342,14 @@ struct SongService::Impl
             // touches lyrics). Callers compute the flatten in C++ via
             // flattenLinesFromJson() over the CURRENT song_sections rows
             // (before any mutation) and bind it as parameter 1.
+            // Apostrophe stripping MUST match upsertFtsForSong exactly (see
+            // there) — the 'delete' subtracts the tokens we hand it, so the
+            // normalisation applied here has to reproduce what was inserted.
             "INSERT INTO songs_fts(songs_fts, rowid, title, author, lyrics) "
-            "SELECT 'delete', s.id, s.title, COALESCE(s.author, ''), ? "
+            "SELECT 'delete', s.id, "
+            "       replace(replace(s.title, '''', ''), char(8217), ''), "
+            "       replace(replace(COALESCE(s.author, ''), '''', ''), char(8217), ''), "
+            "       replace(replace(?, '''', ''), char(8217), '') "
             "FROM songs s WHERE s.id = ?")))
         , duplicateSongRow(conn.prepare(QStringLiteral(
             // Binds (1=nowMs, 2=nowMs, 3=src id). is_favorite resets to 0 so
@@ -892,8 +910,14 @@ QFuture<void> SongService::rebuildFtsIndex()
                 "SELECT lines_json FROM song_sections WHERE song_id = ? "
                 "ORDER BY sort_order"));
             db::Statement insertFts = conn.prepare(QStringLiteral(
+                // Same apostrophe-stripping wrap as upsertFtsForSong so a full
+                // rebuild reproduces the normalised index (this is the path the
+                // V004 migration's delete-all triggers on next launch).
                 "INSERT INTO songs_fts (rowid, title, author, lyrics) "
-                "SELECT s.id, s.title, COALESCE(s.author, ''), ? "
+                "SELECT s.id, "
+                "       replace(replace(s.title, '''', ''), char(8217), ''), "
+                "       replace(replace(COALESCE(s.author, ''), '''', ''), char(8217), ''), "
+                "       replace(replace(?, '''', ''), char(8217), '') "
                 "FROM songs s WHERE s.id = ?"));
 
             int nSongs = 0;
