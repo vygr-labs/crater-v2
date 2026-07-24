@@ -544,6 +544,19 @@ ApplicationWindow {
 
     // Production actions
     Shortcut { sequence: "Ctrl+,"; onActivated: AppState.openModal("settings", {}) }
+    // Ctrl+K = the global search command palette (search across every library
+    // at once). Toggles: closed → open, open → close. Gated so it never stacks
+    // on another modal or the full-screen theme-editor workspace; the palette
+    // itself lives in ModalLayer under activeModal === "globalSearch".
+    Shortcut {
+        sequence: "Ctrl+K"
+        enabled: AppState.workspaceMode === ""
+              && (AppState.activeModal === "" || AppState.activeModal === "globalSearch")
+        onActivated: {
+            if (AppState.activeModal === "globalSearch") AppState.closeGlobalSearch()
+            else                                         AppState.openGlobalSearch()
+        }
+    }
     // Ctrl+L = toggle the logo overlay. "L for Logo." Both the projection
     // window and the live mini-monitor read AppState.showLogo (via their
     // respective LogoView components), so a single toggleLogo() flip

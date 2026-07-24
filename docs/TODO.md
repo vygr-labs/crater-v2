@@ -35,22 +35,32 @@ Shipped: `CollectionService` over `collections` + `collection_songs` (V003 migra
 - [x] SongsTab filters to a selected collection; song context menu has an "Add to Collection…" submenu + "Remove from Collection".
 - [ ] Optional later: drag-reorder of collections and of songs within a collection (schema has `sort_order`, no UI yet).
 
-### Global search (command-palette)
-Today search is **per-tab only** — each library tab owns its own `TabSearchBar`
-bound to `AppState.searchText.<tab>` + `AppState.librarySearchMode.<tab>`. There
-is no single entry point that searches *across* libraries. Build one.
-- [ ] Global shortcut (e.g. `Ctrl+K` / `Ctrl+F`) that opens a floating search
-      overlay with a single text input, mounted in `ModalLayer.qml` and driven
-      by new `AppState` state (`globalSearch.open`, `globalSearch.query`).
-- [ ] Fan out the typed query across the existing services and merge results into
-      one grouped, ranked list: Scripture (`BibleService::search`), Songs
-      (`SongService::search`), Strong's (`StrongsService::search`), Media
-      (`MediaService`), Themes (`ThemeService`), Schedule items. Debounce like
-      `ScriptureTab._debouncedQuery` (`ScriptureTab.qml:51-58`).
-- [ ] Grouped results with keyboard nav (↑/↓ across groups, Enter to act) and a
-      per-row primary action: reveal in its tab, add to schedule, or send to
-      Preview/Live. Reuse `SearchHit`/`Song` value types where possible.
-- [ ] Empty / loading / no-result states; remember last query per session.
+### Global search (command-palette) — DONE
+A cross-library command palette, `Ctrl+K`. `GlobalSearchOverlay.qml` (mounted in
+`ModalLayer.qml` under `activeModal === "globalSearch"`, toggled by the Ctrl+K
+`Shortcut` in `Main.qml`) is a two-pane palette: grouped results on the left, a
+live detail preview on the right. All aggregation is **pure QML** — it calls the
+existing `Q_INVOKABLE` searches, so it inherits any ranking work from the
+`search-quality` branch with zero merge surface.
+- [x] `Ctrl+K` opens/closes a floating overlay driven by `AppState.openGlobalSearch()`
+      / `closeGlobalSearch()` + a session-persisted `AppState.globalSearchQuery`.
+- [x] Fan-out (200 ms debounce) across Scripture (`BibleService.search` scoped to the
+      active translation + a `parseReference` direct hit), Songs (`SongService.search`),
+      Strong's (`StrongsService.search`, when available + tab on), Media / Themes
+      (client-side title/name filter over `allMedia` / `allThemes`), merged into
+      grouped, per-service-ranked results (cap 6/group + "+N more").
+- [x] Grouped keyboard nav (↑/↓ across groups) + a **detail preview pane** — song
+      lyrics (`fetchSong`), full verse, media thumbnail, theme swatch — so the
+      operator confirms the hit before acting. Canonical item builders mirror the
+      per-tab builders, so a hit stages/projects/schedules identically to its tab.
+- [x] **Configurable per-type primary action** (Settings → Search): each result type
+      maps to Preview / Reveal / Go Live (`SettingsService.globalSearchActions`,
+      persisted). Defaults differ by type. Every row also exposes all actions as
+      buttons; `Enter` = primary, `Ctrl+Enter` = Go Live, `Shift+Enter` = Schedule.
+- [x] Empty / no-result states; last query remembered per session.
+- [ ] Follow-ups: fuzzy/typo-tolerant matching; a "recent searches" row; include
+      current **schedule items** as a searchable group; select-and-highlight the
+      revealed row (today reveal seeds the tab's search box / sync signal).
 
 ---
 
