@@ -64,6 +64,26 @@ QString quoteFts(const QString& term)
     return QLatin1Char('"') + escaped + QLatin1Char('"');
 }
 
+// Strip apostrophes / single-quotes so a stray or missing quote can never
+// change matching. The trigram tokenizer treats an apostrophe as an ordinary
+// character, so "God's" indexes trigrams containing the quote — a query for
+// "gods" (or a typo'd "i's") would then miss. We normalise BOTH sides: the
+// indexed content strips the SAME two characters in SQL (the song FTS
+// statements, BibleService::rebuildFtsIndex, the ElectronDataImporter, and the
+// re-index migrations), so index and query always agree.
+//
+// NOTE: the on-screen highlighter (SearchFormat.qml) deliberately does NOT
+// strip — it searches the DISPLAYED text, which keeps its apostrophes, so a
+// search for "God's" still bolds the literal "God's" on screen. Matching
+// (here) and highlighting (there) have different jobs; only matching needs
+// the index and query to agree.
+QString stripApostrophes(QString s)
+{
+    s.remove(QLatin1Char('\''));   // U+0027 APOSTROPHE
+    s.remove(QChar(0x2019));       // U+2019 RIGHT SINGLE QUOTATION MARK
+    return s;
+}
+
 }  // namespace
 
 FtsQuery buildFtsQuery(const QString& raw)
@@ -92,6 +112,11 @@ FtsQuery buildFtsQuery(const QString& raw)
                 text = text.mid(1);
             }
         }
+
+        // Normalise apostrophes out before the length check so index and query
+        // agree: "i's" collapses to "is" (then dropped below as sub-trigram),
+        // "God's" to "gods" — matching the apostrophe-stripped FTS content.
+        text = stripApostrophes(text);
 
         // Trigram floor: a term shorter than 3 chars produces no trigrams and
         // can never match; including it would zero an implicit-AND query, so
