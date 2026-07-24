@@ -129,9 +129,12 @@ QtObject {
     property var  libraryPreviewItem: null
     property bool libraryLiveActive:  false
 
-    function pushLibraryPreview(item) {
+    function pushLibraryPreview(item, page) {
         libraryPreviewItem = item || null
-        previewSubIndex = 0
+        // `page` is optional (defaults to 0). The global-search palette passes
+        // the matched / operator-selected lyric section so Preview opens jumped
+        // to that slide with its card highlighted, not always the first.
+        previewSubIndex = (page === undefined || page < 0) ? 0 : page
     }
 
     function clearLibraryPreview() {
@@ -931,14 +934,29 @@ QtObject {
 
         if (action === "golive") {
             closeGlobalSearch()
-            pushLibraryLive(item)
+            pushLibraryLive(item, result.page || 0)
         } else if (action === "schedule") {
             // Keep the palette open so the operator can queue several items in
             // a row without re-opening it each time.
             addItemToSchedule(item)
         } else { // "preview"
-            closeGlobalSearch()
-            pushLibraryPreview(item)
+            // Songs & scriptures aren't just staged — they're also revealed and
+            // highlighted in their own library tab, so the palette hit behaves
+            // like "take me to this item": the row lights up in Songs/Scripture
+            // AND the slide lands in Preview.
+            if (result.type === "songs") {
+                revealResult(result)                       // switch tab + highlight the song row (closes palette)
+                pushLibraryPreview(item, result.page || 0) // stage, jumped to the matched / selected lyric section
+                setActiveFocus("preview")                  // so that section's card shows the full active highlight
+            } else if (result.type === "scripture") {
+                // revealResult already stages the verse to Preview (via the
+                // Scripture tab's pushPreviewFor) AND highlights its row, with
+                // the tab's richer item (carries copyText for the copy button).
+                revealResult(result)
+            } else {
+                closeGlobalSearch()
+                pushLibraryPreview(item, result.page || 0)
+            }
         }
     }
 }
