@@ -633,11 +633,24 @@ Item {
         delegate: Item {
             id: songRow
             width: list.width - Theme.size.scrollBar   // leave the scrollbar its lane
-            // 36px matches electron's virtualizer row height (estimateSize: 36
-            // + py-2 padding). Title at 14px + author at 12px fit because the
-            // Column is verticalCenter-anchored and Qt's font metrics leave
-            // ~3px of slack each side.
-            height: 36
+
+            // A matched-lyric snippet is being shown on this row: there's an
+            // active query, this hit carried a lyric excerpt, and the operator
+            // hasn't turned the snippet off (Settings › Search). Drives both the
+            // taller row and the subtitle's snippet-vs-author choice below.
+            readonly property bool _showSnippet:
+                root._debouncedQuery.length > 0
+                && (modelData.snippet || "").length > 0
+                && SettingsService.showMatchedLyricSnippet
+
+            // Row height follows content. 52px when a snippet is shown —
+            // electron's *effective* row height (virtualizer estimateSize 36 +
+            // py-2, 8px top/bottom padding) — giving the two-line title+snippet
+            // block room and separating adjacent songs. 36px otherwise: the
+            // compact single-line-with-author look the operator prefers while
+            // browsing (the bare estimateSize the port originally used, which
+            // only looked cramped once the snippet line was always present).
+            height: _showSnippet ? 52 : 36
 
             readonly property bool _selected: list.currentIndex === index
             // True while the library pane owns keyboard focus. When focus
@@ -754,14 +767,21 @@ Item {
                 anchors.right: rowRight.left
                 anchors.rightMargin: Theme.space.sm
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
+                // 2px between the title and the subtitle/snippet so the two
+                // lines read as a pair without touching.
+                spacing: 2
 
-                // A query is active — bold the matched terms in title/subtitle.
+                // A query is active — bold the matched terms in title/subtitle,
+                // unless the operator turned song highlighting off (Settings ›
+                // Search). _colorize gates the StyledText markup; with it off
+                // the rows still filter and show snippets, just as plain text.
                 readonly property bool _hasQuery: root._debouncedQuery.length > 0
+                readonly property bool _colorize:
+                    _hasQuery && SettingsService.highlightSongMatches
 
                 Text {
-                    textFormat: parent._hasQuery ? Text.StyledText : Text.PlainText
-                    text: parent._hasQuery
+                    textFormat: parent._colorize ? Text.StyledText : Text.PlainText
+                    text: parent._colorize
                             ? SearchFormat.markup(modelData.title, root._debouncedQuery,
                                                   Theme.color.brand)
                             : modelData.title
@@ -781,7 +801,11 @@ Item {
                     // CCLI line. Each part is independently suppressible via
                     // Appearance settings; " · " only appears when both survive.
                     readonly property string _base: {
-                        if ((modelData.snippet || "").length > 0)
+                        // Snippet only when it's actually being shown (query +
+                        // excerpt present + Settings › Search toggle on); other-
+                        // wise the usual author + CCLI line, so turning the
+                        // snippet off restores the plain author subtitle.
+                        if (songRow._showSnippet)
                             return modelData.snippet
                         const parts = []
                         if (modelData.author && modelData.author.length > 0)
@@ -792,8 +816,8 @@ Item {
                         return parts.join(" · ")
                     }
                     visible: _base.length > 0
-                    textFormat: parent._hasQuery ? Text.StyledText : Text.PlainText
-                    text: parent._hasQuery
+                    textFormat: parent._colorize ? Text.StyledText : Text.PlainText
+                    text: parent._colorize
                             ? SearchFormat.markup(_base, root._debouncedQuery, Theme.color.brand)
                             : _base
                     color: songRow._selected ? Theme.color.textSecondary

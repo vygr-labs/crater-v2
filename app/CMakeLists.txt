@@ -177,6 +177,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/ProjectionSection.qml
         qml/dialogs/settings/ScriptureSection.qml
         qml/dialogs/settings/SongSection.qml
+        qml/dialogs/settings/SearchSection.qml
         qml/dialogs/settings/MediaSection.qml
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml

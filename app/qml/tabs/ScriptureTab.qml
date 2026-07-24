@@ -391,8 +391,9 @@ Item {
 
     // Build the "copy to clipboard" string for a verse array — the format the
     // operator pastes into a YouTube description, sermon notes, etc. The verses
-    // flow as one quoted passage (no inline verse numbers), followed by a single
-    // attribution line carrying the collapsed reference + translation:
+    // flow as one quoted passage (no inline verse numbers), then the reference
+    // (book chapter:verse + translation) follows below on its own attribution
+    // line:
     //
     //   "For God so loved the world... to condemn the world..."
     //
@@ -400,15 +401,26 @@ Item {
     //
     // Straight ASCII quotes (not typographic) keep the paste clean across web
     // inputs. Reuses _formatVerseRangeTitle so the reference shape matches the
-    // projection title exactly. Returns "" when nothing usable is passed, so
-    // callers can guard on an empty result instead of copying a bare reference.
+    // projection title (collapsed ranges + translation) exactly. Returns ""
+    // when nothing usable is passed, so callers can guard on empty instead of
+    // copying a bare reference.
     function _formatCopyText(verses) {
         if (!verses || verses.length === 0) return ""
         const usable = verses.filter(function(v) { return v && v.text && v.text.length > 0 })
         if (usable.length === 0) return ""
-        const code = usable[0].translationCode || activeTranslation
+        const first = usable[0]
+        const code = (first.translationCode && first.translationCode.length > 0)
+                       ? first.translationCode : activeTranslation
         const body = usable.map(function(v) { return v.text }).join(" ")
-        return "\"" + body + "\"\n\n- " + _formatVerseRangeTitle(usable) + " (" + code + ")"
+        // Reference (book chapter:verse). _formatVerseRangeTitle collapses a
+        // multi-verse selection into ranges; fall back to the first verse's own
+        // coords if it ever returns empty so the attribution line is never
+        // blank. Translation in parens only when we actually have a code.
+        let ref = _formatVerseRangeTitle(usable)
+        if (ref.length === 0 && first.book)
+            ref = first.book + " " + first.chapter + ":" + first.verse
+        const attribution = (code && code.length > 0) ? ref + " (" + code + ")" : ref
+        return "\"" + body + "\"\n\n- " + attribution
     }
 
     // Compose a human reference string for a sorted verse array. Groups
@@ -763,7 +775,7 @@ Item {
         // scripture tab that's almost always true, so copy is one click away.
         IconButton {
             id: copyBtn
-            anchors.right: gearBtn.left
+            anchors.right: allVersionsBtn.left
             anchors.rightMargin: Theme.space.xs
             anchors.verticalCenter: parent.verticalCenter
             iconName: copyBtn._copied ? "check" : "copy"
@@ -786,6 +798,29 @@ Item {
                 copyBtn._copied = true
                 copiedReset.restart()
             }
+        }
+
+        // All-versions toggle — only meaningful in FTS search mode, so it shows
+        // (and reserves its width) only then. Surfaces the "search every
+        // imported translation" switch as a first-class action-bar button next
+        // to copy + gear (the gear menu keeps its item too). Active state paints
+        // the icon brand so the operator sees at a glance that results span
+        // versions.
+        IconButton {
+            id: allVersionsBtn
+            anchors.right: gearBtn.left
+            anchors.rightMargin: Theme.space.xs
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.mode === "search"
+            width: visible ? implicitWidth : 0
+            iconName: "library"
+            iconSize: Theme.icon.sm
+            tint:      AppState.scriptureSearchAllTranslations ? Theme.color.brand
+                                                               : Theme.color.textSecondary
+            tintHover: AppState.scriptureSearchAllTranslations ? Theme.color.brand
+                                                               : Theme.color.textPrimary
+            onClicked: AppState.setScriptureSearchAllTranslations(
+                           !AppState.scriptureSearchAllTranslations)
         }
 
         // Right side: gear menu — quick toggles for mode and a refresh hook.
@@ -1033,12 +1068,14 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 // In FTS search mode, bold the matched terms inside the verse
-                // (StyledText). Plain text otherwise so eliding stays cheap and
-                // no escaping is needed on the hot non-search path.
-                readonly property bool _searching:
+                // (StyledText) — unless the operator turned scripture highlight
+                // off (Settings › Search). Plain text otherwise so eliding stays
+                // cheap and no escaping is needed on the hot non-search path.
+                readonly property bool _colorize:
                     root.mode === "search" && root._parserQuery.length > 0
-                textFormat: _searching ? Text.StyledText : Text.PlainText
-                text: _searching
+                    && SettingsService.highlightScriptureMatches
+                textFormat: _colorize ? Text.StyledText : Text.PlainText
+                text: _colorize
                         ? SearchFormat.markup(modelData.text || "", root._parserQuery,
                                               Theme.color.brand)
                         : (modelData.text || "")
