@@ -189,40 +189,13 @@ Item {
     // ── Helpers ─────────────────────────────────────────────────────────
 
     // Build the canonical schedule-item shape from a full Song record.
+    // Delegates to the canonical builder in AppState. This used to be a full
+    // copy of that logic, with a second verbatim copy in GlobalSearchOverlay —
+    // three surfaces had to agree on the item shape and nothing enforced it.
+    // Kept as a named function because the call sites below (and the item
+    // builders they feed) read better than an inline AppState call.
     function buildItemFromSong(song) {
-        if (!song || !song.id) return null
-        let pages = []
-        for (let i = 0; i < song.sections.length; i++) {
-            const sec = song.sections[i]
-            pages.push({
-                label:   sec.label || "",
-                content: (sec.lines && sec.lines.length > 0) ? sec.lines.join("\n") : ""
-            })
-        }
-        if (pages.length === 0) {
-            pages = [{ label: "", content: song.title + (song.author ? "\n" + song.author : "") }]
-        }
-        // Subtitle composition is gated by the operator's Song > Show
-        // author / Show CCLI number toggles (SettingsService). Each part
-        // is independently suppressible, joined by " · " for any
-        // surviving pairs. Empty when both toggles are off — ProjectionWindow
-        // renders an empty subtitle cleanly.
-        let subtitleParts = []
-        if (SettingsService.showSongAuthor && song.author)
-            subtitleParts.push(song.author)
-        if (SettingsService.showSongCcli && song.ccli)
-            subtitleParts.push("CCLI " + song.ccli)
-        return {
-            kind:     "song",
-            title:    song.title,
-            subtitle: subtitleParts.join(" · "),
-            pages:    pages,
-            songId:   song.id,
-            // Carried through to AppState.resolveItemTheme() so Go Live honors
-            // the per-song theme override (set via the editor). 0 means "use
-            // the user's default for kind=song" — the fallback case.
-            themeId:  song.themeId || 0
-        }
+        return AppState.buildSongItem(song)
     }
 
     function songItemAt(idx) {
