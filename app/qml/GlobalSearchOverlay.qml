@@ -153,29 +153,12 @@ ModalShell {
         }
     }
 
+    // Delegates to the canonical builder in AppState — see the note there.
+    // Previously a verbatim copy of SongsTab.buildItemFromSong, which is
+    // exactly the drift the palette's "stages identically to its tab"
+    // guarantee depends on not happening.
     function buildSongItem(song) {
-        if (!song || !song.id) return null
-        let pages = []
-        for (let i = 0; i < song.sections.length; i++) {
-            const sec = song.sections[i]
-            pages.push({
-                label:   sec.label || "",
-                content: (sec.lines && sec.lines.length > 0) ? sec.lines.join("\n") : ""
-            })
-        }
-        if (pages.length === 0)
-            pages = [{ label: "", content: song.title + (song.author ? "\n" + song.author : "") }]
-        let subtitleParts = []
-        if (SettingsService.showSongAuthor && song.author) subtitleParts.push(song.author)
-        if (SettingsService.showSongCcli && song.ccli)     subtitleParts.push("CCLI " + song.ccli)
-        return {
-            kind:     "song",
-            title:    song.title,
-            subtitle: subtitleParts.join(" · "),
-            pages:    pages,
-            songId:   song.id,
-            themeId:  song.themeId || 0
-        }
+        return AppState.buildSongItem(song)
     }
 
     function buildMediaItem(m) {

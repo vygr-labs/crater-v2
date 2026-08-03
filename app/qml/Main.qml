@@ -64,6 +64,19 @@ ApplicationWindow {
         }
     }
 
+    // ── SongService → AppState glue ─────────────────────────────────────
+    // Same reason as the block above: AppState can't host its own
+    // Connections. SongService invalidates its cache and emits this after
+    // every create / update / destroy / favorite / import, so the staged
+    // preview item re-reads the song it points at and stops serving
+    // pre-edit lyrics to the next Go Live. No-op unless a song is staged.
+    Connections {
+        target: SongService
+        function onAllSongsChanged() {
+            AppState.refreshStagedSong()
+        }
+    }
+
     // One-shot init of showLogo from the operator's persisted default.
     // After this fires, manual Logo button / Ctrl+L toggles take over —
     // the dialog setting governs the next launch, not live override.

@@ -141,6 +141,78 @@ QtObject {
         libraryPreviewItem = null
     }
 
+    // Canonical song → schedule-item builder. Lives here rather than in a tab
+    // because three surfaces need the identical shape: SongsTab (library rows),
+    // GlobalSearchOverlay (palette hits), and refreshStagedSong() below. Those
+    // first two each carried their own verbatim copy, so a change to subtitle
+    // composition or page mapping had to be made twice or it silently drifted.
+    //
+    // Subtitle composition is gated by the operator's Song > Show author /
+    // Show CCLI number toggles. Each part is independently suppressible, joined
+    // by " · " for any surviving pairs. Empty when both toggles are off —
+    // ProjectionWindow renders an empty subtitle cleanly.
+    function buildSongItem(song) {
+        if (!song || !song.id) return null
+        let pages = []
+        for (let i = 0; i < song.sections.length; i++) {
+            const sec = song.sections[i]
+            pages.push({
+                label:   sec.label || "",
+                content: (sec.lines && sec.lines.length > 0) ? sec.lines.join("\n") : ""
+            })
+        }
+        if (pages.length === 0)
+            pages = [{ label: "", content: song.title + (song.author ? "\n" + song.author : "") }]
+        let subtitleParts = []
+        if (SettingsService.showSongAuthor && song.author) subtitleParts.push(song.author)
+        if (SettingsService.showSongCcli && song.ccli)     subtitleParts.push("CCLI " + song.ccli)
+        return {
+            kind:     "song",
+            title:    song.title,
+            subtitle: subtitleParts.join(" · "),
+            pages:    pages,
+            songId:   song.id,
+            // Carried through to resolveItemTheme() so Go Live honors the
+            // per-song theme override (set via the editor). 0 means "use the
+            // user's default for kind=song" — the fallback case.
+            themeId:  song.themeId || 0
+        }
+    }
+
+    // Re-read the staged preview item from the DB after its song was edited.
+    //
+    // libraryPreviewItem is a plain JS snapshot taken when the operator picked
+    // the song, so a later SongService.update() left it stale: double-clicking
+    // a lyric card pushed PRE-EDIT content Live, and the only way out was to
+    // select a different song and come back (which re-ran fetchSong). The C++
+    // side already invalidates its cache and emits allSongsChanged() — nothing
+    // on the QML side was listening. Main.qml wires that signal to this.
+    //
+    // Live is deliberately NOT re-pushed here. ProjectionService snapshots on
+    // goLive so an in-progress edit can't reach the audience screen mid-service
+    // (see ProjectionService.h). The operator's next Go Live picks up the
+    // refreshed item, which is the gesture they were already making.
+    function refreshStagedSong() {
+        const staged = libraryPreviewItem
+        if (!staged || staged.kind !== "song" || !staged.songId) return
+
+        const fresh = SongService.fetchSong(staged.songId)
+        if (!fresh || !fresh.id) {
+            // Song was deleted out from under the preview — drop the override
+            // rather than leave a pane bound to a row that no longer exists.
+            clearLibraryPreview()
+            return
+        }
+
+        const rebuilt = buildSongItem(fresh)
+        if (!rebuilt) return
+        libraryPreviewItem = rebuilt
+        // Hold the operator on the same slide across the edit. Clamp when the
+        // edit removed sections so the index never points past the end.
+        if (previewSubIndex >= rebuilt.pages.length)
+            previewSubIndex = Math.max(0, rebuilt.pages.length - 1)
+    }
+
     // Route a go-live through the crop-aware overload for media items so a
     // crop survives EVERY entry point — Enter, the TopBar Go Live button,
     // schedule double-click, Ctrl+L. Two crop sources by kind:
