@@ -1205,6 +1205,16 @@ Item {
                     // multi-selection failed to collapse it and the clicked row got
                     // folded into the active set instead of replacing it.
                     const wasHighlighted = verseRow._highlighted
+                    // TEMP DIAGNOSTIC — this is the guard under suspicion. If
+                    // wasHighlighted is true here on a plain click, the prior
+                    // multi-selection survives and _activeIndices() folds this
+                    // row into it, which is the reported "adds instead of replaces".
+                    console.log("[verse-click] _focus idx=" + index
+                              + " wasHighlighted=" + wasHighlighted
+                              + " willClear=" + !wasHighlighted
+                              + " fluid=" + root.fluidIndex
+                              + " listCurrent=" + list.currentIndex
+                              + " selBefore=[" + (AppState.librarySelectedIndices[root.tabKey] || []) + "]")
                     AppState.setLibraryFluid(root.tabKey, index)
                     if (!wasHighlighted) {
                         AppState.clearLibrarySelected(root.tabKey)
@@ -1283,14 +1293,36 @@ Item {
                     root.pushPreviewFor(anchorIdx)
                 }
 
+                // TEMP DIAGNOSTIC (multi-select collapse bug) — remove before release.
+                // Writes one line per verse click to crater.log. In a dev tree that's
+                // <repo>/personal/crater.log; in an installed build it's
+                // %APPDATA%/Crater/crater.log (see main.cpp resolveLogDir).
+                function _dbg(tag) {
+                    console.log("[verse-click] " + tag
+                              + " idx=" + index
+                              + " mods=" + mouse_modifiers_dbg
+                              + " fluid=" + root.fluidIndex
+                              + " listCurrent=" + list.currentIndex
+                              + " _selected=" + verseRow._selected
+                              + " _inMulti=" + verseRow._inMulti
+                              + " _highlighted=" + verseRow._highlighted
+                              + " sel=[" + (AppState.librarySelectedIndices[root.tabKey] || []) + "]")
+                }
+                property int mouse_modifiers_dbg: 0
+
                 onLeftClicked: function(mouse) {
                     // Fresh click — discard any prior collapse stash. The
                     // member-collapse branch below re-arms it when relevant.
                     verseMa._collapseStash = null
+                    verseMa.mouse_modifiers_dbg = mouse.modifiers          // TEMP DIAGNOSTIC
+                    _dbg("enter  shift=" + !!(mouse.modifiers & Qt.ShiftModifier)
+                              + " ctrl=" + !!(mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)))
                     if (mouse.modifiers & Qt.ShiftModifier) {
                         _extendRange()
+                        _dbg("after:extendRange")                          // TEMP DIAGNOSTIC
                     } else if (mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
                         _toggleInSet()
+                        _dbg("after:toggleInSet")                          // TEMP DIAGNOSTIC
                     } else {
                         const selArr = AppState.librarySelectedIndices[root.tabKey] || []
                         if (selArr.length > 0 && verseRow._highlighted) {
@@ -1308,8 +1340,10 @@ Item {
                             AppState.setActiveFocus("library")
                             root.pushPreviewFor(index)
                             root._syncInputToVerse(index)
+                            _dbg("after:collapse")                         // TEMP DIAGNOSTIC
                         } else {
                             _focus()
+                            _dbg("after:focus")                            // TEMP DIAGNOSTIC
                         }
                     }
                 }
