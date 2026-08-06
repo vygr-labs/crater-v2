@@ -61,6 +61,10 @@ set_source_files_properties(
     qml/Workspaces.qml
     qml/AppState.qml
     qml/SearchFormat.qml
+    # ScriptureItems is a pure builder — it turns Verse values into canonical
+    # projection items. A singleton because two unrelated surfaces (the
+    # Scripture tab and narration's heard queue) must emit identical items.
+    qml/ScriptureItems.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -75,6 +79,7 @@ qt_add_qml_module(crater
         qml/LucideIcons.qml
         qml/Workspaces.qml
         qml/SearchFormat.qml
+        qml/ScriptureItems.qml
         qml/ModalLayer.qml
         qml/GlobalSearchOverlay.qml
         qml/ProjectionWindow.qml
@@ -147,6 +152,7 @@ qt_add_qml_module(crater
         # ── Major UI panels ───────────────────────────────────────────
         qml/panels/TitleBar.qml
         qml/panels/TopBar.qml
+        qml/panels/NarrationBar.qml
         qml/panels/SchedulePanel.qml
         qml/panels/PreviewPanel.qml
         qml/panels/LivePanel.qml
@@ -186,6 +192,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/SearchSection.qml
         qml/dialogs/settings/MediaSection.qml
         qml/dialogs/settings/RemoteControlSection.qml
+        qml/dialogs/settings/NarrationSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
 )
