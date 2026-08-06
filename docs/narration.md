@@ -385,27 +385,56 @@ mismatch. This is not tidiness: two models' vector spaces are unrelated, so
 searching one with the other's query returns high-scoring, entirely arbitrary
 verses — a failure that looks exactly like a working system.
 
-### 7.2.1 What is built, and what is not
+### 7.2.1 The embedder
 
-The retrieval half is complete and tested: `AllusionIndex` (build, quantize,
-save, load, validate, scan) and `AllusionMatcher` (the three gates of §7.3,
-tier assignment) both ship, exercised against synthetic unit vectors that
-behave exactly as real embeddings do.
+`OnnxEmbedder` runs `bge-small-en-v1.5` through ONNX Runtime 1.28.0, behind
+`CRATER_WITH_EMBEDDINGS` (OFF by default, same reasoning as
+`CRATER_WITH_WHISPER`). The runtime is fetched at configure time and pinned by
+**SHA-256**, not by version tag — this is a binary we execute, and a tag can be
+re-pointed where a content hash cannot. The model itself is never fetched: it
+is operator-supplied, like the whisper model, because nothing in this
+subsystem may touch the network at run time (§8).
 
-The **embedder does not**. `TextEmbedder` is the seam: one method, text in,
-L2-normalized vectors out. Until an implementation and a built index file
-exist, `AllusionMatcher::isReady()` is false and `NarrationService` skips the
-pass entirely — every other path is unaffected.
+Two details are taken from the model's own config rather than from convention,
+and both would have failed silently:
 
-That split is deliberate. Nothing about quantization error, file-format
-round-tripping, ranking, or the distinctiveness gates depends on which model
-produced the numbers, so none of it needed to wait. What remains is genuinely
-model-shaped work: an ONNX Runtime dependency, the `bge-small-en-v1.5`
-weights, a tokenizer, and a build-time step that embeds all 31,102 verses
-once and ships the result beside the Bible DB.
+- **CLS pooling, not mean.** `1_Pooling/config.json` sets
+  `pooling_mode_cls_token: true`. Mean pooling is the more common convention
+  and what most example code does. Using it here would produce perfectly
+  well-formed 384-dimension unit vectors in a space unrelated to the index's,
+  and every query would still return a confident, arbitrary verse.
+- **No query-instruction prefix.** BGE wants one for short-query-to-long-
+  passage retrieval. Ours is sentence-to-sentence. Consistency matters more
+  than the choice anyway: the index is built through this same class, so both
+  sides of every comparison are produced identically by construction.
 
-What this path can and cannot currently do should be stated plainly to
-anyone reading the phase table: **paraphrase detection is not live.**
+Tokenization is a hand-written `WordPieceTokenizer` against the bundled
+`bert-base-uncased` vocabulary (30,522 tokens, shipped as a Qt resource so a
+model can never be paired with the wrong vocab). The alternative was a second
+native dependency the size of the inference runtime, to do string splitting.
+Its tests pin **exact token ids**, computed independently before the
+implementation ran, because a wrong tokenizer does not error — it hands the
+model plausible ids and gets back a vector pointing nowhere.
+
+**Measured against the real model** (`test_onnx_embedder`):
+
+| | cosine |
+|---|---|
+| paraphrase → the verse it paraphrases | 0.75, 0.79 |
+| paraphrase → a plausible but wrong verse | 0.62 |
+| ordinary announcements → nearest verse | 0.47 |
+| query embedding cost | ~47 ms |
+
+That distribution is where §7.3's thresholds come from, and it is why they are
+not guesses. The full path — real embeddings, int8 quantization, flat scan,
+all three gates — resolves the §2 paraphrase example to John 3:16 at tier
+`possible`, and stays silent on four different announcements.
+
+**What is still missing: the shipped index.** Everything above runs against
+indexes built in-process during tests. Generating the real
+31,102-verse `.crai` and shipping it beside the Bible DB is the remaining
+step, and until it exists `AllusionMatcher::isReady()` is false and
+`NarrationService` skips the pass entirely.
 
 Embeddings are computed once at build time and shipped beside the Bible DB.
 Only **one** reference translation is embedded — identification returns verse
@@ -534,7 +563,7 @@ and needs no audio hardware, no models, and no UI.
 | **1** | `SpeechRecognizer` interface + `NullRecognizer` + whisper.cpp + `VoiceGate` + `AudioRing` + `AudioTap` | `test_voice_gate` for the ring and the gate; live mic for the tap |
 | **2** | `NarrationService`, `TrustGate`, mic toggle, hot-mic bar, heard queue, all three modes wired | `test_narration_service` for the gate matrix and routing; operator console |
 | **3** | `QuotationMatcher` over existing FTS, on its own thread (§9.1) | `test_quotation_matcher`: fixture corpus for the gate logic, then the real 31,102-verse index for precision and latency |
-| **4** | `AllusionIndex` + `AllusionMatcher` + gates — **retrieval done, embedder pending** (§7.2.1) | `test_allusion_index`: quantization, format, scan cost, all three gates. Precision/recall waits on the model |
+| **4** | `AllusionIndex`, `AllusionMatcher`, `WordPieceTokenizer`, `OnnxEmbedder` — **index generation still to do** (§7.2.1) | `test_allusion_index` (quantization, format, scan cost, gates), `test_wordpiece_tokenizer` (exact ids), `test_onnx_embedder` (real model, real geometry, end to end) |
 | **5** | Auto mode, grace period, heard log, settings page | `test_narration_service` for log amendment and lifetime; a full service run in Auto with the log reviewed after |
 
 Phase 0 carries most of the design risk and none of the dependencies, so it

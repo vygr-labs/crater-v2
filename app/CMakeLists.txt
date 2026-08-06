@@ -370,6 +370,19 @@ if(WIN32)
         COMMENT "Copying QtMultimedia QML module to <exe>/qml/QtMultimedia"
         VERBATIM)
 
+    # onnxruntime.dll — narration's allusion path (CRATER_WITH_EMBEDDINGS).
+    # crater-core links it PRIVATE, which gives us the symbols but not the
+    # runtime dependency, so the build-tree exe would fail to load with no
+    # visible error (the Win32 GUI subsystem swallows loader failures).
+    if(CRATER_WITH_EMBEDDINGS AND CRATER_ORT_RUNTIME_DLL)
+        add_custom_command(TARGET crater POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CRATER_ORT_RUNTIME_DLL}"
+                "$<TARGET_FILE_DIR:crater>"
+            COMMENT "Copying onnxruntime.dll next to crater.exe"
+            VERBATIM)
+    endif()
+
     # QtQuick.Effects QML module — same deployment trick we use for
     # QtMultimedia. MultiEffect (powering text-node drop shadows in
     # NodeRenderer.qml) is loaded via `import QtQuick.Effects`, which

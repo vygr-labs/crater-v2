@@ -52,14 +52,23 @@ public:
         // case the whole path exists for.
         int minContentWords = 5;
 
-        // Top-1 cosine floor. Deliberately high: bge-small-class models put
-        // genuinely unrelated English sentence pairs around 0.3-0.5, so a
-        // threshold in that region would fire on the announcements.
-        float minScore = 0.72f;
+        // Top-1 cosine floor, chosen from measurements rather than intuition.
+        // Against the real bge-small-en-v1.5 (test_onnx_embedder):
+        //
+        //   paraphrase -> the verse it paraphrases      0.75, 0.79
+        //   paraphrase -> a plausible but wrong verse   0.62
+        //   ordinary announcements -> nearest verse     0.47
+        //
+        // 0.68 sits above every wrong match observed and below every right
+        // one, with room on both sides. Note where it does NOT sit: anywhere
+        // near 0.3-0.5, which is where unrelated English sentence pairs land
+        // and where a threshold picked by feel tends to end up.
+        float minScore = 0.68f;
 
         // How far the top hit must beat the runner-up, in absolute cosine.
         // Small in magnitude and large in effect — this is what separates
-        // "that verse" from "that theme".
+        // "that verse" from "that theme", and it is what actually rejects the
+        // 0.62 near-miss above (0.75 - 0.62 = 0.13, comfortably clear).
         float minMargin = 0.045f;
 
         // Words per embedding window, and how far the window slides.

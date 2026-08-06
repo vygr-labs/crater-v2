@@ -40,6 +40,11 @@ add_library(crater-core STATIC
     # index file exist (docs/narration.md §7.2).
     src/narration/AllusionIndex.cpp
     src/narration/AllusionMatcher.cpp
+    src/narration/WordPieceTokenizer.cpp
+    # Compiles either way — the real body is behind CRATER_WITH_EMBEDDINGS and
+    # the stub keeps the type nameable when the option is off, exactly as
+    # WhisperRecognizer does.
+    src/narration/OnnxEmbedder.cpp
     # Phase 1 is capture and recognition. WhisperRecognizer.cpp compiles
     # either way — its real body is behind CRATER_WITH_WHISPER and the stub
     # keeps the type nameable when the option is off.
@@ -211,6 +216,19 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V009__media_display.sql
 )
 
+# The BERT WordPiece vocabulary bge-small-en-v1.5 was trained against
+# (qrc:/narration/bge-small-en-v1.5-vocab.txt). Bundled rather than
+# operator-supplied for two reasons: it is 226 KB, and it MUST match the
+# model exactly — a vocab/model mismatch produces valid-looking vectors that
+# point nowhere, which is the one failure mode this subsystem cannot tolerate.
+# It is the standard bert-base-uncased vocabulary (30,522 tokens).
+qt_add_resources(crater-core "narration_vocab"
+    PREFIX "/narration"
+    BASE   "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+    FILES
+        resources/bge-small-en-v1.5-vocab.txt
+)
+
 # ── Speech recognition (docs/narration.md §7.1) ────────────────────────
 #
 # OFF by default, and deliberately so. whisper.cpp is a source dependency
@@ -244,6 +262,68 @@ if(CRATER_WITH_WHISPER)
 
     target_link_libraries(crater-core PRIVATE whisper)
     target_compile_definitions(crater-core PRIVATE CRATER_WITH_WHISPER)
+endif()
+
+# ── Semantic search (docs/narration.md §7.2) ───────────────────────────
+#
+# OFF by default, same reasoning as CRATER_WITH_WHISPER: it fetches a ~75 MB
+# runtime at configure time, and nobody working on themes or the schedule
+# should pay for that. With it off, OnnxEmbedder compiles to stubs that fail
+# loudly and the allusion path stays inert.
+#
+# Enable with: cmake -S . -B build -DCRATER_WITH_EMBEDDINGS=ON
+#
+# The MODEL is not fetched. Like the whisper model, it is downloaded
+# separately and pointed at by the operator — nothing in this subsystem
+# touches the network at run time, which is what makes the offline
+# requirement in §8 a security property rather than a convenience.
+option(CRATER_WITH_EMBEDDINGS "Build the ONNX Runtime embedder for narration's allusion path" OFF)
+
+if(CRATER_WITH_EMBEDDINGS)
+    include(FetchContent)
+
+    # Prebuilt, and pinned by content hash rather than by version alone. This
+    # is a binary we execute; a version tag can be re-pointed, a SHA-256
+    # cannot.
+    set(CRATER_ORT_VERSION "1.28.0")
+    if(WIN32)
+        set(_ort_pkg  "onnxruntime-win-x64-${CRATER_ORT_VERSION}")
+        set(_ort_hash "abef733dacbe2f571547a7150b479b5cb9cc0df22f96c24983a42cadb1b4f8bc")
+    else()
+        # Linux/macOS archives have the same layout; their hashes go here when
+        # a non-Windows build is actually exercised, rather than being guessed
+        # now and trusted later.
+        message(FATAL_ERROR
+            "CRATER_WITH_EMBEDDINGS currently pins only the win-x64 ONNX Runtime archive. "
+            "Add the platform's archive name and SHA-256 to core/CMakeLists.txt.")
+    endif()
+
+    FetchContent_Declare(onnxruntime
+        URL      "https://github.com/microsoft/onnxruntime/releases/download/v${CRATER_ORT_VERSION}/${_ort_pkg}.zip"
+        URL_HASH "SHA256=${_ort_hash}"
+        # Stamp extracted files with the extraction time rather than the
+        # archive's own timestamps, so a re-extract cannot look older than the
+        # objects built from it and silently skip a rebuild.
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    )
+    # Not MakeAvailable: the archive is a prebuilt SDK with no CMakeLists, so
+    # it only needs unpacking and an imported target built by hand.
+    FetchContent_MakeAvailable(onnxruntime)
+
+    add_library(crater_onnxruntime SHARED IMPORTED)
+    set_target_properties(crater_onnxruntime PROPERTIES
+        IMPORTED_LOCATION             "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.dll"
+        IMPORTED_IMPLIB               "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${onnxruntime_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(crater-core PRIVATE crater_onnxruntime)
+    target_compile_definitions(crater-core PRIVATE CRATER_WITH_EMBEDDINGS)
+
+    # Exported so the app target can copy the DLL next to crater.exe — a
+    # PRIVATE link gives us the symbols but not the runtime dependency.
+    set(CRATER_ORT_RUNTIME_DLL "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.dll"
+        CACHE INTERNAL "onnxruntime.dll to deploy beside the executable")
 endif()
 
 add_library(Crater::Core ALIAS crater-core)

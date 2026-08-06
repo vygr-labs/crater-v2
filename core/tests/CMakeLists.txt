@@ -166,3 +166,57 @@ target_include_directories(test_allusion_index PRIVATE
 )
 
 add_test(NAME allusion_index COMMAND test_allusion_index)
+
+# ── BERT WordPiece tokenization — docs/narration.md §7.2 ───────────────
+# Exact token ids against the bundled bert-base-uncased vocabulary. Pinned to
+# values rather than shapes because a wrong tokenizer does not fail: it hands
+# the model plausible ids and gets back a confident vector pointing nowhere.
+qt_add_executable(test_wordpiece_tokenizer
+    test_wordpiece_tokenizer.cpp
+)
+
+target_link_libraries(test_wordpiece_tokenizer PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_wordpiece_tokenizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME wordpiece_tokenizer COMMAND test_wordpiece_tokenizer)
+
+# ── The embedder, against the real model — docs/narration.md §7.2 ──────
+# The only test that can distinguish a correct embedding from a confidently
+# wrong one: tokenization, CLS pooling and normalization each produce a
+# well-formed unit vector whether they are right or not, so this asks whether
+# the resulting geometry actually means anything. Skips with a reason when the
+# operator-supplied model is not installed.
+qt_add_executable(test_onnx_embedder
+    test_onnx_embedder.cpp
+)
+
+target_link_libraries(test_onnx_embedder PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_onnx_embedder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+# onnxruntime.dll must sit beside the test binary for the same reason it must
+# sit beside crater.exe — crater-core links it PRIVATE.
+if(CRATER_WITH_EMBEDDINGS AND CRATER_ORT_RUNTIME_DLL)
+    add_custom_command(TARGET test_onnx_embedder POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CRATER_ORT_RUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:test_onnx_embedder>"
+        VERBATIM)
+endif()
+
+add_test(NAME onnx_embedder COMMAND test_onnx_embedder)
