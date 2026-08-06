@@ -5,6 +5,10 @@ out/
 cmake-build-*/
 
 # CMake
+# CTest scratch dir, created by enable_testing() at the root. Note gitignore
+# has no trailing-comment syntax — a comment on this line would become part
+# of the pattern and match nothing.
+Testing/
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json

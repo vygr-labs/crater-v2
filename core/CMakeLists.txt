@@ -29,6 +29,31 @@ add_library(crater-core STATIC
     src/import/Rtf.cpp
     src/import/EasyWorshipImporter.cpp
 
+    # Narration — spoken scripture detection (docs/narration.md).
+    # Phase 0 is pure text: no audio, no models, no DB.
+    src/narration/SpokenNumbers.cpp
+    src/narration/CitationDetector.cpp
+    # Phase 3 rides the existing FTS5 trigram index — no new index, no model.
+    src/narration/QuotationMatcher.cpp
+    # Phase 4: the semantic path. The index and its gates are complete and
+    # tested; they stay inert until a TextEmbedder implementation and a built
+    # index file exist (docs/narration.md §7.2).
+    src/narration/AllusionIndex.cpp
+    src/narration/AllusionMatcher.cpp
+    # Phase 1 is capture and recognition. WhisperRecognizer.cpp compiles
+    # either way — its real body is behind CRATER_WITH_WHISPER and the stub
+    # keeps the type nameable when the option is off.
+    src/narration/AudioRing.cpp
+    src/narration/VoiceGate.cpp
+    src/narration/AudioTap.cpp
+    src/narration/WhisperRecognizer.cpp
+
+    # AUTOMOC needs to see the QObject headers under src/ too — these aren't
+    # in include/ because narration's only public type is HeardReference.
+    src/narration/SpeechRecognizer.h
+    src/narration/AudioTap.h
+    src/narration/WhisperRecognizer.h
+
     # Public bootstrap entry point — runs migrations on all DBs.
     src/Bootstrap.cpp
 
@@ -45,6 +70,7 @@ add_library(crater-core STATIC
     src/OutputService.cpp
     src/ProjectionService.cpp
     src/SettingsService.cpp
+    src/NarrationService.cpp
     src/WorkingTheme.cpp
     src/LyricsDSL.cpp
     src/LyricsService.cpp
@@ -63,12 +89,14 @@ add_library(crater-core STATIC
     include/crater/OutputService.h
     include/crater/ProjectionService.h
     include/crater/SettingsService.h
+    include/crater/NarrationService.h
     include/crater/ElectronDataImporter.h
     include/crater/EasyWorshipImporter.h
     include/crater/WorkingTheme.h
     include/crater/value/Translation.h
     include/crater/value/Book.h
     include/crater/value/Verse.h
+    include/crater/value/HeardReference.h
     include/crater/value/SearchHit.h
     include/crater/value/StrongsEntry.h
     include/crater/value/StrongsWord.h
@@ -124,6 +152,11 @@ target_link_libraries(crater-core
         # Image element via the standard image:// URL scheme. crater-core
         # stays Quick-free per §1.
         Qt6::Pdf
+        # Qt6::Multimedia is here for narration's AudioTap only — QAudioSource
+        # gives us a QIODevice we pull mic PCM from. PRIVATE because no public
+        # header exposes an audio type: the tap normalizes everything to
+        # 16 kHz mono float before anything else in crater-core sees it.
+        Qt6::Multimedia
         # NOTE: deliberately do NOT link Qt6::Sql. We build sqlite3 ourselves
         # with custom compile flags (FTS5, THREADSAFE=2, DQS=0). See the plan's
         # "Deviations from Electron" table.
@@ -177,6 +210,41 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V008__user_fonts.sql
         src/db/migrations/app/V009__media_display.sql
 )
+
+# ── Speech recognition (docs/narration.md §7.1) ────────────────────────
+#
+# OFF by default, and deliberately so. whisper.cpp is a source dependency
+# fetched at configure time and it materially lengthens a cold build, which
+# nobody working on themes or the schedule should have to pay for. With it
+# off, WhisperRecognizer compiles to stubs that fail loudly and
+# NarrationService falls back to NullRecognizer.
+#
+# Enable with: cmake -S . -B build -DCRATER_WITH_WHISPER=ON
+#
+# Models are NOT fetched — they're downloaded separately and pointed at by
+# the operator. Nothing here phones home at build time or at run time.
+option(CRATER_WITH_WHISPER "Build the whisper.cpp speech recognizer for narration" OFF)
+
+if(CRATER_WITH_WHISPER)
+    include(FetchContent)
+
+    # Pinned, not floating. An ASR backend that silently changes its decoding
+    # behaviour between builds would make every precision number we measure
+    # in phases 3-5 unreproducible.
+    FetchContent_Declare(whisper_cpp
+        GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp.git
+        GIT_TAG        v1.7.4
+        GIT_SHALLOW    TRUE
+    )
+
+    set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(whisper_cpp)
+
+    target_link_libraries(crater-core PRIVATE whisper)
+    target_compile_definitions(crater-core PRIVATE CRATER_WITH_WHISPER)
+endif()
 
 add_library(Crater::Core ALIAS crater-core)
 

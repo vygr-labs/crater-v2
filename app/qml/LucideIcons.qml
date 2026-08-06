@@ -28,6 +28,11 @@ QtObject {
         "eye":             "\ue0ba",
         "radio":           "\ue142",
 
+        // Narration (docs/narration.md): arm/disarm chip and the hot-mic bar
+        "mic":             "\ue118",
+        "mic-off":         "\ue119",
+        "audio-lines":     "\ue55a",
+
         // Library tabs
         "music":           "\ue122",
         "book-open":       "\ue05f",
