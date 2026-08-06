@@ -324,6 +324,17 @@ if(CRATER_WITH_EMBEDDINGS)
     # PRIVATE link gives us the symbols but not the runtime dependency.
     set(CRATER_ORT_RUNTIME_DLL "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.dll"
         CACHE INTERNAL "onnxruntime.dll to deploy beside the executable")
+
+    # Developer tool, not shipped: embeds one translation's verses and writes
+    # the .crai index. Runs once per model change and takes tens of minutes,
+    # which is precisely why it does not live inside crater.exe.
+    add_executable(build_allusion_index tools/build_allusion_index.cpp)
+    target_link_libraries(build_allusion_index PRIVATE Qt6::Core Qt6::Gui crater-core)
+    target_include_directories(build_allusion_index PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_custom_command(TARGET build_allusion_index POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CRATER_ORT_RUNTIME_DLL}" "$<TARGET_FILE_DIR:build_allusion_index>"
+        VERBATIM)
 endif()
 
 add_library(Crater::Core ALIAS crater-core)

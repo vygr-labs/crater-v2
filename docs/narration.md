@@ -441,6 +441,33 @@ Only **one** reference translation is embedded — identification returns verse
 *coordinates*, and the operator's chosen translation supplies the text for
 display. Embedding all translations would multiply the index for no gain.
 
+Which translation is therefore a free choice, and `build_allusion_index
+--compare` measures it rather than assuming. Mean cosine from five spoken
+paraphrases to the verses they paraphrase, across a real fourteen-translation
+library:
+
+| | |
+|---|---|
+| GNT / CEV / NLT / NIV | 0.854 / 0.852 / 0.850 / 0.849 |
+| NASB2020 / NKJV / AMPC / ESV / RSV / TLV | 0.826 – 0.843 |
+| **KJV** / ASV | **0.780** / 0.780 |
+| MSG / TPT | 0.751 / 0.726 |
+
+Two things worth keeping. Modern translations beat the King James by about
+0.07, which is a real margin: the model was trained on contemporary English
+and preachers paraphrase in contemporary English, so archaic wording costs
+distance on both sides of the comparison. And the loose paraphrase editions
+score *worst*, not best — MSG and TPT paraphrase in their own idiom, which is
+not the idiom anyone reaching for that verse would use.
+
+The shipped index is **KJV** regardless, for a reason the numbers do not
+capture: it is public domain. An index holds int8 vectors and coordinates
+rather than text, but "is a derived vector index a redistributable work?" is a
+licensing question, not an engineering one. KJV also happens to be what §7.3's
+thresholds were calibrated against, so the two are consistent. Switching is
+one flag (`--translation`) and one recalibration if that question is ever
+answered.
+
 ### 7.3 Why allusion matching needs a hard distinctiveness gate
 
 Sermons are saturated with biblical language. "We need to love one another"
