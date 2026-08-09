@@ -141,6 +141,40 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Paraphrase detection is a separate asset pair (an embedding
+            // model and a vector index) that lives beside the speech model
+            // and is discovered, not configured. Surfaced so its absence is
+            // visible rather than looking like the feature simply never
+            // notices paraphrases.
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text {
+                        text: qsTr("Paraphrase detection")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: qsTr("Catches a verse the preacher rephrases rather than quotes. Needs an embedding model and a verse index in the same folder as the speech model; without them the other two detection paths still work normally.")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 56
@@ -339,7 +373,9 @@ Item {
                     Text {
                         width: parent.width
                         wrapMode: Text.WordWrap
-                        text: qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules, and never opens the microphone.")
+                        text: NarrationService.listening
+                              ? qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules.")
+                              : qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules, and never opens the microphone. Paraphrase detection is skipped unless narration is already listening, because loading its model would stall this dialog.")
                         color: Theme.color.textTertiary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize

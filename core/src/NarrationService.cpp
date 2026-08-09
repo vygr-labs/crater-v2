@@ -8,14 +8,20 @@
 #include "narration/AllusionIndex.h"
 #include "narration/AllusionMatcher.h"
 #include "narration/CitationDetector.h"
+#include "narration/OnnxEmbedder.h"
 #include "narration/QuotationMatcher.h"
 #include "narration/SpeechRecognizer.h"
 #include "narration/TrustGate.h"
 #include "narration/VoiceGate.h"
 #include "narration/WhisperRecognizer.h"
 
+#include "db/DbPaths.h"
+
 #include <QAudioDevice>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QLoggingCategory>
 #include <QMediaDevices>
 #include <QThread>
 
@@ -104,27 +110,62 @@ QVariantMap toMap(const HeardReference& r)
 // No Q_OBJECT: it inherits QObject only for thread affinity, and every call
 // crosses the boundary as a lambda, which keeps custom-type metatype
 // registration out of the picture entirely.
-class QuotationWorker : public QObject
+class DetectionWorker : public QObject
 {
 public:
-    // Called only on the worker thread.
-    QList<HeardReference> match(const QString& text, qint64 atMs)
+    // Everything the detectors need that is slow: the FTS connection, the
+    // embedding session, and the vector index. All built lazily HERE rather
+    // than in the constructor, so each belongs to the thread that uses it.
+    void init(const QString& embedModelPath, const QString& indexPath)
     {
-        if (!m_bible) {
-            // Built lazily, and here rather than in the constructor, so the
-            // connection and its prepared statements are created on the
-            // thread that will use them.
-            m_bible = std::make_unique<BibleService>();
-            m_matcher.setSearch([this](const QString& q) {
-                return m_bible->search(q, QString());
-            });
+        m_bible = std::make_unique<BibleService>();
+        m_quotation.setSearch([this](const QString& q) {
+            return m_bible->search(q, QString());
+        });
+
+        if (embedModelPath.isEmpty() || indexPath.isEmpty()) return;
+
+        auto embedder = std::make_unique<narration::OnnxEmbedder>();
+        QString err;
+        if (!embedder->load(embedModelPath, &err)) {
+            qWarning().noquote() << "narration: semantic search unavailable —" << err;
+            return;
         }
-        return m_matcher.match(text, atMs);
+        // The index records which model built it and the load refuses a
+        // mismatch, so a stale index cannot be searched with a new model's
+        // queries. That failure would return confident, arbitrary verses.
+        if (!m_index.load(indexPath, embedder->modelId(), &err)) {
+            qWarning().noquote() << "narration: allusion index not loaded —" << err;
+            return;
+        }
+
+        m_embedder = std::move(embedder);
+        m_allusion.setIndex(&m_index);
+        m_allusion.setEmbedder([this](const QString& t) { return m_embedder->embedOne(t); });
+
+        qInfo().noquote() << QStringLiteral("narration: allusion index %1 verses (%2)")
+                                 .arg(m_index.count()).arg(m_index.modelId());
     }
 
+    // Called only on the worker thread. Both slow paths in one hop: an
+    // embedding is ~47 ms and an FTS pass up to ~63 ms, and neither belongs
+    // on the thread drawing the operator's console.
+    QList<HeardReference> match(const QString& text, qint64 atMs)
+    {
+        QList<HeardReference> out = m_quotation.match(text, atMs);
+        if (m_allusion.isReady())
+            out.append(m_allusion.match(text, atMs));
+        return out;
+    }
+
+    bool hasAllusion() const { return m_allusion.isReady(); }
+
 private:
-    std::unique_ptr<BibleService> m_bible;
-    narration::QuotationMatcher   m_matcher;
+    std::unique_ptr<BibleService>           m_bible;
+    std::unique_ptr<narration::OnnxEmbedder> m_embedder;
+    narration::QuotationMatcher             m_quotation;
+    narration::AllusionIndex                m_index;
+    narration::AllusionMatcher              m_allusion;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -141,12 +182,10 @@ struct NarrationService::Impl
     narration::CitationDetector citation;
     narration::QuotationMatcher quotation;
 
-    // Phase 4. Inert until both an index file and an embedder exist, which is
-    // the normal state of a build that ships without the embedding model:
-    // AllusionMatcher::match returns nothing and every other path is
-    // unaffected. See docs/narration.md §7.2.
-    narration::AllusionIndex    allusionIndex;
-    narration::AllusionMatcher  allusion;
+    // Note there is no main-thread allusion matcher. A query embedding is
+    // ~47 ms and the model is 127 MB; both belong on the worker beside the
+    // FTS connection, and a second copy on this thread would double the
+    // memory for a path that would still be too slow to run here.
 
     QThread*                     worker     = nullptr;
     narration::SpeechRecognizer* recognizer = nullptr;
@@ -155,7 +194,7 @@ struct NarrationService::Impl
     // null when disarmed; injectTranscript falls back to the synchronous
     // matcher above, which is correct for a one-shot from a modal dialog.
     QThread*         quoteThread = nullptr;
-    QuotationWorker* quoteWorker = nullptr;
+    DetectionWorker* quoteWorker = nullptr;
 
     bool    listening = false;
     QString state     = QStringLiteral("idle");
@@ -194,6 +233,51 @@ struct NarrationService::Impl
         return settings ? settings->narrationModelPath() : QString();
     }
 
+    // The embedding model and the vector index are discovered rather than
+    // configured. Both are downloaded together and live beside the speech
+    // model, and an operator who has already pointed Crater at one folder
+    // should not have to point it at the same folder twice more.
+    QStringList assetDirs() const
+    {
+        QStringList dirs;
+        if (!modelPath().isEmpty())
+            dirs << QFileInfo(modelPath()).absolutePath();
+        dirs << QDir(db::DbPaths::dataDir()).filePath(QStringLiteral("models"));
+        dirs.removeDuplicates();
+        return dirs;
+    }
+
+    QString findAsset(const QStringList& names) const
+    {
+        for (const QString& d : assetDirs())
+            for (const QString& n : names) {
+                const QString p = QDir(d).filePath(n);
+                if (QFile::exists(p)) return p;
+            }
+        return QString();
+    }
+
+    QString embedModelPath() const
+    {
+        return findAsset({ QStringLiteral("bge-small-en-v1.5.onnx") });
+    }
+
+    // Prefer an index built from the translation the operator actually reads
+    // — a paraphrase sits closer to the wording of the version being preached
+    // from — then fall back to the one that ships with every install.
+    QString allusionIndexPath() const
+    {
+        QStringList names;
+        if (settings) {
+            const QString pref = settings->defaultScriptureVersion();
+            if (!pref.isEmpty())
+                names << QStringLiteral("allusion-%1.crai").arg(pref);
+        }
+        names << QStringLiteral("allusion-KJV.crai");
+        names.removeDuplicates();
+        return findAsset(names);
+    }
+
     // The translation used for existence checks only. Which translation the
     // operator actually projects in is a QML concern — detection returns
     // coordinates and display follows the operator's selection
@@ -226,7 +310,6 @@ struct NarrationService::Impl
     // `offThread` sends the quotation pass to QuotationWorker instead of
     // running it inline. True for the audio path, false for injectTranscript.
     void runDetectors(const QString& text, qint64 atMs, bool offThread);
-    void runAllusion(const QString& text, qint64 atMs);
     void startQuotationWorker();
     void stopQuotationWorker();
     void route(const HeardReference& ref);
@@ -333,12 +416,13 @@ void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool
         route(r);
 
     if (offThread && quoteWorker) {
-        // Fire and forget. Results come back on the main thread carrying the
-        // generation they were issued under, so anything still in flight when
-        // the operator disarms is discarded rather than reviving a queue that
-        // was deliberately emptied.
+        // Fire and forget: quotation AND allusion, in one hop. Results come
+        // back on the main thread carrying the generation they were issued
+        // under, so anything still in flight when the operator disarms is
+        // discarded rather than reviving a queue that was deliberately
+        // emptied.
         const int gen = generation;
-        QuotationWorker* w = quoteWorker;
+        DetectionWorker* w = quoteWorker;
         QMetaObject::invokeMethod(
             w,
             [this, w, text, atMs, gen]() {
@@ -356,26 +440,19 @@ void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool
         return;
     }
 
-    // Synchronous path: injectTranscript from Settings > Narration. The
-    // dialog is modal and the operator is waiting for exactly this answer, so
-    // there is no frame budget to protect and no worker to spin up.
+    // Synchronous path: injectTranscript from Settings > Narration while
+    // disarmed. The dialog is modal and the operator is waiting for exactly
+    // this answer, so there is no frame budget to protect and no worker to
+    // spin up.
+    //
+    // Quotation only. Allusion needs the 127 MB embedding session, and
+    // loading it here would stall the dialog for seconds to answer one typed
+    // sentence — so testing a paraphrase means arming first, which is stated
+    // on the settings page rather than left to be discovered.
     const QList<HeardReference> quoted = quotation.match(text, atMs);
     for (const HeardReference& r : quoted)
         route(r);
 
-    runAllusion(text, atMs);
-}
-
-void NarrationService::Impl::runAllusion(const QString& text, qint64 atMs)
-{
-    // Last, deliberately. Citation and quotation are stronger evidence for
-    // the same verse, and route()'s de-duplication keeps whichever arrived
-    // first — so a paraphrase of a verse the preacher also named is recorded
-    // as the citation it really was.
-    if (!allusion.isReady()) return;
-    const QList<HeardReference> alluded = allusion.match(text, atMs);
-    for (const HeardReference& r : alluded)
-        route(r);
 }
 
 void NarrationService::Impl::startQuotationWorker()
@@ -385,11 +462,20 @@ void NarrationService::Impl::startQuotationWorker()
     quoteThread = new QThread(q);
     quoteThread->setObjectName(QStringLiteral("narration-quotation"));
 
-    quoteWorker = new QuotationWorker();
+    quoteWorker = new DetectionWorker();
     quoteWorker->moveToThread(quoteThread);
     QObject::connect(quoteThread, &QThread::finished, quoteWorker, &QObject::deleteLater);
 
     quoteThread->start();
+
+    // Resolve the heavy assets on the main thread (cheap file checks) but
+    // OPEN them on the worker, so the ONNX session and the SQLite connection
+    // both belong to the thread that will use them.
+    const QString embedModel = embedModelPath();
+    const QString index      = allusionIndexPath();
+    DetectionWorker* w = quoteWorker;
+    QMetaObject::invokeMethod(w, [w, embedModel, index]() { w->init(embedModel, index); },
+                              Qt::QueuedConnection);
 }
 
 void NarrationService::Impl::stopQuotationWorker()

@@ -263,12 +263,15 @@ private slots:
         m.setEmbedder([this](const QString& t) { return emb.embedOne(t); });
         QVERIFY(m.isReady());
 
+        // Philippians rather than the gospel paraphrase: the latter matches a
+        // cluster of verses that all genuinely say it, which the cluster gate
+        // treats as a theme (see the_shipped_index_resolves_paraphrases).
         const auto refs =
-            m.match(QStringLiteral("god loved us so much that he sent his own son to die "
-                                   "so that we could live with him forever"), 0);
+            m.match(QStringLiteral("i can handle anything at all because christ is the one "
+                                   "who keeps giving me the strength to do it"), 0);
 
         QVERIFY2(!refs.isEmpty(), "the gates rejected a genuine paraphrase");
-        QCOMPARE(refs.first().reference, QStringLiteral("John 3:16"));
+        QCOMPARE(refs.first().reference, QStringLiteral("Philippians 4:13"));
         QCOMPARE(refs.first().kind,      QStringLiteral("allusion"));
         // Never anything but "possible", however good the match looked.
         QCOMPARE(refs.first().tier,      QStringLiteral("possible"));
@@ -315,6 +318,130 @@ private slots:
                                      .arg(s, refs.first().reference)));
             }
         }
+    }
+
+    // ── The shipped index ───────────────────────────────────────────────
+    //
+    // Everything above builds a four-verse index in-process, which can prove
+    // the machinery works but not that it works at scale. Thirty-one thousand
+    // verses is a crowded neighbourhood: the margin gate that trivially
+    // passes against three decoys has to hold against the whole canon.
+    void the_shipped_index_resolves_paraphrases()
+    {
+        requireModel();
+
+        const QString indexPath = QDir(db::DbPaths::dataDir())
+                                      .filePath(QStringLiteral("models/allusion-KJV.crai"));
+        if (!QFile::exists(indexPath))
+            QSKIP("allusion-KJV.crai is not built; run build_allusion_index");
+
+        AllusionIndex idx;
+        QString err;
+        QVERIFY2(idx.load(indexPath, emb.modelId(), &err), qPrintable(err));
+        QCOMPARE(idx.dimensions(), 384);
+        QVERIFY2(idx.count() > 30000,
+                 qPrintable(QStringLiteral("index holds only %1 verses").arg(idx.count())));
+
+        AllusionMatcher m;
+        m.setIndex(&idx);
+        m.setEmbedder([this](const QString& t) { return emb.embedOne(t); });
+        QVERIFY(m.isReady());
+
+        // The assertion is that the expected verse is among what was emitted,
+        // not that it ranked first: a paraphrase can legitimately match a
+        // small cluster of verses that all say the same thing, and insisting
+        // on first place would be asserting my intuition about which one is
+        // "the" answer.
+        //
+        // Deliberately absent: "god loved us so much that he sent his own son
+        // to die". It is the doc's own flagship example and it does NOT fire
+        // — it lands on a cluster of seven (1 John 4:9 at 0.779, Romans 5:8,
+        // John 3:16 and four more), which the cluster gate reads as a theme
+        // rather than a quotation. Scripture states the gospel in many
+        // places, so the phrase genuinely does not identify one verse. That
+        // is a real limitation of this path, recorded in §7.3 rather than
+        // hidden by choosing kinder test cases.
+        struct Case { const char* said; const char* expect; };
+        const Case cases[] = {
+            { "the lord takes care of me like a shepherd so there is nothing that i need",
+              "Psalms 23:1" },
+            { "i can handle anything at all because christ is the one giving me strength",
+              "Philippians 4:13" },
+            { "in the very beginning god made the heavens and the earth out of nothing",
+              "Genesis 1:1" },
+            { "if we admit what we have done wrong he is faithful and will forgive us",
+              "1 John 1:9" },
+        };
+
+        for (const Case& c : cases) {
+            const auto refs = m.match(QString::fromUtf8(c.said), 0);
+            const QString want = QString::fromUtf8(c.expect);
+
+            // Report what actually happened either way — a near-miss against
+            // 31,102 verses is far more informative than a bare failure.
+            const auto top = idx.search(emb.embedOne(QString::fromUtf8(c.said)), 3);
+            QString detail;
+            for (const auto& h : top)
+                detail += QStringLiteral("%1 %2:%3=%4  ")
+                              .arg(h.book).arg(h.chapter).arg(h.verse)
+                              .arg(h.score, 0, 'f', 3);
+            qInfo().noquote() << QStringLiteral("  \"%1\"\n    top3: %2")
+                                     .arg(QString::fromUtf8(c.said), detail);
+
+            bool found = false;
+            for (const auto& r : refs) if (r.reference == want) found = true;
+            QVERIFY2(found, qPrintable(
+                QStringLiteral("\"%1\" did not yield %2 (emitted %3)")
+                    .arg(QString::fromUtf8(c.said), want,
+                         refs.isEmpty() ? QStringLiteral("nothing")
+                                        : refs.first().reference)));
+            for (const auto& r : refs)
+                QCOMPARE(r.tier, QStringLiteral("possible"));
+        }
+    }
+
+    // The failure that actually matters at scale. Against four verses,
+    // "nothing is close enough" is easy; against the whole canon there is
+    // always something semantically adjacent to any sentence about people,
+    // giving, or meeting together.
+    void the_shipped_index_stays_quiet_on_announcements()
+    {
+        requireModel();
+
+        const QString indexPath = QDir(db::DbPaths::dataDir())
+                                      .filePath(QStringLiteral("models/allusion-KJV.crai"));
+        if (!QFile::exists(indexPath))
+            QSKIP("allusion-KJV.crai is not built; run build_allusion_index");
+
+        AllusionIndex idx;
+        QVERIFY(idx.load(indexPath, emb.modelId()));
+
+        AllusionMatcher m;
+        m.setIndex(&idx);
+        m.setEmbedder([this](const QString& t) { return emb.embedOne(t); });
+
+        const QStringList speech = {
+            QStringLiteral("good morning church it is wonderful to see everybody here today"),
+            QStringLiteral("before we begin i want to thank the worship team for leading us"),
+            QStringLiteral("there are envelopes in the back if you would like to give today"),
+            QStringLiteral("we are going to be starting a brand new series next sunday morning"),
+            QStringLiteral("the youth group is meeting on wednesday evening in the hall downstairs"),
+            QStringLiteral("please remember to sign up for the church picnic before you leave"),
+        };
+
+        int fired = 0;
+        for (const QString& s : speech) {
+            const auto refs = m.match(s, 0);
+            if (refs.isEmpty()) continue;
+            ++fired;
+            const auto top = idx.search(emb.embedOne(s), 2);
+            qWarning().noquote()
+                << QStringLiteral("  fired on \"%1\" -> %2 (top %3, runner-up %4)")
+                       .arg(s, refs.first().reference)
+                       .arg(top.isEmpty() ? 0.0f : top.first().score, 0, 'f', 3)
+                       .arg(top.size() > 1 ? top.at(1).score : 0.0f, 0, 'f', 3);
+        }
+        QCOMPARE(fired, 0);
     }
 
     // §9's budget for a query embedding. This runs once per utterance on the

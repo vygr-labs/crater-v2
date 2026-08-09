@@ -45,62 +45,85 @@ QList<HeardReference> AllusionMatcher::match(const QString& utterance, qint64 no
     {
         const int take = std::min(m_cfg.maxWindowWords, int(words.size()) - start);
         if (take < m_cfg.minContentWords) break;
-        ++windows;
 
         const QStringList window = words.mid(start, take);
         const QString     text   = window.join(QLatin1Char(' '));
 
+        // The content floor has to be re-checked PER WINDOW, not just over
+        // the whole utterance. A trailing window is mostly function words —
+        // "die so we could live" is five tokens carrying two content words —
+        // and embedding it asks the index to identify a fragment that says
+        // almost nothing. Against 31,102 verses something always answers:
+        // that particular fragment lands on 2 Corinthians 4:12 ("death
+        // worketh in us, but life in you") with real confidence.
+        if (int(QuotationMatcher::contentWords(text).size()) < m_cfg.minContentWords)
+            continue;
+
+        ++windows;
+
         const QList<float> vec = m_embed(text);
         if (vec.isEmpty()) continue;
 
-        // Two hits, because the margin test needs a runner-up. Asking for
-        // more would cost nothing in the scan but says nothing extra.
-        const QList<AllusionIndex::Hit> hits = m_index->search(vec, 2);
+        // Probe deep enough to measure the neighbourhood, not just its edge.
+        const QList<AllusionIndex::Hit> hits = m_index->search(vec, m_cfg.probeDepth);
         if (hits.isEmpty()) continue;
 
         const AllusionIndex::Hit& top = hits.first();
 
-        // Gate 2: is it actually close?
+        // Gate 2: is it actually close to anything?
         if (top.score < m_cfg.minScore) continue;
 
-        // Gate 3: is it clearly closer than the next one? A crowded
-        // neighbourhood means the phrase expresses a theme the whole canon
-        // shares, not a paraphrase of one verse. When there is no runner-up
-        // at all the margin is trivially satisfied.
-        if (hits.size() > 1 && (top.score - hits.at(1).score) < m_cfg.minMargin) continue;
-
-        if (top.book.isEmpty() || top.chapter <= 0 || top.verse <= 0) continue;
-
-        // Do not emit two references for the same verse from overlapping
-        // windows of one utterance.
-        bool already = false;
-        for (const HeardReference& prev : out) {
-            if (prev.chapter == top.chapter && prev.verseStart == top.verse
-                && prev.book.compare(top.book, Qt::CaseInsensitive) == 0) {
-                already = true;
-                break;
-            }
+        // Gate 3: how crowded is the neighbourhood? Everything within
+        // clusterWindow of the best hit that also clears minScore is a
+        // co-answer, not a competitor.
+        QList<AllusionIndex::Hit> cluster;
+        for (const AllusionIndex::Hit& h : hits) {
+            if (h.score < m_cfg.minScore) break;              // sorted, so done
+            if ((top.score - h.score) > m_cfg.clusterWindow) break;
+            cluster.append(h);
         }
-        if (already) continue;
 
-        HeardReference ref;
-        ref.book       = top.book;
-        ref.chapter    = top.chapter;
-        ref.verseStart = top.verse;
-        ref.verseEnd   = top.verse;
-        ref.reference  = QStringLiteral("%1 %2:%3")
-                             .arg(top.book).arg(top.chapter).arg(top.verse);
-        ref.kind       = QStringLiteral("allusion");
-        ref.heardText  = text;
-        ref.atMs       = nowMs;
+        // A crowd this size means the phrase expresses a theme the canon
+        // shares rather than a paraphrase of anything in particular. Note the
+        // probe depth bounds what we can see: a cluster filling the probe is
+        // treated as too large, which is the conservative reading.
+        if (cluster.size() > m_cfg.maxCluster) continue;
+        if (cluster.size() >= m_cfg.probeDepth) continue;
 
-        // Always "possible". Not "usually", not "unless the score is very
-        // high" — there is no evidence this path can produce that justifies
-        // driving the audience screen, and the tier is where that judgement
-        // is recorded. See TrustGate.h.
-        ref.tier = QStringLiteral("possible");
+        for (const AllusionIndex::Hit& h : cluster) {
+            if (out.size() >= m_cfg.maxPerWindow) break;
+            if (h.book.isEmpty() || h.chapter <= 0 || h.verse <= 0) continue;
 
-        out.append(ref);
+            // Do not emit the same verse twice from overlapping windows.
+            bool already = false;
+            for (const HeardReference& prev : out) {
+                if (prev.chapter == h.chapter && prev.verseStart == h.verse
+                    && prev.book.compare(h.book, Qt::CaseInsensitive) == 0) {
+                    already = true;
+                    break;
+                }
+            }
+            if (already) continue;
+
+            HeardReference ref;
+            ref.book       = h.book;
+            ref.chapter    = h.chapter;
+            ref.verseStart = h.verse;
+            ref.verseEnd   = h.verse;
+            ref.reference  = QStringLiteral("%1 %2:%3")
+                                 .arg(h.book).arg(h.chapter).arg(h.verse);
+            ref.kind       = QStringLiteral("allusion");
+            ref.heardText  = text;
+            ref.atMs       = nowMs;
+
+            // Always "possible". Not "usually", not "unless the score is very
+            // high" — there is no evidence this path can produce that
+            // justifies driving the audience screen, and the tier is where
+            // that judgement is recorded. See TrustGate.h.
+            ref.tier = QStringLiteral("possible");
+
+            out.append(ref);
+        }
     }
 
     return out;

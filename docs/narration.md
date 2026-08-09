@@ -476,15 +476,69 @@ constantly.
 
 Three gates, all required:
 
-1. **Absolute threshold** on top-1 similarity.
-2. **Margin test**: top-1 must clearly beat top-2. If fifty verses are all
-   equally close, the phrase is generic rather than a quotation of any one
-   of them.
-3. **Content floor**: ≥5 non-stopword tokens in the window. Short phrases
-   carry too little signal.
+1. **Content floor**: ≥5 non-stopword tokens, checked **per window** rather
+   than over the whole utterance.
+2. **Absolute threshold** on top-1 similarity.
+3. **Cluster size**: how many verses sit within 0.04 of the best hit.
 
 Even clearing all three, the result is tier **Possible**, which per §5 never
 fires on its own.
+
+### 7.3.1 What calibration on the real index actually showed
+
+The first version of this section had a *margin* test — top-1 must beat top-2
+— and thresholds measured against a four-verse index. Both were wrong, and
+`build_allusion_index --calibrate` against the real 31,102-verse index is what
+showed it.
+
+**The absolute threshold cannot do this job alone.** Top-1 scores for eight
+real paraphrases and ten real church announcements:
+
+```
+paraphrases       0.707 .. 0.891
+ordinary speech   0.580 .. 0.775
+```
+
+They **overlap**. That is arithmetic rather than a tuning failure: the nearest
+neighbour of any sentence rises as the corpus grows, so "how close is the best
+match" stops discriminating once there are thirty thousand candidates. Any
+threshold calibrated on a toy index is wrong on the real one — ours was 0.68,
+which would have fired on "there are envelopes in the back if you would like
+to give today" (0.719 → 1 Peter 5:14).
+
+**Cluster size is what separates them.** A correctly-resolved paraphrase sits
+alone or near a few verses that genuinely say the same thing; ordinary speech
+scores high only by being vaguely near a crowd:
+
+| | score | cluster | |
+|---|---|---|---|
+| Philippians 4:13 | 0.891 | 1 | "i can handle anything because christ gives me strength" |
+| Genesis 1:1 | 0.885 | 1 | "in the very beginning god made the heavens and the earth" |
+| 1 John 1:9 | 0.863 | 1 | "if we admit what we have done wrong he will forgive us" |
+| Romans 8:28 | 0.822 | 2 | "everything works out for good for the people who love god" |
+| Psalms 23:1 | 0.786 | 3 | "the lord takes care of me like a shepherd" |
+| Revelation 22:21 | 0.775 | 8 | *"good morning church, wonderful to see everybody"* |
+| Psalms 66:8 | 0.755 | 8 | *"thank the worship team for leading us"* |
+
+At `minScore 0.78` and `maxCluster 3` that is **5 of 8 paraphrases and 0 of 10
+announcements**. The asymmetry is deliberate: this tier populates a suggestion
+queue, where a wrong entry costs the operator's trust and a missing one costs
+nothing they would notice.
+
+**A known limitation, stated rather than hidden.** §2's own flagship example —
+"God loved us so much that he sent his own son to die" — does *not* fire. It
+lands on a cluster of seven (1 John 4:9 at 0.779, Romans 5:8, John 3:16, and
+four more), and the gate reads that as a theme. It is not wrong to: scripture
+states the gospel in many places, so the phrase really does not identify one
+verse. The honest framing is that this path catches paraphrases of
+**distinctive** verses, not of central doctrines.
+
+**The margin test is gone**, and its removal is the reason cluster size
+exists. A top-1-versus-top-2 gap cannot tell three correct co-answers from
+three meaningless near-ties, because a gap is not what distinguishes them.
+Crowd size is — which was always the stated intent here ("if fifty verses are
+all equally close…"); the margin was a crude proxy that failed at exactly the
+moment it mattered.
 
 ---
 

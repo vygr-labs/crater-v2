@@ -65,6 +65,13 @@ float cosine(const QList<float>& a, const QList<float>& b)
 
 constexpr int kDims = 384;   // bge-small-en-v1.5's width
 
+bool hasRef(const QList<HeardReference>& refs, const QString& reference)
+{
+    for (const HeardReference& r : refs)
+        if (r.reference == reference) return true;
+    return false;
+}
+
 AllusionIndex::Entry entry(const char* book, int ch, int v, QList<float> vec)
 {
     AllusionIndex::Entry e;
@@ -419,35 +426,71 @@ private slots:
                                        "in the fellowship hall downstairs"), 0).isEmpty());
     }
 
-    // Gate 3, and the one no absolute threshold can replace. When many verses
-    // are equally close, the phrase expresses a theme the canon shares rather
-    // than a paraphrase of any single verse.
+    // Gate 3, and the one no absolute threshold can replace. A LARGE crowd of
+    // equally-near verses means the phrase expresses a theme the canon shares
+    // rather than a paraphrase of anything in particular.
     void a_crowded_neighbourhood_is_rejected()
     {
-        // Two verses at almost exactly the same distance from the query.
         const QList<float> base = unitAlong(kDims, 0);
 
+        // Ten verses all clustered around the query. Nothing here identifies
+        // anything — this is what generic religious phrasing looks like in
+        // embedding space.
         AllusionIndex idx;
         QList<AllusionIndex::Entry> e;
-        e.append(entry("John",   13, 34, unitAlong(kDims, 0, 0.02f, 11)));
-        e.append(entry("John",   15, 12, unitAlong(kDims, 0, 0.02f, 12)));
+        for (int i = 0; i < 10; ++i)
+            e.append(entry("John", 13, 20 + i, unitAlong(kDims, 0, 0.02f, 11 + i)));
         QVERIFY(idx.build(e, QStringLiteral("m")));
 
         AllusionMatcher m;
         m.setIndex(&idx);
         m.setEmbedder([&](const QString&) { return base; });
 
-        const auto hits = idx.search(base, 2);
-        QCOMPARE(hits.size(), 2);
-        // Precondition: both clear the absolute threshold, so only the margin
-        // test can be what rejects them.
-        QVERIFY(hits.at(0).score >= m.config().minScore);
-        QVERIFY(hits.at(1).score >= m.config().minScore);
-        QVERIFY(std::fabs(hits.at(0).score - hits.at(1).score) < m.config().minMargin);
+        // Precondition: they clear the absolute threshold, so only the
+        // cluster-size rule can be what rejects them.
+        const auto hits = idx.search(base, m.config().probeDepth);
+        QVERIFY(hits.size() > m.config().maxCluster);
+        QVERIFY(hits.first().score >= m.config().minScore);
+        QVERIFY(hits.at(m.config().maxCluster).score >= m.config().minScore);
 
         QVERIFY2(m.match(QStringLiteral("we ought to love one another the way that he "
                                         "first loved every one of us"), 0).isEmpty(),
-                 "a phrase equally near two verses is a paraphrase of neither");
+                 "a phrase equally near ten verses is a paraphrase of none of them");
+    }
+
+    // The other half of the same rule, and the reason it counts neighbours
+    // instead of measuring a top-2 gap. Scripture restates its central ideas
+    // in a handful of places; when a paraphrase matches two or three verses
+    // that are all genuinely right, the operator should get all of them —
+    // this tier only ever populates a queue, never the projector.
+    void a_small_cluster_yields_every_member()
+    {
+        const QList<float> base = unitAlong(kDims, 0);
+
+        AllusionIndex idx;
+        QList<AllusionIndex::Entry> e;
+        e.append(entry("1 John", 4,  9, unitAlong(kDims, 0, 0.02f, 11)));
+        e.append(entry("Romans", 5,  8, unitAlong(kDims, 0, 0.02f, 12)));
+        e.append(entry("John",   3, 16, unitAlong(kDims, 0, 0.02f, 13)));
+        e.append(entry("Psalms", 23, 1, unitAlong(kDims, 60, 0.02f, 14)));   // far away
+        QVERIFY(idx.build(e, QStringLiteral("m")));
+
+        AllusionMatcher m;
+        m.setIndex(&idx);
+        m.setEmbedder([&](const QString&) { return base; });
+
+        const auto refs = m.match(
+            QStringLiteral("god loved us so much that he sent his own son to die so that "
+                           "we could live with him"), 0);
+
+        QCOMPARE(refs.size(), 3);
+        QVERIFY(hasRef(refs, QStringLiteral("1 John 4:9")));
+        QVERIFY(hasRef(refs, QStringLiteral("Romans 5:8")));
+        QVERIFY(hasRef(refs, QStringLiteral("John 3:16")));
+        // The distant verse is not part of the cluster.
+        QVERIFY(!hasRef(refs, QStringLiteral("Psalms 23:1")));
+        for (const HeardReference& r : refs)
+            QCOMPARE(r.tier, QStringLiteral("possible"));
     }
 
     void an_embedder_returning_nothing_is_survivable()
