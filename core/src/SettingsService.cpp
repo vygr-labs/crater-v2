@@ -79,6 +79,7 @@ struct SettingsService::Impl
     // fixed path exactly (BGRA, native 1080p render).
     QString ndiPixelFormat   = QStringLiteral("bgra");
     QString ndiResolution    = QStringLiteral("native");
+    bool    ndiHideMedia     = false;
     // KJV is the translation that ships with every install, so it's the safe
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
@@ -123,6 +124,7 @@ struct SettingsService::Impl
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
     static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
     static constexpr const char* kNdiResolution    = "Settings/ndiResolution";
+    static constexpr const char* kNdiHideMedia     = "Settings/ndiHideMedia";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
@@ -159,6 +161,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
     m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
     m_impl->ndiResolution     = s.value(QString::fromLatin1(Impl::kNdiResolution),   m_impl->ndiResolution).toString();
+    m_impl->ndiHideMedia      = s.value(QString::fromLatin1(Impl::kNdiHideMedia),    m_impl->ndiHideMedia).toBool();
     m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
     m_impl->highlightVerse   = s.value(QString::fromLatin1(Impl::kHighlightVerse),   m_impl->highlightVerse).toBool();
@@ -207,6 +210,7 @@ bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessN
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
 QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
 QString SettingsService::ndiResolution() const     { return m_impl->ndiResolution; }
+bool    SettingsService::ndiHideMedia() const      { return m_impl->ndiHideMedia; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
@@ -348,6 +352,14 @@ void SettingsService::setNdiResolution(const QString& v)
     m_impl->ndiResolution = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiResolution), normalized);
     emit ndiResolutionChanged();
+}
+
+void SettingsService::setNdiHideMedia(bool v)
+{
+    if (m_impl->ndiHideMedia == v) return;
+    m_impl->ndiHideMedia = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiHideMedia), v);
+    emit ndiHideMediaChanged();
 }
 
 void SettingsService::setDefaultScriptureVersion(const QString& code)

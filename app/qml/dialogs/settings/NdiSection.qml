@@ -255,6 +255,44 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
+            // Withhold picture / video items from the broadcast while still
+            // sending everything else. Distinct from the Blank control on the
+            // Live bar, which zeroes the entire outgoing frame at the send
+            // boundary: this one only empties the media branch of the NDI
+            // scene, so lyrics and scripture keep reaching receivers.
+            //
+            // Gated on the headless renderer. On the legacy grabToImage path
+            // NDI re-photographs the audience window instead of rendering its
+            // own scene, so there is nothing separate to suppress — better to
+            // disable the row and say why than to ship a toggle that quietly
+            // does nothing.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: hideMediaToggle.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    ElidedText { text: qsTr("Hide pictures and video"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
+                                 width: parent.width }
+                    ElidedText { text: SettingsService.useHeadlessNdi
+                                     ? qsTr("Send a blank frame while an image or video is live. Lyrics and scripture still go out.")
+                                     : qsTr("Needs the headless renderer, below — the legacy path mirrors the audience screen as-is.")
+                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
+                                 width: parent.width }
+                }
+                ToggleSwitch {
+                    id: hideMediaToggle
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    enabled: SettingsService.useHeadlessNdi
+                    opacity: SettingsService.useHeadlessNdi ? 1.0 : 0.45
+                    value: SettingsService.ndiHideMedia
+                    onToggled: SettingsService.ndiHideMedia = !SettingsService.ndiHideMedia
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: 56
                 Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                     Text { text: qsTr("Include audio"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
