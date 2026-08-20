@@ -41,5 +41,13 @@ find_package(Qt6 6.11 REQUIRED COMPONENTS
 
 qt_standard_project_setup(REQUIRES 6.11)
 
+# Root test registry. enable_testing() only emits a CTestTestfile.cmake at the
+# directory it's called in and below, so calling it solely from core/ (where
+# CRATER_BUILD_TESTS gates whether the binaries get built) left `ctest
+# --test-dir build` reporting "No tests were found". Calling it here as well
+# gives ctest a root to walk from; core/ still decides whether anything is
+# registered under it.
+enable_testing()
+
 add_subdirectory(core)
 add_subdirectory(app)

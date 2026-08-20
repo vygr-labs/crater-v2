@@ -70,12 +70,30 @@ Filename: "{app}\crater.exe"; \
   Description: "Launch Crater"; \
   Flags: nowait postinstall skipifsilent
 
+; Relaunch after an in-app update. UpdateService runs this installer with
+; /SILENT (no wizard) plus /LAUNCH=1, and the operator expects Crater to come
+; back on its own - the entry above is skipifsilent and deliberately will not
+; fire on that run. runasoriginaluser matters: setup is elevated, and a plain
+; child process would inherit admin, leaving Crater writing its AppData as the
+; wrong user from then on.
+Filename: "{app}\crater.exe"; \
+  Flags: nowait postinstall runasoriginaluser; \
+  Check: LaunchRequested
+
 [Icons]
 Name: "{group}\Crater";           Filename: "{app}\crater.exe"
 Name: "{group}\Uninstall Crater"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Crater";     Filename: "{app}\crater.exe"; Tasks: desktopicon
 
 [Code]
+function LaunchRequested(): Boolean;
+begin
+  // True only when the caller passed /LAUNCH=1. In-app updates set it; a
+  // person running the installer by hand does not, and gets the ordinary
+  // "Launch Crater" checkbox on the finish page instead.
+  Result := ExpandConstant('{param:LAUNCH|0}') = '1';
+end;
+
 function VCRedistNeedsInstall(): Boolean;
 var
   version: Cardinal;

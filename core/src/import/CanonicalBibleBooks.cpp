@@ -273,4 +273,39 @@ std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt)
     return fuzzyResolveBook(key);
 }
 
+std::optional<BibleBookMeta> lookupBookNearMiss(QStringView nameOrAlt, int maxDistance)
+{
+    if (maxDistance < 0) return std::nullopt;
+
+    const QString key = normalizeKey(nameOrAlt);
+    if (key.isEmpty()) return std::nullopt;
+
+    // Exact first, so "psalm", "revelations" and the ordinal forms resolve on
+    // the same table lookupBook uses rather than having to survive a distance
+    // check against a canonical spelling they were never close to.
+    const auto& tbl = lookupTable();
+    if (const auto it = tbl.find(key); it != tbl.end()) return it.value();
+
+    int                          best = maxDistance + 1;
+    std::optional<BibleBookMeta> hit;
+    bool                         ambiguous = false;
+
+    for (const auto& b : allCanonicalBooks()) {
+        const int d = boundedDamerauLevenshtein(key, normalizeKey(b.name), maxDistance);
+        if (d > maxDistance) continue;
+        if (d < best) {
+            best      = d;
+            hit       = b;
+            ambiguous = false;
+        } else if (d == best && hit && hit->bookNumber != b.bookNumber) {
+            // Two books equally close. lookupBook would break the tie by book
+            // number; here that would be inventing a preference out of nothing.
+            ambiguous = true;
+        }
+    }
+
+    if (ambiguous) return std::nullopt;
+    return hit;
+}
+
 }  // namespace crater::import

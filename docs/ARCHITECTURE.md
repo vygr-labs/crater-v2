@@ -156,7 +156,14 @@ One service = one concern. Each service is a `QObject` with `QML_ELEMENT`
 | `NdiService`        | NDI sender lifecycle                              | v1    |
 | `SettingsService`   | App-wide preferences                              | v1    |
 | `RemoteService`     | WebSocket server for phone remote                 | v1.1  |
-| `UpdateService`     | Auto-update check + install                       | v1.1  |
+| `UpdateService`     | Auto-update check + install                       | v1    |
+
+`UpdateService` is the one entry in this table that lives in the **app**
+target rather than `crater-core` — it needs `QNetworkAccessManager` and
+`QProcess`, which `crater-core` deliberately does not link (§9). Same
+reasoning as `LogReportService` and `NdiService`. Its pure parts (version
+ordering, checksum-file lookup) do sit in `crater-core` so the headless
+test suite can cover them. See `docs/auto-update.md`.
 
 **Public surface rule**: service public headers expose only `Q_OBJECT`-friendly
 types — `QString`, `int`, `qint64`, `QList<T>`, custom `Q_GADGET` value
@@ -228,7 +235,30 @@ renderer. That's a script-injection surface.
   connection (which would expose stored procedures / triggers). Each
   translation is its own connection.
 
-### 5.4 What we explicitly *don't* defend against
+### 5.4 The update channel
+
+`UpdateService` downloads an executable and hands it to the OS, which makes
+it the highest-consequence network path in the app. Full design in
+`docs/auto-update.md` §4; the guards in one line each:
+
+- **Pinned feed.** The release URL is a compile-time constant, so nothing in
+  a payload can redirect the check itself.
+- **Host allow-list on every hop.** Every URL, including each redirect, must
+  be `https` on `api.github.com`, `github.com`, or `*.githubusercontent.com`.
+- **Exact asset name.** The installer is matched by the exact name the
+  release workflow produces, never by scanning for something executable.
+- **No checksum, no install.** Verified against the release's
+  `SHA256SUMS.txt` or the asset's API-reported digest; a release with
+  neither is refused, and a mismatch deletes the file.
+- **Never automatic.** Checking is ambient, installing is an explicit press
+  behind a confirm. Nothing restarts the app on a timer.
+
+Honest limit: Crater ships unsigned, so this proves the bytes that arrived
+are the bytes the release job built and nothing more. It does not defend
+against a compromised GitHub account. Signing needs a certificate we do not
+have yet.
+
+### 5.5 What we explicitly *don't* defend against
 
 Be honest about scope.
 
@@ -457,4 +487,8 @@ format's complexity *out* of the runtime hot path.
 - **No web view embedded for any UI.** Defeats the entire reason we left
   Electron.
 - **No telemetry of any kind without explicit opt-in.** Churches don't
-  need their service-prep behavior phoning home.
+  need their service-prep behavior phoning home. The daily update check
+  (§5.4) is not an exception to this: it is an unauthenticated GET of a
+  public release feed, sending no identifier and no library contents, and
+  it can be switched off in Settings. `LogReportService` is the other
+  outbound path, and it moves nothing without an explicit button press.

@@ -194,12 +194,42 @@ ApplicationWindow {
         visible: root._consoleVisible
     }
 
+    // ── Narration strip (docs/narration.md) ─────────────────────────────
+    // Collapses to zero height whenever narration is idle, so a console with
+    // the feature switched off is laid out exactly as it was before it
+    // existed. When the microphone is open it is a full-width red bar, which
+    // is what §8's "obvious from across the room" hot indicator requires.
+    NarrationBar {
+        id: narrationBar
+        anchors.top: topBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
+        consoleActive: root._consoleVisible
+    }
+
+    // ── What the microphone heard ───────────────────────────────────────
+    // A separate strip rather than a second row inside NarrationBar: that bar
+    // is the hot indicator and the controls, and its three clusters all centre
+    // on its height. This collapses to zero the moment there is nothing to
+    // report, so the idle console is laid out exactly as before.
+    NarrationTranscript {
+        id: narrationTranscript
+        anchors.top: narrationBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
+        consoleActive: root._consoleVisible
+    }
+
     // ── Main work surface ───────────────────────────────────────────────
     Item {
         id: mainArea
 
         visible: root._consoleVisible
-        anchors.top: topBar.bottom
+        anchors.top: narrationTranscript.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right

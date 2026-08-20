@@ -20,7 +20,9 @@ ModalShell {
         { id: "search",        label: qsTr("Search"),         iconName: "search" },
         { id: "media",         label: qsTr("Media"),          iconName: "image" },
         { id: "remoteControl", label: qsTr("Remote Control"), iconName: "tv" },
+        { id: "narration",     label: qsTr("Narration"),      iconName: "mic" },
         { id: "ndi",           label: qsTr("NDI"),            iconName: "radio" },
+        { id: "updates",       label: qsTr("Updates"),        iconName: "download" },
         { id: "diagnostics",   label: qsTr("Diagnostics"),    iconName: "info" }
     ]
 
@@ -105,7 +107,9 @@ ModalShell {
                         case "media":         return mediaComp
                         case "search":        return searchComp
                         case "remoteControl": return remoteComp
+                        case "narration":     return narrationComp
                         case "ndi":           return ndiComp
+                        case "updates":       return updatesComp
                         case "diagnostics":   return diagnosticsComp
                     }
                     return appearanceComp
@@ -156,6 +160,8 @@ ModalShell {
     Component { id: searchComp;     SearchSection        { } }
     Component { id: mediaComp;      MediaSection         { } }
     Component { id: remoteComp;     RemoteControlSection { } }
+    Component { id: narrationComp;  NarrationSection     { } }
     Component { id: ndiComp;        NdiSection           { } }
+    Component { id: updatesComp;    UpdatesSection       { } }
     Component { id: diagnosticsComp; DiagnosticsSection   { } }
 }

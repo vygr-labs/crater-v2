@@ -45,3 +45,212 @@ target_include_directories(test_theme_bundle PRIVATE
 )
 
 add_test(NAME theme_bundle COMMAND test_theme_bundle)
+
+# ── Scripture narration, phase 0 — docs/narration.md §4 ────────────────
+# Spoken-number normalization and the citation detector, exercised against
+# transcript fixtures. Pure text in, references out: no microphone, no model,
+# no database, so this runs anywhere CTest does.
+qt_add_executable(test_reference_detector
+    test_reference_detector.cpp
+)
+
+target_link_libraries(test_reference_detector PRIVATE
+    Qt6::Core
+    # The detector itself is Core-only, but crater-core's Qt6::Gui dependency
+    # is PRIVATE and doesn't propagate — restated here for the same reason
+    # test_lyrics_dsl restates it.
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# The detector and its number parser are PRIVATE headers under src/ — only
+# HeardReference is public. The test drives them directly, so restate the
+# private include dir the same way test_theme_bundle does for bundle/Zip.h.
+target_include_directories(test_reference_detector PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME reference_detector COMMAND test_reference_detector)
+
+# ── Narration audio plumbing, phase 1 — docs/narration.md §7.1 ─────────
+# AudioRing and VoiceGate over synthetic PCM. No microphone, no model: the
+# gate is a deterministic state machine and the ring is pure bookkeeping.
+# AudioTap is excluded on purpose — it needs a real capture device.
+qt_add_executable(test_voice_gate
+    test_voice_gate.cpp
+)
+
+target_link_libraries(test_voice_gate PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_voice_gate PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME voice_gate COMMAND test_voice_gate)
+
+# ── Narration routing + trust gate, phase 2 — docs/narration.md §5 ─────
+# The tier x mode matrix asserted cell by cell, plus NarrationService driven
+# end to end through injectTranscript() — the same entry point the operator
+# gets in Settings > Narration. No microphone and no speech model: this
+# covers what the system DECIDES, which is the part that can put a wrong
+# verse in front of a congregation.
+qt_add_executable(test_narration_service
+    test_narration_service.cpp
+)
+
+target_link_libraries(test_narration_service PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# TrustGate.h is a PRIVATE header under src/ — only HeardReference and the
+# service itself are public. Restated for the same reason the other narration
+# tests restate it.
+target_include_directories(test_narration_service PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME narration_service COMMAND test_narration_service)
+
+# ── Verbatim quotation, phase 3 — docs/narration.md §2 ─────────────────
+# Fixture corpus for the matcher's own logic, then the SAME matcher against
+# the operator's real bibles.sqlite through the real FTS5 index. The second
+# half is the one that can prove a phrase is unique among 31,102 verses; it
+# QSKIPs with a reason when no database is installed.
+qt_add_executable(test_quotation_matcher
+    test_quotation_matcher.cpp
+)
+
+target_link_libraries(test_quotation_matcher PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# QuotationMatcher.h and DbPaths.h are both PRIVATE headers under src/.
+target_include_directories(test_quotation_matcher PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME quotation_matcher COMMAND test_quotation_matcher)
+
+# ── Semantic allusion, phase 4 — docs/narration.md §7.2, §7.3 ──────────
+# The int8 index (build, save, load, brute-force scan) and the three
+# distinctiveness gates, driven with synthetic unit vectors. No embedding
+# model is involved and none is needed: quantization error, file-format
+# round-tripping, ranking and gating are all independent of which model
+# produced the numbers. Also measures the flat scan over a full 31,102-row
+# corpus, which is the claim the no-ANN decision rests on.
+qt_add_executable(test_allusion_index
+    test_allusion_index.cpp
+)
+
+target_link_libraries(test_allusion_index PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_allusion_index PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME allusion_index COMMAND test_allusion_index)
+
+# ── BERT WordPiece tokenization — docs/narration.md §7.2 ───────────────
+# Exact token ids against the bundled bert-base-uncased vocabulary. Pinned to
+# values rather than shapes because a wrong tokenizer does not fail: it hands
+# the model plausible ids and gets back a confident vector pointing nowhere.
+qt_add_executable(test_wordpiece_tokenizer
+    test_wordpiece_tokenizer.cpp
+)
+
+target_link_libraries(test_wordpiece_tokenizer PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_wordpiece_tokenizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME wordpiece_tokenizer COMMAND test_wordpiece_tokenizer)
+
+# ── The embedder, against the real model — docs/narration.md §7.2 ──────
+# The only test that can distinguish a correct embedding from a confidently
+# wrong one: tokenization, CLS pooling and normalization each produce a
+# well-formed unit vector whether they are right or not, so this asks whether
+# the resulting geometry actually means anything. Skips with a reason when the
+# operator-supplied model is not installed.
+qt_add_executable(test_onnx_embedder
+    test_onnx_embedder.cpp
+)
+
+target_link_libraries(test_onnx_embedder PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_onnx_embedder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+# onnxruntime.dll must sit beside the test binary for the same reason it must
+# sit beside crater.exe — crater-core links it PRIVATE.
+if(CRATER_WITH_EMBEDDINGS AND CRATER_ORT_RUNTIME_DLL)
+    add_custom_command(TARGET test_onnx_embedder POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CRATER_ORT_RUNTIME_DLL}"
+            "$<TARGET_FILE_DIR:test_onnx_embedder>"
+        VERBATIM)
+endif()
+
+add_test(NAME onnx_embedder COMMAND test_onnx_embedder)
+
+# -- Version ordering -- docs/auto-update.md ----------------------------
+# Pure string comparison behind the updater's "is this an upgrade?"
+# decision. No network, no database, no Gui: crater::compareVersions is
+# Core-only, so this is the cheapest test in the suite and among the most
+# worth having, because its failure mode is a silent no-op.
+qt_add_executable(test_version_compare
+    test_version_compare.cpp
+)
+
+target_link_libraries(test_version_compare PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME version_compare COMMAND test_version_compare)
+
+# -- SHA256SUMS parsing -- docs/auto-update.md --------------------------
+# The lookup that decides whether a downloaded installer may run. Pure text
+# in, hex out, so it tests headlessly; and it MUST be tested here, because
+# the file it parses is written by the release workflow and read months
+# later by an installed copy, with no closer place to catch a mistake.
+qt_add_executable(test_checksums
+    test_checksums.cpp
+)
+
+target_link_libraries(test_checksums PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME checksums COMMAND test_checksums)

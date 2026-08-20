@@ -200,6 +200,37 @@ private:
     // just the persisted source of truth it reads and writes.
     Q_PROPERTY(QString language           READ language           WRITE setLanguage           NOTIFY languageChanged)
 
+    // ── Narration (docs/narration.md) ────────────────────────────────────
+    // Absolute path to the whisper.cpp model the operator downloaded. Empty
+    // until they choose one; NarrationService refuses to arm without it.
+    // Models are never fetched by Crater — nothing in this subsystem touches
+    // the network, which is what makes the offline requirement a security
+    // property rather than a convenience (§7, §8).
+    Q_PROPERTY(QString narrationModelPath READ narrationModelPath WRITE setNarrationModelPath NOTIFY narrationModelPathChanged)
+    // "suggest" | "stage" | "auto" — the operator's trust level, crossed with
+    // a detection's confidence tier by the gate in §5. Default "stage": a
+    // detection reaches the Preview pane and never the audience screen unless
+    // the operator explicitly opts into Auto.
+    Q_PROPERTY(QString narrationMode      READ narrationMode      WRITE setNarrationMode      NOTIFY narrationModeChanged)
+    // Cancel window before an Auto-mode detection is projected, in ms.
+    // Clamped to 500..10000 on write.
+    Q_PROPERTY(int     narrationGraceMs   READ narrationGraceMs   WRITE setNarrationGraceMs   NOTIFY narrationGraceMsChanged)
+    // QAudioDevice::id() of the microphone to listen on. Empty means "whatever
+    // the system calls default", which is the right default but a poor rule:
+    // the machine driving a service usually has several inputs (a webcam, the
+    // laptop lid array, the desk mic actually pointed at the preacher) and
+    // Windows' idea of default is rarely the one on the pulpit.
+    //
+    // Stored as the opaque device id rather than the display name because
+    // names are neither unique nor stable across reconnects. A saved id that
+    // no longer resolves falls back to the default rather than refusing to
+    // arm — the microphone the operator picked last month being unplugged is
+    // not a reason to have no sound on Sunday.
+    Q_PROPERTY(QString narrationInputDeviceId READ narrationInputDeviceId WRITE setNarrationInputDeviceId NOTIFY narrationInputDeviceIdChanged)
+    // Note what is NOT here: any form of auto-arm. §8 forbids the microphone
+    // opening on app start, schedule load, or go-live, and the way to keep
+    // that true is to never give it a key it could be enabled from.
+
 public:
     explicit SettingsService(QObject* parent = nullptr);
     ~SettingsService() override;
@@ -234,6 +265,10 @@ public:
     bool    highlightSongMatches() const;
     bool    highlightScriptureMatches() const;
     bool    highlightStrongsMatches() const;
+    QString narrationModelPath() const;
+    QString narrationMode() const;
+    int     narrationGraceMs() const;
+    QString narrationInputDeviceId() const;
     QString language() const;
     // True once the operator has explicitly chosen a UI language (the key
     // exists in QSettings). False on a fresh install — TranslationService uses
@@ -270,6 +305,13 @@ public:
     void setHighlightSongMatches(bool v);
     void setHighlightScriptureMatches(bool v);
     void setHighlightStrongsMatches(bool v);
+    void setNarrationModelPath(const QString& path);
+    // Ignores anything outside {suggest, stage, auto} rather than falling back
+    // to a default — see the implementation for why a safety control shouldn't
+    // silently reinterpret a bad write.
+    void setNarrationMode(const QString& mode);
+    void setNarrationGraceMs(int ms);
+    void setNarrationInputDeviceId(const QString& id);
     void setLanguage(const QString& code);
 
     // Set the global-search primary action for one result type. `type` and
@@ -310,6 +352,10 @@ signals:
     void highlightStrongsMatchesChanged();
     void languageChanged();
     void globalSearchActionsChanged();
+    void narrationModelPathChanged();
+    void narrationModeChanged();
+    void narrationGraceMsChanged();
+    void narrationInputDeviceIdChanged();
 
 private:
     struct Impl;

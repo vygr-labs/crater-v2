@@ -130,6 +130,26 @@ Rectangle {
                 color: Theme.color.textSecondary
                 size: Theme.icon.md
             }
+            // Update indicator. A dot, not a badge or a toast: an update is
+            // never urgent, and the one thing this app must not do is put
+            // anything in front of an operator who is mid-service. It sits
+            // on the gear because that is where the Updates section lives,
+            // so the dot and its destination are the same click.
+            Rectangle {
+                width: 7
+                height: 7
+                radius: width / 2
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.rightMargin: -2
+                anchors.topMargin: -2
+                color: Theme.color.brand
+                border.color: Theme.color.elevated
+                border.width: 1
+                visible: UpdateService.state === UpdateService.UpdateAvailable
+                      || UpdateService.state === UpdateService.ReadyToInstall
+            }
+
             MouseArea {
                 id: settingsMa
                 anchors.fill: parent
@@ -216,6 +236,85 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: NdiService.blank = !NdiService.blank
+            }
+        }
+
+        // Narration arm / disarm (docs/narration.md). The ONLY route by which
+        // Crater's microphone opens: §8 forbids arming on app start, schedule
+        // load, or go-live, and there is deliberately no setting that changes
+        // that. If this control has not been clicked, the room is not being
+        // heard.
+        //
+        // Hidden entirely in builds without speech support rather than shown
+        // disabled — a permanently dead control in the top bar is noise, and
+        // the Settings > Narration page explains the absence for anyone who
+        // goes looking.
+        //
+        // While armed this chip is only the secondary indicator; the primary
+        // one is the full-width red NarrationBar directly below, which is what
+        // §8's "obvious from across the room" requirement actually needs.
+        Rectangle {
+            id: micChip
+            visible: NarrationService.available
+            anchors.verticalCenter: parent.verticalCenter
+            height: 34
+            width:  micRow.implicitWidth + Theme.space.lg * 2
+
+            readonly property bool _hot:  NarrationService.listening
+            readonly property bool _busy: NarrationService.engineState === "loading"
+
+            color: _hot ? Theme.color.liveSubtle
+                 : micMa.containsMouse ? Theme.color.overlay
+                                       : "transparent"
+            border.color: _hot ? Theme.color.live : Theme.color.borderStrong
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+            Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+
+            Row {
+                id: micRow
+                anchors.centerIn: parent
+                spacing: Theme.space.sm
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: micChip._hot ? "mic" : "mic-off"
+                    color: micChip._hot ? Theme.color.live : Theme.color.textSecondary
+                    size: Theme.icon.sm
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    // Action-first, matching the NDI chip beside it: the words
+                    // describe what a click will DO, the glyph describes the
+                    // current state.
+                    text: micChip._hot  ? qsTr("Stop Listening")
+                        : micChip._busy ? qsTr("Starting...")
+                                        : qsTr("Listen")
+                    color: micChip._hot ? Theme.color.live : Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    font.weight: Theme.font.weightMedium
+                }
+            }
+            MouseArea {
+                id: micMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (micChip._hot || micChip._busy) {
+                        NarrationService.disarm()
+                        return
+                    }
+                    // arm() returns false with a reason in statusMessage —
+                    // no model configured, no microphone, or a build without
+                    // speech support. Send the operator where the fix is
+                    // rather than leaving them to hunt for it.
+                    if (!NarrationService.arm()) {
+                        AppState.settingsSection = "narration"
+                        AppState.openModal("settings", {})
+                    }
+                }
             }
         }
 
