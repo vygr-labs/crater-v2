@@ -130,6 +130,26 @@ Rectangle {
                 color: Theme.color.textSecondary
                 size: Theme.icon.md
             }
+            // Update indicator. A dot, not a badge or a toast: an update is
+            // never urgent, and the one thing this app must not do is put
+            // anything in front of an operator who is mid-service. It sits
+            // on the gear because that is where the Updates section lives,
+            // so the dot and its destination are the same click.
+            Rectangle {
+                width: 7
+                height: 7
+                radius: width / 2
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.rightMargin: -2
+                anchors.topMargin: -2
+                color: Theme.color.brand
+                border.color: Theme.color.elevated
+                border.width: 1
+                visible: UpdateService.state === UpdateService.UpdateAvailable
+                      || UpdateService.state === UpdateService.ReadyToInstall
+            }
+
             MouseArea {
                 id: settingsMa
                 anchors.fill: parent
