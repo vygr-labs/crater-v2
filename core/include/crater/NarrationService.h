@@ -102,6 +102,43 @@ class NarrationService : public QObject
     // to the operator exactly like a preacher who stopped citing scripture.
     Q_PROPERTY(int droppedUtterances READ droppedUtterances NOTIFY droppedUtterancesChanged)
 
+    // What the microphone actually heard this session, oldest first, as
+    // [{ text, atMs }].
+    //
+    // §8 scopes transcripts to the session and keeps them off disk; it does
+    // not require hiding them, and hiding them was a mistake. Without this the
+    // console only ever reports the END of the pipeline — a suggestion chip —
+    // so a dead microphone, a gate that never opens, a recognizer returning
+    // empty strings and a detector that declined all present identically as a
+    // bar that says "Listening" and does nothing.
+    //
+    // Memory only, capped, and cleared by BOTH arm() and disarm().
+    Q_PROPERTY(QVariantList transcript READ transcript NOTIFY transcriptChanged)
+
+    // Utterances the voice gate closed and handed to the recognizer. Read with
+    // `transcript` this localises a failure without a debugger: zero while the
+    // level meter moves means the gate never opened; non-zero with an empty
+    // transcript means the recognizer returned nothing.
+    Q_PROPERTY(int utterancesHeard READ utterancesHeard NOTIFY utterancesHeardChanged)
+
+    // The sentence currently being spoken, as best the recognizer can tell
+    // before it is finished. Empty between utterances.
+    //
+    // Kept apart from `transcript` because it is a guess that is replaced
+    // roughly once a second: appending each revision would bury the finished
+    // text under ten near-identical drafts of the phrase in progress.
+    Q_PROPERTY(QString partialText READ partialText NOTIFY partialTextChanged)
+
+    // QAudioDevice::id() of the chosen microphone, or "" for the system
+    // default. Persisted through SettingsService.
+    Q_PROPERTY(QString inputDeviceId READ inputDeviceId NOTIFY inputDeviceChanged)
+
+    // What the chosen device is actually called, resolved against the devices
+    // present right now. Empty when nothing resolves — which is a different
+    // state from "default", and the settings page says so rather than showing
+    // a picker that looks correctly set while pointing at a missing device.
+    Q_PROPERTY(QString inputDeviceName READ inputDeviceName NOTIFY inputDeviceChanged)
+
 public:
     explicit NarrationService(BibleService*      bible,
                               ProjectionService* projection,
@@ -122,6 +159,11 @@ public:
     int          heardCount() const;
     QVariantList sessionLog() const;
     int          droppedUtterances() const;
+    QVariantList transcript() const;
+    int          utterancesHeard() const;
+    QString      partialText() const;
+    QString      inputDeviceId() const;
+    QString      inputDeviceName() const;
 
     void setMode(const QString& mode);
 
@@ -156,9 +198,20 @@ public:
     // so this is the operator's way to end that.
     Q_INVOKABLE void clearLog();
 
-    // Available microphones, as [{ id, name, isDefault }]. The settings page
-    // populates its device picker from this.
+    // Available microphones, as [{ id, name, isDefault, isSelected }]. The
+    // settings page populates its device picker from this.
     Q_INVOKABLE QVariantList inputDevices() const;
+
+    // Choose the microphone. "" means the system default.
+    //
+    // Takes effect immediately: if the service is already listening the tap is
+    // reopened on the new device, because an operator who picks a different
+    // microphone mid-service is telling you the current one is wrong, and
+    // making them disarm and re-arm to act on that is asking them to take the
+    // system down to fix it. Arming state is preserved across the swap; a
+    // failure to open the new device reports the error and stops capture
+    // rather than silently continuing on the old one.
+    Q_INVOKABLE void setInputDevice(const QString& id);
 
     // Feed a transcript line straight into the detectors, bypassing audio.
     // This is how the pipeline is exercised without a microphone: the phase-2
@@ -175,6 +228,10 @@ signals:
     void heardChanged();
     void sessionLogChanged();
     void droppedUtterancesChanged();
+    void inputDeviceChanged();
+    void transcriptChanged();
+    void utterancesHeardChanged();
+    void partialTextChanged();
 
     // The three trust outcomes, as separate signals rather than one signal
     // carrying a tier field. The QML handlers are genuinely different actions

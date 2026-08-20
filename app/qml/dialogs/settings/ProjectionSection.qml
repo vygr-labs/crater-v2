@@ -129,6 +129,24 @@ Item {
                     onToggled: SettingsService.projectionInAltTab = !SettingsService.projectionInAltTab }
             }
 
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Picks between the two single-screen arrangements: the corner
+            // preview on top (off, the former behaviour) and a full-size
+            // render pinned underneath (on). Inert while a second display
+            // is attached, which the label says rather than dimming the row
+            // — an operator configuring this on a two-monitor desk is
+            // usually preparing for a one-monitor venue.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Single display: full-size projection behind the console"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { text: qsTr("Renders at full screen size but pinned under every window, so it shows through wherever the console is not. Off keeps the small corner preview."); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.projectionBehindConsole
+                    onToggled: SettingsService.projectionBehindConsole = !SettingsService.projectionBehindConsole }
+            }
+
             // ── TRANSITIONS ──────────────────────────────────────────────
             // Per-output transition between live items + between pages of the
             // same item. Style and duration are independently settable for

@@ -90,61 +90,13 @@ std::optional<BookMatch> matchBookAt(const QStringList& w, int i)
     return std::nullopt;
 }
 
-// Words that must never be handed to the fuzzy matcher. Short function words
-// are subsequences of half the canon, and a fabricated reference emitted at
-// "certain" tier is the worst output this subsystem can produce.
-const QSet<QString>& rescueStopwords()
-{
-    static const QSet<QString> s = {
-        QStringLiteral("the"),    QStringLiteral("this"),  QStringLiteral("that"),
-        QStringLiteral("then"),   QStringLiteral("them"),  QStringLiteral("they"),
-        QStringLiteral("there"),  QStringLiteral("these"), QStringLiteral("those"),
-        QStringLiteral("from"),   QStringLiteral("with"),  QStringLiteral("which"),
-        QStringLiteral("what"),   QStringLiteral("when"),  QStringLiteral("where"),
-        QStringLiteral("your"),   QStringLiteral("our"),   QStringLiteral("and"),
-        QStringLiteral("but"),    QStringLiteral("for"),   QStringLiteral("next"),
-        QStringLiteral("last"),   QStringLiteral("first"), QStringLiteral("second"),
-        QStringLiteral("third"),  QStringLiteral("each"),  QStringLiteral("every"),
-        QStringLiteral("same"),   QStringLiteral("other"), QStringLiteral("another"),
-        QStringLiteral("whole"),  QStringLiteral("entire"),QStringLiteral("following"),
-        QStringLiteral("previous"),QStringLiteral("above"),QStringLiteral("below"),
-        QStringLiteral("into"),   QStringLiteral("in"),    QStringLiteral("verse"),
-        QStringLiteral("verses"), QStringLiteral("about"), QStringLiteral("through"),
-    };
-    return s;
-}
-
-// The narrow readmission of fuzzy matching. Only called when the next token
-// is "chapter", which is strong enough evidence of intent to let lookupBook
-// guess at a mangled name ("phillipians chapter four"). Guarded twice more:
-// no stopword tokens, and a minimum probe length, because every real book
-// name that survives recognizer mangling is long ("corinthians",
-// "deuteronomy", "ephesians") and the short ones are already exact-matched.
-std::optional<BookMatch> rescueBookBefore(const QStringList& w, int chapterIdx)
-{
-    constexpr int kMinProbeChars = 5;
-
-    for (int len = std::min(3, chapterIdx); len >= 1; --len) {
-        const QStringList span = QStringList(w.mid(chapterIdx - len, len));
-
-        bool poisoned = false;
-        for (const QString& t : span) {
-            if (rescueStopwords().contains(t)) { poisoned = true; break; }
-        }
-        if (poisoned) continue;
-
-        const QString probe = span.join(QLatin1Char(' '));
-        if (probe.size() < kMinProbeChars) continue;
-
-        if (const auto meta = crater::import::lookupBook(probe))
-            return BookMatch{ meta->name, chapterIdx };
-    }
-    return std::nullopt;
-}
-
 // Intent cues. Required before a bare book name with no numbers after it,
 // because book names are also ordinary English words and ordinary people's
 // names. "John was there" and "Mark said" must not put anything on a screen.
+//
+// Declared up here rather than beside the main loop because the fuzzy rescue
+// paths below consult them too: a cue is most of what licenses guessing at a
+// mangled name.
 const QList<QStringList>& cuePhrases()
 {
     static const QList<QStringList> t = {
@@ -199,6 +151,116 @@ bool isRangeKeyword(const QString& w)
     return w == QStringLiteral("through") || w == QStringLiteral("thru")
            || w == QStringLiteral("to") || w == QStringLiteral("until")
            || w == QStringLiteral("till");
+}
+
+// Is what follows the shape of a citation? A cue in front of a word is only
+// half an argument — "turn to the front" has one. What makes a citation is a
+// chapter, a verse, or a number after the name, and requiring one is what
+// keeps the near-miss matcher out of ordinary speech.
+bool citationStructureFollows(const QStringList& w, int k)
+{
+    if (k >= int(w.size())) return false;
+    if (isChapterKeyword(w[k]) || isVerseKeyword(w[k])) return true;
+    return parseNumberPhrase(w, k).has_value();
+}
+
+// Words that must never be handed to the fuzzy matcher. Short function words
+// are subsequences of half the canon, and a fabricated reference emitted at
+// "certain" tier is the worst output this subsystem can produce.
+const QSet<QString>& rescueStopwords()
+{
+    static const QSet<QString> s = {
+        QStringLiteral("the"),    QStringLiteral("this"),  QStringLiteral("that"),
+        QStringLiteral("then"),   QStringLiteral("them"),  QStringLiteral("they"),
+        QStringLiteral("there"),  QStringLiteral("these"), QStringLiteral("those"),
+        QStringLiteral("from"),   QStringLiteral("with"),  QStringLiteral("which"),
+        QStringLiteral("what"),   QStringLiteral("when"),  QStringLiteral("where"),
+        QStringLiteral("your"),   QStringLiteral("our"),   QStringLiteral("and"),
+        QStringLiteral("but"),    QStringLiteral("for"),   QStringLiteral("next"),
+        QStringLiteral("last"),   QStringLiteral("first"), QStringLiteral("second"),
+        QStringLiteral("third"),  QStringLiteral("each"),  QStringLiteral("every"),
+        QStringLiteral("same"),   QStringLiteral("other"), QStringLiteral("another"),
+        QStringLiteral("whole"),  QStringLiteral("entire"),QStringLiteral("following"),
+        QStringLiteral("previous"),QStringLiteral("above"),QStringLiteral("below"),
+        QStringLiteral("into"),   QStringLiteral("in"),    QStringLiteral("verse"),
+        QStringLiteral("verses"), QStringLiteral("about"), QStringLiteral("through"),
+    };
+    return s;
+}
+
+// How much recogniser slip to forgive, by probe length.
+//
+// One edit is a mishearing: "join" for "john", "mars" for "mark". Three edits
+// on a four-letter word is a different word, which is precisely how
+// lookupBook's tolerance ends up calling "page" a near-miss for Jude. Longer
+// names earn a second edit because there is more of them left to agree with,
+// and "phillipians" needs it.
+int slipAllowance(const QString& probe)
+{
+    return probe.size() >= 8 ? 2 : 1;
+}
+
+// Canonical name for a span that is close to a book name without being one.
+// The caller supplies the length floor, because how short a probe may safely
+// be depends on how much structure surrounds it.
+std::optional<QString> nearMissSpan(const QStringList& span, int minChars)
+{
+    for (const QString& t : span) {
+        if (rescueStopwords().contains(t)) return std::nullopt;
+    }
+
+    const QString probe = span.join(QLatin1Char(' '));
+    if (probe.size() < minChars) return std::nullopt;
+
+    if (const auto meta = crater::import::lookupBookNearMiss(probe, slipAllowance(probe)))
+        return meta->name;
+    return std::nullopt;
+}
+
+// The narrow readmission of fuzzy matching. Only called when the next token
+// is "chapter", which is strong enough evidence of intent to guess at a
+// mangled name ("phillipians chapter four"). Guarded twice more: no stopword
+// tokens, and a minimum probe length, because every real book name that
+// survives recognizer mangling is long ("corinthians", "deuteronomy",
+// "ephesians") and the short ones are already exact-matched.
+//
+// The floor relaxes by one character when an intent cue sits immediately
+// before the span. "turn with me to join chapter three" has a cue on one side
+// and a chapter on the other, and nothing but a book name goes there; a bare
+// "join chapter three" has half that evidence, and four letters is short
+// enough that half is not enough.
+std::optional<BookMatch> rescueBookBefore(const QStringList& w, int chapterIdx)
+{
+    constexpr int kMinProbeChars = 5;
+
+    for (int len = std::min(3, chapterIdx); len >= 1; --len) {
+        const int start = chapterIdx - len;
+        const int floorChars =
+            hasCueBefore(w, start) ? kMinProbeChars - 1 : kMinProbeChars;
+        if (const auto name = nearMissSpan(w.mid(start, len), floorChars))
+            return BookMatch{ *name, chapterIdx };
+    }
+    return std::nullopt;
+}
+
+// The same idea for the form with no "chapter" in it at all: "turn with me to
+// join three sixteen". Here the evidence is the cue in front and a number
+// behind, which is the shape of every spoken citation and of almost no
+// ordinary sentence.
+//
+// Two tokens at most, so a mangled "first corinthans" survives; three would
+// start swallowing clauses.
+std::optional<BookMatch> nearMissBookAfterCue(const QStringList& w, int i)
+{
+    constexpr int kMinProbeChars = 4;
+
+    const int maxLen = std::min(2, int(w.size()) - i);
+    for (int len = maxLen; len >= 1; --len) {
+        if (!citationStructureFollows(w, i + len)) continue;
+        if (const auto name = nearMissSpan(w.mid(i, len), kMinProbeChars))
+            return BookMatch{ *name, i + len };
+    }
+    return std::nullopt;
 }
 
 QString spanText(const QStringList& w, int from, int to)
@@ -282,7 +344,26 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         //
         // Runs before the ordinal form below, and must: "third john" has to
         // resolve as the book 3 John, not as John chapter 3.
-        if (const auto bm = matchBookAt(w, i)) {
+        //
+        // On an exact miss, and only behind an intent cue, the same branch
+        // accepts a near-miss — "turn with me to join chapter three" is what a
+        // recognizer does to "john", and refusing it means the single most
+        // common citation in English preaching fails on a one-letter slip.
+        auto bm        = matchBookAt(w, i);
+        bool fuzzyBook = false;
+        if (!bm && hasCueBefore(w, i)) {
+            bm        = nearMissBookAfterCue(w, i);
+            fuzzyBook = bm.has_value();
+        }
+        if (bm) {
+            // A book name we had to guess at is not the evidence a book name
+            // we read is. Both are citations; only the exact one is "certain".
+            // That difference is the whole safety story here — at "high" a
+            // mishearing can reach the Preview pane and no further, even in
+            // Auto mode, so the cost of being wrong is an operator glancing at
+            // a wrong chip rather than a congregation reading one.
+            const QString bookTier =
+                fuzzyBook ? QStringLiteral("high") : QStringLiteral("certain");
             const int start = i;
             int       k     = bm->endIdx;
 
@@ -328,14 +409,14 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
                 && !validate(bm->canonical, chapter, verseStart)) {
                 const int composed = chapter * 100 + verseStart;
                 if (validate(bm->canonical, composed, 1)) {
-                    record(bm->canonical, composed, 0, 0, QStringLiteral("certain"), start, k);
+                    record(bm->canonical, composed, 0, 0, bookTier, start, k);
                     i = k;
                     continue;
                 }
             }
 
             record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
-                   QStringLiteral("certain"), start, k);
+                   bookTier, start, k);
             i = k;
             continue;
         }
@@ -364,8 +445,10 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
                     int        verseStart      = 0;
                     int        verseEnd        = 0;
                     const bool hasVerse = readVerseTail(k, sawVerseKeyword, verseStart, verseEnd);
+                    // "high", not "certain", for the same reason as the
+                    // cue-anchored path above: the book name was guessed at.
                     record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
-                           QStringLiteral("certain"), i - 1, k);
+                           QStringLiteral("high"), i - 1, k);
                     i = k;
                     continue;
                 }

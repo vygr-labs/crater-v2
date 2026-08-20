@@ -21,6 +21,11 @@ qt_add_executable(crater
     src/NdiRenderer.h
     src/RichTextHelper.cpp
     src/RichTextHelper.h
+    # Restores OS window management (Win+Arrow snapping, the taskbar
+    # window menu) that Qt::FramelessWindowHint takes away on Windows.
+    # Compiles to nothing on other platforms.
+    src/WindowChrome.cpp
+    src/WindowChrome.h
     # UI localization runtime — loads crater_<code>.qm catalogs and swaps the
     # language live (QTranslator + QQmlEngine::retranslate). App layer because
     # live retranslation needs the engine; crater-core stays Quick-free (§1).
@@ -153,6 +158,7 @@ qt_add_qml_module(crater
         qml/panels/TitleBar.qml
         qml/panels/TopBar.qml
         qml/panels/NarrationBar.qml
+        qml/panels/NarrationTranscript.qml
         qml/panels/SchedulePanel.qml
         qml/panels/PreviewPanel.qml
         qml/panels/LivePanel.qml
@@ -381,6 +387,48 @@ if(WIN32)
                 "$<TARGET_FILE_DIR:crater>"
             COMMENT "Copying onnxruntime.dll next to crater.exe"
             VERBATIM)
+    endif()
+
+    # whisper.dll + the three ggml DLLs — narration's speech path
+    # (CRATER_WITH_WHISPER). Exactly the onnxruntime story above, with one
+    # extra wrinkle: whisper.cpp honours BUILD_SHARED_LIBS and defaults to
+    # shared, and its own CMake sends the DLLs to <build>/bin while our exe
+    # is pinned to <build>/ by RUNTIME_OUTPUT_DIRECTORY. Different directory,
+    # so the loader never finds them and crater.exe dies before main() with
+    # no window, no log line and no error dialog.
+    #
+    # Copied rather than linked statically because ggml registers its CPU
+    # backend through static initializers, which a static link is free to
+    # discard unless every consumer remembers /WHOLEARCHIVE.
+    #
+    # Named targets rather than $<TARGET_RUNTIME_DLLS:crater>, which looks
+    # like the tidier answer and is a trap: it resolves the WHOLE shared
+    # closure, so it also drops Qt6Core.dll and friends into the build root.
+    # Qt then resolves its plugin directory relative to whichever Qt6Core.dll
+    # actually loaded, finds no platforms/ beside this one, and every Qt
+    # process in the build tree dies with "could not find the Qt platform
+    # plugin windows" — tests included. Copy only what is missing.
+    if(CRATER_WITH_WHISPER)
+        set(_crater_whisper_dlls "")
+        foreach(_whisper_target whisper ggml ggml-base ggml-cpu)
+            if(TARGET ${_whisper_target})
+                get_target_property(_whisper_type ${_whisper_target} TYPE)
+                if(_whisper_type STREQUAL "SHARED_LIBRARY")
+                    list(APPEND _crater_whisper_dlls "$<TARGET_FILE:${_whisper_target}>")
+                endif()
+            endif()
+        endforeach()
+        # Empty when whisper.cpp was built static (BUILD_SHARED_LIBS=OFF), in
+        # which case there is nothing to copy and nothing to guard against.
+        if(_crater_whisper_dlls)
+            add_custom_command(TARGET crater POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_crater_whisper_dlls}
+                    "$<TARGET_FILE_DIR:crater>"
+                COMMAND_EXPAND_LISTS
+                COMMENT "Copying whisper + ggml DLLs next to crater.exe"
+                VERBATIM)
+        endif()
     endif()
 
     # QtQuick.Effects QML module — same deployment trick we use for

@@ -35,7 +35,18 @@ inline QString kLive()   { return QStringLiteral("live"); }
 // `tier` is "certain" | "high" | "possible"; `mode` is "suggest" | "stage" |
 // "auto". Unknown values fall to the most conservative outcome rather than
 // the most convenient one — see the two guards below.
-inline QString actionFor(const QString& tier, const QString& mode)
+//
+// `fromPartial` marks a detection made from an in-progress hypothesis, before
+// the speaker finished the sentence. It caps the outcome at "staged": the
+// suggestion is offered and a human still has to act on it.
+//
+// That cap is not a detail of the streaming code, which is why it is a
+// parameter here rather than a check at the one call site that currently
+// needs it. "Turn to John three" identifies John 3:1 with total confidence
+// right up until the next word is "sixteen", and Auto mode's whole purpose is
+// to project without waiting for a human — so the two must not meet.
+inline QString actionFor(const QString& tier, const QString& mode,
+                         bool fromPartial = false)
 {
     // The safety property, and the reason the allusion path in §7.2 is
     // shippable at all: a semantic guess never reaches the projector, in any
@@ -56,7 +67,7 @@ inline QString actionFor(const QString& tier, const QString& mode)
     // Auto projects only what the preacher actually said out loud. A
     // reference inferred from context is unambiguous but still inferred, and
     // inference is not enough to drive the audience screen unattended.
-    if (mode == QLatin1String("auto") && tier == QLatin1String("certain"))
+    if (mode == QLatin1String("auto") && tier == QLatin1String("certain") && !fromPartial)
         return kLive();
 
     return kStaged();

@@ -27,6 +27,26 @@
 
 #include <algorithm>
 #include <cmath>
+
+namespace {
+// Diagnostics for a subsystem whose failures are all silent from the outside:
+// a microphone that is open but deaf, a gate that never opens, a recognizer
+// that returns empty strings, and a detector that rejects everything all look
+// identical to an operator watching a bar that says "Listening".
+//
+// Lifecycle only at Info. Transcript TEXT is Debug and therefore off unless
+// someone deliberately turns it on, because stderr is routinely redirected to
+// a file and docs/narration.md §8 promises transcripts are never written to
+// disk. Enable with:
+//   QT_LOGGING_RULES="crater.narration.debug=true"
+//
+// The explicit QtInfoMsg floor is the part that matters. The two-argument
+// Q_LOGGING_CATEGORY defaults to QtDebugMsg, which would leave the transcript
+// line below switched ON for everyone — and stderr is redirected to a file
+// often enough that this would quietly turn "never written to disk" into a
+// promise the code breaks by default.
+Q_LOGGING_CATEGORY(lcNarration, "crater.narration", QtInfoMsg)
+}  // namespace
 #include <cstring>
 #include <utility>
 
@@ -58,6 +78,43 @@ constexpr int kMaxInFlight = 2;
 
 constexpr int    kQueueCap        = 24;
 constexpr int    kLogCap          = 500;
+// Long enough to scroll back through a sermon's worth of recent speech,
+// short enough that it is obviously a window rather than a recording.
+constexpr int    kTranscriptCap   = 200;
+
+// ── Live suggestions while the speaker is still talking ─────────────────
+//
+// VoiceGate only closes an utterance after `hangoverMs` of silence, with a
+// 15 s backstop. That is right for accuracy — whisper reads a whole phrase
+// far better than a fragment — and wrong for the operator, who watches a
+// preacher say "turn with me to John three sixteen" and gets nothing until
+// the sentence ends. So the utterance-so-far is re-transcribed on a cadence
+// and detection runs on the result.
+//
+// 900 ms. This was 1200 while interim passes ran on the operator's full
+// model, where anything shorter only queued work that was stale before it
+// started. With a draft model answering them (see draftModelPath) a pass
+// completes in well under a second, so the cadence is no longer what limits
+// how current the hypothesis is. The in-flight reservation below still stops
+// this from piling up if the machine is slower than expected.
+constexpr int    kInterimMs       = 900;
+
+// Don't bother with an interim pass over less audio than this. Under a second
+// of speech carries at most a word or two, and a one-word hypothesis is where
+// spurious matches come from.
+constexpr int    kInterimMinMs    = 900;
+
+// How much of the utterance an interim pass re-reads.
+//
+// Five seconds, down from ten. The window matters less than it looks like it
+// should — whisper pads its input to thirty seconds before the encoder runs,
+// so halving the audio does not halve the cost (WhisperRecognizer's
+// audioCtxFor is what actually converts a shorter window into a cheaper
+// pass). What the shorter window does buy is a hypothesis about the phrase
+// being spoken now rather than one diluted by ten seconds of everything
+// before it, and five seconds still comfortably spans "turn with me to the
+// gospel of John, chapter three, verse sixteen".
+constexpr int    kInterimWindowMs = 5000;
 constexpr qint64 kDedupeWindowMs  = 20 * 1000;
 constexpr int    kDrainChunk      = 4096;
 
@@ -210,13 +267,27 @@ struct NarrationService::Impl
 
     int inFlight   = 0;
     int dropped    = 0;
+    // Utterances the voice gate closed and handed to the recognizer. Zero
+    // while the meter moves means the gate never opened; non-zero with an
+    // empty transcript means the recognizer produced nothing. Those are
+    // different faults with different fixes, and this is what tells them
+    // apart from the outside.
+    int utterances = 0;
+    // Session-clock position of the last interim pass, so they run on a
+    // cadence rather than once per device buffer.
+    qint64 lastInterimMs = -kInterimMs;
+    // The in-progress hypothesis, shown live and replaced by each new one.
+    // Never appended to the transcript: it is a guess, and a strip filling
+    // with ten near-identical guesses per phrase is worse than no strip.
+    QString partialText;
     // Bumped on every arm/disarm. Work posted to the recognizer thread carries
     // the generation it was issued under, so a result arriving after the
     // operator disarmed is discarded instead of reviving a dead session.
     int generation = 0;
 
-    QVariantList queue;   // newest first
-    QVariantList log;     // oldest first
+    QVariantList queue;        // newest first
+    QVariantList log;          // oldest first
+    QVariantList transcript;   // oldest first, memory only, cleared on arm+disarm
     int          nextId = 1;
 
     struct Recent { QString reference; qint64 atMs; };
@@ -231,6 +302,24 @@ struct NarrationService::Impl
     QString modelPath() const
     {
         return settings ? settings->narrationModelPath() : QString();
+    }
+
+    // The configured microphone, resolved against what is plugged in now.
+    //
+    // A saved id that no longer matches anything falls back to the system
+    // default rather than returning null. The operator's chosen microphone
+    // being unplugged is a reason to use another one, not a reason to have no
+    // sound during a service — and the settings page shows which device is
+    // actually in use, so the fallback is visible rather than silent.
+    QAudioDevice resolveInputDevice() const
+    {
+        const QString wanted = settings ? settings->narrationInputDeviceId() : QString();
+        if (!wanted.isEmpty()) {
+            const auto devices = QMediaDevices::audioInputs();
+            for (const QAudioDevice& d : devices)
+                if (QString::fromUtf8(d.id()) == wanted) return d;
+        }
+        return QMediaDevices::defaultAudioInput();
     }
 
     // The embedding model and the vector index are discovered rather than
@@ -260,6 +349,36 @@ struct NarrationService::Impl
     QString embedModelPath() const
     {
         return findAsset({ QStringLiteral("bge-small-en-v1.5.onnx") });
+    }
+
+    // A second, faster model for interim passes only — see
+    // SpeechRecognizer::loadDraft.
+    //
+    // Discovered rather than configured, like the embedding assets: the
+    // operator chose one model and should not have to reason about a
+    // "hypothesis model" to get live suggestions. If a small one happens to
+    // sit beside theirs, we use it; if not, interim passes run on the model
+    // they picked and simply arrive later.
+    //
+    // Candidates in speed order, and the scan stops at the operator's own
+    // model rather than passing it. Reaching it means their model is already
+    // at least this fast, and a "draft" slower than the real thing is worse
+    // than none — it would spend a second model's memory to produce the guess
+    // later than the answer.
+    QString draftModelPath() const
+    {
+        static const QStringList kBySpeed = {
+            QStringLiteral("ggml-tiny.en-q5_1.bin"), QStringLiteral("ggml-tiny.en.bin"),
+            QStringLiteral("ggml-base.en-q5_1.bin"), QStringLiteral("ggml-base.en.bin"),
+        };
+
+        const QString mine = QFileInfo(modelPath()).fileName();
+        for (const QString& name : kBySpeed) {
+            if (name == mine) return QString();
+            const QString found = findAsset({ name });
+            if (!found.isEmpty()) return found;
+        }
+        return QString();
     }
 
     // Prefer an index built from the translation the operator actually reads
@@ -307,12 +426,19 @@ struct NarrationService::Impl
     void dispatchUtterance();
     void trimPending(int keep);
     void onTranscribed(const QString& text, qint64 startedAtMs);
+    void onPartial(const QString& text, qint64 startedAtMs);
+    void maybeDispatchInterim();
+    void appendTranscript(const QString& text, qint64 atMs);
     // `offThread` sends the quotation pass to QuotationWorker instead of
     // running it inline. True for the audio path, false for injectTranscript.
-    void runDetectors(const QString& text, qint64 atMs, bool offThread);
+    //
+    // `fromPartial` marks detections that came from an in-progress hypothesis.
+    // They may queue and they may stage; they may never project. See route().
+    void runDetectors(const QString& text, qint64 atMs, bool offThread,
+                      bool fromPartial = false);
     void startQuotationWorker();
     void stopQuotationWorker();
-    void route(const HeardReference& ref);
+    void route(const HeardReference& ref, bool fromPartial = false);
     bool isDuplicate(const HeardReference& ref);
     bool isAlreadyLive(const HeardReference& ref) const;
     // Takes a mutable reference: recording is where a detection acquires its
@@ -363,6 +489,47 @@ void NarrationService::Impl::drain()
         else if (int(pending.size()) > maxUtteranceSamples())
             trimPending(maxUtteranceSamples());
     }
+
+    // Still talking? Take a look at what has been said so far. Outside the
+    // read loop so one device buffer can never trigger two passes.
+    if (speechOpen) maybeDispatchInterim();
+}
+
+// Re-transcribe the utterance in progress, at most every kInterimMs.
+//
+// Deliberately yields to the final pass. Interim work shares kMaxInFlight with
+// real utterances, and the check below reserves a slot: a partial that crowds
+// out the completed utterance behind it would trade a result the operator can
+// act on for a guess that is about to be superseded anyway.
+void NarrationService::Impl::maybeDispatchInterim()
+{
+    if (!recognizer || pending.isEmpty()) return;
+    if (inFlight >= kMaxInFlight - 1) return;
+
+    const qint64 nowMs = gate.elapsedMs();
+    if (nowMs - lastInterimMs < kInterimMs) return;
+
+    const int haveMs = int(qint64(pending.size()) * 1000 / narration::AudioTap::kTargetRate);
+    if (haveMs < kInterimMinMs) return;
+
+    lastInterimMs = nowMs;
+
+    // The tail, not the whole thing, and timestamped to match so the dedupe
+    // window lines up with the final pass over the same speech.
+    const int window = (narration::AudioTap::kTargetRate * kInterimWindowMs) / 1000;
+    const int from   = std::max(0, int(pending.size()) - window);
+    QList<float> slice = pending.mid(from);
+
+    const qint64 lengthMs = qint64(pending.size()) * 1000 / narration::AudioTap::kTargetRate;
+    const qint64 startMs  = std::max<qint64>(0, nowMs - lengthMs);
+
+    ++inFlight;
+    QMetaObject::invokeMethod(
+        recognizer,
+        [rec = recognizer, samples = std::move(slice), startMs]() mutable {
+            rec->transcribeInterim(std::move(samples), startMs);
+        },
+        Qt::QueuedConnection);
 }
 
 void NarrationService::Impl::dispatchUtterance()
@@ -382,6 +549,11 @@ void NarrationService::Impl::dispatchUtterance()
     const qint64 lengthMs = qint64(pending.size()) * 1000 / narration::AudioTap::kTargetRate;
     const qint64 startMs = std::max<qint64>(0, endMs - lengthMs);
 
+    ++utterances;
+    emit q->utterancesHeardChanged();
+    qCInfo(lcNarration) << "utterance" << utterances << "-" << lengthMs << "ms of speech"
+                        << "-> recognizer";
+
     ++inFlight;
     QMetaObject::invokeMethod(
         recognizer,
@@ -396,11 +568,72 @@ void NarrationService::Impl::onTranscribed(const QString& text, qint64 startedAt
 {
     if (inFlight > 0) --inFlight;
     const QString trimmed = text.trimmed();
+
+    // Length, not content, at Info — enough to tell "the recognizer returned
+    // nothing" from "the recognizer returned something the detectors ignored",
+    // which is the fork every report of "it isn't working" lands on.
+    qCInfo(lcNarration) << "transcribed" << trimmed.size() << "chars";
+    qCDebug(lcNarration) << "transcript:" << trimmed;
+
+    // The final text supersedes whatever the interim passes were guessing.
+    if (!partialText.isEmpty()) {
+        partialText.clear();
+        emit q->partialTextChanged();
+    }
+
     if (trimmed.isEmpty()) return;
+    appendTranscript(trimmed, startedAtMs);
     runDetectors(trimmed, startedAtMs, /*offThread=*/true);
 }
 
-void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool offThread)
+// An in-progress hypothesis. Always arrives, even empty, because it is what
+// releases the in-flight slot the interim pass reserved.
+void NarrationService::Impl::onPartial(const QString& text, qint64 startedAtMs)
+{
+    if (inFlight > 0) --inFlight;
+
+    const QString trimmed = text.trimmed();
+    if (trimmed != partialText) {
+        partialText = trimmed;
+        emit q->partialTextChanged();
+    }
+    if (trimmed.isEmpty()) return;
+
+    qCInfo(lcNarration) << "partial" << trimmed.size() << "chars";
+    qCDebug(lcNarration) << "partial:" << trimmed;
+
+    // Detection runs on the guess. This is the entire point: it is what puts a
+    // suggestion in front of the operator while the sentence is still being
+    // spoken. The same verse will be found again by the final pass, and the
+    // 20 s de-duplication window in route() collapses the two.
+    runDetectors(trimmed, startedAtMs, /*offThread=*/true, /*fromPartial=*/true);
+}
+
+// The operator-visible record of what the microphone actually heard.
+//
+// docs/narration.md §8 scopes transcripts to the session and forbids them
+// reaching disk; it does not forbid showing them, and hiding them turned out
+// to be a mistake. Without this the console reports only the END of the
+// pipeline — a suggestion chip — so every failure anywhere upstream presents
+// as the same blank bar, and nobody can tell a dead microphone from a working
+// one that heard something the detectors declined.
+//
+// Memory only, capped, and cleared by both arm() and disarm().
+void NarrationService::Impl::appendTranscript(const QString& text, qint64 atMs)
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("text"), text);
+    m.insert(QStringLiteral("atMs"), atMs);
+    transcript.append(m);
+
+    while (transcript.size() > kTranscriptCap)
+        transcript.removeFirst();
+
+    emit q->transcriptChanged();
+}
+
+void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool offThread,
+                                          bool fromPartial)
 {
     // Citation first, and not only for tidiness. A named address is the
     // strongest evidence there is, and routing it first means route()'s
@@ -413,7 +646,8 @@ void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool
     // indexed single-verse lookup per candidate through the validator.
     const QList<HeardReference> cited = citation.detect(text, atMs);
     for (const HeardReference& r : cited)
-        route(r);
+        route(r, fromPartial);
+    qCInfo(lcNarration) << "citations:" << cited.size();
 
     if (offThread && quoteWorker) {
         // Fire and forget: quotation AND allusion, in one hop. Results come
@@ -425,14 +659,15 @@ void NarrationService::Impl::runDetectors(const QString& text, qint64 atMs, bool
         DetectionWorker* w = quoteWorker;
         QMetaObject::invokeMethod(
             w,
-            [this, w, text, atMs, gen]() {
+            [this, w, text, atMs, gen, fromPartial]() {
                 const QList<HeardReference> found = w->match(text, atMs);
+                qCInfo(lcNarration) << "quotation + allusion:" << found.size();
                 if (found.isEmpty()) return;
                 QMetaObject::invokeMethod(
                     q,
-                    [this, found, gen]() {
+                    [this, found, gen, fromPartial]() {
                         if (gen != generation) return;
-                        for (const HeardReference& r : found) route(r);
+                        for (const HeardReference& r : found) route(r, fromPartial);
                     },
                     Qt::QueuedConnection);
             },
@@ -543,7 +778,7 @@ void NarrationService::Impl::record(HeardReference& ref,
     emit q->heardChanged();
 }
 
-void NarrationService::Impl::route(const HeardReference& incoming)
+void NarrationService::Impl::route(const HeardReference& incoming, bool fromPartial)
 {
     if (!incoming.valid()) return;
 
@@ -556,7 +791,10 @@ void NarrationService::Impl::route(const HeardReference& incoming)
 
     recent.append(Recent{ ref.reference, ref.atMs });
 
-    const QString action = narration::trust::actionFor(ref.tier, q->mode());
+    // A partial is a guess about a sentence nobody has finished saying. The
+    // gate caps it at "staged" — see TrustGate.h, where that rule sits beside
+    // the others it has to be read with.
+    const QString action = narration::trust::actionFor(ref.tier, q->mode(), fromPartial);
     record(ref, action, true);   // assigns ref.id, which the signal carries
 
     if (action == narration::trust::kLive())        emit q->referenceAutoLive(ref);
@@ -710,7 +948,7 @@ bool NarrationService::arm()
                                         "Settings > Narration."));
         return false;
     }
-    if (QMediaDevices::defaultAudioInput().isNull()) {
+    if (m_impl->resolveInputDevice().isNull()) {
         m_impl->setState(QStringLiteral("error"),
                          QStringLiteral("No microphone is available."));
         return false;
@@ -727,6 +965,20 @@ bool NarrationService::arm()
     }
     m_impl->dropped = 0;
     emit droppedUtterancesChanged();
+    m_impl->utterances = 0;
+    emit utterancesHeardChanged();
+    m_impl->lastInterimMs = -kInterimMs;
+    if (!m_impl->transcript.isEmpty()) {
+        m_impl->transcript.clear();
+        emit transcriptChanged();
+    }
+    if (!m_impl->partialText.isEmpty()) {
+        m_impl->partialText.clear();
+        emit partialTextChanged();
+    }
+
+    qCInfo(lcNarration) << "arming - model" << QFileInfo(m_impl->modelPath()).fileName()
+                        << "- device" << m_impl->resolveInputDevice().description();
 
     m_impl->worker = new QThread(this);
     m_impl->worker->setObjectName(QStringLiteral("narration-recognizer"));
@@ -738,6 +990,11 @@ bool NarrationService::arm()
             [this, gen](const QString& text, qint64 atMs) {
                 if (gen != m_impl->generation) return;
                 m_impl->onTranscribed(text, atMs);
+            });
+    connect(rec, &narration::SpeechRecognizer::partial, this,
+            [this, gen](const QString& text, qint64 atMs) {
+                if (gen != m_impl->generation) return;
+                m_impl->onPartial(text, atMs);
             });
     connect(rec, &narration::SpeechRecognizer::failed, this,
             [this, gen](const QString& message) {
@@ -756,21 +1013,42 @@ bool NarrationService::arm()
     // happens on the worker. Capture deliberately does NOT start until it
     // succeeds: opening the microphone before we can use what it hears would
     // be recording the room for no reason.
-    const QString path = m_impl->modelPath();
+    const QString path  = m_impl->modelPath();
+    const QString draft = m_impl->draftModelPath();
     QMetaObject::invokeMethod(
         rec,
-        [this, rec, path, gen]() {
+        [this, rec, path, draft, gen]() {
             QString    error;
             const bool ok = rec->load(path, &error);
+
+            // Best effort, and deliberately non-fatal. A draft that fails to
+            // load costs latency, not correctness, and refusing to arm over it
+            // would turn an optimisation into a new way for the microphone not
+            // to open on a Sunday morning.
+            QString draftError;
+            if (ok && !draft.isEmpty() && !rec->loadDraft(draft, &draftError))
+                qCWarning(lcNarration) << "draft model not loaded -" << draftError;
+
+            // Read on the thread that owns the recognizer. engineName()
+            // reflects whether a draft is in use, and reaching for it from the
+            // main thread would be reading a field this thread just wrote.
+            const QString label = rec->engineName();
+
             QMetaObject::invokeMethod(
                 this,
-                [this, ok, error, gen]() {
+                [this, ok, error, label, gen]() {
                     if (gen != m_impl->generation) return;
                     if (!ok) {
+                        qCWarning(lcNarration) << "speech model failed to load:" << error;
                         m_impl->setState(QStringLiteral("error"), error);
                         m_impl->teardownWorker();
                         return;
                     }
+                    // Before startCapture(), whose setState() is what notifies
+                    // the property bound to this.
+                    m_impl->engineLabel = label;
+                    qCInfo(lcNarration) << "speech model loaded" << label
+                                        << "- opening the microphone";
                     startCapture();
                 },
                 Qt::QueuedConnection);
@@ -785,12 +1063,22 @@ void NarrationService::startCapture()
     auto* tap = new narration::AudioTap(this);
 
     QString error;
-    if (!tap->start(&error)) {
+    if (!tap->start(m_impl->resolveInputDevice(), &error)) {
         tap->deleteLater();
+        // Clear `listening` explicitly rather than assuming it was already
+        // false. It is, when arm() calls this — but setInputDevice() also
+        // calls it, mid-session, with the microphone already open. Leaving the
+        // flag set after a failed open would show a hot indicator over a
+        // closed device, which is the one lie this subsystem must never tell.
+        qCWarning(lcNarration) << "could not open the microphone:" << error;
+        const bool wasListening = m_impl->listening;
+        m_impl->listening = false;
         m_impl->setState(QStringLiteral("error"), error);
         m_impl->teardownWorker();
+        if (wasListening) emit listeningChanged();
         return;
     }
+    qCInfo(lcNarration) << "microphone open:" << tap->deviceName();
 
     m_impl->tap = tap;
     m_impl->startQuotationWorker();
@@ -812,9 +1100,14 @@ void NarrationService::startCapture()
         m_impl->setState(QStringLiteral("error"), reason);
     });
 
+    // Only a real transition emits. A device swap re-enters this function with
+    // the microphone already open, and re-announcing "now listening" would
+    // make every binding on it re-evaluate for a state that did not change.
+    // setState still fires, so the status line picks up the new device name.
+    const bool wasListening = m_impl->listening;
     m_impl->listening = true;
     m_impl->setState(QStringLiteral("listening"), tap->deviceName());
-    emit listeningChanged();
+    if (!wasListening) emit listeningChanged();
 }
 
 void NarrationService::disarm()
@@ -844,6 +1137,18 @@ void NarrationService::disarm()
     m_impl->pending.clear();
     m_impl->pending.squeeze();
     m_impl->speechOpen = false;
+    // The transcript is the one thing here §8 names explicitly: it is
+    // discarded when the microphone closes, not merely capped. It exists to
+    // be watched live, never to be kept.
+    if (!m_impl->transcript.isEmpty()) {
+        m_impl->transcript.clear();
+        emit transcriptChanged();
+    }
+    if (!m_impl->partialText.isEmpty()) {
+        m_impl->partialText.clear();
+        emit partialTextChanged();
+    }
+    m_impl->lastInterimMs = -kInterimMs;
     m_impl->gate.reset();
     m_impl->citation.resetContext();
     m_impl->recent.clear();
@@ -911,18 +1216,63 @@ void NarrationService::clearLog()
 QVariantList NarrationService::inputDevices() const
 {
     const QAudioDevice defaultIn = QMediaDevices::defaultAudioInput();
+    const QString      chosen    = inputDeviceId();
 
     QVariantList out;
     const auto devices = QMediaDevices::audioInputs();
     out.reserve(devices.size());
     for (const QAudioDevice& d : devices) {
+        const QString id = QString::fromUtf8(d.id());
         QVariantMap m;
-        m.insert(QStringLiteral("id"),        QString::fromUtf8(d.id()));
+        m.insert(QStringLiteral("id"),        id);
         m.insert(QStringLiteral("name"),      d.description());
         m.insert(QStringLiteral("isDefault"), d.id() == defaultIn.id());
+        // "Selected" means explicitly chosen, so the picker can distinguish
+        // "following the system default" from "pinned to this device, which
+        // happens to be the default today".
+        m.insert(QStringLiteral("isSelected"), !chosen.isEmpty() && chosen == id);
         out.append(m);
     }
     return out;
+}
+
+QVariantList NarrationService::transcript() const      { return m_impl->transcript; }
+int          NarrationService::utterancesHeard() const { return m_impl->utterances; }
+QString      NarrationService::partialText() const     { return m_impl->partialText; }
+
+QString NarrationService::inputDeviceId() const
+{
+    return m_impl->settings ? m_impl->settings->narrationInputDeviceId() : QString();
+}
+
+QString NarrationService::inputDeviceName() const
+{
+    const QAudioDevice d = m_impl->resolveInputDevice();
+    return d.isNull() ? QString() : d.description();
+}
+
+void NarrationService::setInputDevice(const QString& id)
+{
+    if (!m_impl->settings) return;
+    if (m_impl->settings->narrationInputDeviceId() == id) return;
+
+    m_impl->settings->setNarrationInputDeviceId(id);
+    emit inputDeviceChanged();
+
+    // Not listening: the choice is saved and the next arm() picks it up. No
+    // reason to touch the microphone for a preference change.
+    if (!m_impl->listening) return;
+
+    // Listening: reopen on the new device. Only the tap is replaced — the
+    // loaded model and the detection worker are untouched, because making an
+    // operator sit through a model reload to fix a wrong microphone punishes
+    // them for correcting it.
+    //
+    // startCapture() clears the pending buffer and resets the gate, which is
+    // exactly right here: samples captured from the device they just rejected
+    // have no business landing in an utterance attributed to the new one.
+    m_impl->stopCapture();
+    startCapture();
 }
 
 void NarrationService::injectTranscript(const QString& text)

@@ -390,6 +390,75 @@ private slots:
         QCOMPARE(r[0].book,       QStringLiteral("Philippians"));
         QCOMPARE(r[0].chapter,    4);
         QCOMPARE(r[0].verseStart, 13);
+        // A guessed book name is never "certain", whatever the numbers around
+        // it look like. At "high" the trust gate will stage it and stop; that
+        // is what keeps a mishearing off the audience screen in Auto mode.
+        QCOMPARE(r[0].tier,       QStringLiteral("high"));
+    }
+
+    // The measured failure from a live microphone run: small.en transcribed
+    // "turn with me to john chapter 3 verse 16" as "...to join chapter 3...".
+    // One substituted letter, and the single most-cited verse in English
+    // preaching stopped being detected at all.
+    //
+    // Four letters is below the rescue's normal floor. What buys the exception
+    // is the intent cue immediately before it — between "turn with me to" and
+    // "chapter", nothing but a book name goes.
+    void short_mangled_book_rescued_behind_a_cue()
+    {
+        CitationDetector d;
+        const auto r = d.detect(QStringLiteral("turn with me to join chapter 3 verse 16"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].book,       QStringLiteral("John"));
+        QCOMPARE(r[0].chapter,    3);
+        QCOMPARE(r[0].verseStart, 16);
+        QCOMPARE(r[0].tier,       QStringLiteral("high"));
+    }
+
+    // The same slip in the form with no "chapter" in it, which is at least as
+    // common from a pulpit. Here the structure is cue, name, number.
+    void short_mangled_book_rescued_before_bare_numbers()
+    {
+        CitationDetector d;
+        const auto r = d.detect(QStringLiteral("turn to join three sixteen"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].book,       QStringLiteral("John"));
+        QCOMPARE(r[0].chapter,    3);
+        QCOMPARE(r[0].verseStart, 16);
+        QCOMPARE(r[0].tier,       QStringLiteral("high"));
+    }
+
+    // Both halves of the evidence are load-bearing. Without the cue a
+    // four-letter probe stays below the floor; without a number or a chapter
+    // after it, there is no citation to rescue.
+    void short_mangled_book_needs_both_cue_and_numbers()
+    {
+        CitationDetector d;
+        QVERIFY(d.detect(QStringLiteral("join chapter three of the story"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("turn to join us at the front"), 0).isEmpty());
+    }
+
+    // The reason this uses lookupBookNearMiss rather than lookupBook. The
+    // latter's fuzzy tier accepts edit distance three, which makes "page" a
+    // match for Jude and "cover" a match for Hosea — plausible words in a
+    // sentence that also contains a number, and catastrophic as citations.
+    void near_miss_refuses_ordinary_words_at_distance()
+    {
+        CitationDetector d;
+        QVERIFY(d.detect(QStringLiteral("turn to page four"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("look at point three"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("go to slide twelve"), 0).isEmpty());
+    }
+
+    // An exactly spelled book behind a cue must still come back "certain", or
+    // the rescue has quietly demoted the whole citation path.
+    void exact_book_behind_a_cue_stays_certain()
+    {
+        CitationDetector d;
+        const auto r = d.detect(QStringLiteral("turn with me to john chapter 3 verse 16"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].book,       QStringLiteral("John"));
+        QCOMPARE(r[0].tier,       QStringLiteral("certain"));
     }
 
     // The rescue's blast radius. lookupBook matches on subsequence, so "in"

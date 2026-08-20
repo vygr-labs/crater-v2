@@ -111,6 +111,22 @@ Item {
         return false
     }
 
+    // Settings > NDI > "Hide pictures and video". Scoped to the NDI
+    // scene: the audience layer keeps painting the media, only the
+    // broadcast copy goes dark. This is why the check sits here rather
+    // than at NdiService's send boundary — `blank` there kills the whole
+    // feed, whereas an operator asking to withhold a licensed clip still
+    // wants lyrics and scripture reaching the receivers.
+    //
+    // Only effective on the headless capture path, which builds its own
+    // ProjectionScene { outputKind: "ndi" } in BOTH single and dual
+    // output mode (see NdiRenderer's kSceneQml). The legacy grabToImage
+    // fallback in single mode re-photographs the audience window, so
+    // there is no separate NDI scene to suppress — NdiSection says so on
+    // the row rather than letting the toggle silently do nothing.
+    readonly property bool _mediaSuppressed:
+        outputKind === "ndi" && SettingsService.ndiHideMedia
+
     // ── Text resolution ─────────────────────────────────────────────────
     // The current page's text content, the reference label, and a helper
     // that maps a text node's linkage to the right string. Matches the
@@ -167,7 +183,8 @@ Item {
     MediaMonitor {
         id: mediaItemMonitor
         anchors.fill: parent
-        visible: root._isMediaItem && (root.layerKind === "image" || root.layerKind === "video")
+        visible: root._isMediaItem && !root._mediaSuppressed
+                 && (root.layerKind === "image" || root.layerKind === "video")
         mediaKind: visible ? root.layerKind : ""
         mediaPath: visible ? (root.layerItem.mediaPath || "") : ""
         // Fit + crop + loop come off the committed item snapshot. layerCrop is

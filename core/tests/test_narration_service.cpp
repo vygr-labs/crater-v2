@@ -67,17 +67,151 @@ class TestNarrationService : public QObject
 private slots:
     void initTestCase()
     {
-        // Keep the suite out of the operator's real preferences. IniFormat
-        // plus test mode redirects SettingsService's QSettings to a throwaway
-        // file under ~/.qttest instead of the live registry key.
+        // Redirects QStandardPaths, which is what DbPaths resolves through.
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QStandardPaths::setTestModeEnabled(true);
+
+        // What those two lines do NOT do is move SettingsService's storage,
+        // and an earlier version of this comment claimed they did.
         //
-        // Note this file is still shared by every test in the process, and
+        // SettingsService holds QSettings{"Voyager Labs", "Crater"} — the
+        // (organization, application) constructor, which is always
+        // NativeFormat. setDefaultFormat() only governs the QSettings(QObject*)
+        // and QSettings(Scope, ...) forms, so it never applied here, and on
+        // Windows NativeFormat is the registry, which test mode does not
+        // redirect either. Every setter below therefore writes to the
+        // operator's live preferences.
+        //
+        // That is not hypothetical: this suite left "Z:/no/such/model.bin" in
+        // a real install's narrationModelPath, which silently disables the
+        // whole feature until someone re-picks the model. Save the narration
+        // keys here and put them back in cleanupTestCase.
+        //
+        // Storage is still shared by every test in the process, and
         // SettingsService really does persist. Any test whose expectation
         // depends on the narration mode sets it explicitly rather than
         // trusting the default — otherwise it passes or fails according to
         // what the test before it happened to leave behind.
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        QStandardPaths::setTestModeEnabled(true);
+        SettingsService s;
+        m_savedModelPath = s.narrationModelPath();
+        m_savedMode      = s.narrationMode();
+        m_savedGraceMs   = s.narrationGraceMs();
+        m_savedDeviceId  = s.narrationInputDeviceId();
+    }
+
+    void cleanupTestCase()
+    {
+        SettingsService s;
+        s.setNarrationModelPath(m_savedModelPath);
+        s.setNarrationMode(m_savedMode);
+        s.setNarrationGraceMs(m_savedGraceMs);
+        s.setNarrationInputDeviceId(m_savedDeviceId);
+    }
+
+    // ── Microphone selection ────────────────────────────────────────────
+
+    void the_default_input_device_is_the_system_one()
+    {
+        SettingsService settings;
+        settings.setNarrationInputDeviceId(QString());
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        // Empty means "follow the system", which is a real state and not the
+        // same as naming whichever device is default today.
+        QVERIFY(svc.inputDeviceId().isEmpty());
+    }
+
+    void choosing_a_device_persists_it()
+    {
+        SettingsService settings;
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy spy(&svc, &NarrationService::inputDeviceChanged);
+        svc.setInputDevice(QStringLiteral("some-device-id"));
+
+        QCOMPARE(svc.inputDeviceId(), QStringLiteral("some-device-id"));
+        QCOMPARE(settings.narrationInputDeviceId(), QStringLiteral("some-device-id"));
+        QCOMPARE(spy.count(), 1);
+
+        // Idempotent: re-selecting the same device is not a change, and must
+        // not churn a binding or (worse) reopen a live microphone.
+        svc.setInputDevice(QStringLiteral("some-device-id"));
+        QCOMPARE(spy.count(), 1);
+    }
+
+    // The rule that matters on a Sunday. A device id saved last month may name
+    // a microphone that is not plugged in today, and the answer to that is the
+    // default input, not silence.
+    void an_unknown_device_falls_back_to_the_default()
+    {
+        SettingsService settings;
+        settings.setNarrationInputDeviceId(QStringLiteral("id-of-a-device-that-is-not-here"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        // The id is remembered — unplugging a microphone must not silently
+        // discard the operator's choice, because plugging it back in should
+        // restore it without them re-picking.
+        QCOMPARE(svc.inputDeviceId(), QStringLiteral("id-of-a-device-that-is-not-here"));
+
+        // But the resolved device is whatever is actually available. On a
+        // machine with no inputs at all this is empty, which is honest;
+        // anywhere else it is the system default's name.
+        const QVariantList devices = svc.inputDevices();
+        if (devices.isEmpty()) {
+            QVERIFY(svc.inputDeviceName().isEmpty());
+        } else {
+            QVERIFY2(!svc.inputDeviceName().isEmpty(),
+                     "a missing saved device must resolve to the default, not to nothing");
+        }
+
+        // And nothing claims to be the selected device, so the settings page
+        // can tell "pinned to this one" from "falling back".
+        for (const QVariant& v : devices)
+            QVERIFY(!v.toMap().value(QStringLiteral("isSelected")).toBool());
+    }
+
+    void a_present_device_is_marked_selected()
+    {
+        SettingsService settings;
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        const QVariantList before = svc.inputDevices();
+        if (before.isEmpty())
+            QSKIP("no audio inputs on this machine");
+
+        const QString id = before.first().toMap().value(QStringLiteral("id")).toString();
+        svc.setInputDevice(id);
+
+        int selected = 0;
+        for (const QVariant& v : svc.inputDevices()) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("isSelected")).toBool()) {
+                ++selected;
+                QCOMPARE(m.value(QStringLiteral("id")).toString(), id);
+            }
+        }
+        QCOMPARE(selected, 1);
+        QCOMPARE(svc.inputDeviceName(),
+                 before.first().toMap().value(QStringLiteral("name")).toString());
+    }
+
+    // Selecting a device is a preference change, not an arming action. §8's
+    // rule is that the microphone opens on arm() and on nothing else, and a
+    // picker that opened it to "preview" the choice would be exactly the kind
+    // of helpful idea that breaks the guarantee.
+    void choosing_a_device_never_opens_the_microphone()
+    {
+        SettingsService settings;
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        const QVariantList devices = svc.inputDevices();
+        if (devices.isEmpty())
+            QSKIP("no audio inputs on this machine");
+
+        svc.setInputDevice(devices.first().toMap().value(QStringLiteral("id")).toString());
+        QVERIFY(!svc.listening());
+        QCOMPARE(svc.inputLevel(), 0.0);
+        QVERIFY(!svc.hearingSpeech());
     }
 
     // ── The trust gate, cell by cell ────────────────────────────────────
@@ -113,6 +247,42 @@ private slots:
         for (const QString& mode : modes)
             QVERIFY2(actionFor("possible", mode) != QStringLiteral("live"),
                      qPrintable(QStringLiteral("possible tier fired in %1 mode").arg(mode)));
+    }
+
+    // Live suggestions are produced by re-transcribing a sentence that is not
+    // finished, so the gate has to know the difference between "the preacher
+    // said this" and "the preacher is partway through saying something".
+    //
+    // The case that matters: "turn to John three" identifies John 3:1 with
+    // complete confidence, and is wrong the moment the next word is "sixteen".
+    // Auto mode's entire purpose is to project without waiting for a human, so
+    // a partial must never be allowed to reach it.
+    void gate_a_partial_hypothesis_never_reaches_the_projector()
+    {
+        const QStringList tiers{ "certain", "high", "possible" };
+        const QStringList modes{ "suggest", "stage", "auto" };
+        for (const QString& tier : tiers) {
+            for (const QString& mode : modes) {
+                QVERIFY2(actionFor(tier, mode, /*fromPartial=*/true) != QStringLiteral("live"),
+                         qPrintable(QStringLiteral("partial %1/%2 reached the projector")
+                                        .arg(tier, mode)));
+            }
+        }
+
+        // Exactly one cell moves, and only downward: the one that would
+        // otherwise have gone live.
+        QCOMPARE(actionFor("certain", "auto", true), QStringLiteral("staged"));
+
+        // Everything else is untouched, so a partial still populates the queue
+        // and still stages. Suppressing it entirely would trade the latency
+        // problem for a silence problem.
+        for (const QString& tier : tiers) {
+            for (const QString& mode : modes) {
+                if (tier == QStringLiteral("certain") && mode == QStringLiteral("auto"))
+                    continue;
+                QCOMPARE(actionFor(tier, mode, true), actionFor(tier, mode, false));
+            }
+        }
     }
 
     void gate_unknown_values_fail_closed()
@@ -546,6 +716,14 @@ private slots:
         QCOMPARE(svc.inputLevel(), 0.0);
         QVERIFY(!svc.hearingSpeech());
     }
+
+private:
+    // The operator's real narration preferences, borrowed for the duration of
+    // the run and returned in cleanupTestCase. See initTestCase.
+    QString m_savedModelPath;
+    QString m_savedMode;
+    int     m_savedGraceMs = 1500;
+    QString m_savedDeviceId;
 };
 
 QTEST_MAIN(TestNarrationService)

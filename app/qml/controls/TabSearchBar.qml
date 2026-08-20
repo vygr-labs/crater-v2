@@ -691,12 +691,14 @@ Item {
             // the schedule pane instead.
             Keys.onUpPressed: function(event) {
                 if (AppState.activeFocusPanel !== "library") return
-                AppState.libraryNavigateUp()
+                // Shift rides along as the "extend the selection" flag —
+                // the tab decides whether it means anything.
+                AppState.libraryNavigateUp((event.modifiers & Qt.ShiftModifier) !== 0)
                 event.accepted = true
             }
             Keys.onDownPressed: function(event) {
                 if (AppState.activeFocusPanel !== "library") return
-                AppState.libraryNavigateDown()
+                AppState.libraryNavigateDown((event.modifiers & Qt.ShiftModifier) !== 0)
                 event.accepted = true
             }
             Keys.onReturnPressed: function(event) {

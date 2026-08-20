@@ -24,10 +24,12 @@
 #include "crater/BibleService.h"
 #include "db/DbPaths.h"
 #include "narration/AllusionIndex.h"
+#include "narration/AllusionMatcher.h"
 #include "narration/OnnxEmbedder.h"
 
 using namespace crater;
 using narration::AllusionIndex;
+using narration::AllusionMatcher;
 using narration::OnnxEmbedder;
 
 namespace {
@@ -94,6 +96,40 @@ int compareTranslations(BibleService& bible, OnnxEmbedder& emb)
     return 0;
 }
 
+// The two corpora every gate decision is measured against. Shared by
+// --calibrate (which prints raw geometry) and --gates (which prints what the
+// shipping matcher actually does with it), because a calibration mode that
+// drifts from the code it calibrates is worse than none.
+QStringList paraphraseProbes()
+{
+    return {
+        QStringLiteral("god loved us so much that he sent his own son to die so we could live"),
+        QStringLiteral("the lord takes care of me like a shepherd so there is nothing that i need"),
+        QStringLiteral("i can handle anything at all because christ is the one giving me strength"),
+        QStringLiteral("everything that happens works out for good for the people who love god"),
+        QStringLiteral("do not be anxious about tomorrow because tomorrow has its own worries"),
+        QStringLiteral("if we admit what we have done wrong he is faithful and will forgive us"),
+        QStringLiteral("god has plans to give you a future and a hope and not to harm you"),
+        QStringLiteral("in the very beginning god made the heavens and the earth out of nothing"),
+    };
+}
+
+QStringList speechProbes()
+{
+    return {
+        QStringLiteral("good morning church it is wonderful to see everybody here today"),
+        QStringLiteral("before we begin i want to thank the worship team for leading us"),
+        QStringLiteral("there are envelopes in the back if you would like to give today"),
+        QStringLiteral("we are going to be starting a brand new series next sunday morning"),
+        QStringLiteral("the youth group is meeting on wednesday evening in the hall downstairs"),
+        QStringLiteral("please remember to sign up for the church picnic before you leave"),
+        QStringLiteral("the parking team could use a few more volunteers for the early service"),
+        QStringLiteral("we will hand out the new small group booklets at the back table"),
+        QStringLiteral("if you are visiting with us for the first time please stop by the desk"),
+        QStringLiteral("the building fund update is printed in this morning's bulletin"),
+    };
+}
+
 // Where should the gates actually sit?
 //
 // The first thresholds for this path were measured against a four-verse index
@@ -114,29 +150,8 @@ int calibrate(OnnxEmbedder& emb, const QString& indexPath)
     }
     out() << "index:  " << indexPath << "  (" << idx.count() << " verses)\n\n";
 
-    const QStringList paraphrases = {
-        QStringLiteral("god loved us so much that he sent his own son to die so we could live"),
-        QStringLiteral("the lord takes care of me like a shepherd so there is nothing that i need"),
-        QStringLiteral("i can handle anything at all because christ is the one giving me strength"),
-        QStringLiteral("everything that happens works out for good for the people who love god"),
-        QStringLiteral("do not be anxious about tomorrow because tomorrow has its own worries"),
-        QStringLiteral("if we admit what we have done wrong he is faithful and will forgive us"),
-        QStringLiteral("god has plans to give you a future and a hope and not to harm you"),
-        QStringLiteral("in the very beginning god made the heavens and the earth out of nothing"),
-    };
-
-    const QStringList speech = {
-        QStringLiteral("good morning church it is wonderful to see everybody here today"),
-        QStringLiteral("before we begin i want to thank the worship team for leading us"),
-        QStringLiteral("there are envelopes in the back if you would like to give today"),
-        QStringLiteral("we are going to be starting a brand new series next sunday morning"),
-        QStringLiteral("the youth group is meeting on wednesday evening in the hall downstairs"),
-        QStringLiteral("please remember to sign up for the church picnic before you leave"),
-        QStringLiteral("the parking team could use a few more volunteers for the early service"),
-        QStringLiteral("we will hand out the new small group booklets at the back table"),
-        QStringLiteral("if you are visiting with us for the first time please stop by the desk"),
-        QStringLiteral("the building fund update is printed in this morning's bulletin"),
-    };
+    const QStringList paraphrases = paraphraseProbes();
+    const QStringList speech      = speechProbes();
 
     auto report = [&](const QString& label, const QStringList& lines) {
         out() << label << "\n";
@@ -181,6 +196,85 @@ int calibrate(OnnxEmbedder& emb, const QString& indexPath)
     return 0;
 }
 
+// What does the operator actually SEE?
+//
+// --calibrate prints geometry; this prints decisions. It drives the real
+// AllusionMatcher, with the real config it ships with, over the real index —
+// so the windowing, the per-window content floor and all three gates are the
+// ones that will run on stage, not a re-implementation of them that agrees
+// with the shipping code only until someone edits one of the two.
+//
+// Read the output as two columns of one number each: how many paraphrases
+// produced at least one suggestion (higher is better) and how many
+// announcements produced any at all (must be zero).
+int gates(OnnxEmbedder& emb, const QString& indexPath, float minScore, int maxCluster)
+{
+    AllusionIndex idx;
+    QString err;
+    if (!idx.load(indexPath, emb.modelId(), &err)) {
+        out() << "error: " << err << "\n";
+        out().flush();
+        return 1;
+    }
+
+    AllusionMatcher m;
+    m.setIndex(&idx);
+    m.setEmbedder([&](const QString& t) { return emb.embedOne(t); });
+
+    // Overrides exist so the operating point can be swept without a rebuild.
+    // Sweeping matters more than any single number here: the useful output of
+    // this mode is the shape of the recall/false-positive curve, which is what
+    // tells you whether a threshold sits on a plateau or on a cliff edge.
+    if (minScore > 0.0f || maxCluster > 0) {
+        AllusionMatcher::Config cfg = m.config();
+        if (minScore > 0.0f)  cfg.minScore   = minScore;
+        if (maxCluster > 0) { cfg.maxCluster = maxCluster;
+                              cfg.maxEmits   = std::max(cfg.maxEmits, maxCluster); }
+        m.setConfig(cfg);
+    }
+
+    const auto& c = m.config();
+    out() << "index:  " << indexPath << "  (" << idx.count() << " verses)\n";
+    out() << QStringLiteral("config: minScore %1  cluster<=%2  window %3  probe %4  "
+                            "content>=%5  maxEmits %6\n\n")
+                 .arg(c.minScore, 0, 'f', 3).arg(c.maxCluster)
+                 .arg(c.clusterWindow, 0, 'f', 3).arg(c.probeDepth)
+                 .arg(c.minContentWords).arg(c.maxEmits);
+
+    auto run = [&](const QString& label, const QStringList& lines) {
+        out() << label << "\n";
+        int fired = 0;
+        for (const QString& s : lines) {
+            const auto refs = m.match(s, 0);
+            if (!refs.isEmpty()) ++fired;
+
+            QStringList names;
+            for (const HeardReference& r : refs) names << r.reference;
+            out() << QStringLiteral("  %1  %2\n")
+                         .arg(refs.isEmpty() ? QStringLiteral("--- silent   ")
+                                             : QStringLiteral("--> %1 hit%2 ")
+                                                   .arg(refs.size())
+                                                   .arg(refs.size() == 1 ? QLatin1String(" ")
+                                                                         : QLatin1String("s")),
+                              s.left(58));
+            if (!refs.isEmpty())
+                out() << QStringLiteral("        %1\n").arg(names.join(QStringLiteral(", ")));
+        }
+        out() << QStringLiteral("  -> %1 of %2 fired\n\n").arg(fired).arg(lines.size());
+        return fired;
+    };
+
+    const int hits  = run(QStringLiteral("PARAPHRASES (should fire)"), paraphraseProbes());
+    const int noise = run(QStringLiteral("ORDINARY SPEECH (must not fire)"), speechProbes());
+
+    out() << QStringLiteral("recall %1/8   false positives %2/10\n").arg(hits).arg(noise);
+    if (noise > 0)
+        out() << "a false positive here is an announcement in the operator's queue; "
+                 "tighten minScore or maxCluster before shipping this config.\n";
+    out().flush();
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -194,6 +288,9 @@ int main(int argc, char* argv[])
     QString outPath;
     bool    compare   = false;
     bool    calibrate_ = false;
+    bool    gates_     = false;
+    float   minScore   = 0.0f;   // 0 = use the shipping default
+    int     maxCluster = 0;      // 0 = ditto
 
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
@@ -203,11 +300,18 @@ int main(int argc, char* argv[])
         else if (a == QLatin1String("--out") && i + 1 < args.size())         outPath     = args.at(++i);
         else if (a == QLatin1String("--compare"))                            compare     = true;
         else if (a == QLatin1String("--calibrate"))                          calibrate_  = true;
+        else if (a == QLatin1String("--gates"))                              gates_      = true;
+        else if (a == QLatin1String("--min-score") && i + 1 < args.size())   minScore    = args.at(++i).toFloat();
+        else if (a == QLatin1String("--max-cluster") && i + 1 < args.size()) maxCluster  = args.at(++i).toInt();
     }
 
     if (modelPath.isEmpty()) {
         out() << "usage: build_allusion_index --model <path.onnx> "
-                 "[--translation KJV] [--out <path.crai>] [--compare]\n";
+                 "[--translation KJV] [--out <path.crai>]\n"
+                 "       [--compare]    which translation embeds closest to spoken paraphrase\n"
+                 "       [--calibrate]  raw score distributions, paraphrase vs ordinary speech\n"
+                 "       [--gates]      what the shipping matcher actually emits for each\n"
+                 "                      sweep it with --min-score <f> --max-cluster <n>\n";
         out().flush();
         return 2;
     }
@@ -231,12 +335,12 @@ int main(int argc, char* argv[])
 
     if (compare) return compareTranslations(bible, emb);
 
-    if (calibrate_) {
+    if (calibrate_ || gates_) {
         QString p = outPath;
         if (p.isEmpty())
             p = QDir(db::DbPaths::dataDir())
                     .filePath(QStringLiteral("models/allusion-%1.crai").arg(translation));
-        return calibrate(emb, p);
+        return gates_ ? gates(emb, p, minScore, maxCluster) : calibrate(emb, p);
     }
 
     const QList<Verse> verses = bible.allVerses(translation);

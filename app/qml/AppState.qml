@@ -193,6 +193,11 @@ QtObject {
     // (see ProjectionService.h). The operator's next Go Live picks up the
     // refreshed item, which is the gesture they were already making.
     function refreshStagedSong() {
+        _refreshStagedPreviewSong()
+        _refreshScheduleSongs()
+    }
+
+    function _refreshStagedPreviewSong() {
         const staged = libraryPreviewItem
         if (!staged || staged.kind !== "song" || !staged.songId) return
 
@@ -211,6 +216,100 @@ QtObject {
         // edit removed sections so the index never points past the end.
         if (previewSubIndex >= rebuilt.pages.length)
             previewSubIndex = Math.max(0, rebuilt.pages.length - 1)
+    }
+
+    // Same staleness, one layer down. Schedule rows store a song's lyrics
+    // INLINE (see ScheduleService), so a song edit left every schedule row
+    // quoting the pre-edit text — and Preview / Live both read schedule rows
+    // when the operator is driving from the schedule rather than the library.
+    // Rebuild each affected row in place; ScheduleService.replaceItem no-ops
+    // when the rebuilt row is byte-identical, so an unrelated song edit does
+    // not dirty the schedule.
+    function _refreshScheduleSongs() {
+        const items = ScheduleService.currentItems
+        for (let i = 0; i < items.length; i++) {
+            const merged = _songContentMerged(items[i])
+            if (merged) ScheduleService.replaceItem(i, merged)
+        }
+        // Clamp the staged page when the edit shortened the selected row.
+        const sel = (selectedScheduleIndex >= 0
+                     && selectedScheduleIndex < ScheduleService.currentItems.length)
+                        ? ScheduleService.currentItems[selectedScheduleIndex] : null
+        if (sel && sel.pages && previewSubIndex >= sel.pages.length)
+            previewSubIndex = Math.max(0, sel.pages.length - 1)
+    }
+
+    // Re-read `row`'s song from the library and fold the fresh lyrics back
+    // into a COPY of the row. Returns null when there is nothing to do — the
+    // row is not a song, the song is gone, or its content is unchanged.
+    //
+    // Merging rather than substituting matters: a schedule row carries fields
+    // buildSongItem knows nothing about — ScheduleService stamps every row
+    // with a uuid `id`, and the row may hold a per-item `themeId` override the
+    // song itself does not have. Replacing the row wholesale would drop both.
+    // A deleted song leaves its row alone: pulling rows out from under the
+    // operator mid-service is worse than a stale one, and the row is still
+    // removable by hand.
+    function _songContentMerged(row) {
+        if (!row || row.kind !== "song" || !row.songId) return null
+        const fresh = SongService.fetchSong(row.songId)
+        if (!fresh || !fresh.id) return null
+        const rebuilt = buildSongItem(fresh)
+        if (!rebuilt) return null
+
+        let merged = {}
+        for (const k in row) merged[k] = row[k]
+        // A row the operator renamed keeps its own title (see
+        // renameScheduleItem); everything else follows the library.
+        if (!row.titleOverride) merged.title = rebuilt.title
+        merged.subtitle = rebuilt.subtitle
+        merged.pages    = rebuilt.pages
+        // The row's own theme pin wins; adopt the song's only when the row
+        // never had one.
+        if (!merged.themeId) merged.themeId = rebuilt.themeId
+
+        if (_itemContentDigest(merged) === _itemContentDigest(row)) return null
+        return merged
+    }
+
+    // Stable content digest for a canonical item. Order-independent of the
+    // map's key order, which matters because an item that has been through
+    // C++ comes back as an alphabetically-keyed QVariantMap while a freshly
+    // built one carries its literal key order — JSON.stringify would call
+    // those two different even when they hold identical content.
+    function _itemContentDigest(item) {
+        if (!item) return ""
+        const pages = item.pages || []
+        let flat = []
+        for (let i = 0; i < pages.length; i++) {
+            const p = pages[i] || {}
+            flat.push([p.label || "", p.content || ""])
+        }
+        // JSON over an ARRAY, not the map: array order is ours, so the digest
+        // is stable no matter which side built the item.
+        return JSON.stringify([item.title || "", item.subtitle || "",
+                               item.themeId || 0, flat])
+    }
+
+    // Live-pane commit — "the audience sees this page now".
+    //
+    // A bare ProjectionService.setPage() re-uses whatever was snapshotted at
+    // the last go-live. That snapshot is deliberate (ProjectionService.h: an
+    // in-progress edit must not leak to the audience), but it stranded the
+    // operator after a song edit: Preview showed the new lyrics, the projector
+    // kept the old ones, and clicking the same verse changed nothing because
+    // the page index had not moved. The only way out was to step to another
+    // verse and back.
+    //
+    // Clicking or arrowing onto a live card IS an explicit commit, so re-read
+    // the song first and re-stage when its content actually changed. Anything
+    // else — media, scripture, an unedited song — falls through to the cheap
+    // setPage() path, so live behaviour is otherwise untouched.
+    function commitLivePage(i) {
+        liveSubIndex = i
+        const restaged = _songContentMerged(ProjectionService.currentItem)
+        if (restaged) _projectItemLive(restaged, i)
+        else          ProjectionService.setPage(i)
     }
 
     // Route a go-live through the crop-aware overload for media items so a
@@ -315,6 +414,109 @@ QtObject {
         selectedScheduleIndices = s
         selectedScheduleIndex = i
         previewSubIndex = 0
+    }
+
+    // Open the right editor for a schedule row. There is no single
+    // "schedule item editor" because the three kinds keep their editable
+    // state in three different places: a song's text lives on the song
+    // record, a picture's framing lives on the media record, and a passage
+    // is re-chosen in the picker rather than retyped. So this routes.
+    //
+    // Previously the schedule menu passed { itemIndex } to "songEditor",
+    // which reads modalProps.songId — the dialog fell back to its -1
+    // "create new song" sentinel and opened blank. Every other kind was
+    // routed to a "themeEditor" modal that no longer exists (the theme
+    // editor became a full-screen workspace), so Edit did nothing at all.
+    //
+    // Returns false when the row carries nothing editable, so the menu can
+    // dim the entry instead of offering an action that goes nowhere.
+    function editScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return false
+        const item = items[index]
+        const kind = item.kind || ""
+
+        if (kind === "song") {
+            const songId = Number(item.songId || 0)
+            if (songId <= 0) return false
+            // Edits the library song, not a detached copy — which is what an
+            // operator fixing a typo mid-rehearsal wants. The schedule row
+            // picks the new lyrics up through refreshStagedSong.
+            openModal("songEditor", { songId: songId })
+            return true
+        }
+        if (kind === "image" || kind === "video" || kind === "pdf") {
+            const mediaId = Number(item.mediaId || 0)
+            if (mediaId <= 0) return false
+            openModal("mediaEdit", { mediaId: mediaId })
+            return true
+        }
+        if (kind === "scripture" && item.scriptureRef) {
+            // No scripture editor exists (and none should — the text is the
+            // translation's). Editing a passage means re-picking it, so this
+            // lands the operator in the Scripture tab on that exact verse,
+            // in that exact translation, ready to adjust the range.
+            //
+            // revealResult wants the global-search row shape, whose verse
+            // field is `verse`; a schedule ref spells it `verseStart`.
+            const r = item.scriptureRef
+            revealResult({
+                type: "scripture",
+                scriptureRef: {
+                    book:            r.book,
+                    chapter:         r.chapter,
+                    verse:           r.verseStart,
+                    translationCode: r.translationCode || ""
+                }
+            })
+            return true
+        }
+        return false
+    }
+
+    // Menu-enablement companion to editScheduleItem — same routing, no
+    // side effects. Kept separate rather than folded in so the menu can be
+    // built without opening anything.
+    function canEditScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return false
+        const item = items[index]
+        switch (item.kind || "") {
+            case "song":      return Number(item.songId  || 0) > 0
+            case "image":
+            case "video":
+            case "pdf":       return Number(item.mediaId || 0) > 0
+            case "scripture": return !!item.scriptureRef
+        }
+        return false
+    }
+
+    // Retitle one schedule row. The library record is deliberately NOT
+    // touched: a service that calls its closer "Response" must not rename
+    // that song for every future service.
+    //
+    // The row is stamped titleOverride so _songContentMerged knows to leave
+    // the title alone on the next refresh — without it, the first edit to
+    // the underlying song would quietly restore the library name.
+    function renameScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return
+        const item = items[index]
+        openModal("naming", {
+            title:        qsTr("Rename item"),
+            placeholder:  qsTr("Item name"),
+            confirmText:  qsTr("Rename"),
+            initialValue: item.title || "",
+            onConfirm: function(name) {
+                const trimmed = String(name || "").trim()
+                if (trimmed.length === 0) return
+                let next = {}
+                for (const k in item) next[k] = item[k]
+                next.title = trimmed
+                next.titleOverride = true
+                ScheduleService.replaceItem(index, next)
+            }
+        })
     }
 
     function clearScheduleSelection() {
@@ -847,8 +1049,14 @@ QtObject {
     //
     // Each tab guards its handler with `tabKeys[activeTab] === tabKey` so
     // background-loaded tabs ignore navigation meant for the foreground one.
-    signal libraryNavigateUp()
-    signal libraryNavigateDown()
+    // `extend` carries the Shift modifier through to the tab. Tabs with a
+    // multi-selection model (ScriptureTab today) grow the set from the
+    // anchor instead of moving it, so an operator can build a combined
+    // passage from the keyboard the way Shift+click already does with the
+    // mouse. Tabs without one ignore the argument and keep single-row
+    // navigation — a QML signal handler is free to omit trailing params.
+    signal libraryNavigateUp(bool extend)
+    signal libraryNavigateDown(bool extend)
     signal libraryNavigateLeft()
     signal libraryNavigateRight()
     signal libraryActivate()
@@ -888,6 +1096,21 @@ QtObject {
     //
     // Analogous to electron's FocusContext.currentPanel().
     property string activeFocusPanel: "library"   // "library" | "schedule" | "preview" | "live"
+
+    // True when the operator console itself owns the keyboard: no modal
+    // over it, no full-screen workspace in front of it.
+    //
+    // Every window-level Shortcut in Main.qml gates on this. Qt resolves a
+    // sequence across ALL enabled Shortcuts in the window, and when two
+    // match it fires activatedAmbiguously() on both rather than activated()
+    // on either — so an ungated console shortcut does not merely run at a
+    // bad moment, it silently kills the dialog's binding for the same keys.
+    // That is what happened to Ctrl+S (console "save schedule" against the
+    // song editor's and the theme editor's own saves) and to Up / Down
+    // (console page navigation against the theme editor's node nudge).
+    readonly property bool consoleShortcutsActive:
+        activeModal === "" && workspaceMode === ""
+
 
     function setActiveFocus(panel) {
         if (!panel || panel === activeFocusPanel) return
