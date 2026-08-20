@@ -361,12 +361,18 @@ Rectangle {
                     AppState.openContextMenuAt(this, mouseX, mouseY, [
                         { label: qsTr("Send to Live"), iconName: "play",
                           action: function() { AppState.goLive() } },
-                        { label: qsTr("Edit"), iconName: "edit",
-                          action: function() {
-                              AppState.openModal(
-                                  item.kind === "song" ? "songEditor" : "themeEditor",
-                                  { itemIndex: index })
-                          } },
+                        // Edit routes by kind (song editor / media options /
+                        // back to the verse picker) — see
+                        // AppState.editScheduleItem. Dimmed rather than hidden
+                        // when a row has nothing editable, so the entry keeps a
+                        // stable position in the menu.
+                        { label: qsTr("Edit…"), iconName: "edit",
+                          enabled: AppState.canEditScheduleItem(index),
+                          action: function() { AppState.editScheduleItem(index) } },
+                        // Retitles THIS row only; the library record keeps its
+                        // own name (see AppState.renameScheduleItem).
+                        { label: qsTr("Rename…"), iconName: "type",
+                          action: function() { AppState.renameScheduleItem(index) } },
                         { label: qsTr("Duplicate"), iconName: "copy",
                           action: function() {
                               // addItem assigns a fresh id; strip the old one

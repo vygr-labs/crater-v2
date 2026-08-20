@@ -259,7 +259,9 @@ QtObject {
 
         let merged = {}
         for (const k in row) merged[k] = row[k]
-        merged.title    = rebuilt.title
+        // A row the operator renamed keeps its own title (see
+        // renameScheduleItem); everything else follows the library.
+        if (!row.titleOverride) merged.title = rebuilt.title
         merged.subtitle = rebuilt.subtitle
         merged.pages    = rebuilt.pages
         // The row's own theme pin wins; adopt the song's only when the row
@@ -412,6 +414,109 @@ QtObject {
         selectedScheduleIndices = s
         selectedScheduleIndex = i
         previewSubIndex = 0
+    }
+
+    // Open the right editor for a schedule row. There is no single
+    // "schedule item editor" because the three kinds keep their editable
+    // state in three different places: a song's text lives on the song
+    // record, a picture's framing lives on the media record, and a passage
+    // is re-chosen in the picker rather than retyped. So this routes.
+    //
+    // Previously the schedule menu passed { itemIndex } to "songEditor",
+    // which reads modalProps.songId — the dialog fell back to its -1
+    // "create new song" sentinel and opened blank. Every other kind was
+    // routed to a "themeEditor" modal that no longer exists (the theme
+    // editor became a full-screen workspace), so Edit did nothing at all.
+    //
+    // Returns false when the row carries nothing editable, so the menu can
+    // dim the entry instead of offering an action that goes nowhere.
+    function editScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return false
+        const item = items[index]
+        const kind = item.kind || ""
+
+        if (kind === "song") {
+            const songId = Number(item.songId || 0)
+            if (songId <= 0) return false
+            // Edits the library song, not a detached copy — which is what an
+            // operator fixing a typo mid-rehearsal wants. The schedule row
+            // picks the new lyrics up through refreshStagedSong.
+            openModal("songEditor", { songId: songId })
+            return true
+        }
+        if (kind === "image" || kind === "video" || kind === "pdf") {
+            const mediaId = Number(item.mediaId || 0)
+            if (mediaId <= 0) return false
+            openModal("mediaEdit", { mediaId: mediaId })
+            return true
+        }
+        if (kind === "scripture" && item.scriptureRef) {
+            // No scripture editor exists (and none should — the text is the
+            // translation's). Editing a passage means re-picking it, so this
+            // lands the operator in the Scripture tab on that exact verse,
+            // in that exact translation, ready to adjust the range.
+            //
+            // revealResult wants the global-search row shape, whose verse
+            // field is `verse`; a schedule ref spells it `verseStart`.
+            const r = item.scriptureRef
+            revealResult({
+                type: "scripture",
+                scriptureRef: {
+                    book:            r.book,
+                    chapter:         r.chapter,
+                    verse:           r.verseStart,
+                    translationCode: r.translationCode || ""
+                }
+            })
+            return true
+        }
+        return false
+    }
+
+    // Menu-enablement companion to editScheduleItem — same routing, no
+    // side effects. Kept separate rather than folded in so the menu can be
+    // built without opening anything.
+    function canEditScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return false
+        const item = items[index]
+        switch (item.kind || "") {
+            case "song":      return Number(item.songId  || 0) > 0
+            case "image":
+            case "video":
+            case "pdf":       return Number(item.mediaId || 0) > 0
+            case "scripture": return !!item.scriptureRef
+        }
+        return false
+    }
+
+    // Retitle one schedule row. The library record is deliberately NOT
+    // touched: a service that calls its closer "Response" must not rename
+    // that song for every future service.
+    //
+    // The row is stamped titleOverride so _songContentMerged knows to leave
+    // the title alone on the next refresh — without it, the first edit to
+    // the underlying song would quietly restore the library name.
+    function renameScheduleItem(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return
+        const item = items[index]
+        openModal("naming", {
+            title:        qsTr("Rename item"),
+            placeholder:  qsTr("Item name"),
+            confirmText:  qsTr("Rename"),
+            initialValue: item.title || "",
+            onConfirm: function(name) {
+                const trimmed = String(name || "").trim()
+                if (trimmed.length === 0) return
+                let next = {}
+                for (const k in item) next[k] = item[k]
+                next.title = trimmed
+                next.titleOverride = true
+                ScheduleService.replaceItem(index, next)
+            }
+        })
     }
 
     function clearScheduleSelection() {
