@@ -101,6 +101,12 @@ struct OutputService::Impl
 {
     QList<Screen>                  screens;
     int                            selectedIndex   = 0;
+    // What the operator actually asked for, kept apart from the
+    // index in use. selectedIndex has to collapse to something
+    // valid the instant a display disappears; these two do not,
+    // and they are what a replug is resolved against.
+    int                            desiredIndex    = -1;
+    QString                        desiredName;
     bool                           projectionOpen  = false;
     OutputService::ProjectionMode  mode            = OutputService::Fullscreen;
     bool                           modeIsUserSet   = false;
@@ -111,6 +117,10 @@ struct OutputService::Impl
     bool                           legacyMigrationDone = false;
 
     static constexpr const char* kSettingKey = "Output/selectedScreen";
+    // Name as well as index: a projector that comes back on a different
+    // port lands at a different index, and the name is what identifies
+    // it across the unplug.
+    static constexpr const char* kNameKey    = "Output/selectedScreenName";
     static constexpr const char* kModeKey    = "Output/projectionMode";
 
     // Registry storage prefix. Each output gets a sub-group keyed by id.
@@ -146,16 +156,29 @@ OutputService::OutputService(QObject* parent)
         m_impl->modeIsUserSet = true;
     }
 
+    // Load the stored display preference BEFORE rebuildScreens(), which
+    // resolves it against whatever is plugged in at this moment. Doing it
+    // the other way round makes the first resolve run blind and then get
+    // overwritten, which is how the old code ended up with two different
+    // notions of the selected screen.
+    m_impl->desiredIndex =
+        m_impl->settings.value(QString::fromLatin1(Impl::kSettingKey), -1).toInt();
+    m_impl->desiredName =
+        m_impl->settings.value(QString::fromLatin1(Impl::kNameKey)).toString();
+
     rebuildScreens();
 
-    m_impl->selectedIndex =
-        m_impl->settings.value(QString::fromLatin1(Impl::kSettingKey), 0).toInt();
-
-    if (m_impl->selectedIndex < 0 || m_impl->selectedIndex >= m_impl->screens.size()) {
-        // Prefer a non-primary monitor if available; else stay at 0.
-        m_impl->selectedIndex = 0;
+    if (m_impl->desiredIndex < 0 && m_impl->desiredName.isEmpty()) {
+        // Fresh install, nothing stored. Prefer a non-primary monitor — the
+        // projector — over the operator's own panel, then adopt that as the
+        // remembered choice so an unplug/replug later resolves back to it
+        // instead of stranding the audience output on the console's screen.
         for (int i = 0; i < m_impl->screens.size(); ++i) {
             if (!m_impl->screens[i].isPrimary) { m_impl->selectedIndex = i; break; }
+        }
+        m_impl->desiredIndex = m_impl->selectedIndex;
+        if (m_impl->selectedIndex < m_impl->screens.size()) {
+            m_impl->desiredName = m_impl->screens[m_impl->selectedIndex].name;
         }
     }
 
@@ -221,9 +244,16 @@ void OutputService::setSelectedScreenIndex(int index)
 {
     if (!m_impl) return;
     if (index < 0 || index >= m_impl->screens.size()) return;
+    // Record the choice even when it matches the index already in use —
+    // after an unplug forced a fallback, re-picking the same display is
+    // how the operator says "this one, remember it".
+    m_impl->desiredIndex = index;
+    m_impl->desiredName  = m_impl->screens[index].name;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kSettingKey), index);
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNameKey),
+                              m_impl->desiredName);
     if (m_impl->selectedIndex == index) return;
     m_impl->selectedIndex = index;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kSettingKey), index);
     emit selectedScreenIndexChanged();
 }
 
@@ -277,6 +307,28 @@ void OutputService::notifyProjectionClosed()
     emit projectionOpenChanged();
 }
 
+namespace {
+
+// Map the operator's stored preference onto the displays that exist right
+// now. Name first, because that survives a cable coming out and going back
+// into a different port; then the index, which covers a fresh install that
+// never named anything; then the old blind clamp as a last resort.
+int resolveScreenIndex(const QList<crater::Screen>& screens,
+                       const QString& desiredName,
+                       int desiredIndex)
+{
+    if (screens.isEmpty()) return 0;
+    if (!desiredName.isEmpty()) {
+        for (int i = 0; i < screens.size(); ++i) {
+            if (screens[i].name == desiredName) return i;
+        }
+    }
+    if (desiredIndex >= 0 && desiredIndex < screens.size()) return desiredIndex;
+    return qMax(0, screens.size() - 1);
+}
+
+}  // namespace
+
 void OutputService::rebuildScreens()
 {
     if (!m_impl) return;
@@ -293,8 +345,18 @@ void OutputService::rebuildScreens()
     }
     m_impl->screens = std::move(list);
 
-    if (m_impl->selectedIndex >= m_impl->screens.size()) {
-        m_impl->selectedIndex = qMax(0, m_impl->screens.size() - 1);
+    // Re-resolve on EVERY rebuild, not just when the current index has
+    // gone out of range. The old one-way clamp meant an unplug rewrote
+    // selectedIndex to 0 and a replug left it there: the audience output
+    // came back on the operator's own panel, and because two screens
+    // existed again it also regained WindowStaysOnTopHint and fullscreen
+    // — an always-on-top window burying the console mid-service, which
+    // is the exact failure the single-screen demotion was added to stop.
+    const int resolved = resolveScreenIndex(m_impl->screens,
+                                            m_impl->desiredName,
+                                            m_impl->desiredIndex);
+    if (resolved != m_impl->selectedIndex) {
+        m_impl->selectedIndex = resolved;
         emit selectedScreenIndexChanged();
     }
 
