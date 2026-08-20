@@ -21,6 +21,11 @@ qt_add_executable(crater
     src/NdiRenderer.h
     src/RichTextHelper.cpp
     src/RichTextHelper.h
+    # Restores OS window management (Win+Arrow snapping, the taskbar
+    # window menu) that Qt::FramelessWindowHint takes away on Windows.
+    # Compiles to nothing on other platforms.
+    src/WindowChrome.cpp
+    src/WindowChrome.h
     # UI localization runtime — loads crater_<code>.qm catalogs and swaps the
     # language live (QTranslator + QQmlEngine::retranslate). App layer because
     # live retranslation needs the engine; crater-core stays Quick-free (§1).
