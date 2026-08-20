@@ -285,8 +285,17 @@ Rectangle {
                 onClicked: function(button, modifiers) {
                     if (modifiers & Qt.ControlModifier) {
                         AppState.toggleScheduleSelection(index)
+                        // A modified click is an unambiguous "I am working
+                        // in the schedule" gesture, so it claims keyboard
+                        // focus where a plain click deliberately does not.
+                        // Without this, activeFocusPanel never reached
+                        // "schedule" and the Delete shortcut gated on it could
+                        // never fire — multi-select had no keyboard removal
+                        // at all.
+                        AppState.setActiveFocus("schedule")
                     } else if (modifiers & Qt.ShiftModifier) {
                         AppState.extendScheduleSelectionTo(index)
+                        AppState.setActiveFocus("schedule")
                     } else {
                         AppState.selectScheduleItem(index)
                         // Scripture rows: notify the picker so it can scroll-and-
@@ -332,6 +341,10 @@ Rectangle {
                     if (AppState.selectedScheduleIndices.indexOf(index) < 0) {
                         AppState.selectScheduleItem(index)
                     }
+                    // Opening the row menu is a schedule gesture, never a
+                    // library-navigation one, so it can safely take focus
+                    // — which is also what arms the Delete shortcut.
+                    AppState.setActiveFocus("schedule")
                     const item = ScheduleService.currentItems[index]
                     if (!item) return
 
@@ -361,12 +374,18 @@ Rectangle {
                     AppState.openContextMenuAt(this, mouseX, mouseY, [
                         { label: qsTr("Send to Live"), iconName: "play",
                           action: function() { AppState.goLive() } },
-                        { label: qsTr("Edit"), iconName: "edit",
-                          action: function() {
-                              AppState.openModal(
-                                  item.kind === "song" ? "songEditor" : "themeEditor",
-                                  { itemIndex: index })
-                          } },
+                        // Edit routes by kind (song editor / media options /
+                        // back to the verse picker) — see
+                        // AppState.editScheduleItem. Dimmed rather than hidden
+                        // when a row has nothing editable, so the entry keeps a
+                        // stable position in the menu.
+                        { label: qsTr("Edit…"), iconName: "edit",
+                          enabled: AppState.canEditScheduleItem(index),
+                          action: function() { AppState.editScheduleItem(index) } },
+                        // Retitles THIS row only; the library record keeps its
+                        // own name (see AppState.renameScheduleItem).
+                        { label: qsTr("Rename…"), iconName: "type",
+                          action: function() { AppState.renameScheduleItem(index) } },
                         { label: qsTr("Duplicate"), iconName: "copy",
                           action: function() {
                               // addItem assigns a fresh id; strip the old one

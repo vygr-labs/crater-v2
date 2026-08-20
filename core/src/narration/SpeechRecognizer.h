@@ -31,6 +31,25 @@ public:
     // thread, not during app startup.
     virtual bool load(const QString& modelPath, QString* error) = 0;
 
+    // Optional second, faster model used only by transcribeInterim().
+    //
+    // The two passes want opposite things. A finished utterance is the answer
+    // an operator acts on and has to be right. An in-progress hypothesis is
+    // superseded a second later and can never project, so its only real
+    // failure mode is arriving too late to be a hypothesis at all. Running the
+    // accurate model on both makes the fast path as slow as the careful one
+    // for no benefit.
+    //
+    // Optional in the strict sense: a backend that declines simply uses its
+    // one model for both passes, and callers must treat failure as a
+    // degradation rather than an error. Never required for correctness.
+    virtual bool loadDraft(const QString& modelPath, QString* error)
+    {
+        Q_UNUSED(modelPath);
+        if (error) *error = QStringLiteral("This backend has no separate draft model.");
+        return false;
+    }
+
     virtual bool    isLoaded()   const = 0;
     virtual QString engineName() const = 0;
 
@@ -47,6 +66,27 @@ public slots:
     // queued connections copy the argument anyway. A 15 s utterance is 960 kB,
     // which is cheap next to the inference that follows it.
     virtual void transcribe(QList<float> mono16k, qint64 startedAtMs) = 0;
+
+    // Transcribe an utterance that is still being spoken, and emit partial().
+    //
+    // The whole reason this exists: VoiceGate only closes an utterance after a
+    // pause, and its backstop is 15 seconds, so a preacher in full flow gets
+    // no suggestions at all until they stop. Re-running recognition over the
+    // audio so far is what turns the feature from "after the fact" into
+    // "while you speak".
+    //
+    // A backend with no in-progress hypothesis is a valid backend — it just
+    // never shortens the latency.
+    //
+    // It must still answer. Callers throttle interim work against the same
+    // in-flight budget as real utterances, so a backend that silently declines
+    // would leak a slot on every pass and stall the pipeline within a minute.
+    // Emitting an empty partial() is how a backend says "nothing from me".
+    virtual void transcribeInterim(QList<float> mono16k, qint64 startedAtMs)
+    {
+        Q_UNUSED(mono16k);
+        emit partial(QString(), startedAtMs);
+    }
 
 signals:
     // A finished utterance. `startedAtMs` echoes back what was passed to

@@ -69,6 +69,7 @@ struct SettingsService::Impl
     // Projection window taskbar / Alt-Tab presence — see header. Default true
     // preserves the standard behavior (own taskbar button + switcher slot).
     bool    projectionInAltTab = true;
+    bool    projectionBehindConsole = false;
     // Headless NDI renderer toggle — see header. Default true so the QRhi
     // path is the standard production behavior; flipping false drops back to
     // the legacy grabToImage path as a fallback.
@@ -79,6 +80,7 @@ struct SettingsService::Impl
     // fixed path exactly (BGRA, native 1080p render).
     QString ndiPixelFormat   = QStringLiteral("bgra");
     QString ndiResolution    = QStringLiteral("native");
+    bool    ndiHideMedia     = false;
     // KJV is the translation that ships with every install, so it's the safe
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
@@ -110,6 +112,9 @@ struct SettingsService::Impl
     // the Preview pane, never the audience screen, without the operator
     // opting into Auto.
     QString narrationMode    = QStringLiteral("stage");
+    // Empty = the system default input. See the header for why the id is
+    // stored rather than the device name.
+    QString narrationInputDeviceId;
     // Cancel window before an Auto-mode detection is projected. 1.5 s is long
     // enough for an operator watching the console to catch a wrong call and
     // short enough that a correct one still feels automatic.
@@ -133,10 +138,12 @@ struct SettingsService::Impl
     static constexpr const char* kOutputResolution = "Settings/outputResolution";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
+    static constexpr const char* kProjectionBehindConsole = "Settings/projectionBehindConsole";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
     static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
     static constexpr const char* kNdiResolution    = "Settings/ndiResolution";
+    static constexpr const char* kNdiHideMedia     = "Settings/ndiHideMedia";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
@@ -157,6 +164,7 @@ struct SettingsService::Impl
     static constexpr const char* kNarrationModelPath = "Settings/narrationModelPath";
     static constexpr const char* kNarrationMode      = "Settings/narrationMode";
     static constexpr const char* kNarrationGraceMs   = "Settings/narrationGraceMs";
+    static constexpr const char* kNarrationInputDeviceId = "Settings/narrationInputDeviceId";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -172,10 +180,12 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
+    m_impl->projectionBehindConsole = s.value(QString::fromLatin1(Impl::kProjectionBehindConsole), m_impl->projectionBehindConsole).toBool();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
     m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
     m_impl->ndiResolution     = s.value(QString::fromLatin1(Impl::kNdiResolution),   m_impl->ndiResolution).toString();
+    m_impl->ndiHideMedia      = s.value(QString::fromLatin1(Impl::kNdiHideMedia),    m_impl->ndiHideMedia).toBool();
     m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
     m_impl->highlightVerse   = s.value(QString::fromLatin1(Impl::kHighlightVerse),   m_impl->highlightVerse).toBool();
@@ -195,6 +205,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->narrationModelPath = s.value(QString::fromLatin1(Impl::kNarrationModelPath), m_impl->narrationModelPath).toString();
     m_impl->narrationMode      = s.value(QString::fromLatin1(Impl::kNarrationMode),      m_impl->narrationMode).toString();
     m_impl->narrationGraceMs   = s.value(QString::fromLatin1(Impl::kNarrationGraceMs),   m_impl->narrationGraceMs).toInt();
+    m_impl->narrationInputDeviceId = s.value(QString::fromLatin1(Impl::kNarrationInputDeviceId), m_impl->narrationInputDeviceId).toString();
 
     // Global-search actions: start from the per-type defaults, then overlay any
     // persisted overrides. Each override is validated so a hand-edited or
@@ -223,10 +234,12 @@ bool    SettingsService::showLogoByDefault() const { return m_impl->showLogoByDe
 QString SettingsService::outputResolution() const  { return m_impl->outputResolution; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
+bool    SettingsService::projectionBehindConsole() const { return m_impl->projectionBehindConsole; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
 QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
 QString SettingsService::ndiResolution() const     { return m_impl->ndiResolution; }
+bool    SettingsService::ndiHideMedia() const      { return m_impl->ndiHideMedia; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
@@ -245,6 +258,7 @@ bool    SettingsService::highlightStrongsMatches() const   { return m_impl->high
 QString SettingsService::narrationModelPath() const      { return m_impl->narrationModelPath; }
 QString SettingsService::narrationMode() const           { return m_impl->narrationMode; }
 int     SettingsService::narrationGraceMs() const        { return m_impl->narrationGraceMs; }
+QString SettingsService::narrationInputDeviceId() const  { return m_impl->narrationInputDeviceId; }
 QString SettingsService::language() const                { return m_impl->language; }
 bool    SettingsService::hasExplicitLanguage() const     { return m_impl->settings.contains(QString::fromLatin1(Impl::kLanguage)); }
 QVariantMap SettingsService::globalSearchActions() const { return m_impl->globalSearchActions; }
@@ -331,6 +345,14 @@ void SettingsService::setProjectionInAltTab(bool v)
     emit projectionInAltTabChanged();
 }
 
+void SettingsService::setProjectionBehindConsole(bool v)
+{
+    if (m_impl->projectionBehindConsole == v) return;
+    m_impl->projectionBehindConsole = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionBehindConsole), v);
+    emit projectionBehindConsoleChanged();
+}
+
 void SettingsService::setUseHeadlessNdi(bool v)
 {
     if (m_impl->useHeadlessNdi == v) return;
@@ -371,6 +393,14 @@ void SettingsService::setNdiResolution(const QString& v)
     m_impl->ndiResolution = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiResolution), normalized);
     emit ndiResolutionChanged();
+}
+
+void SettingsService::setNdiHideMedia(bool v)
+{
+    if (m_impl->ndiHideMedia == v) return;
+    m_impl->ndiHideMedia = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiHideMedia), v);
+    emit ndiHideMediaChanged();
 }
 
 void SettingsService::setDefaultScriptureVersion(const QString& code)
@@ -454,6 +484,14 @@ void SettingsService::setNarrationModelPath(const QString& path)
     m_impl->narrationModelPath = path;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kNarrationModelPath), path);
     emit narrationModelPathChanged();
+}
+
+void SettingsService::setNarrationInputDeviceId(const QString& id)
+{
+    if (m_impl->narrationInputDeviceId == id) return;
+    m_impl->narrationInputDeviceId = id;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kNarrationInputDeviceId), id);
+    emit narrationInputDeviceIdChanged();
 }
 
 void SettingsService::setNarrationMode(const QString& mode)

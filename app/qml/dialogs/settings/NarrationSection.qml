@@ -14,6 +14,66 @@ import Crater
 Item {
     id: root
 
+    // ── Microphone list ─────────────────────────────────────────────────
+    //
+    // inputDevices() is a plain call rather than a property, so nothing tells
+    // QML when the set of microphones changes. Bumping this counter is the
+    // dependency that forces the list to re-evaluate: on becoming visible (a
+    // USB mic plugged in while the dialog was closed) and whenever the
+    // selection changes.
+    property int _deviceRevision: 0
+    onVisibleChanged: if (visible) root._deviceRevision++
+
+    readonly property var _deviceOptions: {
+        root._deviceRevision;   // dependency, deliberately unused
+
+        // "System default" is a real choice and not the same as naming the
+        // device that happens to be default today: it means "keep following
+        // whatever Windows decides", which is what an operator who moves
+        // between rooms usually wants.
+        const list = [{ label: qsTr("System default"), value: "" }]
+        const devices = NarrationService.inputDevices()
+        for (let i = 0; i < devices.length; i++) {
+            list.push({
+                label: devices[i].isDefault
+                       ? qsTr("%1 (system default)").arg(devices[i].name)
+                       : devices[i].name,
+                value: devices[i].id
+            })
+        }
+        return list
+    }
+
+    // What the button shows. Three genuinely different states, because a
+    // picker that renders a disconnected device exactly like a working one is
+    // how an operator ends up staring at a dead level meter.
+    readonly property bool _deviceMissing: {
+        root._deviceRevision;
+        const id = NarrationService.inputDeviceId
+        if (id.length === 0) return false
+        const opts = root._deviceOptions
+        for (let i = 0; i < opts.length; i++)
+            if (opts[i].value === id) return false
+        return true
+    }
+
+    readonly property string _deviceLabel: {
+        root._deviceRevision;
+        const id = NarrationService.inputDeviceId
+        if (id.length === 0) return qsTr("System default")
+        if (root._deviceMissing)
+            return qsTr("Not connected (using %1)").arg(NarrationService.inputDeviceName)
+        const opts = root._deviceOptions
+        for (let i = 0; i < opts.length; i++)
+            if (opts[i].value === id) return opts[i].label
+        return NarrationService.inputDeviceName
+    }
+
+    Connections {
+        target: NarrationService
+        function onInputDeviceChanged() { root._deviceRevision++ }
+    }
+
     Flickable {
         anchors.fill: parent
         contentHeight: layout.implicitHeight
@@ -123,6 +183,24 @@ Item {
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
                     }
+                    // What is actually loaded, once it is. Two models behave
+                    // visibly differently from one — suggestions appear early
+                    // and are then corrected — and without this the operator
+                    // has no way to tell the fast configuration from the slow
+                    // one except by how long they wait.
+                    //
+                    // Only while armed: engineName is the engine that is
+                    // running, not the one that would run.
+                    Text {
+                        width: parent.width
+                        visible: NarrationService.engineName.length > 0
+                                 && NarrationService.listening
+                        elide: Text.ElideMiddle
+                        text: NarrationService.engineName
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
                 }
                 GhostButton {
                     id: modelBtn
@@ -137,6 +215,61 @@ Item {
                         if (p && p.length > 0)
                             SettingsService.narrationModelPath = p
                     }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // ── MICROPHONE ───────────────────────────────────────────────
+            //
+            // The system default is frequently the wrong microphone: the
+            // machine running a service usually also has a webcam and a
+            // laptop lid array, and Windows picks between them on its own
+            // logic rather than on which one is pointed at the preacher.
+            SettingsSectionHeader { title: qsTr("Microphone") }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: deviceCombo.left
+                    anchors.rightMargin: Theme.space.lg
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text {
+                        text: qsTr("Input device")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        // While listening this says so explicitly, because
+                        // changing the device mid-service reopens the
+                        // microphone and the operator should know that before
+                        // they touch it rather than after.
+                        text: root._deviceMissing
+                              ? qsTr("The microphone you chose is not connected. Falling back to the system default.")
+                              : NarrationService.listening
+                                ? qsTr("Changing this reopens the microphone straight away.")
+                                : qsTr("Used the next time you press Listen.")
+                        color: root._deviceMissing ? Theme.color.warning : Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+                Combobox {
+                    id: deviceCombo
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 260
+                    searchable: false
+                    enabled: NarrationService.available
+                    options: root._deviceOptions
+                    value: root._deviceLabel
+                    onValueSelected: function(v) { NarrationService.setInputDevice(v) }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }

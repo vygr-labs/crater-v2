@@ -10,6 +10,7 @@
 #include <QFuture>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QQuickWindow>
 #include <QQmlEngine>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -37,6 +38,7 @@
 #include "PdfPageImageProvider.h"
 #include "RichTextHelper.h"
 #include "TranslationService.h"
+#include "WindowChrome.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
@@ -538,6 +540,19 @@ int main(int argc, char* argv[])
     engine.loadFromModule("Crater", "Main");
     qInfo().noquote() << "[startup] QML loaded, main window realized: +"
                       << startupClock.elapsed() << "ms";
+
+    // Hand the operator console back to the Windows shell. Must come after
+    // loadFromModule — the HWND does not exist until the root Window is
+    // realized — and it is scoped to that one window on purpose: the
+    // projection window owns its own fullscreen/windowed chrome and must
+    // not be given a resize frame. See WindowChrome.h for why the frameless
+    // hint costs us Win+Arrow in the first place.
+    if (!engine.rootObjects().isEmpty()) {
+        if (auto* consoleWindow =
+                qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
+            crater::installNativeWindowChrome(consoleWindow);
+        }
+    }
 
     // ─── Stage 6: wire the headless NDI renderer ────────────────────────
     // Must come AFTER loadFromModule — the renderer shares the engine to

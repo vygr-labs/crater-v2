@@ -66,6 +66,21 @@ private:
     // fixed projector the operator never tabs to. See ProjectionWindow.qml
     // flags; note it also removes the single-screen "click to surface" route.
     Q_PROPERTY(bool    projectionInAltTab READ projectionInAltTab WRITE setProjectionInAltTab NOTIFY projectionInAltTabChanged)
+    // Which of the two single-display arrangements the audience output
+    // uses. Only consulted when there is exactly one screen.
+    //
+    // false (default): the former behaviour — demote to a small
+    // windowed preview in the corner, floating above the console.
+    // true: render fullscreen, at the size the audience would actually
+    // see, but pinned beneath every other window. It cannot cover the
+    // console because it is never allowed in front of it, and it shows
+    // through wherever the console is not — snap the console to half
+    // the screen and the other half becomes a true-size preview.
+    //
+    // Ignored with two displays attached: a fullscreen audience output
+    // on its own screen must stay on TOP, or a notification toast lands
+    // in front of the congregation. See ProjectionWindow.qml.
+    Q_PROPERTY(bool    projectionBehindConsole READ projectionBehindConsole WRITE setProjectionBehindConsole NOTIFY projectionBehindConsoleChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
     // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
@@ -92,6 +107,21 @@ private:
     // useHeadlessNdi), so a change applies on the next (re)start.
     Q_PROPERTY(QString ndiPixelFormat     READ ndiPixelFormat     WRITE setNdiPixelFormat     NOTIFY ndiPixelFormatChanged)
     Q_PROPERTY(QString ndiResolution      READ ndiResolution      WRITE setNdiResolution      NOTIFY ndiResolutionChanged)
+    // Suppress picture / video items on the NDI broadcast only.
+    // When true, an image or video that is live still fills the
+    // audience screen, but the NDI scene renders it as a blank
+    // frame. Lyrics, scripture and theme output are unaffected.
+    //
+    // Motivation: a stream carrying licensed footage or a slide of
+    // faces often must not leave the room, while the room itself
+    // still needs to see it. Suppressing at the NDI scene rather
+    // than at the send boundary (where `blank` lives) keeps text
+    // flowing to receivers instead of cutting the whole feed.
+    //
+    // Live, not deferred to the next broadcast start: the headless
+    // renderer hosts its own ProjectionScene, so the QML binding
+    // re-renders on the very next tick.
+    Q_PROPERTY(bool    ndiHideMedia       READ ndiHideMedia       WRITE setNdiHideMedia       NOTIFY ndiHideMediaChanged)
     // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
     // in the same uppercase form BibleService::translations() reports and the
     // scripture sidebar displays; AppState lowercases it to seed
@@ -185,6 +215,18 @@ private:
     // Cancel window before an Auto-mode detection is projected, in ms.
     // Clamped to 500..10000 on write.
     Q_PROPERTY(int     narrationGraceMs   READ narrationGraceMs   WRITE setNarrationGraceMs   NOTIFY narrationGraceMsChanged)
+    // QAudioDevice::id() of the microphone to listen on. Empty means "whatever
+    // the system calls default", which is the right default but a poor rule:
+    // the machine driving a service usually has several inputs (a webcam, the
+    // laptop lid array, the desk mic actually pointed at the preacher) and
+    // Windows' idea of default is rarely the one on the pulpit.
+    //
+    // Stored as the opaque device id rather than the display name because
+    // names are neither unique nor stable across reconnects. A saved id that
+    // no longer resolves falls back to the default rather than refusing to
+    // arm — the microphone the operator picked last month being unplugged is
+    // not a reason to have no sound on Sunday.
+    Q_PROPERTY(QString narrationInputDeviceId READ narrationInputDeviceId WRITE setNarrationInputDeviceId NOTIFY narrationInputDeviceIdChanged)
     // Note what is NOT here: any form of auto-arm. §8 forbids the microphone
     // opening on app start, schedule load, or go-live, and the way to keep
     // that true is to never give it a key it could be enabled from.
@@ -202,10 +244,12 @@ public:
     QString outputResolution() const;
     QString outputMode() const;
     bool    projectionInAltTab() const;
+    bool    projectionBehindConsole() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
     QString ndiPixelFormat() const;
     QString ndiResolution() const;
+    bool    ndiHideMedia() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    highlightCurrentVerse() const;
@@ -224,6 +268,7 @@ public:
     QString narrationModelPath() const;
     QString narrationMode() const;
     int     narrationGraceMs() const;
+    QString narrationInputDeviceId() const;
     QString language() const;
     // True once the operator has explicitly chosen a UI language (the key
     // exists in QSettings). False on a fresh install — TranslationService uses
@@ -239,10 +284,12 @@ public:
     void setOutputResolution(const QString& v);
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
+    void setProjectionBehindConsole(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
     void setNdiPixelFormat(const QString& v);
     void setNdiResolution(const QString& v);
+    void setNdiHideMedia(bool v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setHighlightCurrentVerse(bool v);
@@ -264,6 +311,7 @@ public:
     // silently reinterpret a bad write.
     void setNarrationMode(const QString& mode);
     void setNarrationGraceMs(int ms);
+    void setNarrationInputDeviceId(const QString& id);
     void setLanguage(const QString& code);
 
     // Set the global-search primary action for one result type. `type` and
@@ -281,10 +329,12 @@ signals:
     void outputResolutionChanged();
     void outputModeChanged();
     void projectionInAltTabChanged();
+    void projectionBehindConsoleChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();
     void ndiPixelFormatChanged();
     void ndiResolutionChanged();
+    void ndiHideMediaChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void highlightCurrentVerseChanged();
@@ -305,6 +355,7 @@ signals:
     void narrationModelPathChanged();
     void narrationModeChanged();
     void narrationGraceMsChanged();
+    void narrationInputDeviceIdChanged();
 
 private:
     struct Impl;

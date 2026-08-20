@@ -263,9 +263,11 @@ private slots:
         m.setEmbedder([this](const QString& t) { return emb.embedOne(t); });
         QVERIFY(m.isReady());
 
-        // Philippians rather than the gospel paraphrase: the latter matches a
-        // cluster of verses that all genuinely say it, which the cluster gate
-        // treats as a theme (see the_shipped_index_resolves_paraphrases).
+        // Philippians rather than the gospel paraphrase: against the full
+        // canon the latter resolves to a cluster of seven verses that all
+        // genuinely say it, and a four-verse index cannot show that at all
+        // (see the_shipped_index_resolves_paraphrases). This case wants one
+        // unambiguous winner, which is what Philippians 4:13 gives.
         const auto refs =
             m.match(QStringLiteral("i can handle anything at all because christ is the one "
                                    "who keeps giving me the strength to do it"), 0);
@@ -324,7 +326,7 @@ private slots:
     //
     // Everything above builds a four-verse index in-process, which can prove
     // the machinery works but not that it works at scale. Thirty-one thousand
-    // verses is a crowded neighbourhood: the margin gate that trivially
+    // verses is a crowded neighbourhood: the cluster gate that trivially
     // passes against three decoys has to hold against the whole canon.
     void the_shipped_index_resolves_paraphrases()
     {
@@ -353,16 +355,23 @@ private slots:
         // on first place would be asserting my intuition about which one is
         // "the" answer.
         //
-        // Deliberately absent: "god loved us so much that he sent his own son
-        // to die". It is the doc's own flagship example and it does NOT fire
-        // — it lands on a cluster of seven (1 John 4:9 at 0.779, Romans 5:8,
-        // John 3:16 and four more), which the cluster gate reads as a theme
-        // rather than a quotation. Scripture states the gospel in many
-        // places, so the phrase genuinely does not identify one verse. That
-        // is a real limitation of this path, recorded in §7.3 rather than
-        // hidden by choosing kinder test cases.
+        // The first case is the doc's flagship example, and it is here rather
+        // than excluded because it is the one that decided maxCluster.
+        //
+        // It resolves to a cluster of seven: 1 John 4:9 (0.779), Romans 5:8,
+        // John 3:16, Romans 5:10, 1 John 4:10, 1 John 4:11 and
+        // 2 Thessalonians 2:16. Five of those are squarely the thing that was
+        // paraphrased; 1 John 4:11 ("we ought also to love one another") and
+        // 2 Thessalonians 2:16 are adjacent rather than equivalent. So the
+        // honest claim is not "seven correct answers" — it is that the right
+        // verse is reliably IN the offered set, and that the set is short
+        // enough to scan. That is the correct bar for a queue the operator
+        // reads, and it is the only bar this tier has to clear, since
+        // TrustGate never projects "possible".
         struct Case { const char* said; const char* expect; };
         const Case cases[] = {
+            { "god loved us so much that he sent his own son to die so we could live",
+              "John 3:16" },
             { "the lord takes care of me like a shepherd so there is nothing that i need",
               "Psalms 23:1" },
             { "i can handle anything at all because christ is the one giving me strength",

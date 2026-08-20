@@ -54,21 +54,62 @@ Window {
     readonly property var _targetScreen:
         Qt.application.screens[screenIndex] || Qt.application.screens[0]
 
+    // Windowed when the operator picked it, and unconditionally when the
+    // audience has no display of its own (see _windowedForced).
     readonly property bool _windowed:
         OutputService.projectionMode === OutputService.Windowed
+        || _windowedForced
 
-    // True when this machine has no second display. With one screen there is
-    // nowhere to put the audience output that isn't also the operator's
-    // screen, so a fullscreen projector claiming the always-on-top layer would
-    // bury the console the operator is driving. On a single screen we instead
-    //   (a) drop WindowStaysOnTopHint below so the window CAN sit behind the
-    //       console, and
-    //   (b) let Main.qml re-raise the console on go-live (the OS still briefly
-    //       foregrounds a freshly-shown window).
-    // The projection still renders fullscreen — it just stays hidden behind
-    // the console until the operator clicks its taskbar / Alt-Tab entry to
-    // bring it forward. Multi-monitor rigs are unaffected.
-    readonly property bool _singleScreen: Qt.application.screens.length <= 1
+    // True when this machine has no display other than the one the operator
+    // console is on — either it never had a second one, or the cable just
+    // came out mid-service. Sourced from OutputService rather than
+    // Qt.application.screens because OutputService rebuilds on screenAdded /
+    // screenRemoved / primaryScreenChanged, so this re-evaluates the moment
+    // a display appears or disappears.
+    readonly property bool _singleScreen: OutputService.screens.length <= 1
+
+    // Fullscreen is only ever safe when the audience output has a screen to
+    // itself. With one display, a fullscreen projector covers the console the
+    // operator is driving — and the failure is worst exactly when it hurts
+    // most: HDMI pulled mid-service, the window follows onto the laptop
+    // panel, and the operator is left clicking at an output they can't drive.
+    //
+    // Dropping WindowStaysOnTopHint (the previous mitigation, still in the
+    // flags below) was not enough. It lets the console come forward, but only
+    // once something raises it, and nothing did on cable removal — the raise
+    // in Main.qml hangs off go-live. The window also keeps a fullscreen
+    // footprint, so every stray click lands on the audience output.
+    //
+    // So a single screen demotes the projector to the windowed preview: a
+    // small titled sub-window in the corner, the way EasyWorship shows its
+    // output when there is nowhere else to put it. This is an override of the
+    // render state, NOT a write to OutputService.projectionMode — the
+    // operator's stored Fullscreen preference is untouched, so plugging the
+    // display back in re-evaluates this to false and fullscreen returns on
+    // its own.
+    // …unless the operator picked the other single-screen mode. See
+    // _belowConsole: fullscreen-behind renders the audience output at
+    // full size and pins it under the console instead of shrinking it
+    // into a corner, so it cannot bury the controls either way.
+    readonly property bool _windowedForced:
+        _singleScreen && !SettingsService.projectionBehindConsole
+
+    // Size of the windowed preview. This used to be a flat 480x270, which
+    // was fine while windowed mode was an occasional choice on a 1080p
+    // desk. It is not fine now that a single-screen console lives in this
+    // mode for the whole service: on a 4K panel 480 px is a postage stamp,
+    // and the preview is the only view of the audience output there is.
+    //
+    // A quarter of the target display, floored so it stays legible on a
+    // 1366-wide laptop and capped so it stays a glanceable thumbnail rather
+    // than a second console on an ultrawide. The arithmetic lands on
+    // exactly 480x270 at 1920 wide, so nothing moves on the display this
+    // was designed against.
+    readonly property int _previewWidth: {
+        const sw = _targetScreen ? _targetScreen.width : 1920
+        return Math.round(Math.max(400, Math.min(800, sw * 0.25)))
+    }
+    readonly property int _previewHeight: Math.round(_previewWidth * 9 / 16)
 
     // Base window-type flag for the operator-visible states. Qt.Window gives
     // the projection its own taskbar button + Alt-Tab slot; Qt.Tool
@@ -78,6 +119,27 @@ Window {
     // never meant to be operator-visible regardless of this preference.)
     readonly property int _windowTypeFlag:
         SettingsService.projectionInAltTab ? Qt.Window : Qt.Tool
+
+    // The single-screen mode selector. With one display there are two
+    // ways to keep the audience output from burying the console, and
+    // they suit different desks:
+    //
+    //   off (default) — the former behaviour. Demote to a small
+    //     windowed preview in the corner, floating above the console.
+    //     Always visible, but it is a thumbnail, not the real thing.
+    //
+    //   on — render FULLSCREEN, exactly as the audience would see it,
+    //     and pin it under every other window. It cannot cover the
+    //     console because it is never allowed in front of it; the
+    //     operator sees it through whatever desktop the console is not
+    //     occupying, so snapping the console to half the screen
+    //     (Win+Left) turns the other half into a true-size preview.
+    //
+    // Deliberately gated on _singleScreen. A fullscreen audience output
+    // that has a display to itself must keep WindowStaysOnTopHint, or
+    // any notification toast lands in front of the congregation.
+    readonly property bool _belowConsole:
+        _singleScreen && !_offscreen && SettingsService.projectionBehindConsole
 
     screen: _targetScreen
 
@@ -112,14 +174,23 @@ Window {
         ? (Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
         : _windowed
             ? _windowTypeFlag
-            // Fullscreen production. On a multi-monitor rig the audience output
-            // owns the always-on-top layer so nothing can pop over it. On a
-            // SINGLE screen we drop that hint (see _singleScreen) so the
-            // projector sits behind the console rather than burying it; the
+            // Fullscreen, three ways:
+            //
+            //   multi-monitor — the audience output owns the always-on-top
+            //     layer so nothing can pop over it mid-service.
+            //   single screen, fullscreen-behind — the opposite hint, so it
+            //     is pinned UNDER the console and shows through wherever the
+            //     console is not (see _belowConsole).
+            //   single screen otherwise — no hint at all. Unreachable today
+            //     because _windowedForced demotes that case, but harmless
+            //     and correct if the demotion is ever made optional.
+            //
             // _windowTypeFlag (Qt.Window unless the operator hid it from
-            // Alt-Tab) keeps a taskbar entry so they can still surface it.
+            // Alt-Tab) keeps a taskbar entry in every case.
             : (_windowTypeFlag | Qt.FramelessWindowHint
-               | (_singleScreen ? 0 : Qt.WindowStaysOnTopHint))
+               | (_belowConsole  ? Qt.WindowStaysOnBottomHint
+                : _singleScreen  ? 0
+                                 : Qt.WindowStaysOnTopHint))
     title: qsTr("Crater Projection")
 
     // Geometry — three cases, matching the visibility states above:
@@ -133,10 +204,10 @@ Window {
     //     the instant the operator goes live, so a fixed 480×270 actively
     //     fights the fullscreen state. The binding must AGREE with it.
     width: _offscreen ? 1920
-         : _windowed  ? 480
+         : _windowed  ? _previewWidth
          : (_targetScreen ? _targetScreen.width : 1920)
     height: _offscreen ? 1080
-          : _windowed  ? 270
+          : _windowed  ? _previewHeight
           : (_targetScreen ? _targetScreen.height : 1080)
     x: _offscreen ? -32000
      : !_windowed ? (_targetScreen ? _targetScreen.virtualX : 0)

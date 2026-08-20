@@ -433,12 +433,12 @@ private slots:
     {
         const QList<float> base = unitAlong(kDims, 0);
 
-        // Ten verses all clustered around the query. Nothing here identifies
-        // anything — this is what generic religious phrasing looks like in
-        // embedding space.
+        // Twelve verses all clustered around the query. Nothing here
+        // identifies anything — this is what generic religious phrasing looks
+        // like in embedding space.
         AllusionIndex idx;
         QList<AllusionIndex::Entry> e;
-        for (int i = 0; i < 10; ++i)
+        for (int i = 0; i < 12; ++i)
             e.append(entry("John", 13, 20 + i, unitAlong(kDims, 0, 0.02f, 11 + i)));
         QVERIFY(idx.build(e, QStringLiteral("m")));
 
@@ -488,6 +488,59 @@ private slots:
         QVERIFY(hasRef(refs, QStringLiteral("Romans 5:8")));
         QVERIFY(hasRef(refs, QStringLiteral("John 3:16")));
         // The distant verse is not part of the cluster.
+        QVERIFY(!hasRef(refs, QStringLiteral("Psalms 23:1")));
+        for (const HeardReference& r : refs)
+            QCOMPARE(r.tier, QStringLiteral("possible"));
+    }
+
+    // The gospel case, and the reason maxCluster is 7 rather than 3.
+    //
+    // "God loved us so much that he sent his own son to die" is the example
+    // §2 opens with, and against the real index it lands on a crowd of seven —
+    // 1 John 4:9, Romans 5:8, John 3:16 and four more. Every one of them is a
+    // correct answer; scripture simply states this in seven places. A gate
+    // tuned to reject crowds rejected the feature's own headline example, and
+    // "your paraphrase was too central to the faith" is not a defensible
+    // reason to show the operator nothing.
+    //
+    // So the whole cluster is offered and the operator picks. That is only
+    // safe because of what this tier is: TrustGate refuses to project
+    // "possible" in any mode, so seven suggestions is seven chips in a queue,
+    // never seven verses on the screen.
+    void a_seven_verse_cluster_yields_all_seven()
+    {
+        const QList<float> base = unitAlong(kDims, 0);
+
+        AllusionIndex idx;
+        QList<AllusionIndex::Entry> e;
+        e.append(entry("1 John",        4,  9, unitAlong(kDims, 0, 0.02f, 21)));
+        e.append(entry("Romans",        5,  8, unitAlong(kDims, 0, 0.02f, 22)));
+        e.append(entry("John",          3, 16, unitAlong(kDims, 0, 0.02f, 23)));
+        e.append(entry("1 John",        4, 10, unitAlong(kDims, 0, 0.02f, 24)));
+        e.append(entry("Titus",         3,  4, unitAlong(kDims, 0, 0.02f, 25)));
+        e.append(entry("Ephesians",     2,  4, unitAlong(kDims, 0, 0.02f, 26)));
+        e.append(entry("1 Thessalonians", 5, 10, unitAlong(kDims, 0, 0.02f, 27)));
+        e.append(entry("Psalms",       23,  1, unitAlong(kDims, 60, 0.02f, 28)));  // far away
+        QVERIFY(idx.build(e, QStringLiteral("m")));
+
+        AllusionMatcher m;
+        m.setIndex(&idx);
+        m.setEmbedder([&](const QString&) { return base; });
+
+        // The invariant that makes the gate above mean anything: admitting a
+        // cluster of seven and then emitting three would hand the operator an
+        // arbitrary subset of the answer.
+        QVERIFY2(m.config().maxEmits >= m.config().maxCluster,
+                 "maxEmits below maxCluster silently truncates an accepted cluster");
+
+        const auto refs = m.match(
+            QStringLiteral("god loved us so much that he sent his own son to die so that "
+                           "we could live with him"), 0);
+
+        QCOMPARE(refs.size(), 7);
+        QVERIFY(hasRef(refs, QStringLiteral("1 John 4:9")));
+        QVERIFY(hasRef(refs, QStringLiteral("Romans 5:8")));
+        QVERIFY(hasRef(refs, QStringLiteral("John 3:16")));
         QVERIFY(!hasRef(refs, QStringLiteral("Psalms 23:1")));
         for (const HeardReference& r : refs)
             QCOMPARE(r.tier, QStringLiteral("possible"));

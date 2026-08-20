@@ -74,12 +74,27 @@ QList<HeardReference> AllusionMatcher::match(const QString& utterance, qint64 no
         if (top.score < m_cfg.minScore) continue;
 
         // Gate 3: how crowded is the neighbourhood? Everything within
-        // clusterWindow of the best hit that also clears minScore is a
-        // co-answer, not a competitor.
+        // clusterWindow of the best hit is a co-answer, not a competitor.
+        //
+        // Membership is RELATIVE only. It used to also require each member to
+        // clear minScore, which quietly collapsed this window to nothing
+        // whenever the top hit sat near the threshold — at minScore 0.780 and
+        // a top of 0.779, a 0.04 window admits a 0.001 band, so the six
+        // verses that genuinely co-answered were filtered out before they
+        // could be counted. The two numbers answer different questions and
+        // should not be spent on each other: minScore asks "is this utterance
+        // near scripture at all", which is absolute and already settled by
+        // gate 2 above; the window asks "which verses answer it together with
+        // the best one", which is only meaningful relative to that best one.
+        //
+        // Dropping the floor here can only make clusters LARGER, so it makes
+        // the crowd rejection below stricter rather than looser. What it
+        // changes is what an accepted cluster contains: all of its members
+        // instead of only the ones that happened to sit above an absolute
+        // line drawn for another purpose.
         QList<AllusionIndex::Hit> cluster;
         for (const AllusionIndex::Hit& h : hits) {
-            if (h.score < m_cfg.minScore) break;              // sorted, so done
-            if ((top.score - h.score) > m_cfg.clusterWindow) break;
+            if ((top.score - h.score) > m_cfg.clusterWindow) break;   // sorted, so done
             cluster.append(h);
         }
 
@@ -91,7 +106,7 @@ QList<HeardReference> AllusionMatcher::match(const QString& utterance, qint64 no
         if (cluster.size() >= m_cfg.probeDepth) continue;
 
         for (const AllusionIndex::Hit& h : cluster) {
-            if (out.size() >= m_cfg.maxPerWindow) break;
+            if (out.size() >= m_cfg.maxEmits) break;
             if (h.book.isEmpty() || h.chapter <= 0 || h.verse <= 0) continue;
 
             // Do not emit the same verse twice from overlapping windows.

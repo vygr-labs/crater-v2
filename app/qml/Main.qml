@@ -209,12 +209,27 @@ ApplicationWindow {
         consoleActive: root._consoleVisible
     }
 
+    // ── What the microphone heard ───────────────────────────────────────
+    // A separate strip rather than a second row inside NarrationBar: that bar
+    // is the hot indicator and the controls, and its three clusters all centre
+    // on its height. This collapses to zero the moment there is nothing to
+    // report, so the idle console is laid out exactly as before.
+    NarrationTranscript {
+        id: narrationTranscript
+        anchors.top: narrationBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
+        consoleActive: root._consoleVisible
+    }
+
     // ── Main work surface ───────────────────────────────────────────────
     Item {
         id: mainArea
 
         visible: root._consoleVisible
-        anchors.top: narrationBar.bottom
+        anchors.top: narrationTranscript.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -226,6 +241,26 @@ ApplicationWindow {
         // drag a horizontal grip to adjust this; today it's a static
         // constant matching the existing visual design.
         readonly property real topRowRatio: 0.58
+
+        // Panel widths are proportional, but the two LIST panels have a
+        // real useful maximum: past ~420px a schedule row is mostly empty
+        // space to the right of its title, and past ~320px the sidebar is
+        // a column of short labels in a wide gutter. Those pixels are worth
+        // far more to Preview and Live, which render actual output and can
+        // always use more area.
+        //
+        // Below ~1400px wide the clamps never bind, so every layout at
+        // 1080p and under is pixel-identical to before this change.
+        readonly property real scheduleWidth: Math.min(width * 0.30, 420)
+        readonly property real sidebarWidth:  Math.min(width * 0.24, 320)
+
+        // Live takes its share of what the schedule LEFT rather than of the
+        // whole row — 0.36 / (0.36 + 0.34) — so the freed width is split
+        // between the two monitors in their existing proportion instead of
+        // Preview quietly absorbing all of it. At any width where the
+        // schedule clamp is inactive this evaluates to exactly 0.36 * width.
+        readonly property real liveWidth:
+            (width - scheduleWidth) * (0.36 / 0.70)
 
         // ── Top row: Schedule | Preview | Live ───────────────────────────
         Item {
@@ -241,7 +276,7 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                width: parent.width * 0.30
+                width: mainArea.scheduleWidth
             }
 
             PreviewPanel {
@@ -257,7 +292,7 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.right: parent.right
-                width: parent.width * 0.36
+                width: mainArea.liveWidth
             }
         }
 
@@ -291,7 +326,7 @@ ApplicationWindow {
                 anchors.top: tabBar.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                width: parent.width * 0.24
+                width: mainArea.sidebarWidth
             }
 
             LibraryContent {
@@ -525,6 +560,30 @@ ApplicationWindow {
         }
     }
 
+    // The same guard for the cable coming OUT. onVisibleToOperatorChanged
+    // only fires at go-live, so unplugging the audience display mid-service
+    // never ran it: the fullscreen projector followed the operator onto the
+    // remaining panel and sat on top of the console with nothing to push it
+    // back. ProjectionWindow now demotes itself to the corner preview when
+    // the screen count collapses (see _windowedForced there); this puts the
+    // console back in front so the operator keeps a surface they can drive.
+    //
+    // Fires on screenAdded / screenRemoved / primaryScreenChanged via
+    // OutputService.rebuildScreens. Re-plugging is not a special case — the
+    // count goes back above one, this returns early, and ProjectionWindow's
+    // bindings restore fullscreen on their own.
+    Connections {
+        target: OutputService
+        function onScreensChanged() {
+            if (OutputService.screens.length > 1) return
+            if (!projectionWindow.visibleToOperator) return
+            Qt.callLater(function() {
+                root.raise()
+                root.requestActivate()
+            })
+        }
+    }
+
     // ── Dedicated NDI render canvas (dual output mode only) ─────────────
     // Hidden Item parked far offscreen within this ApplicationWindow. It
     // hosts a ProjectionScene with outputKind="ndi" so dual mode can grab
@@ -559,19 +618,19 @@ ApplicationWindow {
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────
     // Numeric shortcuts switch tabs. Ctrl+Tab and Ctrl+Shift+Tab cycle.
-    Shortcut { sequence: "Ctrl+1"; onActivated: AppState.setActiveTab(0) }
-    Shortcut { sequence: "Ctrl+2"; onActivated: AppState.setActiveTab(1) }
-    Shortcut { sequence: "Ctrl+3"; onActivated: AppState.setActiveTab(2) }
-    Shortcut { sequence: "Ctrl+4"; onActivated: AppState.setActiveTab(3) }
-    Shortcut { sequence: "Ctrl+5"; onActivated: AppState.setActiveTab(4) }
+    Shortcut { sequence: "Ctrl+1"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(0) }
+    Shortcut { sequence: "Ctrl+2"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(1) }
+    Shortcut { sequence: "Ctrl+3"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(2) }
+    Shortcut { sequence: "Ctrl+4"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(3) }
+    Shortcut { sequence: "Ctrl+5"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(4) }
     // Disabled while a modal is open so dialogs (e.g. SongEditor) can
     // claim Ctrl+Tab for their own view-mode toggles without two
     // handlers fighting over the same sequence.
-    Shortcut { sequence: "Ctrl+Tab";       enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab( 1) }
-    Shortcut { sequence: "Ctrl+Shift+Tab"; enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab(-1) }
+    Shortcut { sequence: "Ctrl+Tab";       enabled: AppState.consoleShortcutsActive; onActivated: AppState.cycleTab( 1) }
+    Shortcut { sequence: "Ctrl+Shift+Tab"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.cycleTab(-1) }
 
     // Production actions
-    Shortcut { sequence: "Ctrl+,"; onActivated: AppState.openModal("settings", {}) }
+    Shortcut { sequence: "Ctrl+,"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.openModal("settings", {}) }
     // Ctrl+K = the global search command palette (search across every library
     // at once). Toggles: closed → open, open → close. Gated so it never stacks
     // on another modal or the full-screen theme-editor workspace; the palette
@@ -592,7 +651,7 @@ ApplicationWindow {
     // "Go Live" button + schedule double-click; the keyboard shortcut
     // is reserved for the lighter operator action of showing/hiding
     // the splash/wallpaper.
-    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.toggleLogo() }
+    Shortcut { sequence: "Ctrl+L"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.toggleLogo() }
     // Ctrl+C = clear the projection (hide text, keep theme background +
     // logo). Same simple one-liner form as Ctrl+L — earlier attempts with
     // a text-input guard and Qt.ApplicationShortcut context appeared to
@@ -600,20 +659,24 @@ ApplicationWindow {
     // when a text input is focused with selected text, so in-dialog copy
     // is shadowed by Clear. Ctrl+. remains as the redundant clear
     // binding; right-click → copy still works in text fields.
-    Shortcut { sequence: "Ctrl+C"; onActivated: AppState.clearLive() }
+    Shortcut { sequence: "Ctrl+C"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.clearLive() }
     // Ctrl+. is the legacy "clear" shortcut from the Electron version —
     // kept as a backup binding that always fires (no text-input guard) so
     // operators inside a text field can still clear via this combo.
-    Shortcut { sequence: "Ctrl+."; onActivated: AppState.clearLive() }
+    Shortcut { sequence: "Ctrl+."; enabled: AppState.consoleShortcutsActive; onActivated: AppState.clearLive() }
     // Ctrl+T = stage the currently focused library item. The active tab
     // (ScriptureTab / SongsTab / MediaTab) handles via its
     // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
-    Shortcut { sequence: "Ctrl+T"; onActivated: AppState.libraryAddToSchedule() }
+    Shortcut { sequence: "Ctrl+T"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.libraryAddToSchedule() }
 
     // Save the working schedule. Updates the currently loaded saved row if
     // there is one; otherwise prompts the operator for a name (Save As).
     Shortcut {
         sequence: "Ctrl+S"
+        // Off while a dialog or the theme editor is up — both bind
+        // Ctrl+S to their own save, and an ungated one here made all
+        // three ambiguous, so none of them fired.
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             if (ScheduleService.loadedScheduleId > 0) {
                 ScheduleService.saveCurrent()
@@ -635,6 +698,7 @@ ApplicationWindow {
     // into a variant without overwriting the original.
     Shortcut {
         sequence: "Ctrl+Shift+S"
+        enabled: AppState.consoleShortcutsActive
         onActivated: AppState.openModal("naming", {
             title:       qsTr("Save schedule as"),
             placeholder: qsTr("e.g., Sunday AM - June 5"),
@@ -646,8 +710,21 @@ ApplicationWindow {
     }
 
     // Escape: close modal first; if no modal, deselect schedule item.
+    //
+    // Deliberately NOT gated on consoleShortcutsActive — ModalShell has
+    // no Escape handling of its own, so settings / naming / confirm /
+    // import / media-edit all rely on this one to close.
+    //
+    // The exclusions are the two surfaces that DO bind Escape: the song
+    // editor (which needs to intercept and warn about unsaved lyrics
+    // rather than let a blunt closeModal discard them) and the theme
+    // editor workspace. Leaving those in made Escape ambiguous, which
+    // is worse than either outcome: the key did nothing at all. Any
+    // future dialog that binds its own Escape belongs in this list.
     Shortcut {
         sequence: "Escape"
+        enabled: AppState.activeModal !== "songEditor"
+              && AppState.workspaceMode === ""
         onActivated: {
             if (AppState.activeModal !== "") {
                 AppState.closeModal()
@@ -666,8 +743,13 @@ ApplicationWindow {
     // deletion.
     Shortcut {
         sequence: "Delete"
+        // activeFocusPanel only reaches "schedule" through a deliberate
+        // schedule gesture (right-click, or a Ctrl / Shift multi-select
+        // click) — see SchedulePanel. A plain row click still leaves
+        // focus in the library, which is what keeps Delete from eating
+        // keystrokes in the sidebar search input.
         enabled: AppState.selectedScheduleIndices.length > 0
-              && AppState.activeModal === ""
+              && AppState.consoleShortcutsActive
               && AppState.activeFocusPanel === "schedule"
         onActivated: {
             const indices = AppState.selectedScheduleIndices.slice()
@@ -708,23 +790,50 @@ ApplicationWindow {
     // Keys.onShortcutOverride to avoid double-fire).
     Shortcut {
         sequence: "Up"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateUp(); break
                 case "live":    AppState.liveNavigateUp();    break
-                default:        AppState.libraryNavigateUp()
+                default:        AppState.libraryNavigateUp(false)
+            }
+        }
+    }
+    Shortcut {
+        sequence: "Shift+Up"
+        enabled: AppState.consoleShortcutsActive
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateUp(); break
+                case "live":    AppState.liveNavigateUp();    break
+                default:        AppState.libraryNavigateUp(true)
             }
         }
     }
     Shortcut {
         sequence: "Down"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateDown(); break
                 case "live":    AppState.liveNavigateDown();    break
-                default:        AppState.libraryNavigateDown()
+                default:        AppState.libraryNavigateDown(false)
+            }
+        }
+    }
+    // Shift+Arrow is the same dispatch with the extend flag set. It needs its
+    // own Shortcut because a sequence of "Up" does not match a Shift+Up press
+    // — Qt treats the modified chord as a different sequence entirely. Preview
+    // and Live have no selection to extend, so there Shift behaves as a plain
+    // arrow rather than swallowing the key.
+    Shortcut {
+        sequence: "Shift+Down"
+        enabled: AppState.consoleShortcutsActive
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateDown(); break
+                case "live":    AppState.liveNavigateDown();    break
+                default:        AppState.libraryNavigateDown(true)
             }
         }
     }
@@ -741,7 +850,7 @@ ApplicationWindow {
     // there.
     Shortcut {
         sequences: ["Return", "Enter"]
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewActivate(); break

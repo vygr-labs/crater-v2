@@ -268,6 +268,24 @@ Rectangle {
                         root.linesEdited(root.index, dsl)
                     }
                 }
+                // Ctrl+V / Ctrl+Shift+V go through RichTextHelper rather
+                // than TextEdit's built-in paste. The built-in one hands the
+                // clipboard's text/html straight to QTextDocument, so a verse
+                // copied off a lyrics site arrives carrying that page's
+                // background slab, body color, family and size — and the
+                // colour then bakes into the DSL and overrides the theme on
+                // the projector. pasteFiltered keeps bold / italic /
+                // underline and nothing else. Shift = paste as plain text.
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_V
+                        && (event.modifiers & Qt.ControlModifier)) {
+                        RichTextHelper.pasteFiltered(
+                            linesEdit,
+                            !(event.modifiers & Qt.ShiftModifier))
+                        event.accepted = true
+                    }
+                }
+
                 onActiveFocusChanged: {
                     if (activeFocus) {
                         root.focused(root.index)

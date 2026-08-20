@@ -48,11 +48,22 @@ These are three different computational problems and the system runs all three
 concurrently over the same transcript stream.
 
 **Citation** is deterministic parsing. Spoken words to a normalized reference
-string, then handed to the existing `BibleService::parseReference`. We do not
-write a second book-name resolver — `crater::import::lookupBook` already does
-exact, alias, prefix, subsequence, and bounded-edit-distance matching, which
-is exactly the tolerance a mangled transcript needs. "Fill of pians" resolving
-to Philippians is a problem that codebase already solved.
+string, then handed to the existing `BibleService::parseReference`.
+
+The plan here was to reuse `crater::import::lookupBook` wholesale, on the
+grounds that its exact / alias / prefix / subsequence / edit-distance tiers are
+exactly the tolerance a mangled transcript needs. That turned out to be half
+right, and the half that was wrong matters. `lookupBook` is tuned for an
+operator at a search box, where a wrong guess costs one keystroke: it accepts
+subsequences and edit distance up to three, which over sermon prose makes "in"
+a match for 1 K**in**gs and "page" a match for Jude at distance three. Run over
+arbitrary speech it answers for nearly every clause.
+
+So the scanner uses a strict spoken-form table, and fuzzy matching comes back
+only where surrounding structure has established intent —
+`lookupBookNearMiss()`, which drops the prefix and subsequence tiers entirely,
+takes a hard distance cap (one edit under eight characters, two above), matches
+canonical names only, and refuses ties. See §4.3.1 for what forced this.
 
 **Quotation** is lexical retrieval. The transcript window goes at the existing
 FTS5 trigram index over `verses.text` via `BibleService::search`. Near-verbatim
@@ -242,6 +253,43 @@ Bare "verse N" with no book requires an active `RefContext` less than ~6
 minutes old, otherwise it's discarded. Sermons wander, and a verse number
 recovered from context ten minutes stale is a coin flip.
 
+### 4.3.1 When the recognizer mishears the book
+
+The first live microphone run transcribed "turn with me to john chapter 3 verse
+16" as *"turn with me to **join** chapter 3 verse 16"*. One substituted letter,
+word error rate 11.1%, and the most-cited verse in English preaching stopped
+being detected at all.
+
+The obvious fix — loosen the rescue's five-character floor — is the wrong one.
+Between the cue and the chapter, four-letter words that `lookupBook` will
+happily resolve are everywhere: "page" reaches Jude at distance three, "slide"
+and "point" reach others. Loosening the length while keeping distance-three
+tolerance trades one missed citation for a class of fabricated ones, and a
+fabricated reference at `certain` tier is the worst output this subsystem can
+produce.
+
+What licenses a guess is **structure on both sides**, not a looser matcher:
+
+- an intent cue immediately before the candidate ("turn with me to …"), and
+- a chapter keyword, verse keyword, or number immediately after it, and
+- a distance cap of one edit at this length, via `lookupBookNearMiss` rather
+  than `lookupBook`, and
+- the token is not a function word, and
+- the exact table has already declined it.
+
+All five together. "join" between "turn with me to" and "chapter" satisfies
+them; "page" in "turn to page four" satisfies four of five and fails on the
+distance cap, which is the only one that separates them.
+
+**Both rescue paths emit `high`, never `certain`.** A book name we had to guess
+at is not the evidence a book name we read is, and §5's rule that tier is a
+property of the path makes that a tier difference rather than a score
+adjustment. The practical consequence is the whole safety story here: at `high`
+even Auto mode stages and stops, so the cost of a wrong guess is an operator
+glancing at a wrong chip rather than a congregation reading one. This also
+downgrades the pre-existing "phillipians chapter four" rescue, which had been
+emitting `certain` on the same kind of evidence.
+
 ---
 
 ## 5. Confidence tiers and the trust model
@@ -355,6 +403,132 @@ first. That is deliberate and not speculative generality: the offline
 constraint is a decision this church-software domain revisits, and a cloud or
 Vosk backend must be a file, not a refactor.
 
+### 7.1.1 Suggestions while the sentence is still being spoken
+
+Pause-based segmentation is right for accuracy and, on its own, unusable
+live. The gate closes an utterance after 600 ms of silence with a 15 s
+backstop, so a preacher in full flow says "turn with me to John three sixteen"
+and the operator sees nothing until they stop for breath. The first live run
+reported exactly that: *"I want it to bring suggestions as we talk."*
+
+So the utterance in progress is re-transcribed on a cadence — `transcribeInterim()`
+emits `partial()`, and detection runs on the result. Three constants
+(`NarrationService.cpp`):
+
+| | | |
+|---|---|---|
+| `kInterimMs` | 900 | cadence. Was 1200 while interim passes ran on the operator's full model; the draft model below removed that as the binding constraint |
+| `kInterimMinMs` | 900 | skip passes over a word or two, where spurious matches come from |
+| `kInterimWindowMs` | 5000 | tail re-read. Longer than any single spoken citation, short enough that the hypothesis is about the phrase being spoken now |
+
+Interim work shares the `kMaxInFlight` budget with real utterances and
+deliberately yields to them: a partial that crowded out the finished utterance
+behind it would trade a result the operator can act on for a guess that is
+about to be superseded. The same verse is normally found twice — once on a
+partial, once on the final — and the 20 s de-duplication window collapses them.
+
+**A partial may never be projected.** Not "should not": the trust gate takes
+`fromPartial` and caps the outcome at `staged`, so the single cell that would
+have gone live (certain × auto) becomes staged and every other cell is
+untouched. "Turn to John three" identifies John 3:1 with complete confidence
+and is wrong the moment the next word is "sixteen"; Auto mode exists to remove
+the human from the loop, which is precisely why it must not be handed an
+unfinished sentence. Asserted over the whole tier × mode matrix in
+`test_narration_service`.
+
+### 7.1.1.1 Two models, because the two passes want opposite things
+
+The first version ran both passes on the operator's chosen model, and the
+second live run reported the predictable result: *"the delay is annoying."*
+
+The two passes are not the same job. A finished utterance is the answer an
+operator acts on and has to be right. An in-progress hypothesis is superseded a
+second later and can never project, so its only real failure mode is arriving
+too late to be a hypothesis at all. Running the careful model on both makes the
+fast path as slow as the careful one and buys nothing.
+
+So `SpeechRecognizer::loadDraft()` takes an optional second model that answers
+`transcribeInterim()` only. `NarrationService::draftModelPath()` discovers it
+beside the main model, scanning candidates in speed order and **stopping at the
+operator's own model** — reaching it means theirs is already at least that
+fast, and a draft slower than the real thing would spend a second model's
+memory to produce the guess later than the answer.
+
+Two contexts, one worker thread. Serializing the passes is deliberate: a draft
+pass stealing cores from the final pass it exists to precede would be
+self-defeating.
+
+The other half is `audio_ctx`. Whisper pads every input to a 30-second mel
+spectrogram before the encoder runs, so a two-second clip costs very nearly
+what a thirty-second one does — which is why shortening `kInterimWindowMs`, on
+its own, buys much less than it looks like it should. `audio_ctx` caps how much
+of that padded window the encoder attends to and is the only parameter that
+makes encoder cost track the audio actually present. Interim only; the final
+pass keeps the full context.
+
+Measured on a 15 s desk-microphone recording of "turn with me to John chapter 3
+verse 16", i7-8750H, CPU only, 11 threads:
+
+| config | wall clock | WER |
+|---|---|---|
+| `small.en`, final pass (unchanged) | 13.8 s | 11.1% |
+| `base.en`, final pass | 13.5 s | 44.4% |
+| `base.en`, interim params (`audio_ctx`, single segment, no temperature fallback) | 2.0 s | 22.2% |
+| `small.en` + `base.en` draft, interim pass — **shipping** | 3.1 s | 22.2% |
+
+The interim parameters alone take the same model from 13.5 s to 2.0 s *and*
+improve its accuracy, because the temperature fallback they disable was
+spending its retries on the noise floor. Net effect: the operator sees a
+suggestion roughly 4.5x sooner, at about double the word error rate, on a
+hypothesis that is corrected within seconds and could never have projected.
+
+### 7.1.2 Level, and why the first live run heard the wrong words
+
+Whisper is trained on roughly normalized speech. A congregation microphone six
+feet from a preacher does not deliver that — a laptop array at conversational
+distance lands near -30 dBFS peak, about a sixth of full scale — and the model
+answers a quiet prompt with confident invention rather than silence. That is
+what "it's not picking my words correctly" turned out to mean.
+
+`WhisperRecognizer` now scales every utterance to a 0.90 peak before
+inference. Plain gain, one factor across the buffer, so nothing about the
+speech changes except how loud it is. It attenuates too, since a clipped desk
+mic is no better than a quiet lid array. Gain is capped at 25x so a near-silent
+buffer cannot be blown up to full scale.
+
+Both passes run through one function so a change to the audio handling cannot
+land on the final pass and miss the interim one.
+
+**The silence floor is the expensive part.** The first version of this gate
+read the loudest single sample and skipped buffers peaking under about -48
+dBFS. A door click or a plosive clears that easily while carrying no speech at
+all, so a silent buffer with one transient in it was licensing 25x gain on
+ventilation noise — and whisper was dutifully finding words in the result.
+
+What that costs is not a wrong transcript, it is the worst latency case in the
+system. Measured on the same recording: five seconds of a quiet office took
+**4.8 s idle and 18-26 s under load** to return an empty string, and ten
+seconds of it came back `"(clippers buzzing)"`. Every one of those seconds is a
+second the recognizer thread is unavailable for the sentence actually being
+spoken, and with `kMaxInFlight` at 2 it is also where dropped utterances come
+from. A large part of "the delay is annoying" was this, not model speed.
+
+The fix is RMS rather than peak, and an early return rather than a skipped
+amplification — there are no words in a quiet room, and confirming that is not
+worth twenty seconds of the only recognizer thread. Levels from that recording:
+
+| window | peak | RMS | heard | before | after |
+|---|---|---|---|---|---|
+| 5 s, no speech | -49.1 dBFS | -69.6 dBFS | — | 4.8 s | 0.00 s |
+| 10 s, no speech | -33.9 dBFS | -65.6 dBFS | `(clippers buzzing)` | 2.6 s | 0.00 s |
+| 15 s, with speech | -18.2 dBFS | -40.5 dBFS | the sentence | 1.9 s | 1.9 s |
+
+Peak separates those windows by 15 dB and misorders them; RMS separates them by
+25 dB and orders them correctly. `kSpeechRmsFloor` sits in the middle of that
+gap at about -55 dBFS. It is deliberately far looser than VoiceGate's -38 dBFS
+speech threshold, so anything the gate was confident enough to forward passes
+comfortably — this catches what the gate let through, not what it decided.
+
 ### 7.2 Allusion: flat vector retrieval
 
 Sentence embeddings over every verse, brute-force cosine against the rolling
@@ -460,6 +634,12 @@ distance on both sides of the comparison. And the loose paraphrase editions
 score *worst*, not best — MSG and TPT paraphrase in their own idiom, which is
 not the idiom anyone reaching for that verse would use.
 
+One caveat this table cannot show, because it only measures true positives:
+being closer to modern speech pulls in the announcements too. Measured end to
+end in §7.3.2, the NKJV index leaks false positives at the same settings where
+the KJV index leaks none. Higher similarity to paraphrase is not the same as
+better separation, and separation is what the gates need.
+
 The shipped index is **KJV** regardless, for a reason the numbers do not
 capture: it is public domain. An index holds int8 vectors and coordinates
 rather than text, but "is a derived vector index a redistributable work?" is a
@@ -478,8 +658,16 @@ Three gates, all required:
 
 1. **Content floor**: ≥5 non-stopword tokens, checked **per window** rather
    than over the whole utterance.
-2. **Absolute threshold** on top-1 similarity.
-3. **Cluster size**: how many verses sit within 0.04 of the best hit.
+2. **Absolute threshold** on top-1 similarity — on the *top hit only*.
+3. **Cluster size**: how many verses sit within 0.04 of the best hit. Membership
+   is **relative only**; it deliberately does not re-apply gate 2.
+
+Gates 2 and 3 answer different questions and must not be spent on each other.
+Gate 2 asks "is this utterance near scripture at all", which is absolute. Gate 3
+asks "which verses answer it *together with* the best one", which is meaningful
+only relative to that best one. Requiring cluster members to also clear the
+absolute threshold collapsed the 0.04 window to nothing whenever the top hit sat
+near it — see §7.3.1.
 
 Even clearing all three, the result is tier **Possible**, which per §5 never
 fires on its own.
@@ -517,21 +705,98 @@ scores high only by being vaguely near a crowd:
 | 1 John 1:9 | 0.863 | 1 | "if we admit what we have done wrong he will forgive us" |
 | Romans 8:28 | 0.822 | 2 | "everything works out for good for the people who love god" |
 | Psalms 23:1 | 0.786 | 3 | "the lord takes care of me like a shepherd" |
-| Revelation 22:21 | 0.775 | 8 | *"good morning church, wonderful to see everybody"* |
-| Psalms 66:8 | 0.755 | 8 | *"thank the worship team for leading us"* |
+| 1 John 4:9 | 0.779 | 7 | "god loved us so much that he sent his own son to die" |
+| Revelation 22:21 | 0.775 | 8+ | *"good morning church, wonderful to see everybody"* |
+| Psalms 66:8 | 0.755 | 8+ | *"thank the worship team for leading us"* |
 
-At `minScore 0.78` and `maxCluster 3` that is **5 of 8 paraphrases and 0 of 10
-announcements**. The asymmetry is deliberate: this tier populates a suggestion
-queue, where a wrong entry costs the operator's trust and a missing one costs
-nothing they would notice.
+`--calibrate` probes eight deep, so a cluster of 8 means "eight or more" — the
+matcher itself probes 16 precisely so a seven-verse cluster is a measurement
+rather than a guess. A cluster that fills the probe is rejected, since k
+near-ties cannot be told apart from k-and-counting.
 
-**A known limitation, stated rather than hidden.** §2's own flagship example —
-"God loved us so much that he sent his own son to die" — does *not* fire. It
-lands on a cluster of seven (1 John 4:9 at 0.779, Romans 5:8, John 3:16, and
-four more), and the gate reads that as a theme. It is not wrong to: scripture
-states the gospel in many places, so the phrase really does not identify one
-verse. The honest framing is that this path catches paraphrases of
-**distinctive** verses, not of central doctrines.
+**The two gates were fighting each other.** At `minScore 0.78` and
+`maxCluster 3` the result was 5 of 8 paraphrases and 0 of 10 announcements, and
+§2's own flagship example — "God loved us so much that he sent his own son to
+die" — was among the misses. Raising `maxCluster` alone changed nothing, which
+is what exposed the real bug: cluster *membership* also required each member to
+clear `minScore`, so with a top hit at 0.779 and a threshold at 0.780 the 0.04
+window admitted a band 0.001 wide. Six genuine co-answers were filtered out
+before anything counted them, and the crowd gate was measuring a crowd of one.
+
+Making membership relative-only fixed it, and made the path **stricter** on
+noise rather than looser: announcement clusters grew too, so they are now
+rejected by crowd size at thresholds where they previously slipped through.
+
+**The absolute threshold is a floor, not the discriminator.** Sweeping it with
+`--gates --min-score` produces one flat plateau:
+
+| minScore | paraphrases | announcements |
+|---|---|---|
+| 0.650 | 6/8 | **3/10** |
+| 0.680 | 6/8 | **2/10** |
+| 0.700 | 6/8 | **1/10** |
+| 0.720 – 0.778 | 6/8 | 0/10 |
+| 0.780 and up | **5/8** | 0/10 |
+
+Everything inside 0.720–0.778 behaves identically, because inside it gate 3
+decides every case. The edges are sharp: below 0.720 announcements start
+clearing gate 2, and at 0.780 the gospel paraphrase dies on its 0.779 top hit.
+**0.75** is the midpoint, ~0.03 clear of both. A value tucked just inside one
+edge is a value that moves the next time the index is rebuilt.
+
+**`maxCluster` is 7 because the canon says so.** The gospel paraphrase resolves
+to 1 John 4:9, Romans 5:8, John 3:16, Romans 5:10, 1 John 4:10, 1 John 4:11 and
+2 Thessalonians 2:16. Five are squarely what was paraphrased; the last two are
+adjacent. The claim is therefore not "seven right answers" but "the right verse
+is in the offered set, and the set is short enough to scan" — the correct bar
+for a queue. Seven is also structurally safe rather than luckily safe: the
+announcements that have to be rejected cluster at **eight or more**, so the
+boundary sits in a real gap instead of splitting a continuum.
+
+The asymmetry throughout is deliberate: this tier populates a suggestion queue,
+where a wrong entry costs the operator's trust and a missing one costs nothing
+they would notice.
+
+**The two remaining misses.** "Do not be anxious about tomorrow" (Matthew 6:34)
+and "God has plans to give you a future and a hope" (Jeremiah 29:11) still do
+not fire at any threshold — lowering `minScore` to 0.65 does not recover them,
+so their tops are crowded rather than distant. Catching them needs a better
+sentence encoder, not a looser gate.
+
+### 7.3.2 The operating point does not transfer between translations
+
+Everything above is measured against `allusion-KJV.crai`. Running the identical
+config against `allusion-NKJV.crai` gives **2 of 10 false positives**: "good
+morning church, it is wonderful to see everybody here today" returns Titus 3:15,
+1 Peter 5:14, Philippians 4:21 and 2 Corinthians 13:14, and the thanks-to-the-
+worship-team line returns seven verses.
+
+| | KJV | NKJV |
+|---|---|---|
+| `minScore 0.75`, `maxCluster 7` | 6/8, **0**/10 | 6/8, **2**/10 |
+| `minScore 0.75`, `maxCluster 3` | 5/8, 0/10 | 5/8, 0/10 |
+| `minScore 0.82`, `maxCluster 7` | 4/8, 0/10 | 4/8, 0/10 |
+
+Both parameters move, and no single pair is best for both. The cause is the
+same property §7.2 measured as an advantage: the NKJV is modern English, so a
+modern paraphrase sits closer to it — but so does a modern *announcement*.
+Greeting a congregation is genuinely near "Greet those who love us in the
+faith" once both are in contemporary wording. The KJV's archaic register is a
+poor match for paraphrase and an even poorer one for church admin, and that gap
+is what the gates have been living on. §7.2's conclusion therefore needs the
+qualifier it did not have: a modern translation raises recall and lowers
+precision together.
+
+**Consequence, and the shape of the fix.** Gate thresholds are a property of
+*the index*, not of the matcher, so they belong in the `.crai` header beside the
+model id — calibrated when the index is built, applied when it is loaded. That
+is a format change and is not done yet. Until it is, only the calibrated KJV
+index is discoverable; an uncalibrated index must not be left in the models
+directory where `allusionIndexPath()` will prefer it over the fallback.
+
+This costs nothing in what the operator reads. Detection returns coordinates and
+display follows the operator's own translation selection (§11), so a KJV-built
+index projects NKJV text exactly as before.
 
 **The margin test is gone**, and its removal is the reason cluster size
 exists. A top-1-versus-top-2 gap cannot tell three correct co-answers from
@@ -590,6 +855,7 @@ else. Crater with narration disarmed must still hit every number in §6.
 |---|---|
 | Additional resident memory, armed (`small.en`) | < 550 MB |
 | Additional resident memory, armed (`base.en`) | < 300 MB |
+| Draft model, when one is found (§7.1.1.1) | + ~110 MB (`base.en` q5_1: 59 MB weights, rest compute buffers) |
 | Speech to on-screen, Certain tier | < 2.5 s |
 | **Main-thread** detector work per utterance | < 20 ms |
 | Quotation pass (own thread) | < 250 ms |

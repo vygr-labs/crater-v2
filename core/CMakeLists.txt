@@ -337,6 +337,23 @@ if(CRATER_WITH_EMBEDDINGS)
         VERBATIM)
 endif()
 
+# Developer tool, not shipped: records through the real AudioTap, reports
+# levels, and scores recognition against known text (word error rate).
+#
+# Built unconditionally, unlike build_allusion_index. Two of its four modes
+# (--list, --record, --analyze) diagnose the audio chain and need no model at
+# all, and those are exactly the modes someone reaches for when the answer to
+# "why is it mishearing me" might be "the microphone is wrong" — a question
+# that should not require rebuilding with speech support to ask.
+#
+# It writes audio to disk, which docs/narration.md §8 forbids for crater.exe.
+# The distinction is consent: this binary records only what a developer
+# explicitly asks it to, to a path they name. The application's microphone
+# opens in a room full of people who agreed to no such thing.
+add_executable(narration_bench tools/narration_bench.cpp)
+target_link_libraries(narration_bench PRIVATE Qt6::Core Qt6::Multimedia crater-core)
+target_include_directories(narration_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 add_library(Crater::Core ALIAS crater-core)
 
 # Headless unit tests. Off by default so dev rebuilds stay snappy; enable

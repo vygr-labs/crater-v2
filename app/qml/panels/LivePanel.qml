@@ -425,7 +425,6 @@ Rectangle {
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
                     onClicked: {
-                        AppState.liveSubIndex = index
                         // Claim arrow-key navigation for this panel —
                         // mirrors PreviewPanel. Subsequent Up/Down moves
                         // through the live page list.
@@ -434,12 +433,14 @@ Rectangle {
                         // The Live pane is a control surface, not a
                         // preview — clicking a card is the operator
                         // commanding "audience sees this now", not just
-                        // changing what the mini monitor renders. setPage
-                        // is a no-op when the page is already current,
-                        // and clears the m_isClear flag as a side effect
-                        // (correct: an explicit click implies "show",
-                        // overriding a previous Clear).
-                        ProjectionService.setPage(index)
+                        // changing what the mini monitor renders.
+                        // commitLivePage re-reads an edited song before
+                        // committing (a bare setPage would re-show the
+                        // pre-edit snapshot) and otherwise degrades to
+                        // setPage, which is a no-op when the page is
+                        // already current. Both paths leave a standing
+                        // Clear alone.
+                        AppState.commitLivePage(index)
                     }
                 }
             }
@@ -465,14 +466,12 @@ Rectangle {
             // keypresses don't burn a re-render.
             function onLiveNavigateUp() {
                 if (root.pages.length === 0) return
-                AppState.liveSubIndex = Math.max(AppState.liveSubIndex - 1, 0)
-                ProjectionService.setPage(AppState.liveSubIndex)
+                AppState.commitLivePage(Math.max(AppState.liveSubIndex - 1, 0))
             }
             function onLiveNavigateDown() {
                 if (root.pages.length === 0) return
-                AppState.liveSubIndex = Math.min(AppState.liveSubIndex + 1,
-                                                 root.pages.length - 1)
-                ProjectionService.setPage(AppState.liveSubIndex)
+                AppState.commitLivePage(Math.min(AppState.liveSubIndex + 1,
+                                                 root.pages.length - 1))
             }
             function onLiveSubIndexChanged() {
                 // Fires on every liveSubIndex update — click, key,
@@ -512,7 +511,7 @@ Rectangle {
     //   • Compact: 160×90 thumb anchored left, with the item info
     //     column on the right (title + "Slide N of M").
     //   • Fullsize (media items): centered, expanded to fit the body area.
-    // Live shares Preview's base size (160×90). The crimson border on the
+    // Live shares Preview's compact sizing rule. The crimson border on the
     // monitor frame is enough visual separation — making live physically
     // larger would over-emphasise it and break the paired-pane symmetry.
     Item {
@@ -532,8 +531,18 @@ Rectangle {
                                           - Theme.space.md
                                           - Theme.space.lg
 
-        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : 160
-        height: fullsize ? width * 9 / 16                        : 90
+        // Compact size tracks the pane instead of sitting at a hard 160x90.
+        // The old constant meant the monitor never grew with the window: on
+        // a wide console the operator got a postage stamp in a 900px pane,
+        // which is the surface they actually watch. The floor keeps a 1080p
+        // console identical to before (0.30 of that pane is under 160), and
+        // the ceiling stops the monitor eating the pages list on an
+        // ultrawide. monitorInfo beside it just elides earlier.
+        readonly property real compactWidth:
+            Math.max(160, Math.min(288, parent.width * 0.30))
+
+        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : compactWidth
+        height: width * 9 / 16
 
         state: fullsize ? "fullsize" : "compact"
         states: [
