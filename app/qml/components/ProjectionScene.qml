@@ -167,11 +167,37 @@ Item {
         return kind + ":" + (item.title || "")
     }
 
+    // Content fingerprint. Identity alone is not enough to decide "did the
+    // live content change?" — two commits can share an identity and still
+    // render differently:
+    //   • the operator edits a song and re-commits the SAME verse. songId
+    //     and page are unchanged; the lyrics are not.
+    //   • the operator flips an image's fit mode in the preview fit bar and
+    //     presses Enter. mediaPath and page are unchanged; fitMode is not.
+    // Both used to be swallowed by the identity-only tag, so the audience
+    // kept seeing the pre-edit render until the operator stepped off the
+    // slide and back. Serializing the whole item map catches every such
+    // field without enumerating them, and keeps a genuinely-redundant
+    // re-commit (same item, same page, same everything) debounced — which
+    // matters because a fadeBlack transition on a no-op commit would flash
+    // the audience screen for no reason.
+    function _contentFingerprint(item) {
+        if (!item) return ""
+        try {
+            return JSON.stringify(item)
+        } catch (e) {
+            // Cyclic or non-serializable map — degrade to identity-only
+            // debouncing rather than throwing out of the signal handler.
+            return ""
+        }
+    }
+
     function _buildTag(item, kind, page, crop) {
         return _itemIdentity(item, kind)
              + "|" + kind
              + "|" + page
              + "|" + crop.x + "," + crop.y + "," + crop.width + "," + crop.height
+             + "|" + _contentFingerprint(item)
     }
 
     function _promoteLayers() {

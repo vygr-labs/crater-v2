@@ -193,6 +193,11 @@ QtObject {
     // (see ProjectionService.h). The operator's next Go Live picks up the
     // refreshed item, which is the gesture they were already making.
     function refreshStagedSong() {
+        _refreshStagedPreviewSong()
+        _refreshScheduleSongs()
+    }
+
+    function _refreshStagedPreviewSong() {
         const staged = libraryPreviewItem
         if (!staged || staged.kind !== "song" || !staged.songId) return
 
@@ -211,6 +216,98 @@ QtObject {
         // edit removed sections so the index never points past the end.
         if (previewSubIndex >= rebuilt.pages.length)
             previewSubIndex = Math.max(0, rebuilt.pages.length - 1)
+    }
+
+    // Same staleness, one layer down. Schedule rows store a song's lyrics
+    // INLINE (see ScheduleService), so a song edit left every schedule row
+    // quoting the pre-edit text — and Preview / Live both read schedule rows
+    // when the operator is driving from the schedule rather than the library.
+    // Rebuild each affected row in place; ScheduleService.replaceItem no-ops
+    // when the rebuilt row is byte-identical, so an unrelated song edit does
+    // not dirty the schedule.
+    function _refreshScheduleSongs() {
+        const items = ScheduleService.currentItems
+        for (let i = 0; i < items.length; i++) {
+            const merged = _songContentMerged(items[i])
+            if (merged) ScheduleService.replaceItem(i, merged)
+        }
+        // Clamp the staged page when the edit shortened the selected row.
+        const sel = (selectedScheduleIndex >= 0
+                     && selectedScheduleIndex < ScheduleService.currentItems.length)
+                        ? ScheduleService.currentItems[selectedScheduleIndex] : null
+        if (sel && sel.pages && previewSubIndex >= sel.pages.length)
+            previewSubIndex = Math.max(0, sel.pages.length - 1)
+    }
+
+    // Re-read `row`'s song from the library and fold the fresh lyrics back
+    // into a COPY of the row. Returns null when there is nothing to do — the
+    // row is not a song, the song is gone, or its content is unchanged.
+    //
+    // Merging rather than substituting matters: a schedule row carries fields
+    // buildSongItem knows nothing about — ScheduleService stamps every row
+    // with a uuid `id`, and the row may hold a per-item `themeId` override the
+    // song itself does not have. Replacing the row wholesale would drop both.
+    // A deleted song leaves its row alone: pulling rows out from under the
+    // operator mid-service is worse than a stale one, and the row is still
+    // removable by hand.
+    function _songContentMerged(row) {
+        if (!row || row.kind !== "song" || !row.songId) return null
+        const fresh = SongService.fetchSong(row.songId)
+        if (!fresh || !fresh.id) return null
+        const rebuilt = buildSongItem(fresh)
+        if (!rebuilt) return null
+
+        let merged = {}
+        for (const k in row) merged[k] = row[k]
+        merged.title    = rebuilt.title
+        merged.subtitle = rebuilt.subtitle
+        merged.pages    = rebuilt.pages
+        // The row's own theme pin wins; adopt the song's only when the row
+        // never had one.
+        if (!merged.themeId) merged.themeId = rebuilt.themeId
+
+        if (_itemContentDigest(merged) === _itemContentDigest(row)) return null
+        return merged
+    }
+
+    // Stable content digest for a canonical item. Order-independent of the
+    // map's key order, which matters because an item that has been through
+    // C++ comes back as an alphabetically-keyed QVariantMap while a freshly
+    // built one carries its literal key order — JSON.stringify would call
+    // those two different even when they hold identical content.
+    function _itemContentDigest(item) {
+        if (!item) return ""
+        const pages = item.pages || []
+        let flat = []
+        for (let i = 0; i < pages.length; i++) {
+            const p = pages[i] || {}
+            flat.push([p.label || "", p.content || ""])
+        }
+        // JSON over an ARRAY, not the map: array order is ours, so the digest
+        // is stable no matter which side built the item.
+        return JSON.stringify([item.title || "", item.subtitle || "",
+                               item.themeId || 0, flat])
+    }
+
+    // Live-pane commit — "the audience sees this page now".
+    //
+    // A bare ProjectionService.setPage() re-uses whatever was snapshotted at
+    // the last go-live. That snapshot is deliberate (ProjectionService.h: an
+    // in-progress edit must not leak to the audience), but it stranded the
+    // operator after a song edit: Preview showed the new lyrics, the projector
+    // kept the old ones, and clicking the same verse changed nothing because
+    // the page index had not moved. The only way out was to step to another
+    // verse and back.
+    //
+    // Clicking or arrowing onto a live card IS an explicit commit, so re-read
+    // the song first and re-stage when its content actually changed. Anything
+    // else — media, scripture, an unedited song — falls through to the cheap
+    // setPage() path, so live behaviour is otherwise untouched.
+    function commitLivePage(i) {
+        liveSubIndex = i
+        const restaged = _songContentMerged(ProjectionService.currentItem)
+        if (restaged) _projectItemLive(restaged, i)
+        else          ProjectionService.setPage(i)
     }
 
     // Route a go-live through the crop-aware overload for media items so a

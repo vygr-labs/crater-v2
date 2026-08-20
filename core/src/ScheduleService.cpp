@@ -257,6 +257,16 @@ void ScheduleService::setItemTheme(int index, qint64 themeId)
     emit currentItemsChanged();
 }
 
+void ScheduleService::replaceItem(int index, QVariantMap item)
+{
+    if (!m_impl || index < 0 || index >= m_impl->items.size()) return;
+    const QJsonObject next = QJsonObject::fromVariantMap(item);
+    if (m_impl->items[index].toObject() == next) return;   // nothing moved
+    m_impl->items[index] = next;
+    markDirty();
+    emit currentItemsChanged();
+}
+
 qint64 ScheduleService::saveAs(QString name)
 {
     if (!m_impl) return 0;

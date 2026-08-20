@@ -425,7 +425,6 @@ Rectangle {
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
                     onClicked: {
-                        AppState.liveSubIndex = index
                         // Claim arrow-key navigation for this panel —
                         // mirrors PreviewPanel. Subsequent Up/Down moves
                         // through the live page list.
@@ -434,12 +433,14 @@ Rectangle {
                         // The Live pane is a control surface, not a
                         // preview — clicking a card is the operator
                         // commanding "audience sees this now", not just
-                        // changing what the mini monitor renders. setPage
-                        // is a no-op when the page is already current,
-                        // and clears the m_isClear flag as a side effect
-                        // (correct: an explicit click implies "show",
-                        // overriding a previous Clear).
-                        ProjectionService.setPage(index)
+                        // changing what the mini monitor renders.
+                        // commitLivePage re-reads an edited song before
+                        // committing (a bare setPage would re-show the
+                        // pre-edit snapshot) and otherwise degrades to
+                        // setPage, which is a no-op when the page is
+                        // already current. Both paths leave a standing
+                        // Clear alone.
+                        AppState.commitLivePage(index)
                     }
                 }
             }
@@ -465,14 +466,12 @@ Rectangle {
             // keypresses don't burn a re-render.
             function onLiveNavigateUp() {
                 if (root.pages.length === 0) return
-                AppState.liveSubIndex = Math.max(AppState.liveSubIndex - 1, 0)
-                ProjectionService.setPage(AppState.liveSubIndex)
+                AppState.commitLivePage(Math.max(AppState.liveSubIndex - 1, 0))
             }
             function onLiveNavigateDown() {
                 if (root.pages.length === 0) return
-                AppState.liveSubIndex = Math.min(AppState.liveSubIndex + 1,
-                                                 root.pages.length - 1)
-                ProjectionService.setPage(AppState.liveSubIndex)
+                AppState.commitLivePage(Math.min(AppState.liveSubIndex + 1,
+                                                 root.pages.length - 1))
             }
             function onLiveSubIndexChanged() {
                 // Fires on every liveSubIndex update — click, key,
