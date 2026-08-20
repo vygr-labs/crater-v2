@@ -1097,6 +1097,21 @@ QtObject {
     // Analogous to electron's FocusContext.currentPanel().
     property string activeFocusPanel: "library"   // "library" | "schedule" | "preview" | "live"
 
+    // True when the operator console itself owns the keyboard: no modal
+    // over it, no full-screen workspace in front of it.
+    //
+    // Every window-level Shortcut in Main.qml gates on this. Qt resolves a
+    // sequence across ALL enabled Shortcuts in the window, and when two
+    // match it fires activatedAmbiguously() on both rather than activated()
+    // on either — so an ungated console shortcut does not merely run at a
+    // bad moment, it silently kills the dialog's binding for the same keys.
+    // That is what happened to Ctrl+S (console "save schedule" against the
+    // song editor's and the theme editor's own saves) and to Up / Down
+    // (console page navigation against the theme editor's node nudge).
+    readonly property bool consoleShortcutsActive:
+        activeModal === "" && workspaceMode === ""
+
+
     function setActiveFocus(panel) {
         if (!panel || panel === activeFocusPanel) return
         activeFocusPanel = panel
