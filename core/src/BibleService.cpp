@@ -10,6 +10,7 @@
 
 #include <QDebug>
 #include <QRegularExpression>
+#include <QVariantMap>
 #include <QtConcurrent>
 
 namespace crater {
@@ -223,23 +224,25 @@ QList<Verse> BibleService::allVerses(QString translationCode)
     return out;
 }
 
-Verse BibleService::parseReference(QString input, QString translationCode)
+QVariantMap BibleService::parseReferenceRange(QString input)
 {
-    Verse invalid;  // text stays empty — sentinel for "no parse"
+    QVariantMap invalid;
+    invalid[QStringLiteral("valid")] = false;
     const QString trimmed = input.trimmed();
     if (trimmed.isEmpty()) return invalid;
 
-    // Three capture groups:
+    // Four capture groups:
     //   1) book token — either "1 John" / "1John" / "Song of Solomon" / "jn"
     //   2) chapter (optional — defaults to 1 when omitted, so "exo" → Exodus 1:1)
     //   3) verse   (optional — defaults to 1 when omitted, so "John 3" → John 3:1)
+    //   4) range end (optional — "John 3:16-18" → verses 16 through 18)
     // The first alternative for the book greedily handles digit-prefixed books
     // so "1 John 3:16" doesn't split as ["John", "1", "3"] with stray digits.
     // Chapter+verse are wrapped in an outer optional group so the operator
     // gets a live "Interpreted" hint after just typing a book prefix — they
     // see "Exodus 1:1" the moment "exo" resolves, before they type a chapter.
     static const QRegularExpression rx(QStringLiteral(
-        R"(^\s*([1-3]\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*|[a-zA-Z]+(?:\s+[a-zA-Z]+)*)(?:\s*(\d+)(?:\s*[:\s]\s*(\d+))?)?\s*$)"));
+        R"(^\s*([1-3]\s*[a-zA-Z]+(?:\s+[a-zA-Z]+)*|[a-zA-Z]+(?:\s+[a-zA-Z]+)*)(?:\s*(\d+)(?:\s*[:\s]\s*(\d+)(?:\s*-\s*(\d+))?)?)?\s*$)"));
 
     const auto m = rx.match(trimmed);
     if (!m.hasMatch()) return invalid;
@@ -249,6 +252,12 @@ Verse BibleService::parseReference(QString input, QString translationCode)
     const int chapterNum     = chapterCap.isEmpty() ? 1 : chapterCap.toInt();
     const QString verseCap   = m.captured(3);
     const int verseNum       = verseCap.isEmpty() ? 1 : verseCap.toInt();
+    const QString endCap     = m.captured(4);
+    // A backwards range ("16-12") is a typo, not an instruction to walk
+    // upwards — clamp it to the opening verse rather than silently
+    // staging a reversed passage.
+    const int endNum         = endCap.isEmpty() ? verseNum
+                                                : qMax(verseNum, endCap.toInt());
 
     // Try exact lookup first (canonical name / abbrev / known alias). If
     // that fails — common when the operator types a short prefix like
@@ -290,7 +299,30 @@ Verse BibleService::parseReference(QString input, QString translationCode)
     }
     if (!bookMeta.has_value()) return invalid;
 
-    return verse(translationCode, bookMeta->name, chapterNum, verseNum);
+    QVariantMap out;
+    out[QStringLiteral("valid")]      = true;
+    out[QStringLiteral("book")]       = bookMeta->name;
+    out[QStringLiteral("chapter")]    = chapterNum;
+    out[QStringLiteral("verseStart")] = verseNum;
+    out[QStringLiteral("verseEnd")]   = endNum;
+    return out;
+}
+
+// Thin wrapper kept for every caller that only wants the opening verse's
+// row — the reference hint, Strong's lookups, the global search overlay.
+// Widening the grammar above means those callers stop dying on a typed
+// range: "John 3:16-18" used to fail the regex outright and yield no
+// parse at all, so the input went dead the moment the operator hit the
+// dash. Now it resolves to John 3:16 for them, and the range-aware
+// caller asks for the span separately.
+Verse BibleService::parseReference(QString input, QString translationCode)
+{
+    const QVariantMap r = parseReferenceRange(input);
+    if (!r.value(QStringLiteral("valid")).toBool()) return Verse();
+    return verse(translationCode,
+                 r.value(QStringLiteral("book")).toString(),
+                 r.value(QStringLiteral("chapter")).toInt(),
+                 r.value(QStringLiteral("verseStart")).toInt());
 }
 
 QList<SearchHit> BibleService::search(QString query, QString translationCodeFilter)

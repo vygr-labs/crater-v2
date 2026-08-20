@@ -722,7 +722,18 @@ ApplicationWindow {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateUp(); break
                 case "live":    AppState.liveNavigateUp();    break
-                default:        AppState.libraryNavigateUp()
+                default:        AppState.libraryNavigateUp(false)
+            }
+        }
+    }
+    Shortcut {
+        sequence: "Shift+Up"
+        enabled: AppState.activeModal === ""
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateUp(); break
+                case "live":    AppState.liveNavigateUp();    break
+                default:        AppState.libraryNavigateUp(true)
             }
         }
     }
@@ -733,7 +744,23 @@ ApplicationWindow {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateDown(); break
                 case "live":    AppState.liveNavigateDown();    break
-                default:        AppState.libraryNavigateDown()
+                default:        AppState.libraryNavigateDown(false)
+            }
+        }
+    }
+    // Shift+Arrow is the same dispatch with the extend flag set. It needs its
+    // own Shortcut because a sequence of "Up" does not match a Shift+Up press
+    // — Qt treats the modified chord as a different sequence entirely. Preview
+    // and Live have no selection to extend, so there Shift behaves as a plain
+    // arrow rather than swallowing the key.
+    Shortcut {
+        sequence: "Shift+Down"
+        enabled: AppState.activeModal === ""
+        onActivated: {
+            switch (AppState.activeFocusPanel) {
+                case "preview": AppState.previewNavigateDown(); break
+                case "live":    AppState.liveNavigateDown();    break
+                default:        AppState.libraryNavigateDown(true)
             }
         }
     }

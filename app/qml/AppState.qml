@@ -944,8 +944,14 @@ QtObject {
     //
     // Each tab guards its handler with `tabKeys[activeTab] === tabKey` so
     // background-loaded tabs ignore navigation meant for the foreground one.
-    signal libraryNavigateUp()
-    signal libraryNavigateDown()
+    // `extend` carries the Shift modifier through to the tab. Tabs with a
+    // multi-selection model (ScriptureTab today) grow the set from the
+    // anchor instead of moving it, so an operator can build a combined
+    // passage from the keyboard the way Shift+click already does with the
+    // mouse. Tabs without one ignore the argument and keep single-row
+    // navigation — a QML signal handler is free to omit trailing params.
+    signal libraryNavigateUp(bool extend)
+    signal libraryNavigateDown(bool extend)
     signal libraryNavigateLeft()
     signal libraryNavigateRight()
     signal libraryActivate()

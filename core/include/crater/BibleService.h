@@ -9,6 +9,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 
 #include <memory>
 
@@ -63,6 +64,21 @@ public:
     // Returns an invalid Verse (text.isEmpty()) when the input doesn't parse
     // or when the resolved book/chapter/verse doesn't exist.
     Q_INVOKABLE crater::Verse parseReference(QString input, QString translationCode);
+
+    // Same grammar as parseReference, but reports the whole span the
+    // operator typed rather than collapsing to the opening verse.
+    // Returns a map: valid (bool), book, chapter, verseStart, verseEnd.
+    // verseEnd equals verseStart when no range was given, so callers can
+    // treat every reference as a span of at least one.
+    //
+    // Exists because the reference box is the fastest way to pull a
+    // passage onto one slide: "John 3:16-18" should stage three verses,
+    // and Verse (a single DB row) has nowhere to carry the second bound.
+    // Returning a map keeps that parse-only field off the row type.
+    //
+    // Book resolution is translation-independent, so no translation code
+    // is needed — the caller looks the text up afterwards.
+    Q_INVOKABLE QVariantMap parseReferenceRange(QString input);
 
     // FTS5 trigram search across verses.text. Optional `translationCodeFilter`
     // narrows to a single translation. Hard-capped at 100 hits (bm25-ranked).
