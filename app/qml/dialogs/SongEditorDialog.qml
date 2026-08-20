@@ -1016,6 +1016,24 @@ ModalShell {
                                     root._commitRawText(dsl)
                                 }
                             }
+                            // Ctrl+V / Ctrl+Shift+V go through RichTextHelper
+                            // rather than TextEdit's built-in paste, which
+                            // hands the clipboard's text/html straight to
+                            // QTextDocument and so imports a source page's
+                            // background slab, body colour, family and size
+                            // along with the words. pasteFiltered keeps bold /
+                            // italic / underline and re-applies this editor's
+                            // own format to everything else. Shift = paste as
+                            // plain text. See RichTextHelper.h.
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_V
+                                    && (event.modifiers & Qt.ControlModifier)) {
+                                    RichTextHelper.pasteFiltered(
+                                        rawArea,
+                                        !(event.modifiers & Qt.ShiftModifier))
+                                    event.accepted = true
+                                }
+                            }
                             // Tell the dialog this editor is now the
                             // toolbar's target. Set on entry only — we
                             // intentionally DO NOT clear on loss of

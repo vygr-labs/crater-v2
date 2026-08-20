@@ -66,6 +66,31 @@ public:
     // Returns the current foreground color as "#rrggbb", or "" if no
     // explicit color is set (i.e. inheriting from the document default).
     Q_INVOKABLE QString currentColor(QQuickItem* textEdit) const;
+
+    // ─── Paste ────────────────────────────────────────────────────────
+    // Replace the selection with the clipboard's contents, filtered down
+    // to what a lyric can actually carry.
+    //
+    // TextEdit's built-in Ctrl+V hands the clipboard's text/html straight
+    // to QTextDocument, which faithfully reproduces every declaration the
+    // source page carried — background-color, font-family, font-size,
+    // foreground color, margins. Copying a verse off a lyrics site
+    // therefore dropped a slab of white page background into a dark
+    // editor, and baked the site's grey body color into the DSL as an
+    // explicit {color=#…} run that then overrode the theme on the
+    // projector.
+    //
+    // This path rebuilds the pasted text run by run instead. It carries
+    // over ONLY bold / italic / underline (the marks the DSL supports and
+    // the ones a Crater-to-Crater copy is meant to keep) and re-applies
+    // the destination's own char format to everything else, so pasted
+    // text arrives looking like the text already in the card. Newlines
+    // land as U+2028 line separators — the same shape dslToHtml's <br>
+    // parses to — so htmlToDsl reads them back as DSL line breaks.
+    //
+    // keepMarks=false is the "paste without formatting" variant bound to
+    // Ctrl+Shift+V: plain text, destination format, nothing else.
+    Q_INVOKABLE void pasteFiltered(QQuickItem* textEdit, bool keepMarks = true);
 };
 
 }  // namespace crater
