@@ -53,6 +53,33 @@ QString versionString()
     return QStringLiteral(CRATER_VERSION_STRING);
 }
 
+bool isVersionTag(const QString& tag)
+{
+    QString v = tag.trimmed();
+    if (v.startsWith(QLatin1Char('v')) || v.startsWith(QLatin1Char('V')))
+        v.remove(0, 1);
+
+    // Judge only the numeric core; a pre-release suffix may be anything.
+    const qsizetype dash = v.indexOf(QLatin1Char('-'));
+    const qsizetype plus = v.indexOf(QLatin1Char('+'));
+    qsizetype cut = dash;
+    if (plus >= 0 && (cut < 0 || plus < cut)) cut = plus;
+    if (cut >= 0) v.truncate(cut);
+
+    if (v.isEmpty()) return false;
+
+    // Split WITHOUT SkipEmptyParts, unlike parseVersion: here an empty
+    // component means a malformed tag ("1..2", "1."), and this predicate's
+    // whole job is to reject those rather than quietly read them as zero.
+    const QStringList parts = v.split(QLatin1Char('.'));
+    for (const QString& part : parts) {
+        if (part.isEmpty()) return false;
+        for (const QChar c : part)
+            if (c < QLatin1Char('0') || c > QLatin1Char('9')) return false;
+    }
+    return true;
+}
+
 int compareVersions(const QString& a, const QString& b)
 {
     const Parsed pa = parseVersion(a);
