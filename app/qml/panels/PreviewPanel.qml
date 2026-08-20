@@ -546,12 +546,21 @@ Rectangle {
                                           - Theme.space.md      // body top gap
                                           - Theme.space.lg      // monitor bottom gap
 
+        // Compact size tracks the pane instead of sitting at a hard 160x90.
+        // The old constant meant the monitor never grew with the window: on
+        // a wide console the operator got a postage stamp in a 900px pane,
+        // which is the surface they actually watch. The floor keeps a 1080p
+        // console identical to before (0.30 of that pane is under 160), and
+        // the ceiling stops the monitor eating the pages list on an
+        // ultrawide. monitorInfo beside it just elides earlier.
+        readonly property real compactWidth:
+            Math.max(160, Math.min(288, parent.width * 0.30))
+
         width:  root.isPdfMedia ? maxFullW
               : fullsize        ? Math.min(maxFullW, maxFullH * 16 / 9)
-                                : 160
+                                : compactWidth
         height: root.isPdfMedia ? maxFullH
-              : fullsize        ? width * 9 / 16
-                                : 90
+                                : width * 9 / 16
 
         state: fullsize ? "fullsize" : "compact"
         states: [
