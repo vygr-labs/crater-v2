@@ -78,6 +78,18 @@ public:
     // re-evaluates its theme binding.
     Q_INVOKABLE void setItemTheme(int index, qint64 themeId);
 
+    // Swap a working-schedule row for a rebuilt copy of itself. The item map
+    // is canonical-shape (same contract as addItem), so callers rebuild the
+    // whole row rather than patching fields.
+    //
+    // Exists for one reason: schedule rows carry a *snapshot* of their
+    // source's content (a song row holds its lyrics inline), so editing the
+    // song in the library left every schedule row quoting the old text —
+    // Preview, Live and the projector all read from that snapshot. AppState
+    // listens for SongService::allSongsChanged and re-writes the affected
+    // rows through here. Out-of-range indices are ignored.
+    Q_INVOKABLE void replaceItem(int index, QVariantMap item);
+
     // Saved-schedule operations.
 
     // Snapshot current items into a new `schedules` row and adopt its id as
