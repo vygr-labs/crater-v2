@@ -66,6 +66,21 @@ private:
     // fixed projector the operator never tabs to. See ProjectionWindow.qml
     // flags; note it also removes the single-screen "click to surface" route.
     Q_PROPERTY(bool    projectionInAltTab READ projectionInAltTab WRITE setProjectionInAltTab NOTIFY projectionInAltTabChanged)
+    // Which of the two single-display arrangements the audience output
+    // uses. Only consulted when there is exactly one screen.
+    //
+    // false (default): the former behaviour — demote to a small
+    // windowed preview in the corner, floating above the console.
+    // true: render fullscreen, at the size the audience would actually
+    // see, but pinned beneath every other window. It cannot cover the
+    // console because it is never allowed in front of it, and it shows
+    // through wherever the console is not — snap the console to half
+    // the screen and the other half becomes a true-size preview.
+    //
+    // Ignored with two displays attached: a fullscreen audience output
+    // on its own screen must stay on TOP, or a notification toast lands
+    // in front of the congregation. See ProjectionWindow.qml.
+    Q_PROPERTY(bool    projectionBehindConsole READ projectionBehindConsole WRITE setProjectionBehindConsole NOTIFY projectionBehindConsoleChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
     // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
@@ -198,6 +213,7 @@ public:
     QString outputResolution() const;
     QString outputMode() const;
     bool    projectionInAltTab() const;
+    bool    projectionBehindConsole() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
     QString ndiPixelFormat() const;
@@ -233,6 +249,7 @@ public:
     void setOutputResolution(const QString& v);
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
+    void setProjectionBehindConsole(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
     void setNdiPixelFormat(const QString& v);
@@ -270,6 +287,7 @@ signals:
     void outputResolutionChanged();
     void outputModeChanged();
     void projectionInAltTabChanged();
+    void projectionBehindConsoleChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();
     void ndiPixelFormatChanged();
