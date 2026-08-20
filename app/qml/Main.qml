@@ -212,6 +212,26 @@ ApplicationWindow {
         // constant matching the existing visual design.
         readonly property real topRowRatio: 0.58
 
+        // Panel widths are proportional, but the two LIST panels have a
+        // real useful maximum: past ~420px a schedule row is mostly empty
+        // space to the right of its title, and past ~320px the sidebar is
+        // a column of short labels in a wide gutter. Those pixels are worth
+        // far more to Preview and Live, which render actual output and can
+        // always use more area.
+        //
+        // Below ~1400px wide the clamps never bind, so every layout at
+        // 1080p and under is pixel-identical to before this change.
+        readonly property real scheduleWidth: Math.min(width * 0.30, 420)
+        readonly property real sidebarWidth:  Math.min(width * 0.24, 320)
+
+        // Live takes its share of what the schedule LEFT rather than of the
+        // whole row — 0.36 / (0.36 + 0.34) — so the freed width is split
+        // between the two monitors in their existing proportion instead of
+        // Preview quietly absorbing all of it. At any width where the
+        // schedule clamp is inactive this evaluates to exactly 0.36 * width.
+        readonly property real liveWidth:
+            (width - scheduleWidth) * (0.36 / 0.70)
+
         // ── Top row: Schedule | Preview | Live ───────────────────────────
         Item {
             id: topRow
@@ -226,7 +246,7 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                width: parent.width * 0.30
+                width: mainArea.scheduleWidth
             }
 
             PreviewPanel {
@@ -242,7 +262,7 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.right: parent.right
-                width: parent.width * 0.36
+                width: mainArea.liveWidth
             }
         }
 
@@ -276,7 +296,7 @@ ApplicationWindow {
                 anchors.top: tabBar.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                width: parent.width * 0.24
+                width: mainArea.sidebarWidth
             }
 
             LibraryContent {
