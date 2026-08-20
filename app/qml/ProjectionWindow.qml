@@ -89,6 +89,23 @@ Window {
     // its own.
     readonly property bool _windowedForced: _singleScreen
 
+    // Size of the windowed preview. This used to be a flat 480x270, which
+    // was fine while windowed mode was an occasional choice on a 1080p
+    // desk. It is not fine now that a single-screen console lives in this
+    // mode for the whole service: on a 4K panel 480 px is a postage stamp,
+    // and the preview is the only view of the audience output there is.
+    //
+    // A quarter of the target display, floored so it stays legible on a
+    // 1366-wide laptop and capped so it stays a glanceable thumbnail rather
+    // than a second console on an ultrawide. The arithmetic lands on
+    // exactly 480x270 at 1920 wide, so nothing moves on the display this
+    // was designed against.
+    readonly property int _previewWidth: {
+        const sw = _targetScreen ? _targetScreen.width : 1920
+        return Math.round(Math.max(400, Math.min(800, sw * 0.25)))
+    }
+    readonly property int _previewHeight: Math.round(_previewWidth * 9 / 16)
+
     // Base window-type flag for the operator-visible states. Qt.Window gives
     // the projection its own taskbar button + Alt-Tab slot; Qt.Tool
     // (WS_EX_TOOLWINDOW on Windows) hides it from BOTH so a fixed projector
@@ -152,10 +169,10 @@ Window {
     //     the instant the operator goes live, so a fixed 480×270 actively
     //     fights the fullscreen state. The binding must AGREE with it.
     width: _offscreen ? 1920
-         : _windowed  ? 480
+         : _windowed  ? _previewWidth
          : (_targetScreen ? _targetScreen.width : 1920)
     height: _offscreen ? 1080
-          : _windowed  ? 270
+          : _windowed  ? _previewHeight
           : (_targetScreen ? _targetScreen.height : 1080)
     x: _offscreen ? -32000
      : !_windowed ? (_targetScreen ? _targetScreen.virtualX : 0)
