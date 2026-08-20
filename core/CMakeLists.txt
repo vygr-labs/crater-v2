@@ -64,6 +64,7 @@ add_library(crater-core STATIC
 
     # Services.
     src/Version.cpp
+    src/Checksums.cpp
     src/BibleService.cpp
     src/StrongsService.cpp
     src/SongService.cpp
