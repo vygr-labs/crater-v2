@@ -209,7 +209,21 @@ The interactive remote (go-live / next / prev / blank / search / add-to-schedule
 - [ ] Theme context-menu "Set for Stage Monitor (Soon)" (`ThemesTab.qml:738-746`) writes to `OutputService.setThemeIdFor("stage", …)` but nothing consumes it yet.
 
 ### Auto-update
-- [ ] No `UpdateService` / in-app updater. Updates are manual via `scripts/release.{ps1,sh}` + the CI release workflow only.
+- [x] **DONE — shipped, see `docs/auto-update.md`.** `UpdateService`
+      (`app/src/`) checks GitHub's `/releases/latest` at most once a day,
+      downloads the platform installer, verifies its SHA-256 against the
+      release's `SHA256SUMS.txt` (or the asset's API digest) and refuses to
+      install anything it cannot verify. Settings > Updates is the whole
+      operator surface; a dot on the settings gear is the only ambient
+      affordance. Installing is always an explicit press behind a confirm —
+      nothing restarts the app on a timer. The release workflow now emits
+      `SHA256SUMS.txt`, and `crater.iss` gained a `/LAUNCH=1` parameter so a
+      silent in-app update brings Crater back up.
+- [ ] *Follow-ups:* artifacts are unsigned, so the hash chain plus TLS is the
+      whole integrity story — code signing needs a certificate. macOS is
+      "open the .dmg and drag", not a real self-replace. `fetchChecksums()`
+      first runs for real on the next release, since no published release
+      carries `SHA256SUMS.txt` yet.
 
 ---
 
@@ -223,7 +237,7 @@ presentation. Ordered by how much a real church deployment feels each one.
 
 Several PP features already have a home above and are **not** repeated here:
 Stage Display → *Multi-output* (§🔵), interactive phone control → *Phone
-remote-control server* (§🔵), in-app updates → *Auto-update* (§🔵), cross-library
+remote-control server* (§🔵), in-app updates → *Auto-update* (done), cross-library
 search → *Global search* (§🔴), verse highlight / book:chapter footer /
 auto-advance → *Scripture & Song settings* (§🟡).
 

@@ -10,6 +10,12 @@ qt_add_executable(crater
     src/FileDialogService.h
     src/LogReportService.cpp
     src/LogReportService.h
+    # In-app updates — checks GitHub releases, verifies a SHA-256, and hands
+    # the installer to the OS. App layer for the same reason as
+    # LogReportService: it needs Qt6::Network and QProcess, neither of which
+    # crater-core links. See docs/auto-update.md.
+    src/UpdateService.cpp
+    src/UpdateService.h
     src/VideoThumbnailer.cpp
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp
@@ -200,6 +206,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NarrationSection.qml
         qml/dialogs/settings/NdiSection.qml
+        qml/dialogs/settings/UpdatesSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
 )
 

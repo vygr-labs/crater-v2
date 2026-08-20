@@ -127,6 +127,44 @@ jobs:
           # step globs across `**/` to pick up Win + Mac files together.
           path: artifacts
 
+      - name: Generate SHA256SUMS.txt
+        # The in-app updater (app/src/UpdateService.cpp) refuses to run an
+        # installer it cannot verify, and this is the file it verifies
+        # against. Generated in the publish job rather than in each build
+        # job because only this one has all four artifacts in one place, and
+        # a single file covering every platform means the updater fetches
+        # one small extra object instead of one per asset.
+        #
+        # Output is normalised to the canonical text form,
+        # "<hex><two spaces><bare name>", by the awk pass. Two reasons not to
+        # take sha256sum's output as-is: it emits a binary-mode marker
+        # ("<hex> *name") on some platforms, and the names here carry the
+        # per-job artifact directory that download-artifact created. Stripping
+        # to the bare name makes each entry match the asset name GitHub
+        # publishes — which is the key the updater looks it up by — and keeps
+        # the file usable with `sha256sum -c` next to a manual download.
+        #
+        # Note this is an integrity check, not a signature: it proves the
+        # bytes that arrived are the bytes this job built, and nothing more.
+        # Signing the artifacts would need a certificate we do not have yet.
+        shell: bash
+        run: |
+          cd artifacts
+          find . -type f \( -name 'Crater-*-win64.zip' \
+                         -o -name 'Crater-Setup-*.exe' \
+                         -o -name 'Crater-*-macos.zip' \
+                         -o -name 'Crater-*-macos.dmg' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | awk '{ n = $2; sub(/^\*/, "", n); sub(/.*\//, "", n); printf "%s  %s\n", $1, n }' \
+            > ../SHA256SUMS.txt
+          echo '--- SHA256SUMS.txt ---'
+          cat ../SHA256SUMS.txt
+          # Four artifacts in, four lines out. A short file here means an
+          # upload job silently produced nothing, which must fail the
+          # release rather than ship an unverifiable download.
+          test "$(wc -l < ../SHA256SUMS.txt)" -eq 4
+
       - name: Bump CMakeLists.txt
         # Identical edit to the one each build job made locally — we redo
         # it here on a fresh checkout so the commit captures only this
@@ -185,3 +223,4 @@ jobs:
             artifacts/**/Crater-Setup-*.exe
             artifacts/**/Crater-*-macos.zip
             artifacts/**/Crater-*-macos.dmg
+            SHA256SUMS.txt
