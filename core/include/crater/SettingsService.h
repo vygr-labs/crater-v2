@@ -92,6 +92,21 @@ private:
     // useHeadlessNdi), so a change applies on the next (re)start.
     Q_PROPERTY(QString ndiPixelFormat     READ ndiPixelFormat     WRITE setNdiPixelFormat     NOTIFY ndiPixelFormatChanged)
     Q_PROPERTY(QString ndiResolution      READ ndiResolution      WRITE setNdiResolution      NOTIFY ndiResolutionChanged)
+    // Suppress picture / video items on the NDI broadcast only.
+    // When true, an image or video that is live still fills the
+    // audience screen, but the NDI scene renders it as a blank
+    // frame. Lyrics, scripture and theme output are unaffected.
+    //
+    // Motivation: a stream carrying licensed footage or a slide of
+    // faces often must not leave the room, while the room itself
+    // still needs to see it. Suppressing at the NDI scene rather
+    // than at the send boundary (where `blank` lives) keeps text
+    // flowing to receivers instead of cutting the whole feed.
+    //
+    // Live, not deferred to the next broadcast start: the headless
+    // renderer hosts its own ProjectionScene, so the QML binding
+    // re-renders on the very next tick.
+    Q_PROPERTY(bool    ndiHideMedia       READ ndiHideMedia       WRITE setNdiHideMedia       NOTIFY ndiHideMediaChanged)
     // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
     // in the same uppercase form BibleService::translations() reports and the
     // scripture sidebar displays; AppState lowercases it to seed
@@ -187,6 +202,7 @@ public:
     bool    ndiOnDemand() const;
     QString ndiPixelFormat() const;
     QString ndiResolution() const;
+    bool    ndiHideMedia() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    highlightCurrentVerse() const;
@@ -221,6 +237,7 @@ public:
     void setNdiOnDemand(bool v);
     void setNdiPixelFormat(const QString& v);
     void setNdiResolution(const QString& v);
+    void setNdiHideMedia(bool v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setHighlightCurrentVerse(bool v);
@@ -257,6 +274,7 @@ signals:
     void ndiOnDemandChanged();
     void ndiPixelFormatChanged();
     void ndiResolutionChanged();
+    void ndiHideMediaChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void highlightCurrentVerseChanged();
