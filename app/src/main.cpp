@@ -32,6 +32,7 @@
 #include "ClipboardService.h"
 #include "FileDialogService.h"
 #include "LogReportService.h"
+#include "UpdateService.h"
 #include "MediaPlaybackService.h"
 #include "NdiRenderer.h"
 #include "NdiService.h"
@@ -53,7 +54,6 @@
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
 #include "crater/ScheduleService.h"
-#include "crater/NarrationService.h"
 #include "crater/SettingsService.h"
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
@@ -390,6 +390,10 @@ int main(int argc, char* argv[])
     // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
     // takes the path main.cpp logs to so it reports the exact file in use.
     crater::LogReportService  logReportService(logPath);
+    // In-app updates (docs/auto-update.md). Constructing it touches nothing
+    // but QSettings; the first network request is armed further down, after
+    // the UI is up, and only when a check is actually due.
+    crater::UpdateService     updateService;
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
     // the on-disk layout. Must come after mediaService is constructed.
@@ -417,14 +421,6 @@ int main(int argc, char* argv[])
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
     crater::BrowserCastService browserCastService(&projectionService);
-    // AI scripture narration (docs/narration.md). Constructing it does NOT
-    // open the microphone — capture starts only on an explicit operator
-    // arm() and there is no setting that changes that (§8). It takes
-    // bibleService to validate that a heard reference actually exists,
-    // projectionService to suppress re-sending what is already on screen,
-    // and settingsService for the trust mode and model path.
-    crater::NarrationService  narrationService(&bibleService, &projectionService,
-                                               &settingsService);
     qInfo().noquote() << "[startup] crater-core services constructed: +"
                       << startupClock.elapsed() << "ms";
 
@@ -442,11 +438,11 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
-    qmlRegisterSingletonInstance("Crater", 1, 0, "NarrationService",   &narrationService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "UpdateService",         &updateService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
@@ -568,6 +564,12 @@ int main(int argc, char* argv[])
     ndiService.setRenderer(&ndiRenderer);
     qInfo().noquote() << "[startup] NDI renderer ready, entering event loop: +"
                       << startupClock.elapsed() << "ms";
+
+    // Arm the once-a-day update check. Returns immediately when auto-check
+    // is off or the last one was recent; when it is due, it only starts a
+    // timer — the request itself fires well after startup so it never
+    // competes with migrations or the first QML load (docs/auto-update.md).
+    updateService.armStartupCheck();
 
     return app.exec();
 }
