@@ -197,6 +197,31 @@ Item {
         return (v && v.text && v.text.length > 0) ? v : null
     }
 
+    // The same input read as a SPAN. parsedRef collapses "John 3:16-18" to
+    // its opening verse, which is what scroll-to-match and the "Interpreted"
+    // hint want; this one keeps both bounds so a typed dash can stage the
+    // whole passage on one slide. verseEnd equals verseStart for a plain
+    // reference, so the range branch below is the only place that has to
+    // care about the difference.
+    //
+    // Deliberately NOT gated on the verse text existing (the way parsedRef
+    // is). This is a pure parse; whether the rows are present is decided
+    // against currentVerses when the range is applied, so a range typed
+    // while a translation is still loading fails on the lookup rather than
+    // on the parse.
+    readonly property var parsedRange: {
+        if (mode !== "reference") return null
+        if (_parserQuery.length === 0) return null
+        const r = BibleService.parseReferenceRange(_parserQuery)
+        return (r && r.valid) ? r : null
+    }
+
+    // True while the current multi-selection came from a typed range rather
+    // than from clicks. Only a selection WE created gets torn down when the
+    // operator narrows the input back to a single verse — otherwise every
+    // re-parse would quietly wipe a set they built with Shift+click.
+    property bool _rangeFromInput: false
+
     readonly property int fluidIndex: AppState.libraryFluidIndex.scripture
 
     // Track focused coordinates so a translation switch can re-position.
@@ -551,6 +576,34 @@ Item {
         // operator is still navigating the synced reference.
         if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
         AppState.setSearch(tabKey, text)
+    }
+
+    // A typed range selects the span. Runs independently of
+    // onParsedRefChanged because the two fire on different edits: appending
+    // "-18" to "John 3:16" leaves the opening verse untouched, so
+    // parsedRef never changes and only this handler sees the edit.
+    onParsedRangeChanged: {
+        const r = parsedRange
+        if (!r) return
+        if (r.verseEnd > r.verseStart) {
+            const lo = indexOf(r.book, r.chapter, r.verseStart)
+            if (lo < 0) return
+            // A missing end row (range runs past the chapter, or the
+            // translation splits verses differently) degrades to the opening
+            // verse instead of selecting nothing.
+            const hiMatch = indexOf(r.book, r.chapter, r.verseEnd)
+            const hi = (hiMatch >= lo) ? hiMatch : lo
+            const range = []
+            for (let i = lo; i <= hi; ++i) range.push(i)
+            _rangeFromInput = true
+            AppState.setLibraryFluid(tabKey, lo)
+            AppState.setLibrarySelected(tabKey, range)
+            list.positionViewAtIndex(lo, ListView.Contain)
+            pushPreviewFor(lo)
+        } else if (_rangeFromInput) {
+            _rangeFromInput = false
+            AppState.clearLibrarySelected(tabKey)
+        }
     }
 
     // When the parser yields a match, scroll there and highlight.
@@ -1387,17 +1440,57 @@ Item {
         restoreMode: Binding.RestoreBindingOrValue
     }
 
+    // Shift+Arrow — grow or shrink the selection instead of moving it. The
+    // anchor (fluidIndex) is the fixed pivot, exactly as it is for
+    // Shift+click; what moves is the far end of the range.
+    //
+    // That far end is not stored anywhere, so it is recovered from the set:
+    // a range built this way always spans anchor..cursor, so whichever
+    // endpoint is not the anchor IS the cursor. With no selection yet the
+    // cursor starts on the anchor, which makes the first Shift+Arrow select
+    // two rows rather than one.
+    //
+    // The reference input is deliberately left alone here. Rewriting it
+    // would re-trigger the parse, and onParsedRangeChanged would then reset
+    // the anchor to the low end of the range — extending upward would fight
+    // itself after a single keypress.
+    function _extendSelectionByKey(dir) {
+        const n = currentVerses.length
+        if (n === 0) return
+        const anchor = fluidIndex >= 0 ? fluidIndex : 0
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        let cursor = anchor
+        if (sel.length > 0) {
+            let lo = sel[0], hi = sel[0]
+            for (let i = 1; i < sel.length; ++i) {
+                if (sel[i] < lo) lo = sel[i]
+                if (sel[i] > hi) hi = sel[i]
+            }
+            cursor = (anchor === lo) ? hi : lo
+        }
+        const next = Math.max(0, Math.min(n - 1, cursor + dir))
+        const from = Math.min(anchor, next)
+        const to   = Math.max(anchor, next)
+        const range = []
+        for (let i = from; i <= to; ++i) range.push(i)
+        _rangeFromInput = false
+        AppState.setLibraryFluid(tabKey, anchor)
+        AppState.setLibrarySelected(tabKey, range)
+        AppState.setActiveFocus("library")
+        list.positionViewAtIndex(next, ListView.Contain)
+        pushPreviewFor(anchor)
+    }
+
     // ── Keyboard navigation routed from TabSearchBar ────────────────────
     Connections {
         target: AppState
-        function onLibraryNavigateDown() {
+        function onLibraryNavigateDown(extend) {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.currentVerses.length === 0) return
+            if (extend) { root._extendSelectionByKey(1); return }
             // Plain arrow nav clears the multi-selection — operator is
-            // moving the anchor, not extending the set. Shift+arrow as a
-            // "extend selection" gesture is a possible later add (would
-            // need TabSearchBar to forward modifier state through the
-            // navigate signals).
+            // moving the anchor, not extending the set. Shift+arrow takes
+            // the branch above instead.
             AppState.clearLibrarySelected(root.tabKey)
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.currentVerses.length - 1)
@@ -1405,9 +1498,10 @@ Item {
             root.pushPreviewFor(next)
             root._syncInputToVerse(next)
         }
-        function onLibraryNavigateUp() {
+        function onLibraryNavigateUp(extend) {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.currentVerses.length === 0) return
+            if (extend) { root._extendSelectionByKey(-1); return }
             AppState.clearLibrarySelected(root.tabKey)
             const next = Math.max(root.fluidIndex - 1, 0)
             AppState.setLibraryFluid(root.tabKey, next)
