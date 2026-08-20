@@ -19,6 +19,7 @@
 
 using crater::compareVersions;
 using crater::isNewerVersion;
+using crater::isVersionTag;
 
 class TestVersionCompare : public QObject
 {
@@ -175,6 +176,63 @@ private slots:
         QVERIFY(!isNewerVersion(QStringLiteral("latest"),
                                 QStringLiteral("0.6.1")));
         QVERIFY(!isNewerVersion(QString(), QStringLiteral("0.6.1")));
+    }
+
+    // ── isVersionTag ────────────────────────────────────────────────────
+    // The filter that decides which GitHub releases are Crater builds at
+    // all. Getting this wrong does not produce a bad update — junk sorts
+    // low — it produces NO updates, permanently and silently.
+    void isVersionTag_acceptsOurReleaseTags()
+    {
+        QVERIFY(isVersionTag(QStringLiteral("v0.6.1")));
+        QVERIFY(isVersionTag(QStringLiteral("v1.0.0")));
+        QVERIFY(isVersionTag(QStringLiteral("0.6.1")));     // no 'v' is fine
+        QVERIFY(isVersionTag(QStringLiteral("v10.20.30")));
+        QVERIFY(isVersionTag(QStringLiteral(" v0.6.1 ")));  // whitespace tolerated
+    }
+
+    void isVersionTag_acceptsAPreReleaseSuffix()
+    {
+        QVERIFY(isVersionTag(QStringLiteral("v1.0.0-rc1")));
+        QVERIFY(isVersionTag(QStringLiteral("v1.0.0+build7")));
+    }
+
+    // The case this predicate was written for. vygr-labs/crater-v2 already
+    // publishes `data-v1` for the bundled Bible / Strong's databases, and a
+    // future `data-v2` would otherwise become GitHub's "latest release".
+    void isVersionTag_rejectsTheDataBundleTags()
+    {
+        QVERIFY(!isVersionTag(QStringLiteral("data-v1")));
+        QVERIFY(!isVersionTag(QStringLiteral("data-v2")));
+        QVERIFY(!isVersionTag(QStringLiteral("bibles-2026-05")));
+    }
+
+    void isVersionTag_rejectsOtherNonReleases()
+    {
+        QVERIFY(!isVersionTag(QString()));
+        QVERIFY(!isVersionTag(QStringLiteral("latest")));
+        QVERIFY(!isVersionTag(QStringLiteral("nightly")));
+        QVERIFY(!isVersionTag(QStringLiteral("v")));
+        QVERIFY(!isVersionTag(QStringLiteral("release-1.0")));
+    }
+
+    void isVersionTag_rejectsMalformedNumericCores()
+    {
+        QVERIFY(!isVersionTag(QStringLiteral("v1..2")));
+        QVERIFY(!isVersionTag(QStringLiteral("v1.")));
+        QVERIFY(!isVersionTag(QStringLiteral("v.1")));
+        QVERIFY(!isVersionTag(QStringLiteral("v1.x.3")));
+    }
+
+    // Whatever isVersionTag accepts, compareVersions must be able to order
+    // sensibly — the two are used together and a gap between them would let
+    // a tag through that then compares as garbage.
+    void isVersionTag_acceptedTagsOrderCorrectly()
+    {
+        QVERIFY(isVersionTag(QStringLiteral("v0.9.0")));
+        QVERIFY(isVersionTag(QStringLiteral("v0.10.0")));
+        QVERIFY(compareVersions(QStringLiteral("v0.10.0"),
+                                QStringLiteral("v0.9.0")) > 0);
     }
 };
 

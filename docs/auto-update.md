@@ -74,13 +74,33 @@ Covered by `core/tests/test_version_compare.cpp`.
 
 ## 4. The release feed and the trust chain
 
-The feed is `https://api.github.com/repos/vygr-labs/crater-v2/releases/latest`,
+The feed is
+`https://api.github.com/repos/vygr-labs/crater-v2/releases?per_page=50`,
 pinned as a compile-time constant so nothing in a downloaded payload can
 redirect the check itself.
 
-`/releases/latest` skips drafts and pre-releases, and `release.yml` publishes
-a **draft**. So "an update exists" means a human pressed Publish, not merely
-that CI went green. That is the semantics we want and it costs nothing.
+**Why the list and not `/releases/latest`.** That endpoint means
+most-recently-*created*, not highest-version, and this repository publishes
+more than app builds — there is already a published `data-v1` release
+holding the bundled Bible and Strong's databases. Publish a `data-v2` some
+day and it becomes "latest"; the updater would read a version out of it, get
+junk, sort the junk low, and report "up to date" from then on. Every
+installation would silently stop updating, caused by a routine action with
+no visible connection to the updater.
+
+So the check asks for the list and picks the **highest** release whose tag
+actually names an app build, per `crater::isVersionTag` — one or more
+dot-separated digit runs after an optional `v`, so `v0.6.1` passes and
+`data-v1` does not. Highest rather than first, because the list is ordered
+by creation date and a patch cut after a later minor would otherwise win.
+
+Drafts and pre-releases are filtered out, which preserves the property that
+matters: `release.yml` publishes a **draft**, so "an update exists" means a
+human pressed Publish, not merely that CI went green. (Unauthenticated
+callers never see drafts anyway; the check is belt and braces.)
+
+A response holding no app release at all is treated as "we learned nothing"
+— `Idle`, or an error on a manual check — never as "you are up to date".
 
 The repository is public, so the request is unauthenticated and no token
 ships in the binary. GitHub's unauthenticated limit is 60 requests per hour
@@ -230,7 +250,8 @@ future check on that machine.
 
 Verified against the live `v0.6.1` release:
 
-- Check, parse, and version comparison — `0.5.0` correctly sees `0.6.1`.
+- Check, parse, and version comparison — `0.5.0` correctly sees `0.6.1`,
+  and the scan skips the repository's published `data-v1` release.
 - Asset selection by exact name, and the `github.com` →
   `release-assets.githubusercontent.com` redirect passing the allow-list.
 - A full 97,980,388-byte download with SHA-256 verification, confirmed
@@ -251,8 +272,14 @@ Verified against the live `v0.6.1` release:
   uses the same guarded `get()` as the verified paths, but the wiring
   between them first runs for real on the next release.
 - `installUpdate()` actually running the installer, which would have
-  replaced the developer's installed Crater.
+  replaced the developer's installed Crater. The `/LAUNCH=1` relaunch can
+  be exercised without the app: build an installer with
+  `scripts/release.ps1` and run it by hand with the flags from §7.
 - The macOS `reveal` path.
+- A `data-v2`-shaped release actually being the newest one. The skip is
+  order-independent — the loop takes the maximum over version tags, so a
+  non-version tag is ignored wherever it sits — and `isVersionTag("data-v2")`
+  is unit-tested, but no live release has that shape to reproduce against.
 
 ## 10. Known benign noise
 
