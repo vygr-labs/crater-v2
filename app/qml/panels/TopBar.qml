@@ -349,8 +349,21 @@ Rectangle {
             id: goLiveBtn
             anchors.verticalCenter: parent.verticalCenter
             height: 36
-            width: goLiveRow.implicitWidth + Theme.space.xl * 2
+            width: goLiveRow.implicitWidth + Theme.space.xl * 2 + caretWidth
             radius: 0   // squared — app-wide button shape (see PrimaryButton)
+
+            // Split button. The wide left face keeps its single-click
+            // meaning (open / lower the audience window); the narrow caret
+            // on the right opens the output picker. Retargeting the output
+            // used to mean a trip through Settings > Projection, which is a
+            // long way to go for the one adjustment an operator actually
+            // makes under pressure — the projector is on the wrong screen,
+            // or fullscreen needs to become a window.
+            //
+            // Splitting rather than replacing the click keeps the primary
+            // action one press. A menu that had to be dismissed before
+            // going live would be a regression on the busiest button here.
+            readonly property int caretWidth: 28
 
             // True once the audience projection window is actually up — the
             // button then flips to its "End Live" face. Kept as one control
@@ -390,7 +403,10 @@ Rectangle {
 
             Row {
                 id: goLiveRow
-                anchors.centerIn: parent
+                anchors.verticalCenter: parent.verticalCenter
+                // Centred on the LEFT face rather than the whole control,
+                // so adding the caret doesn't shove the label off-centre.
+                x: (parent.width - goLiveBtn.caretWidth - width) / 2
                 spacing: Theme.space.sm
 
                 AppIcon {
@@ -420,7 +436,10 @@ Rectangle {
 
             MouseArea {
                 id: goLiveMa
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: goLiveCaret.left
                 hoverEnabled: true
                 cursorShape: goLiveBtn.enabled ? Qt.PointingHandCursor
                                                : Qt.ArrowCursor
@@ -432,6 +451,100 @@ Rectangle {
                     if (goLiveBtn.ending) AppState.endLive()
                     else                  AppState.openProjector()
                 }
+            }
+
+            // ── Output picker ───────────────────────────────────────
+            // Divider + caret + its own hit area. The divider inherits the
+            // face's ink at low alpha so it reads on both the pale-cyan Go
+            // Live fill and the transparent End Live face.
+            Rectangle {
+                anchors.right: goLiveCaret.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: 1
+                height: parent.height - 12
+                color: goLiveBtn.ending ? Qt.rgba(177/255, 54/255, 52/255, 0.35)
+                                        : Qt.rgba(0, 0, 0, 0.16)
+            }
+
+            Item {
+                id: goLiveCaret
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: goLiveBtn.caretWidth
+
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: "chevron-down"
+                    color: goLiveBtn.ending ? Theme.color.live
+                                            : Theme.color.brandPressed
+                    size: Theme.icon.sm
+                }
+
+                MouseArea {
+                    id: goLiveCaretMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: goLiveBtn.openOutputMenu()
+                }
+            }
+
+            // Screens first (the choice made most often), then the
+            // fullscreen / windowed split, then the full settings page for
+            // everything this menu deliberately leaves out.
+            //
+            // Fullscreen carries a caveat line when there is only one
+            // display: ProjectionWindow overrides it to the corner preview
+            // in that case (see _windowedForced), and a row that silently
+            // does nothing is worse than one that says why.
+            function openOutputMenu() {
+                const items = []
+                const screens = OutputService.screens
+                for (let i = 0; i < screens.length; i++) {
+                    const s = screens[i]
+                    const idx = i
+                    items.push({
+                        label: s.name + (s.isPrimary ? qsTr(" (primary)") : ""),
+                        iconName: (OutputService.selectedScreenIndex === i)
+                                    ? "check" : "monitor",
+                        detail: s.geometry.width + "x" + s.geometry.height,
+                        action: function() { OutputService.selectedScreenIndex = idx }
+                    })
+                }
+                if (items.length > 0) items.push({ separator: true })
+
+                const single = screens.length <= 1
+                items.push({
+                    label: qsTr("Fullscreen"),
+                    iconName: (OutputService.projectionMode === OutputService.Fullscreen)
+                                ? "check" : "maximize",
+                    detail: single ? qsTr("needs a 2nd display") : "",
+                    action: function() {
+                        OutputService.projectionMode = OutputService.Fullscreen
+                    }
+                })
+                items.push({
+                    label: qsTr("Windowed"),
+                    iconName: (OutputService.projectionMode === OutputService.Windowed)
+                                ? "check" : "minimize",
+                    action: function() {
+                        OutputService.projectionMode = OutputService.Windowed
+                    }
+                })
+                items.push({ separator: true })
+                items.push({
+                    label: qsTr("Output settings…"),
+                    iconName: "settings",
+                    action: function() { AppState.openModal("settings", {}) }
+                })
+
+                // Right-aligned under the button: dx pulls the menu back by
+                // its own width so it can't run off the window edge — this
+                // control sits in the far-right cluster of the top bar.
+                AppState.openContextMenuAt(goLiveBtn, goLiveBtn.width,
+                                           goLiveBtn.height + 4, items,
+                                           { menuWidth: 260, dx: -260 })
             }
         }
     }
