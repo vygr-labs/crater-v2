@@ -220,3 +220,37 @@ if(CRATER_WITH_EMBEDDINGS AND CRATER_ORT_RUNTIME_DLL)
 endif()
 
 add_test(NAME onnx_embedder COMMAND test_onnx_embedder)
+
+# -- Version ordering -- docs/auto-update.md ----------------------------
+# Pure string comparison behind the updater's "is this an upgrade?"
+# decision. No network, no database, no Gui: crater::compareVersions is
+# Core-only, so this is the cheapest test in the suite and among the most
+# worth having, because its failure mode is a silent no-op.
+qt_add_executable(test_version_compare
+    test_version_compare.cpp
+)
+
+target_link_libraries(test_version_compare PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME version_compare COMMAND test_version_compare)
+
+# -- SHA256SUMS parsing -- docs/auto-update.md --------------------------
+# The lookup that decides whether a downloaded installer may run. Pure text
+# in, hex out, so it tests headlessly; and it MUST be tested here, because
+# the file it parses is written by the release workflow and read months
+# later by an installed copy, with no closer place to catch a mistake.
+qt_add_executable(test_checksums
+    test_checksums.cpp
+)
+
+target_link_libraries(test_checksums PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME checksums COMMAND test_checksums)
