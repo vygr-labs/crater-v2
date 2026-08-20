@@ -54,21 +54,40 @@ Window {
     readonly property var _targetScreen:
         Qt.application.screens[screenIndex] || Qt.application.screens[0]
 
+    // Windowed when the operator picked it, and unconditionally when the
+    // audience has no display of its own (see _windowedForced).
     readonly property bool _windowed:
         OutputService.projectionMode === OutputService.Windowed
+        || _windowedForced
 
-    // True when this machine has no second display. With one screen there is
-    // nowhere to put the audience output that isn't also the operator's
-    // screen, so a fullscreen projector claiming the always-on-top layer would
-    // bury the console the operator is driving. On a single screen we instead
-    //   (a) drop WindowStaysOnTopHint below so the window CAN sit behind the
-    //       console, and
-    //   (b) let Main.qml re-raise the console on go-live (the OS still briefly
-    //       foregrounds a freshly-shown window).
-    // The projection still renders fullscreen — it just stays hidden behind
-    // the console until the operator clicks its taskbar / Alt-Tab entry to
-    // bring it forward. Multi-monitor rigs are unaffected.
-    readonly property bool _singleScreen: Qt.application.screens.length <= 1
+    // True when this machine has no display other than the one the operator
+    // console is on — either it never had a second one, or the cable just
+    // came out mid-service. Sourced from OutputService rather than
+    // Qt.application.screens because OutputService rebuilds on screenAdded /
+    // screenRemoved / primaryScreenChanged, so this re-evaluates the moment
+    // a display appears or disappears.
+    readonly property bool _singleScreen: OutputService.screens.length <= 1
+
+    // Fullscreen is only ever safe when the audience output has a screen to
+    // itself. With one display, a fullscreen projector covers the console the
+    // operator is driving — and the failure is worst exactly when it hurts
+    // most: HDMI pulled mid-service, the window follows onto the laptop
+    // panel, and the operator is left clicking at an output they can't drive.
+    //
+    // Dropping WindowStaysOnTopHint (the previous mitigation, still in the
+    // flags below) was not enough. It lets the console come forward, but only
+    // once something raises it, and nothing did on cable removal — the raise
+    // in Main.qml hangs off go-live. The window also keeps a fullscreen
+    // footprint, so every stray click lands on the audience output.
+    //
+    // So a single screen demotes the projector to the windowed preview: a
+    // small titled sub-window in the corner, the way EasyWorship shows its
+    // output when there is nowhere else to put it. This is an override of the
+    // render state, NOT a write to OutputService.projectionMode — the
+    // operator's stored Fullscreen preference is untouched, so plugging the
+    // display back in re-evaluates this to false and fullscreen returns on
+    // its own.
+    readonly property bool _windowedForced: _singleScreen
 
     // Base window-type flag for the operator-visible states. Qt.Window gives
     // the projection its own taskbar button + Alt-Tab slot; Qt.Tool

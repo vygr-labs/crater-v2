@@ -510,6 +510,30 @@ ApplicationWindow {
         }
     }
 
+    // The same guard for the cable coming OUT. onVisibleToOperatorChanged
+    // only fires at go-live, so unplugging the audience display mid-service
+    // never ran it: the fullscreen projector followed the operator onto the
+    // remaining panel and sat on top of the console with nothing to push it
+    // back. ProjectionWindow now demotes itself to the corner preview when
+    // the screen count collapses (see _windowedForced there); this puts the
+    // console back in front so the operator keeps a surface they can drive.
+    //
+    // Fires on screenAdded / screenRemoved / primaryScreenChanged via
+    // OutputService.rebuildScreens. Re-plugging is not a special case — the
+    // count goes back above one, this returns early, and ProjectionWindow's
+    // bindings restore fullscreen on their own.
+    Connections {
+        target: OutputService
+        function onScreensChanged() {
+            if (OutputService.screens.length > 1) return
+            if (!projectionWindow.visibleToOperator) return
+            Qt.callLater(function() {
+                root.raise()
+                root.requestActivate()
+            })
+        }
+    }
+
     // ── Dedicated NDI render canvas (dual output mode only) ─────────────
     // Hidden Item parked far offscreen within this ApplicationWindow. It
     // hosts a ProjectionScene with outputKind="ndi" so dual mode can grab
