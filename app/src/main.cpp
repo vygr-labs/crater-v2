@@ -10,6 +10,7 @@
 #include <QFuture>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QQuickWindow>
 #include <QQmlEngine>
 #include <QQmlError>
 #include <QQuickStyle>
@@ -37,6 +38,7 @@
 #include "PdfPageImageProvider.h"
 #include "RichTextHelper.h"
 #include "TranslationService.h"
+#include "WindowChrome.h"
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
@@ -51,6 +53,7 @@
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
 #include "crater/ScheduleService.h"
+#include "crater/NarrationService.h"
 #include "crater/SettingsService.h"
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
@@ -414,6 +417,14 @@ int main(int argc, char* argv[])
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
     crater::BrowserCastService browserCastService(&projectionService);
+    // AI scripture narration (docs/narration.md). Constructing it does NOT
+    // open the microphone — capture starts only on an explicit operator
+    // arm() and there is no setting that changes that (§8). It takes
+    // bibleService to validate that a heard reference actually exists,
+    // projectionService to suppress re-sending what is already on screen,
+    // and settingsService for the trust mode and model path.
+    crater::NarrationService  narrationService(&bibleService, &projectionService,
+                                               &settingsService);
     qInfo().noquote() << "[startup] crater-core services constructed: +"
                       << startupClock.elapsed() << "ms";
 
@@ -431,6 +442,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "NarrationService",   &narrationService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
@@ -528,6 +540,19 @@ int main(int argc, char* argv[])
     engine.loadFromModule("Crater", "Main");
     qInfo().noquote() << "[startup] QML loaded, main window realized: +"
                       << startupClock.elapsed() << "ms";
+
+    // Hand the operator console back to the Windows shell. Must come after
+    // loadFromModule — the HWND does not exist until the root Window is
+    // realized — and it is scoped to that one window on purpose: the
+    // projection window owns its own fullscreen/windowed chrome and must
+    // not be given a resize frame. See WindowChrome.h for why the frameless
+    // hint costs us Win+Arrow in the first place.
+    if (!engine.rootObjects().isEmpty()) {
+        if (auto* consoleWindow =
+                qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
+            crater::installNativeWindowChrome(consoleWindow);
+        }
+    }
 
     // ─── Stage 6: wire the headless NDI renderer ────────────────────────
     // Must come AFTER loadFromModule — the renderer shares the engine to
