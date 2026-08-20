@@ -87,7 +87,12 @@ Window {
     // operator's stored Fullscreen preference is untouched, so plugging the
     // display back in re-evaluates this to false and fullscreen returns on
     // its own.
-    readonly property bool _windowedForced: _singleScreen
+    // …unless the operator picked the other single-screen mode. See
+    // _belowConsole: fullscreen-behind renders the audience output at
+    // full size and pins it under the console instead of shrinking it
+    // into a corner, so it cannot bury the controls either way.
+    readonly property bool _windowedForced:
+        _singleScreen && !SettingsService.projectionBehindConsole
 
     // Size of the windowed preview. This used to be a flat 480x270, which
     // was fine while windowed mode was an occasional choice on a 1080p
@@ -114,6 +119,27 @@ Window {
     // never meant to be operator-visible regardless of this preference.)
     readonly property int _windowTypeFlag:
         SettingsService.projectionInAltTab ? Qt.Window : Qt.Tool
+
+    // The single-screen mode selector. With one display there are two
+    // ways to keep the audience output from burying the console, and
+    // they suit different desks:
+    //
+    //   off (default) — the former behaviour. Demote to a small
+    //     windowed preview in the corner, floating above the console.
+    //     Always visible, but it is a thumbnail, not the real thing.
+    //
+    //   on — render FULLSCREEN, exactly as the audience would see it,
+    //     and pin it under every other window. It cannot cover the
+    //     console because it is never allowed in front of it; the
+    //     operator sees it through whatever desktop the console is not
+    //     occupying, so snapping the console to half the screen
+    //     (Win+Left) turns the other half into a true-size preview.
+    //
+    // Deliberately gated on _singleScreen. A fullscreen audience output
+    // that has a display to itself must keep WindowStaysOnTopHint, or
+    // any notification toast lands in front of the congregation.
+    readonly property bool _belowConsole:
+        _singleScreen && !_offscreen && SettingsService.projectionBehindConsole
 
     screen: _targetScreen
 
@@ -148,14 +174,23 @@ Window {
         ? (Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
         : _windowed
             ? _windowTypeFlag
-            // Fullscreen production. On a multi-monitor rig the audience output
-            // owns the always-on-top layer so nothing can pop over it. On a
-            // SINGLE screen we drop that hint (see _singleScreen) so the
-            // projector sits behind the console rather than burying it; the
+            // Fullscreen, three ways:
+            //
+            //   multi-monitor — the audience output owns the always-on-top
+            //     layer so nothing can pop over it mid-service.
+            //   single screen, fullscreen-behind — the opposite hint, so it
+            //     is pinned UNDER the console and shows through wherever the
+            //     console is not (see _belowConsole).
+            //   single screen otherwise — no hint at all. Unreachable today
+            //     because _windowedForced demotes that case, but harmless
+            //     and correct if the demotion is ever made optional.
+            //
             // _windowTypeFlag (Qt.Window unless the operator hid it from
-            // Alt-Tab) keeps a taskbar entry so they can still surface it.
+            // Alt-Tab) keeps a taskbar entry in every case.
             : (_windowTypeFlag | Qt.FramelessWindowHint
-               | (_singleScreen ? 0 : Qt.WindowStaysOnTopHint))
+               | (_belowConsole  ? Qt.WindowStaysOnBottomHint
+                : _singleScreen  ? 0
+                                 : Qt.WindowStaysOnTopHint))
     title: qsTr("Crater Projection")
 
     // Geometry — three cases, matching the visibility states above:

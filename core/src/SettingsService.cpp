@@ -69,6 +69,7 @@ struct SettingsService::Impl
     // Projection window taskbar / Alt-Tab presence — see header. Default true
     // preserves the standard behavior (own taskbar button + switcher slot).
     bool    projectionInAltTab = true;
+    bool    projectionBehindConsole = false;
     // Headless NDI renderer toggle — see header. Default true so the QRhi
     // path is the standard production behavior; flipping false drops back to
     // the legacy grabToImage path as a fallback.
@@ -120,6 +121,7 @@ struct SettingsService::Impl
     static constexpr const char* kOutputResolution = "Settings/outputResolution";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
+    static constexpr const char* kProjectionBehindConsole = "Settings/projectionBehindConsole";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
     static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
@@ -157,6 +159,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
+    m_impl->projectionBehindConsole = s.value(QString::fromLatin1(Impl::kProjectionBehindConsole), m_impl->projectionBehindConsole).toBool();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
     m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
@@ -206,6 +209,7 @@ bool    SettingsService::showLogoByDefault() const { return m_impl->showLogoByDe
 QString SettingsService::outputResolution() const  { return m_impl->outputResolution; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
+bool    SettingsService::projectionBehindConsole() const { return m_impl->projectionBehindConsole; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
 QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
@@ -310,6 +314,14 @@ void SettingsService::setProjectionInAltTab(bool v)
     m_impl->projectionInAltTab = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionInAltTab), v);
     emit projectionInAltTabChanged();
+}
+
+void SettingsService::setProjectionBehindConsole(bool v)
+{
+    if (m_impl->projectionBehindConsole == v) return;
+    m_impl->projectionBehindConsole = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionBehindConsole), v);
+    emit projectionBehindConsoleChanged();
 }
 
 void SettingsService::setUseHeadlessNdi(bool v)
