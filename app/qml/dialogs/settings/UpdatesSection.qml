@@ -56,10 +56,16 @@ Item {
     // Installing quits Crater on Windows, so it goes through the shared
     // confirm modal rather than firing on the press. The operator may well
     // be mid-service and have a screen full of congregation.
+    //
+    // The permission-prompt sentence is not padding. The installer is
+    // PrivilegesRequired=admin, so /SILENT suppresses the wizard but NOT
+    // elevation: Crater disappears and a UAC dialog takes its place. An
+    // operator who is not expecting that sees the app vanish and nothing
+    // else happen, and the update stalls until someone finds the prompt.
     function _confirmInstall() {
         AppState.openModal("confirm", {
             title:       qsTr("Install update now?"),
-            body:        qsTr("Crater will close, install version %1, and reopen. Anything on the projection screen will disappear while it runs.")
+            body:        qsTr("Crater will close, install version %1, and reopen. Windows will ask you to allow the installer to make changes, so watch for that prompt. Anything on the projection screen goes dark until Crater is back.")
                              .arg(UpdateService.availableVersion),
             confirmText: qsTr("Close and install"),
             onConfirm:   function() { UpdateService.installUpdate() }
