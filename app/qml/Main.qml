@@ -568,19 +568,19 @@ ApplicationWindow {
 
     // ── Keyboard shortcuts ──────────────────────────────────────────────
     // Numeric shortcuts switch tabs. Ctrl+Tab and Ctrl+Shift+Tab cycle.
-    Shortcut { sequence: "Ctrl+1"; onActivated: AppState.setActiveTab(0) }
-    Shortcut { sequence: "Ctrl+2"; onActivated: AppState.setActiveTab(1) }
-    Shortcut { sequence: "Ctrl+3"; onActivated: AppState.setActiveTab(2) }
-    Shortcut { sequence: "Ctrl+4"; onActivated: AppState.setActiveTab(3) }
-    Shortcut { sequence: "Ctrl+5"; onActivated: AppState.setActiveTab(4) }
+    Shortcut { sequence: "Ctrl+1"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(0) }
+    Shortcut { sequence: "Ctrl+2"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(1) }
+    Shortcut { sequence: "Ctrl+3"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(2) }
+    Shortcut { sequence: "Ctrl+4"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(3) }
+    Shortcut { sequence: "Ctrl+5"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.setActiveTab(4) }
     // Disabled while a modal is open so dialogs (e.g. SongEditor) can
     // claim Ctrl+Tab for their own view-mode toggles without two
     // handlers fighting over the same sequence.
-    Shortcut { sequence: "Ctrl+Tab";       enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab( 1) }
-    Shortcut { sequence: "Ctrl+Shift+Tab"; enabled: AppState.activeModal === ""; onActivated: AppState.cycleTab(-1) }
+    Shortcut { sequence: "Ctrl+Tab";       enabled: AppState.consoleShortcutsActive; onActivated: AppState.cycleTab( 1) }
+    Shortcut { sequence: "Ctrl+Shift+Tab"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.cycleTab(-1) }
 
     // Production actions
-    Shortcut { sequence: "Ctrl+,"; onActivated: AppState.openModal("settings", {}) }
+    Shortcut { sequence: "Ctrl+,"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.openModal("settings", {}) }
     // Ctrl+K = the global search command palette (search across every library
     // at once). Toggles: closed → open, open → close. Gated so it never stacks
     // on another modal or the full-screen theme-editor workspace; the palette
@@ -601,7 +601,7 @@ ApplicationWindow {
     // "Go Live" button + schedule double-click; the keyboard shortcut
     // is reserved for the lighter operator action of showing/hiding
     // the splash/wallpaper.
-    Shortcut { sequence: "Ctrl+L"; onActivated: AppState.toggleLogo() }
+    Shortcut { sequence: "Ctrl+L"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.toggleLogo() }
     // Ctrl+C = clear the projection (hide text, keep theme background +
     // logo). Same simple one-liner form as Ctrl+L — earlier attempts with
     // a text-input guard and Qt.ApplicationShortcut context appeared to
@@ -609,20 +609,24 @@ ApplicationWindow {
     // when a text input is focused with selected text, so in-dialog copy
     // is shadowed by Clear. Ctrl+. remains as the redundant clear
     // binding; right-click → copy still works in text fields.
-    Shortcut { sequence: "Ctrl+C"; onActivated: AppState.clearLive() }
+    Shortcut { sequence: "Ctrl+C"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.clearLive() }
     // Ctrl+. is the legacy "clear" shortcut from the Electron version —
     // kept as a backup binding that always fires (no text-input guard) so
     // operators inside a text field can still clear via this combo.
-    Shortcut { sequence: "Ctrl+."; onActivated: AppState.clearLive() }
+    Shortcut { sequence: "Ctrl+."; enabled: AppState.consoleShortcutsActive; onActivated: AppState.clearLive() }
     // Ctrl+T = stage the currently focused library item. The active tab
     // (ScriptureTab / SongsTab / MediaTab) handles via its
     // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
-    Shortcut { sequence: "Ctrl+T"; onActivated: AppState.libraryAddToSchedule() }
+    Shortcut { sequence: "Ctrl+T"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.libraryAddToSchedule() }
 
     // Save the working schedule. Updates the currently loaded saved row if
     // there is one; otherwise prompts the operator for a name (Save As).
     Shortcut {
         sequence: "Ctrl+S"
+        // Off while a dialog or the theme editor is up — both bind
+        // Ctrl+S to their own save, and an ungated one here made all
+        // three ambiguous, so none of them fired.
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             if (ScheduleService.loadedScheduleId > 0) {
                 ScheduleService.saveCurrent()
@@ -644,6 +648,7 @@ ApplicationWindow {
     // into a variant without overwriting the original.
     Shortcut {
         sequence: "Ctrl+Shift+S"
+        enabled: AppState.consoleShortcutsActive
         onActivated: AppState.openModal("naming", {
             title:       qsTr("Save schedule as"),
             placeholder: qsTr("e.g., Sunday AM - June 5"),
@@ -655,8 +660,21 @@ ApplicationWindow {
     }
 
     // Escape: close modal first; if no modal, deselect schedule item.
+    //
+    // Deliberately NOT gated on consoleShortcutsActive — ModalShell has
+    // no Escape handling of its own, so settings / naming / confirm /
+    // import / media-edit all rely on this one to close.
+    //
+    // The exclusions are the two surfaces that DO bind Escape: the song
+    // editor (which needs to intercept and warn about unsaved lyrics
+    // rather than let a blunt closeModal discard them) and the theme
+    // editor workspace. Leaving those in made Escape ambiguous, which
+    // is worse than either outcome: the key did nothing at all. Any
+    // future dialog that binds its own Escape belongs in this list.
     Shortcut {
         sequence: "Escape"
+        enabled: AppState.activeModal !== "songEditor"
+              && AppState.workspaceMode === ""
         onActivated: {
             if (AppState.activeModal !== "") {
                 AppState.closeModal()
@@ -675,8 +693,13 @@ ApplicationWindow {
     // deletion.
     Shortcut {
         sequence: "Delete"
+        // activeFocusPanel only reaches "schedule" through a deliberate
+        // schedule gesture (right-click, or a Ctrl / Shift multi-select
+        // click) — see SchedulePanel. A plain row click still leaves
+        // focus in the library, which is what keeps Delete from eating
+        // keystrokes in the sidebar search input.
         enabled: AppState.selectedScheduleIndices.length > 0
-              && AppState.activeModal === ""
+              && AppState.consoleShortcutsActive
               && AppState.activeFocusPanel === "schedule"
         onActivated: {
             const indices = AppState.selectedScheduleIndices.slice()
@@ -717,7 +740,7 @@ ApplicationWindow {
     // Keys.onShortcutOverride to avoid double-fire).
     Shortcut {
         sequence: "Up"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateUp(); break
@@ -728,7 +751,7 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Shift+Up"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateUp(); break
@@ -739,7 +762,7 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Down"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateDown(); break
@@ -755,7 +778,7 @@ ApplicationWindow {
     // arrow rather than swallowing the key.
     Shortcut {
         sequence: "Shift+Down"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewNavigateDown(); break
@@ -777,7 +800,7 @@ ApplicationWindow {
     // there.
     Shortcut {
         sequences: ["Return", "Enter"]
-        enabled: AppState.activeModal === ""
+        enabled: AppState.consoleShortcutsActive
         onActivated: {
             switch (AppState.activeFocusPanel) {
                 case "preview": AppState.previewActivate(); break
