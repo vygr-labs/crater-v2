@@ -27,11 +27,24 @@ namespace {
 // The one place the update feed is named. A compile-time constant, so
 // nothing in a downloaded payload can redirect the check itself.
 //
-// `/releases/latest` is also exactly the semantics we want: it skips drafts
-// and pre-releases, and release.yml publishes a DRAFT. "An update exists"
-// therefore means a human pressed Publish, not merely that CI went green.
-const QString kReleaseApi =
-    QStringLiteral("https://api.github.com/repos/vygr-labs/crater-v2/releases/latest");
+// Deliberately the release LIST rather than `/releases/latest`. That
+// endpoint means most-recently-created, not highest-version, and this
+// repository publishes more than app releases — there is a `data-v1`
+// release holding the bundled Bible and Strong's databases. Publishing a
+// `data-v2` some day would make it "latest" and quietly park every
+// installation on "up to date" forever. So we ask for the list and pick the
+// highest tag that actually names an app release (crater::isVersionTag).
+//
+// Drafts are filtered too, which preserves the property that matters:
+// release.yml publishes a DRAFT, so "an update exists" means a human
+// pressed Publish, not merely that CI went green. Unauthenticated callers
+// do not see drafts at all; the explicit check below is belt and braces.
+//
+// 50 per page: releases come back newest-first, and fifty is far more than
+// the number of data bundles that could ever bury a real release, while
+// staying one request.
+const QString kReleaseApi = QStringLiteral(
+    "https://api.github.com/repos/vygr-labs/crater-v2/releases?per_page=50");
 
 const QString kReleasesPage =
     QStringLiteral("https://github.com/vygr-labs/crater-v2/releases/latest");
@@ -199,11 +212,34 @@ void UpdateService::onCheckReply(QNetworkReply* reply, bool userInitiated)
         return;
     }
 
-    const QJsonObject release =
-        QJsonDocument::fromJson(reply->readAll()).object();
+    // Pick the highest APP release out of the list, ignoring drafts,
+    // pre-releases, and tags that name something other than a Crater build
+    // (see kReleaseApi). Highest rather than first: the list is ordered by
+    // creation date, and a patch cut after a later minor would otherwise
+    // win.
+    const QJsonArray releases = QJsonDocument::fromJson(reply->readAll()).array();
+    QJsonObject release;
+    QString     tag;
+    for (const QJsonValue& value : releases) {
+        const QJsonObject candidate = value.toObject();
+        if (candidate.value(QStringLiteral("draft")).toBool()) continue;
+        if (candidate.value(QStringLiteral("prerelease")).toBool()) continue;
 
-    const QString tag = release.value(QStringLiteral("tag_name")).toString();
+        const QString candidateTag =
+            candidate.value(QStringLiteral("tag_name")).toString();
+        if (!isVersionTag(candidateTag)) continue;
+
+        if (tag.isEmpty() || compareVersions(candidateTag, tag) > 0) {
+            tag     = candidateTag;
+            release = candidate;
+        }
+    }
+
     if (tag.isEmpty()) {
+        // Either the response was not a release list at all, or it held
+        // nothing that names an app build. Both are "we learned nothing",
+        // which is not the same as "you are up to date" — so say nothing
+        // rather than assert currency we cannot support.
         if (userInitiated)
             fail(tr("The update server sent a response Crater could not read."));
         else

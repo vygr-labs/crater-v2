@@ -39,4 +39,20 @@ inline bool isNewerVersion(const QString& candidate, const QString& current)
     return compareVersions(candidate, current) > 0;
 }
 
+// Does this git tag name an application release — "v0.6.1", "1.2.3-rc1" —
+// as opposed to some other tagged thing in the same repository?
+//
+// This exists because a repo holds more than app releases. Crater's already
+// carries a published `data-v1` release for the bundled Bible and Strong's
+// databases, and GitHub's "latest release" means most-recently-CREATED, not
+// highest-version. Without this filter, publishing a `data-v2` bundle would
+// make it "latest", the updater would read a version out of it, get junk,
+// sort the junk low, and quietly report "up to date" from then on — a
+// permanent silent failure caused by a routine action.
+//
+// True only when the part before any pre-release suffix is one or more
+// dot-separated runs of digits, after an optional leading 'v'. So "v0.6.1"
+// and "0.6" pass; "data-v1", "nightly" and "" do not.
+bool isVersionTag(const QString& tag);
+
 }  // namespace crater
