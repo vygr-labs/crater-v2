@@ -34,11 +34,6 @@ Rectangle {
             return p && p.content && String(p.content).length > 0
         })
     }
-    // Whatever the operator was pointing at with Ctrl+Arrow no longer means
-    // anything once a different item goes live — the index would carry over
-    // onto an unrelated page list. Drop the highlight rather than let it
-    // land somewhere arbitrary.
-    onPagesChanged: AppState.liveScrubIndex = -1
     // `isClear` no longer makes the live state collapse — clearing hides
     // text but keeps the theme background (and logo, if showing) on the
     // projector. From the operator's perspective the channel is still
@@ -90,7 +85,18 @@ Rectangle {
     // Re-sync on every input that gates or paces the timer. liveSubIndex
     // firing here (from either a manual jump or the timer's own advance) is
     // what re-arms the full delay for the next slide.
-    onPagesChanged:  _syncAutoAdvance()
+    // One handler, two jobs — QML permits only a single `onPagesChanged`
+    // declaration on this object, so the Ctrl+Arrow reset lives here rather
+    // than in its own block next to the `pages` property it reacts to.
+    //
+    // The reset: whatever the operator was pointing at with Ctrl+Arrow stops
+    // meaning anything once a different item goes live, because the index
+    // would carry over onto an unrelated page list. Drop the highlight rather
+    // than let it land somewhere arbitrary.
+    onPagesChanged: {
+        AppState.liveScrubIndex = -1
+        _syncAutoAdvance()
+    }
     onIsLiveChanged: _syncAutoAdvance()
     Connections {
         target: SettingsService
