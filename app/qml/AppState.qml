@@ -1202,6 +1202,20 @@ QtObject {
     // which verse the operator is focused on).
     signal requestPushLiveInTranslation(string translationCode)
 
+    // Emitted right after a row is appended to the working schedule, carrying
+    // the new row's index. SchedulePanel listens and scrolls it into view.
+    //
+    // It exists because the panel cannot tell an append apart from any other
+    // change on its own: its ListView is bound to ScheduleService.currentItems,
+    // a QVariantList that is replaced wholesale on every mutation, so the view
+    // regenerates and drops contentY to 0 — the operator adds an item and the
+    // schedule jumps to the top, away from the row they just created. Watching
+    // for "the count went up" would also fire on loading a saved schedule,
+    // which should stay at the top, hence an explicit signal rather than a
+    // heuristic. ScheduleService::addItem always appends, so the index is
+    // always the new last row.
+    signal scheduleItemAppended(int index)
+
     // Convenience for the "Add to Schedule" right-click action — adds the
     // item AND selects it so the operator gets immediate visual feedback.
     function addItemToSchedule(item) {
@@ -1210,6 +1224,7 @@ QtObject {
         // selectScheduleItem keeps the multi-set in sync with the primary
         // index and clears any active library-preview override.
         selectScheduleItem(ScheduleService.currentItems.length - 1)
+        scheduleItemAppended(ScheduleService.currentItems.length - 1)
     }
 
     // ─── Global search (command palette, Ctrl+K) ─────────────────────────

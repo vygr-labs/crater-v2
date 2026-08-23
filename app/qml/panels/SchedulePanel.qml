@@ -248,6 +248,20 @@ Rectangle {
                 return Math.max(0, Math.min(count - 1, draggedRow + delta))
             }
 
+            // Bring a freshly-appended row into view. Without this the
+            // operator adds an item and the schedule jumps to the top: the
+            // model is a QVariantList replaced wholesale on every mutation,
+            // so the ListView regenerates and contentY resets to 0. Contain
+            // scrolls the minimum needed, which for an appended row means
+            // settling on the bottom edge exactly where the new item is.
+            Connections {
+                target: AppState
+                function onScheduleItemAppended(index) {
+                    if (index >= 0 && index < list.count)
+                        list.positionViewAtIndex(index, ListView.Contain)
+                }
+            }
+
             add: Transition {
                 NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.motion.normal }
             }
@@ -393,6 +407,13 @@ Rectangle {
                               const copy = Object.assign({}, item)
                               delete copy.id
                               ScheduleService.addItem(copy)
+                              // Deliberately not routed through
+                              // AppState.addItemToSchedule: that also selects
+                              // the new row, and duplicating shouldn't move the
+                              // operator's selection. We still announce the
+                              // append so the copy gets scrolled into view.
+                              AppState.scheduleItemAppended(
+                                  ScheduleService.currentItems.length - 1)
                           } },
                         // First-class submenu — chevron + hover-open inside
                         // PopoverMenu. Used to be two sibling top-level
