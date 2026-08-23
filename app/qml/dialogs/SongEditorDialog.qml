@@ -837,16 +837,31 @@ ModalShell {
 
                         Repeater {
                             id: sectionsRepeater
-                            model: root._sections
+                            // Count-only, deliberately NOT `root._sections`. A
+                            // Repeater bound to a JS array rebuilds its whole
+                            // delegate tree whenever that array is reassigned, and
+                            // `_setLines` / `_setLabel` reassign on every keystroke
+                            // — so each character destroyed every card and took the
+                            // focused TextEdit with it (focus lost, caret back to 0).
+                            // Against the length, a content edit only re-evaluates
+                            // the two strings below and the card survives, leaving
+                            // LyricSectionEditor's `_lastEmittedDsl` guard to absorb
+                            // the echo as it was always meant to. Add / delete /
+                            // duplicate still change the count and regenerate.
+                            model: root._sections.length
 
-                            // Inline wrapper so we can declare the index +
-                            // modelData as required properties (Qt 6 idiom)
-                            // and forward them to LyricSectionEditor without
-                            // shadowing the delegate's `index` context property.
+                            // Inline wrapper so we can declare `index` as a required
+                            // property (Qt 6 idiom) and forward it to
+                            // LyricSectionEditor without shadowing the delegate's
+                            // own `index`. The section is looked up rather than
+                            // injected as `modelData` now that the model is a count;
+                            // `|| null` covers the beat during a delete where a
+                            // doomed delegate re-evaluates past the shortened end.
                             delegate: Item {
                                 id: sectionItem
                                 required property int index
-                                required property var modelData
+                                readonly property var section:
+                                    root._sections[sectionItem.index] || null
 
                                 width:  sectionsCol.width
                                 height: cardEditor.implicitHeight
@@ -861,9 +876,9 @@ ModalShell {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     index:     sectionItem.index
-                                    label:     (sectionItem.modelData && sectionItem.modelData.label) || ""
-                                    linesText: (sectionItem.modelData && sectionItem.modelData.lines)
-                                        ? sectionItem.modelData.lines.join("\n") : ""
+                                    label:     (sectionItem.section && sectionItem.section.label) || ""
+                                    linesText: (sectionItem.section && sectionItem.section.lines)
+                                        ? sectionItem.section.lines.join("\n") : ""
                                     canDelete: root._sections.length > 1
                                     active:    root._currentSection === sectionItem.index
 
