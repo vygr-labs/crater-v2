@@ -284,6 +284,17 @@ makes easy to get wrong:
   rendered visibly smaller than content slides for no reason the author intended.
   The card hugs actual rendered height, so an oversized box costs no dead space.
 
+`qt/docs/examples/presentation-stream-strap.theme.json` — a compact broadcast
+lower third. It shows the one §7 feature that is easy to miss: a container can
+carry **both a fill and `data.group`**, so the panel itself hugs the text
+instead of being a fixed box drawn behind it. The strap therefore measures
+~13.6% of frame on a title-only slide and ~19.5% with a body, with no dead
+space at either size, and the background can never be the wrong height.
+
+Its brand rule is pinned near the strap's **bottom**, because bottom-anchored
+is the one edge a hugging card holds still. Anything pinned to the top of a
+hugging card drifts with content length.
+
 ---
 
 ## 9. Checklist before importing
