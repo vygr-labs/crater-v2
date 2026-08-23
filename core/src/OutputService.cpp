@@ -37,6 +37,26 @@ int clampedTransitionMs(int ms)
     return ms;
 }
 
+// Content mode decides which scene a window mounts, so an unrecognised
+// value must not be allowed through: a physical display rendering neither
+// the audience view nor the presenter view is a black screen the operator
+// has no way to diagnose. Anything unknown collapses to the audience
+// render, which is the mode every output had before stage mode existed.
+QString normalizedContentMode(const QString& mode)
+{
+    if (mode == QStringLiteral("stage")) return QStringLiteral("stage");
+    return QStringLiteral("mirror");
+}
+
+// The mode a freshly-seeded or newly-registered output starts in. Derived
+// from role rather than stored as a second default, so "register a stage
+// output" cannot produce a stage output that mirrors.
+QString contentModeForRole(const QString& role)
+{
+    if (role == QStringLiteral("stage")) return QStringLiteral("stage");
+    return QStringLiteral("mirror");
+}
+
 // Built-in seeds. The three slugs match the values QML scenes pass as
 // outputKind today, so existing consumers find a binding the moment they
 // look one up. displayName mirrors what the Themes tab + Projection
@@ -58,6 +78,13 @@ QList<OutputBinding> defaultBuiltins()
     stage.id          = QStringLiteral("stage");
     stage.displayName = QStringLiteral("Stage Monitor");
     stage.role        = QStringLiteral("stage");
+    stage.contentMode = QStringLiteral("stage");
+    // Ships off. A stage monitor that turned itself on at first launch
+    // would seize a display nobody has told us about yet, and on a
+    // two-screen desk that display is the audience projector. The operator
+    // enables it in Settings > Projection, which is also where they pick
+    // the screen it lands on.
+    stage.enabled     = false;
 
     return { primary, ndi, stage };
 }
@@ -327,6 +354,39 @@ int resolveScreenIndex(const QList<crater::Screen>& screens,
     return qMax(0, screens.size() - 1);
 }
 
+// Extra outputs resolve strictly: the remembered name first, then the
+// stored index while it is still in range, otherwise -1 (unassigned).
+//
+// The difference from resolveScreenIndex above is the missing fallback,
+// and it is deliberate. The audience output must always land somewhere --
+// a service with no projection is worse than a projection on the wrong
+// screen. A stage monitor or overflow display is the opposite: if its
+// screen is unplugged the only safe answer is "nowhere". Clamping it the
+// way primary clamps would walk a confidence monitor onto the operator
+// console mid-service, covering the controls with a window whose whole
+// purpose is to be looked at by somebody else.
+//
+// screenName is left intact when this returns -1, so plugging the display
+// back in re-resolves by name and the output returns to it on its own.
+int resolveStrictScreenIndex(const QList<crater::Screen>& screens,
+                             const QString& desiredName,
+                             int desiredIndex)
+{
+    if (screens.isEmpty()) return -1;
+    if (!desiredName.isEmpty()) {
+        for (int i = 0; i < screens.size(); ++i) {
+            if (screens[i].name == desiredName) return i;
+        }
+        // A recorded name that no longer matches anything means the chosen
+        // display is genuinely gone. Don't fall through to the index -- on
+        // a machine that just lost a monitor, the old index now points at a
+        // DIFFERENT display.
+        return -1;
+    }
+    if (desiredIndex >= 0 && desiredIndex < screens.size()) return desiredIndex;
+    return -1;
+}
+
 }  // namespace
 
 void OutputService::rebuildScreens()
@@ -360,6 +420,9 @@ void OutputService::rebuildScreens()
         emit selectedScreenIndexChanged();
     }
 
+    // Same replug recovery for every other output.
+    const bool outputsMoved = resolveOutputScreens();
+
     if (!m_impl->modeIsUserSet) {
         const auto newMode = computeDefaultMode();
         if (newMode != m_impl->mode) {
@@ -369,9 +432,33 @@ void OutputService::rebuildScreens()
     }
 
     emit screensChanged();
+    // Emitted after screensChanged, so a QML handler reacting to the new
+    // screen list already sees re-resolved placements rather than bindings
+    // still pointing at displays that no longer exist.
+    if (outputsMoved) emit outputsChanged();
 }
 
 // ── Registry helpers ────────────────────────────────────────────────────
+
+// Skipped for "primary" (handled by the global selection it aliases) and for
+// outputs that were never assigned a display, which must stay unassigned
+// rather than adopt whatever sits at index 0.
+bool OutputService::resolveOutputScreens()
+{
+    if (!m_impl) return false;
+    bool moved = false;
+    for (auto& b : m_impl->outputs) {
+        if (b.id == QStringLiteral("primary")) continue;
+        if (b.screenIndex < 0 && b.screenName.isEmpty()) continue;
+        const int idx = resolveStrictScreenIndex(m_impl->screens,
+                                                 b.screenName, b.screenIndex);
+        if (idx == b.screenIndex) continue;
+        b.screenIndex = idx;
+        persistOutput(b);
+        moved = true;
+    }
+    return moved;
+}
 
 void OutputService::seedBuiltinsIfMissing()
 {
@@ -420,9 +507,28 @@ void OutputService::loadOutputsFromSettings()
                     QStringLiteral("crossfade")).toString());
         b.transitionDurationMs = clampedTransitionMs(
             s.value(p + QStringLiteral("transitionDurationMs"), 280).toInt());
+        b.enabled              = s.value(p + QStringLiteral("enabled"), false).toBool();
+        b.screenIndex          = s.value(p + QStringLiteral("screenIndex"), -1).toInt();
+        b.screenName           = s.value(p + QStringLiteral("screenName")).toString();
+        // Default derived from role, not hardcoded to "mirror": an install
+        // that predates multi-display has a persisted "stage" output with no
+        // contentMode key, and reading that as a mirror would turn the newly
+        // wired Stage Monitor into a second audience screen.
+        b.contentMode          = normalizedContentMode(
+            s.value(p + QStringLiteral("contentMode"),
+                    contentModeForRole(b.role)).toString());
         loaded.append(std::move(b));
     }
     m_impl->outputs = std::move(loaded);
+
+    // Resolve placements against the displays actually attached right now.
+    // The constructor calls rebuildScreens() BEFORE this function -- it has
+    // to, because the screen list is what a placement resolves against --
+    // so that pass ran over an empty registry and this is the first chance
+    // to check a stored screenIndex. Without it, a stage monitor whose
+    // display came back on a different port would sit on the wrong screen
+    // for the whole session, until some later hot-plug happened to fix it.
+    resolveOutputScreens();
     emit outputsChanged();
 }
 
@@ -436,6 +542,10 @@ void OutputService::persistOutput(const OutputBinding& b)
     s.setValue(p + QStringLiteral("themes"),               themesToJson(b.themes));
     s.setValue(p + QStringLiteral("transitionStyle"),      b.transitionStyle);
     s.setValue(p + QStringLiteral("transitionDurationMs"), b.transitionDurationMs);
+    s.setValue(p + QStringLiteral("enabled"),              b.enabled);
+    s.setValue(p + QStringLiteral("screenIndex"),          b.screenIndex);
+    s.setValue(p + QStringLiteral("screenName"),           b.screenName);
+    s.setValue(p + QStringLiteral("contentMode"),          b.contentMode);
 }
 
 void OutputService::runLegacyMigration()
@@ -603,6 +713,137 @@ void OutputService::setTransitionDurationMs(const QString& outputId, int ms)
     }
 }
 
+// ── Multi-display placement ─────────────────────────────────────────────
+
+bool OutputService::outputEnabled(const QString& outputId) const
+{
+    // "primary" reports enabled unconditionally. Its window always exists;
+    // whether the audience is SEEING it is AppState.projectorVisible, a live
+    // gesture rather than a stored preference. Reporting the raw (always
+    // false) flag here would make every "does this output have a window"
+    // caller -- screenIsContested included -- skip the audience output,
+    // which is precisely the one that matters.
+    if (outputId == QStringLiteral("primary")) return true;
+    if (!m_impl) return false;
+    for (const auto& b : m_impl->outputs) {
+        if (b.id == outputId) return b.enabled;
+    }
+    return false;
+}
+
+void OutputService::setOutputEnabled(const QString& outputId, bool enabled)
+{
+    if (!m_impl) return;
+    // primary and ndi own their own lifecycles (projectorVisible and
+    // NdiService.sending respectively). Accepting a write here would store
+    // a flag nothing reads, which is worse than refusing it -- the operator
+    // would see a switch that appears to do something and does not.
+    if (outputId == QStringLiteral("primary")) return;
+    if (outputId == QStringLiteral("ndi"))     return;
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        if (b.enabled == enabled) return;
+        b.enabled = enabled;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+int OutputService::screenIndexFor(const QString& outputId) const
+{
+    if (!m_impl) return -1;
+    // Aliased onto the global selection rather than copied -- see the
+    // header. Keeps one answer to "which display is the audience on",
+    // shared with the Projection settings picker and the replug recovery.
+    if (outputId == QStringLiteral("primary")) return m_impl->selectedIndex;
+    for (const auto& b : m_impl->outputs) {
+        if (b.id == outputId) return b.screenIndex;
+    }
+    return -1;
+}
+
+void OutputService::setScreenIndexFor(const QString& outputId, int index)
+{
+    if (!m_impl) return;
+    if (outputId == QStringLiteral("primary")) {
+        setSelectedScreenIndex(index);
+        return;
+    }
+    // -1 is a legal write: it means "unassign", and the settings UI offers
+    // it so an operator can park an output for a week without deleting it
+    // and losing its theme pins and transition tuning.
+    if (index < -1 || index >= m_impl->screens.size()) return;
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        const QString name = (index >= 0) ? m_impl->screens[index].name : QString();
+        if (b.screenIndex == index && b.screenName == name) return;
+        b.screenIndex = index;
+        // Record the name alongside the index so a replug onto a different
+        // port still finds this display. Cleared on unassign, so a stale
+        // name cannot resurrect the output on the next hot-plug rebuild.
+        b.screenName  = name;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+QString OutputService::contentMode(const QString& outputId) const
+{
+    if (!m_impl) return QStringLiteral("mirror");
+    for (const auto& b : m_impl->outputs) {
+        if (b.id == outputId) return b.contentMode;
+    }
+    return QStringLiteral("mirror");
+}
+
+void OutputService::setContentMode(const QString& outputId, const QString& mode)
+{
+    if (!m_impl) return;
+    const QString m = normalizedContentMode(mode);
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        if (b.contentMode == m) return;
+        b.contentMode = m;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+void OutputService::setDisplayName(const QString& outputId, const QString& name)
+{
+    if (!m_impl) return;
+    const QString trimmed = name.trimmed();
+    // An empty rename is dropped rather than stored. A row labelled with
+    // nothing is unusable in the output picker, and the operator has no
+    // obvious way back from it.
+    if (trimmed.isEmpty()) return;
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        if (b.displayName == trimmed) return;
+        b.displayName = trimmed;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+bool OutputService::screenIsContested(const QString& outputId, int index) const
+{
+    if (!m_impl || index < 0) return false;
+    for (const auto& b : m_impl->outputs) {
+        if (b.id == outputId) continue;
+        // NDI renders to a network stream, not a display, so it can never
+        // contend for a physical screen no matter what index it carries.
+        if (b.role == QStringLiteral("ndi")) continue;
+        if (!outputEnabled(b.id)) continue;
+        if (screenIndexFor(b.id) == index) return true;
+    }
+    return false;
+}
+
 QString OutputService::registerOutput(const QString& role, const QString& displayName)
 {
     if (!m_impl) return {};
@@ -623,6 +864,12 @@ QString OutputService::registerOutput(const QString& role, const QString& displa
     b.id          = id;
     b.displayName = displayName.isEmpty() ? id : displayName;
     b.role        = role;
+    b.contentMode = contentModeForRole(role);
+    // On by default: the operator just asked for this output to exist, so
+    // making them flip a second switch to see it is friction. It still has
+    // no screen (screenIndex -1) until they pick one, so enabling it here
+    // cannot put a window anywhere unexpected.
+    b.enabled     = true;
 
     m_impl->outputs.append(b);
     persistOutput(b);

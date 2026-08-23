@@ -115,6 +115,45 @@ public:
     Q_INVOKABLE int     transitionDurationMs(const QString& outputId) const;
     Q_INVOKABLE void    setTransitionDurationMs(const QString& outputId, int ms);
 
+    // ── Multi-display: per-output placement and mode ────────────────────
+    // Every output that renders a window carries its own display
+    // assignment, its own on/off switch and its own content mode. Before
+    // these, the registry could say how an output should look but not
+    // where it should go, so a second projection window had nowhere to be.
+    //
+    // "primary" is deliberately aliased onto the pre-existing global
+    // selection rather than given a parallel copy: screenIndexFor("primary")
+    // reads selectedScreenIndex and setScreenIndexFor("primary", i) routes
+    // to setSelectedScreenIndex(i). The Projection settings screen picker,
+    // the hot-plug re-resolve and the replug-by-name recovery all keep
+    // working untouched, and there is still exactly one answer to "which
+    // display is the audience on".
+    Q_INVOKABLE bool    outputEnabled(const QString& outputId) const;
+    Q_INVOKABLE void    setOutputEnabled(const QString& outputId, bool enabled);
+
+    // Index into screens(). Returns -1 when the output has no display
+    // assigned yet (fresh registration) so QML can show "Not assigned"
+    // rather than silently pointing a new output at screen 0, which on a
+    // single-monitor desk is the operator's own console.
+    Q_INVOKABLE int     screenIndexFor(const QString& outputId) const;
+    Q_INVOKABLE void    setScreenIndexFor(const QString& outputId, int index);
+
+    // "mirror" (audience render) | "stage" (presenter view). Anything else
+    // normalizes to "mirror" — an unknown mode must not leave a physical
+    // display rendering nothing.
+    Q_INVOKABLE QString contentMode(const QString& outputId) const;
+    Q_INVOKABLE void    setContentMode(const QString& outputId, const QString& mode);
+
+    // Operator-facing rename. Empty names are ignored rather than stored,
+    // so an accidental clear can't produce an unlabelled row.
+    Q_INVOKABLE void    setDisplayName(const QString& outputId, const QString& name);
+
+    // True when some OTHER enabled window-bearing output already occupies
+    // this screen. The settings UI warns on it instead of refusing: two
+    // outputs on one display is legitimate while an operator is re-patching
+    // mid-service, it just isn't what they usually mean.
+    Q_INVOKABLE bool    screenIsContested(const QString& outputId, int index) const;
+
     // Dynamic registration / removal. role ∈ {"projection","ndi","stage",
     // ...}; built-ins (primary/ndi/stage) cannot be unregistered. Returns
     // the assigned id ("<role>-<n>" auto-numbered); the id is also added
@@ -142,6 +181,12 @@ private:
     ProjectionMode computeDefaultMode() const;
 
     // Registry helpers.
+    // Re-resolves every non-primary output's screenIndex against the display
+    // list currently in m_impl->screens. Returns true when any placement
+    // moved, so callers know whether to emit outputsChanged(). Runs both at
+    // load (the stored index may be stale from a previous session) and on
+    // every hot-plug.
+    bool resolveOutputScreens();
     void seedBuiltinsIfMissing();
     void loadOutputsFromSettings();
     void persistOutput(const OutputBinding& b);
