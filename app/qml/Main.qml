@@ -1,3 +1,4 @@
+import QtQml
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic
@@ -505,6 +506,55 @@ ApplicationWindow {
         keepRendering:     (NdiService.sending
                          && SettingsService.outputMode === "single")
                         || BrowserCastService.active
+    }
+
+    // ── Extra output windows (multi-display) ─────────────────────────────
+    // One window per registered output that is not the audience projector
+    // and not NDI. "primary" is the ProjectionWindow above; NDI renders to a
+    // network stream through NdiCanvas and has no display of its own. Every
+    // other entry — the built-in Stage Monitor, plus anything the operator
+    // adds in Settings > Projection — gets an OutputWindow that decides for
+    // itself whether it is currently showable.
+    //
+    // Instantiator, not Repeater: Repeater reparents its delegates and so
+    // requires them to be Items, and a Window is not an Item. Instantiator
+    // creates plain QObjects, which is exactly what a top-level Window is.
+    //
+    // The model is a list of ID STRINGS held in a property that is only
+    // reassigned when the set of ids genuinely changes — deliberately not a
+    // binding on OutputService.outputs. outputsChanged() is a coarse signal
+    // that also fires for a theme pin, a transition tweak, or an enable
+    // toggle; binding straight to it would hand Instantiator a new array
+    // every time and tear down and rebuild every output window, so flipping
+    // a stage monitor off and on would destroy a live fullscreen window
+    // mid-service. Enable / screen / mode changes instead flow through
+    // OutputWindow's own bindings, which re-evaluate without recreating it.
+    property var _outputWindowIds: []
+
+    function _refreshOutputWindowIds() {
+        const list = OutputService.outputs
+        const ids = []
+        for (let i = 0; i < list.length; i++) {
+            const b = list[i]
+            if (b.id === "primary" || b.role === "ndi") continue
+            ids.push(b.id)
+        }
+        if (ids.join("|") === root._outputWindowIds.join("|")) return
+        root._outputWindowIds = ids
+    }
+
+    Connections {
+        target: OutputService
+        function onOutputsChanged() { root._refreshOutputWindowIds() }
+    }
+
+    Instantiator {
+        model: root._outputWindowIds
+        delegate: OutputWindow { outputId: modelData }
+        // Seed the list once at startup. Scoped here rather than added to
+        // the window's own Component.onCompleted so this whole feature is
+        // one contiguous block that can be read (or removed) on its own.
+        Component.onCompleted: root._refreshOutputWindowIds()
     }
 
     // Single-screen go-live: keep the console in front. ProjectionWindow drops

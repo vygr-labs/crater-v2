@@ -2,8 +2,8 @@
 
 Punch-list of what's left before v1 / v1.1. Crater is essentially
 feature-complete for a v1 core (Bible, Songs, Themes + editor, Schedule,
-Media, Fonts, Projection + transitions, multi-monitor routing, NDI, and the
-operator console are all done). What remains splits into: a couple of
+Media, Fonts, Projection + transitions, multi-display output incl. a stage
+monitor, NDI, and the operator console are all done). What remains splits into: a couple of
 genuinely-unbuilt features, a set of settings toggles that render but do
 nothing yet ("Soon"), v1.1-deferred items, tuning/loose ends, and a
 forward-looking competitive-parity roadmap (what ProPresenter has that we don't).
@@ -203,10 +203,37 @@ The interactive remote (go-live / next / prev / blank / search / add-to-schedule
 - [ ] Enable the disabled preview controls in `RemoteControlSection.qml:167-222` (enable toggle, port, require-password).
 - Note: `BrowserCastService` (`app/src/BrowserCastService.cpp`) is real and working, but it's a **one-way, view-only** MJPEG/video cast to a TV/phone browser — not a control channel. Self-documented as "temporary / removable."
 
-### Multi-output (stage monitor + dynamic outputs)
-- [ ] `OutputService` already has the full registry / theme-slot / transition plumbing (`registerOutput`, `stage` builtin), but **no window renders anything except `primary` and `ndi`**. Wire a real Stage Monitor window + generic dynamic-output windows to consume the existing bindings (`app/qml/components/ProjectionScene.qml:18` marks stage "reserved for v1.1").
-- [ ] The Projection settings rows are aspirational mockups: NDI toggle `ProjectionSection.qml:370-411`, Stage Monitor `:415-456`, "Add output" (decorative) `:459-487`, "Clear output when idle" (no idle timer) `:503-527`.
-- [ ] Theme context-menu "Set for Stage Monitor (Soon)" (`ThemesTab.qml:738-746`) writes to `OutputService.setThemeIdFor("stage", …)` but nothing consumes it yet.
+### Multi-output (stage monitor + dynamic outputs) — DONE
+Shipped: every registered output now carries its own **display assignment**,
+enable flag and content mode, and `Main.qml` instantiates a window per enabled
+entry. That was the one missing piece — the registry could always describe how
+an output should *look*, but not where it should *go*, so a second window had
+nowhere to be.
+- [x] `OutputBinding` gained `enabled` / `screenIndex` / `screenName` /
+      `contentMode`; `OutputService` gained the matching accessors plus
+      `screenIsContested`. `screenIndexFor("primary")` deliberately **aliases**
+      the pre-existing global `selectedScreenIndex` rather than duplicating it,
+      so the Output settings picker and the replug-by-name recovery keep one
+      source of truth.
+- [x] **Replug survival for extra outputs.** `resolveStrictScreenIndex` re-resolves
+      by remembered display NAME on hot-plug, and returns -1 (dark) rather than
+      clamping when that display is gone — a confidence monitor must never walk
+      onto the operator console mid-service the way a clamped index would.
+- [x] `OutputWindow.qml` — one window per extra output. Kept separate from
+      `ProjectionWindow.qml` on purpose: that file's ~250 lines of single-screen
+      safety logic exist because the AUDIENCE output shares a machine with the
+      console, and none of it applies to an output given a display by name.
+- [x] `StageScene.qml` — a real **presenter view**: live text, the preacher's
+      speaker notes, what is next, a clock, and a banner when the audience screen
+      is blanked or showing the logo. Deliberately unthemed (see its header).
+- [x] Settings ▸ Projection ▸ Multiple Outputs is live — per-output screen picker
+      (incl. "Not assigned"), Mirror/Stage mode, enable toggle, inline rename,
+      remove, plus contested-screen / on-console / display-gone warnings. "Add
+      output" registers for real.
+- [x] Theme context-menu no longer says "(Soon)": it enumerates every registered
+      output in mirror mode, and says *why* when there are none to offer.
+- [ ] Remaining from this section: **"Clear output when idle"**
+      (`ProjectionSection.qml`) is still a mockup — no idle timer exists.
 
 ### Auto-update
 - [x] **DONE — shipped, see `docs/auto-update.md`.** `UpdateService`
@@ -236,7 +263,7 @@ operator console) — the gaps are mostly **production / integration**, not
 presentation. Ordered by how much a real church deployment feels each one.
 
 Several PP features already have a home above and are **not** repeated here:
-Stage Display → *Multi-output* (§🔵), interactive phone control → *Phone
+Stage Display → *Multi-output* (done), interactive phone control → *Phone
 remote-control server* (§🔵), in-app updates → *Auto-update* (done), cross-library
 search → *Global search* (§🔴), verse highlight / book:chapter footer /
 auto-advance → *Scripture & Song settings* (§🟡).
@@ -261,10 +288,12 @@ auto-advance → *Scripture & Song settings* (§🟡).
       a slide background or full-screen source. Today NDI and `BrowserCastService`
       are **output-only** — nothing comes in. Needs a capture/input path
       (`QMediaCaptureSession` / NDI receiver) surfaced as a media source.
-- [ ] **Multiple independent outputs + masks / edge-blend / warp.** Drive several
-      screens with *different* content, plus screen-shaping for projection
-      mapping. Builds on the existing `OutputService` registry (already models
-      >2 outputs) once the Multi-output windows (§🔵) land.
+- [ ] **Masks / edge-blend / warp.** Screen-shaping for projection mapping. The
+      *multiple independent outputs* half of this is now done (see Multi-output
+      above): several screens can run different content, each with its own theme
+      pin, transition and content mode. What remains is the geometry work —
+      per-output masks, edge blending and keystone / warp — which needs a
+      transform stage between the canvas and the window that does not exist yet.
 - [ ] **Built-in recording & streaming.** Record the program output to disk and
       stream to RTMP / YouTube / Facebook. No capture pipeline exists today.
 - [ ] **MIDI / macros / triggers / "Looks."** Hardware (MIDI) control, macro

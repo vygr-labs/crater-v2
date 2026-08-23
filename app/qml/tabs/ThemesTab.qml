@@ -461,9 +461,75 @@ Item {
                 _outputsRev
                 return OutputService.themeIdFor("ndi", modelData.kind) === modelData.id
             }
-            readonly property bool _isStage: {
+            // Theme pins for every OTHER registered output, built fresh on
+            // each registry change. This was a single hardcoded "Stage
+            // Monitor (Soon)" row back when "stage" was the only output that
+            // could ever exist besides primary and NDI. Outputs are dynamic
+            // now — a church can add an overflow screen or a foyer display —
+            // so the menu enumerates them instead of naming one.
+            //
+            // Only outputs in "mirror" content mode appear. The presenter
+            // view (StageScene) is deliberately unthemed — it is text on flat
+            // colour so it stays readable from across a dark room — so
+            // offering to pin a theme to a stage-mode output would be an
+            // option that silently does nothing.
+            // Display names of every extra output this theme is pinned to.
+            // Drives the tile badge. Deliberately NOT filtered by content
+            // mode, unlike _outputPinEntries below: a pin on an output that
+            // has since been switched to presenter view is inert, and the
+            // operator can only notice and clear it if the tile still admits
+            // it exists.
+            readonly property var _pinnedOutputNames: {
                 _outputsRev
-                return OutputService.themeIdFor("stage", modelData.kind) === modelData.id
+                const list = OutputService.outputs
+                let names = []
+                for (let i = 0; i < list.length; i++) {
+                    const b = list[i]
+                    if (b.id === "primary" || b.role === "ndi") continue
+                    if (OutputService.themeIdFor(b.id, modelData.kind) === modelData.id)
+                        names.push(b.displayName)
+                }
+                return names
+            }
+
+            readonly property var _outputPinEntries: {
+                _outputsRev
+                const list = OutputService.outputs
+                let entries = []
+                let sawStageMode = false
+                for (let i = 0; i < list.length; i++) {
+                    const b = list[i]
+                    if (b.id === "primary" || b.role === "ndi") continue
+                    if (b.contentMode !== "mirror") { sawStageMode = true; continue }
+                    const pinned =
+                        OutputService.themeIdFor(b.id, modelData.kind) === modelData.id
+                    // Bind id + pinned per iteration: a closure over the loop
+                    // variables would have every row act on the last output.
+                    entries.push({
+                        label: pinned ? qsTr("Unset for %1").arg(b.displayName)
+                                      : qsTr("Set for %1").arg(b.displayName),
+                        iconName: "tv",
+                        action: (function(outId, isPinned) {
+                            return function() {
+                                OutputService.setThemeIdFor(
+                                    outId, modelData.kind, isPinned ? 0 : modelData.id)
+                            }
+                        })(b.id, pinned)
+                    })
+                }
+                if (entries.length === 0) {
+                    // Say WHICH of the two reasons applies, so the operator
+                    // knows whether to add an output or switch one out of
+                    // presenter mode.
+                    entries.push({
+                        label: sawStageMode
+                                 ? qsTr("Presenter-view outputs are unthemed")
+                                 : qsTr("No other outputs configured"),
+                        iconName: "tv",
+                        enabled: false
+                    })
+                }
+                return entries
             }
 
             Rectangle {
@@ -629,8 +695,13 @@ Item {
                             font.letterSpacing: 0.8
                         }
                     }
+                    // One badge covering every extra output, rather than one
+                    // badge per output: a tile is 200-odd px wide and a church
+                    // with three extra screens would push the theme name off
+                    // it. Names the output when there is exactly one, counts
+                    // them otherwise.
                     Rectangle {
-                        visible: tileRoot._isStage
+                        visible: tileRoot._pinnedOutputNames.length > 0
                         width: stageLabel.implicitWidth + Theme.space.sm * 2
                         height: 16
                         radius: 2
@@ -641,7 +712,9 @@ Item {
                         Text {
                             id: stageLabel
                             anchors.centerIn: parent
-                            text: qsTr("STAGE")
+                            text: tileRoot._pinnedOutputNames.length === 1
+                                    ? tileRoot._pinnedOutputNames[0].toUpperCase()
+                                    : qsTr("%1 OUTPUTS").arg(tileRoot._pinnedOutputNames.length)
                             color: Theme.color.textSecondary
                             font.family: Theme.font.monoFamily
                             font.pixelSize: 11
@@ -703,8 +776,9 @@ Item {
                         // are per-output pins that auto-route by the theme's kind
                         // into that output's slot. NDI is live only in dual
                         // output mode (disabled + annotated otherwise, and an
-                        // already-set pin stays clearable); Stage stays Soon
-                        // until multi-output lands in v1.1.
+                        // already-set pin stays clearable). Every other
+                        // registered output that renders a themed scene is
+                        // appended from _outputPinEntries.
                         { label: qsTr("Set as default %1 theme").arg(modelData.kind),
                           iconName: "star",
                           submenu: [
@@ -735,16 +809,7 @@ Item {
                                         "ndi", modelData.kind,
                                         tileRoot._isNdi ? 0 : modelData.id)
                                 } },
-                              { label: tileRoot._isStage
-                                      ? qsTr("Unset for Stage Monitor (Soon)")
-                                      : qsTr("Set for Stage Monitor (Soon)"),
-                                iconName: "tv",
-                                action: () => {
-                                    OutputService.setThemeIdFor(
-                                        "stage", modelData.kind,
-                                        tileRoot._isStage ? 0 : modelData.id)
-                                } }
-                          ] },
+                          ].concat(tileRoot._outputPinEntries) },
                         { separator: true },
                         { label: qsTr("Delete"),     iconName: "trash",
                           destructive: true,
