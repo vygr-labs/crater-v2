@@ -295,6 +295,20 @@ Its brand rule is pinned near the strap's **bottom**, because bottom-anchored
 is the one edge a hugging card holds still. Anything pinned to the top of a
 hugging card drifts with content length.
 
+`scripture-stream-strap.theme.json` and `song-stream-strap.theme.json` are the
+matching **scripture** and **song** straps, so a service can cut between a
+verse, a lyric and a sermon point without the graphics changing identity. Same
+band, rule, margins and type; only the hierarchy flips. A sermon point is its
+own headline, so presentation runs title-large over body-small. A verse and a
+lyric are the content, so those run a small `scriptureRef` kicker over
+large body text — `scriptureRef` resolves to the item title for non-scripture
+kinds, which is how the song strap labels itself with the song name.
+
+Sizing note: a four-line stanza is the case that hurts. Lyrics are fitted to
+their own box, so a lower third that stays compact for two lines shrinks four
+to roughly 33px and grows to ~29% of frame. Two-line song pages stream far
+better than four-line ones.
+
 ---
 
 ## 9. Checklist before importing

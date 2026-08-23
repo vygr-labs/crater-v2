@@ -1,0 +1,83 @@
+{
+  "name": "GCCC Stream Strap (Scripture)",
+  "kind": "scripture",
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [
+      {
+        "id": "strap",
+        "kind": "container",
+        "style": {
+          "x": 0, "y": 58, "width": 100, "height": 42, "z": 1, "opacity": 1,
+          "backgroundColor": "#e6060d14"
+        },
+        "data": {
+          "layerName": "Strap",
+          "group": {
+            "members": ["reference", "verse"],
+            "gap": 0.6,
+            "padTop": 1.5,
+            "padBottom": 4.0,
+            "padX": 8.6,
+            "anchor": "bottom"
+          }
+        }
+      },
+      {
+        "id": "ruleRed",
+        "kind": "container",
+        "style": { "x": 0, "y": 97.1, "width": 26, "height": 0.55, "z": 3, "opacity": 1, "backgroundColor": "#eb3b40" },
+        "data": { "layerName": "Brand rule (red)" }
+      },
+      {
+        "id": "ruleBlue",
+        "kind": "container",
+        "style": { "x": 26, "y": 97.1, "width": 74, "height": 0.55, "z": 3, "opacity": 1, "backgroundColor": "#36abe2" },
+        "data": { "layerName": "Brand rule (blue)" }
+      },
+      {
+        "id": "reference",
+        "kind": "text",
+        "style": {
+          "x": 8.6, "y": 72, "width": 70, "height": 4.2, "z": 2, "opacity": 1,
+          "color": "#36abe2",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 28,
+          "fontWeight": 600,
+          "letterSpacing": 1.6,
+          "lineHeightMultiplier": 1.0,
+          "textAlign": "left",
+          "verticalAlign": "end",
+          "textTransform": "uppercase"
+        },
+        "data": {
+          "layerName": "Reference",
+          "linkage": "scriptureRef",
+          "autoResize": true,
+          "maxFontSize": 30
+        }
+      },
+      {
+        "id": "verse",
+        "kind": "text",
+        "style": {
+          "x": 8.6, "y": 78, "width": 82, "height": 15, "z": 2, "opacity": 1,
+          "color": "#f2f6fa",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 44,
+          "fontWeight": 400,
+          "lineHeightMultiplier": 1.26,
+          "textAlign": "left",
+          "verticalAlign": "end"
+        },
+        "data": {
+          "layerName": "Verse",
+          "linkage": "scriptureText",
+          "autoResize": true,
+          "maxFontSize": 46
+        }
+      }
+    ]
+  }
+}
