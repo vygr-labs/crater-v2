@@ -34,6 +34,11 @@ Rectangle {
             return p && p.content && String(p.content).length > 0
         })
     }
+    // Whatever the operator was pointing at with Ctrl+Arrow no longer means
+    // anything once a different item goes live — the index would carry over
+    // onto an unrelated page list. Drop the highlight rather than let it
+    // land somewhere arbitrary.
+    onPagesChanged: AppState.liveScrubIndex = -1
     // `isClear` no longer makes the live state collapse — clearing hides
     // text but keeps the theme background (and logo, if showing) on the
     // projector. From the operator's perspective the channel is still
@@ -248,6 +253,15 @@ Rectangle {
 
                 readonly property bool   isActive: AppState.liveSubIndex === index
                 readonly property bool   isHover:  pageMa.containsMouse
+                // Ctrl+Arrow scrub target — where the operator is pointing
+                // while the chord is held, which is NOT what the audience is
+                // seeing. Deliberately dressed in the champagne preview
+                // channel rather than crimson: the console already teaches
+                // "champagne = staged, crimson = on-air", so a scrub reads as
+                // a staged page that happens to be sitting in the Live list.
+                // The live card keeps its crimson underneath, so the operator
+                // can see both "on screen now" and "about to be" at once.
+                readonly property bool   isScrub:  AppState.liveScrubIndex === index
                 // True while the Live pane owns keyboard focus. When focus
                 // moves to Schedule / Library / Preview, the crimson chrome
                 // on the active card mutes — bg drops to neutral, border
@@ -277,10 +291,12 @@ Rectangle {
                 width:  pagesList.width - Theme.space.lg - Theme.size.scrollBar
                 height: bodyArea.y + bodyArea.height + 1
 
-                color: isActive && _paneFocused ? Theme.color.liveSubtle
+                color: isScrub ? Theme.color.previewSubtle
+                     : isActive && _paneFocused ? Theme.color.liveSubtle
                                                 : isHover  ? Theme.color.overlay
                                                            : Theme.color.raised
-                border.color: isActive
+                border.color: isScrub ? Theme.color.preview
+                            : isActive
                               ? (_paneFocused ? Theme.color.live
                                               : Theme.color.liveMuted)
                             : isHover  ? Qt.rgba(177/255, 54/255, 52/255, 0.22)
@@ -299,7 +315,8 @@ Rectangle {
                     anchors.bottomMargin: 1
                     width: 32
 
-                    color: card.isActive && card._paneFocused ? Theme.color.cueRailLive
+                    color: card.isScrub ? Theme.color.cueRailPreview
+                         : card.isActive && card._paneFocused ? Theme.color.cueRailLive
                                                               : card.isHover  ? Theme.color.cueRailHover
                                                                               : Theme.color.cueRailIdle
                     
@@ -317,7 +334,8 @@ Rectangle {
                         // crimson card border, and the title in the
                         // header band; the digit doesn't also need to be
                         // red-on-red. White wins clarity outright.
-                        color: card.isActive ? Theme.color.textPrimary
+                        color: (card.isActive || card.isScrub)
+                                             ? Theme.color.textPrimary
                                              : Theme.color.textTertiary
                         font.family:    Theme.font.monoFamily
                         font.pixelSize: Theme.font.bodySize
@@ -354,7 +372,8 @@ Rectangle {
                     anchors.rightMargin: 1
                     anchors.topMargin:   1
 
-                    color: card.isActive && card._paneFocused ? Theme.color.cueRailLive
+                    color: card.isScrub ? Theme.color.cueRailPreview
+                         : card.isActive && card._paneFocused ? Theme.color.cueRailLive
                                                               : card.isHover  ? Theme.color.cueRailHover
                                                                               : Theme.color.cueRailIdle
                     
@@ -473,6 +492,47 @@ Rectangle {
                 AppState.commitLivePage(Math.min(AppState.liveSubIndex + 1,
                                                  root.pages.length - 1))
             }
+            // ── Ctrl+Arrow scrub ────────────────────────────────────
+            // Same clamp as the plain-arrow handlers above, minus the
+            // commit: these only move AppState.liveScrubIndex, so the
+            // projector holds whatever page it was already showing. The
+            // first step departs from the live page (not from 0), so the
+            // operator is always navigating relative to what the audience
+            // can see.
+            function onLiveScrubUp() {
+                if (root.pages.length === 0) return
+                const from = AppState.liveScrubIndex >= 0
+                    ? AppState.liveScrubIndex : AppState.liveSubIndex
+                AppState.liveScrubIndex = Math.max(from - 1, 0)
+            }
+            function onLiveScrubDown() {
+                if (root.pages.length === 0) return
+                const from = AppState.liveScrubIndex >= 0
+                    ? AppState.liveScrubIndex : AppState.liveSubIndex
+                AppState.liveScrubIndex = Math.min(from + 1,
+                                                   root.pages.length - 1)
+            }
+            // Ctrl released. Clear the highlight BEFORE committing so the
+            // card resolves straight to its live styling rather than
+            // flashing champagne-over-crimson for a frame. A bare Ctrl tap
+            // lands here with nothing staged and returns.
+            function onLiveScrubCommit() {
+                if (AppState.liveScrubIndex < 0) return
+                const target = AppState.liveScrubIndex
+                AppState.liveScrubIndex = -1
+                if (target >= 0 && target < root.pages.length)
+                    AppState.commitLivePage(target)
+            }
+            function onLiveScrubIndexChanged() {
+                // Keep the scrub highlight centered as it walks, matching
+                // what onLiveSubIndexChanged does for the live page.
+                if (pagesList.visible && AppState.liveScrubIndex >= 0
+                                      && AppState.liveScrubIndex < root.pages.length) {
+                    pagesList.positionViewAtIndex(AppState.liveScrubIndex,
+                                                  ListView.Center)
+                }
+            }
+
             function onLiveSubIndexChanged() {
                 // Fires on every liveSubIndex update — click, key,
                 // schedule advance, etc. Centering on click is mostly

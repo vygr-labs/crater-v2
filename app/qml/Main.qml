@@ -199,6 +199,28 @@ ApplicationWindow {
     Item {
         id: mainArea
 
+        // Holds keyboard focus whenever nothing below has claimed it, so
+        // there is always a focused item for key events to propagate up
+        // from. Load-bearing for Keys.onReleased below: a click on a Live
+        // card sets AppState.activeFocusPanel but claims no OS focus, so
+        // without this the Ctrl release after a scrub could land on the
+        // window's contentItem and never reach us. Panels that do want real
+        // focus (search inputs, editors) still take it on click as before —
+        // their releases then propagate back up through here.
+        focus: true
+
+        // Commits a live scrub (see AppState.liveScrubIndex). Ctrl+Arrow
+        // moves the highlight; letting go of Ctrl is the "send it" gesture.
+        // This has to be a key handler rather than a Shortcut because
+        // Shortcut only fires on press — there is no release side to bind.
+        // Sitting on mainArea rather than on the Live pane is deliberate:
+        // key releases travel up the focus chain, so the ancestor of every
+        // panel sees the release no matter which one holds focus.
+        Keys.onReleased: function(event) {
+            if (event.key === Qt.Key_Control)
+                AppState.liveScrubCommit()
+        }
+
         visible: root._consoleVisible
         anchors.top: topBar.bottom
         anchors.bottom: parent.bottom
@@ -841,6 +863,24 @@ ApplicationWindow {
             }
         }
     }
+    // Ctrl+Arrow — walk the Live pane's page list without projecting; the
+    // Ctrl release commits (mainArea's Keys.onReleased). Bound only while
+    // the Live pane holds focus, so Ctrl+Arrow keeps its word-wise meaning
+    // in every text field in the console — an unconditional binding here
+    // would break editing in the search box and the song editor.
+    Shortcut {
+        sequence: "Ctrl+Up"
+        enabled: AppState.consoleShortcutsActive
+              && AppState.activeFocusPanel === "live"
+        onActivated: AppState.liveScrubUp()
+    }
+    Shortcut {
+        sequence: "Ctrl+Down"
+        enabled: AppState.consoleShortcutsActive
+              && AppState.activeFocusPanel === "live"
+        onActivated: AppState.liveScrubDown()
+    }
+
     // Shift+Arrow is the same dispatch with the extend flag set. It needs its
     // own Shortcut because a sequence of "Up" does not match a Shift+Up press
     // — Qt treats the modified chord as a different sequence entirely. Preview

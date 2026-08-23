@@ -1140,6 +1140,26 @@ QtObject {
     signal previewNavigateDown()
     signal liveNavigateUp()
     signal liveNavigateDown()
+
+    // ── Live scrub (Ctrl+Arrow) ─────────────────────────────────────────
+    // Plain Up/Down in the Live pane is a control gesture: every press goes
+    // straight to the projector. That's right for advancing a song mid-verse
+    // and wrong for "where do I want to be next?" — the operator can't look
+    // ahead without the congregation seeing them do it.
+    //
+    // Ctrl+Arrow walks a highlight through the live item's pages while the
+    // chord is held, touching nothing on the projector; releasing Ctrl sends
+    // the highlighted page. So the whole hunt costs the audience one cut
+    // instead of one per keypress.
+    //
+    // -1 means "not scrubbing", which is also what makes a bare Ctrl tap a
+    // no-op: the release handler finds nothing staged and returns. LivePanel
+    // owns the clamping for the same reason it owns liveNavigate's — only it
+    // knows how many pages survived the empty-content filter.
+    property int liveScrubIndex: -1
+    signal liveScrubUp()
+    signal liveScrubDown()
+    signal liveScrubCommit()
     // Enter on a preview card → push to live. Same call path as the
     // existing preview-card double-click (goLive(false), no projector
     // raise). PreviewPanel owns the handler so it can read its own
