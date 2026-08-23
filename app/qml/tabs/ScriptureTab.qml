@@ -235,9 +235,12 @@ Item {
     // _pendingSyncCoord: schedule click → scroll & focus the matching verse.
     // _pendingPushLiveCoord: translation dblclick → push verse Live in the
     //                        new translation.
+    // _pendingRetargetCoord: translation switch → keep the operator on the
+    //                        verse they were reading, in the new version.
     // Each is a `{book, chapter, verse}` shape (or null when nothing pending).
     property var _pendingSyncCoord:     null
     property var _pendingPushLiveCoord: null
+    property var _pendingRetargetCoord: null
 
     // Verse strings come from the Bible DB in several shapes:
     //   "2"       — plain number
@@ -628,6 +631,10 @@ Item {
     onCurrentVersesChanged: {
         const n = currentVerses.length
         if (n === 0) {
+            // Nothing to resolve against (translation selected but no rows
+            // imported). Drop the queued retarget rather than let it outlive
+            // its cascade and fire against some unrelated later corpus.
+            _pendingRetargetCoord = null
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
             return
         }
@@ -666,7 +673,25 @@ Item {
             }
         }
 
-        const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
+        // Drain a queued translation-switch retarget (see
+        // onActiveTranslationChanged) against the corpus that just landed.
+        // This has to run here, not there: only now do we hold the verses
+        // the coordinates should be resolved against.
+        let idx = -1
+        if (_pendingRetargetCoord) {
+            idx = findBestVerseMatch(currentVerses,
+                _pendingRetargetCoord.book,
+                _pendingRetargetCoord.chapter,
+                _pendingRetargetCoord.verse)
+            _pendingRetargetCoord = null
+            // Verse simply isn't in this translation (different splits, or a
+            // canon that doesn't carry it) — the top of the list is honest,
+            // a carried-over row number is not.
+            if (idx < 0) idx = 0
+        }
+        // No retarget pending: same corpus, so the row number still means
+        // what it did (search-mode keystrokes, mode flips).
+        if (idx < 0) idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
 
@@ -681,9 +706,18 @@ Item {
         // typed character. Guarding both behind the "binding broke"
         // check avoids that lag.
         Qt.callLater(function() {
-            if (list.currentIndex === idx) return
-            list.currentIndex = idx
-            list.positionViewAtIndex(idx, ListView.Center)
+            // Re-read fluidIndex instead of closing over `idx`.
+            // onParsedRefChanged and onParsedRangeChanged run later in this
+            // same change cascade and legitimately move the focus; a
+            // captured `idx` would fire afterwards and stomp the highlight
+            // back onto the row that was current when this handler ran,
+            // leaving list.currentIndex disagreeing with fluidIndex and the
+            // preview until the next arrow key knocked them back in sync.
+            const want = root.fluidIndex
+            if (want < 0 || want >= root.currentVerses.length) return
+            if (list.currentIndex === want) return
+            list.currentIndex = want
+            list.positionViewAtIndex(want, ListView.Center)
         })
     }
 
@@ -766,6 +800,26 @@ Item {
         }
         AppState.clearLibrarySelected(tabKey)
 
+        // Queue the focused verse rather than looking it up here.
+        // `activeTranslation` changes FIRST; the
+        // versesForActiveTranslation → currentVerses chain only re-resolves
+        // after this handler returns, so an indexOf at this point searches
+        // the OUTGOING translation and yields a row number that means a
+        // different verse in the incoming one — translations split verses
+        // differently ("1-2" rows, "2a" subdivisions), so the same index
+        // drifts. onCurrentVersesChanged then treats any in-range fluidIndex
+        // as still valid and keeps it, which is how the operator ends up
+        // some rows off the verse they were on while the reference input
+        // still reads correctly. Same queue-and-drain shape the schedule
+        // sync above already uses, and for the same reason.
+        if (_focusedCoord) {
+            _pendingRetargetCoord = {
+                book:    _focusedCoord.book,
+                chapter: _focusedCoord.chapter,
+                verse:   _focusedCoord.verse
+            }
+        }
+
         // When we drove the switch via the typed-code override, leave
         // cursor placement to onParsedRefChanged (it already ran with
         // synchronously-pushed _debouncedQuery). But the model swap
@@ -784,20 +838,10 @@ Item {
             return
         }
 
-        if (!_focusedCoord) {
-            AppState.setLibraryFluid(tabKey, 0)
-            return
-        }
-        const idx = indexOf(_focusedCoord.book, _focusedCoord.chapter, _focusedCoord.verse)
-        if (idx >= 0) {
-            AppState.setLibraryFluid(tabKey, idx)
-            // Center, not Contain — model swap reset the viewport. Same
-            // reasoning as the override branch above; applies to manual
-            // sidebar translation switches too.
-            Qt.callLater(() => list.positionViewAtIndex(idx, ListView.Center))
-        } else {
-            AppState.setLibraryFluid(tabKey, 0)
-        }
+        // Nothing focused to preserve — open the new translation at the top.
+        // Everything else is handled by the queued retarget, which resolves
+        // (and re-centers) in onCurrentVersesChanged once the corpus lands.
+        if (!_focusedCoord) AppState.setLibraryFluid(tabKey, 0)
     }
 
     // ── Top action bar ──────────────────────────────────────────────────
