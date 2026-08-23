@@ -1,0 +1,90 @@
+{
+  "name": "Lectern",
+  "kind": "presentation",
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [
+      {
+        "id": "bg",
+        "kind": "container",
+        "style": { "x": 0, "y": 0, "width": 100, "height": 100, "z": 0, "opacity": 1, "backgroundColor": "#141210" },
+        "data": {
+          "layerName": "Background",
+          "fill": {
+            "type": "gradient",
+            "gradient": {
+              "style": "radial",
+              "colors": ["#1c1815", "#0f0d0b"],
+              "angle": 0,
+              "animate": false
+            }
+          }
+        }
+      },
+      {
+        "id": "spine",
+        "kind": "container",
+        "style": { "x": 9.2, "y": 0, "width": 0.22, "height": 100, "z": 1, "opacity": 1, "backgroundColor": "#8a6b3a" },
+        "data": { "layerName": "Margin rule" }
+      },
+      {
+        "id": "card",
+        "kind": "container",
+        "style": { "x": 12.5, "y": 16, "width": 63, "height": 68, "z": 2, "opacity": 1 },
+        "data": {
+          "layerName": "Slide card",
+          "group": {
+            "members": ["title", "body"],
+            "gap": 3.4,
+            "padTop": 0,
+            "padBottom": 0,
+            "padX": 0,
+            "anchor": "center"
+          }
+        }
+      },
+      {
+        "id": "title",
+        "kind": "text",
+        "style": {
+          "x": 12.5, "y": 28, "width": 63, "height": 26, "z": 4, "opacity": 1,
+          "color": "#f2ece1",
+          "fontFamily": "Georgia",
+          "fontPixelSize": 88,
+          "fontWeight": 700,
+          "letterSpacing": -0.5,
+          "lineHeightMultiplier": 1.08,
+          "textAlign": "left",
+          "verticalAlign": "center"
+        },
+        "data": {
+          "layerName": "Title",
+          "linkage": "presentationTitle",
+          "autoResize": true,
+          "maxFontSize": 116
+        }
+      },
+      {
+        "id": "body",
+        "kind": "text",
+        "style": {
+          "x": 12.5, "y": 54, "width": 63, "height": 30, "z": 3, "opacity": 1,
+          "color": "#cbc2b3",
+          "fontFamily": "Segoe UI",
+          "fontPixelSize": 46,
+          "fontWeight": 400,
+          "lineHeightMultiplier": 1.32,
+          "textAlign": "left",
+          "verticalAlign": "center"
+        },
+        "data": {
+          "layerName": "Body",
+          "linkage": "presentationBody",
+          "autoResize": true,
+          "maxFontSize": 62
+        }
+      }
+    ]
+  }
+}

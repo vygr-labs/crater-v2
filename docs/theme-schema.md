@@ -261,12 +261,28 @@ cross-link.
 
 ---
 
-## 8. Worked example
+## 8. Worked examples
 
-See `qt/docs/examples/scripture-aurora.theme.json` — a complete scripture theme
+`qt/docs/examples/scripture-aurora.theme.json` — a complete scripture theme
 with an animated **mesh** background, a lower-third **scrim** that **hugs** the
 verse (§7), and **verse** + **reference** text that stack above the screen
 bottom. Import it as-is, or use it as a template.
+
+`qt/docs/examples/presentation-lectern.theme.json` — a **presentation** theme
+("Lectern") for sermon-notes decks. Worth reading for two things the schema
+makes easy to get wrong:
+
+- **Decoration must be fixed-position, not content-adjacent.** The group card
+  (§7) hugs its members and re-centres per slide, so a rule drawn to bracket the
+  text would sit correctly on a two-line slide and wrongly on an eight-line one.
+  Lectern's accent rule is therefore a full-height **page** margin rule, which
+  has nothing to misalign with.
+- **`autoResize` fits to the node's OWN box height, so that box is a size
+  control, not just a bounding box.** Lectern's title box is 26% tall rather
+  than the ~20% the text needs, because at 22% a two-line title could only reach
+  95px while a one-line title reached the 116px cap — section-divider slides
+  rendered visibly smaller than content slides for no reason the author intended.
+  The card hugs actual rendered height, so an oversized box costs no dead space.
 
 ---
 

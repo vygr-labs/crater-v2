@@ -1,0 +1,96 @@
+{
+  "name": "Stage Bold",
+  "kind": "presentation",
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [
+      {
+        "id": "bg",
+        "kind": "container",
+        "style": { "x": 0, "y": 0, "width": 100, "height": 100, "z": 0, "opacity": 1, "backgroundColor": "#060d14" },
+        "data": {
+          "layerName": "Background",
+          "fill": {
+            "type": "gradient",
+            "gradient": {
+              "style": "radial",
+              "colors": ["#102338", "#04080e"],
+              "angle": 0,
+              "animate": false
+            }
+          }
+        }
+      },
+      {
+        "id": "barRed",
+        "kind": "container",
+        "style": { "x": 0, "y": 97.6, "width": 32, "height": 2.4, "z": 5, "opacity": 1, "backgroundColor": "#eb3b40" },
+        "data": { "layerName": "Brand bar (red)" }
+      },
+      {
+        "id": "barBlue",
+        "kind": "container",
+        "style": { "x": 32, "y": 97.6, "width": 68, "height": 2.4, "z": 5, "opacity": 1, "backgroundColor": "#36abe2" },
+        "data": { "layerName": "Brand bar (blue)" }
+      },
+      {
+        "id": "card",
+        "kind": "container",
+        "style": { "x": 10, "y": 12, "width": 80, "height": 78, "z": 2, "opacity": 1 },
+        "data": {
+          "layerName": "Slide card",
+          "group": {
+            "members": ["title", "body"],
+            "gap": 3.2,
+            "padTop": 0,
+            "padBottom": 0,
+            "padX": 0,
+            "anchor": "center"
+          }
+        }
+      },
+      {
+        "id": "title",
+        "kind": "text",
+        "style": {
+          "x": 10, "y": 26, "width": 80, "height": 26, "z": 4, "opacity": 1,
+          "color": "#f6f8fb",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 96,
+          "fontWeight": 700,
+          "letterSpacing": -0.5,
+          "lineHeightMultiplier": 1.1,
+          "textAlign": "center",
+          "verticalAlign": "center"
+        },
+        "data": {
+          "layerName": "Title",
+          "linkage": "presentationTitle",
+          "autoResize": true,
+          "maxFontSize": 130
+        }
+      },
+      {
+        "id": "body",
+        "kind": "text",
+        "style": {
+          "x": 10, "y": 54, "width": 80, "height": 30, "z": 3, "opacity": 1,
+          "color": "#b7c7d8",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 52,
+          "fontWeight": 400,
+          "lineHeightMultiplier": 1.36,
+          "textAlign": "center",
+          "verticalAlign": "center"
+        },
+        "data": {
+          "layerName": "Body",
+          "linkage": "presentationBody",
+          "autoResize": true,
+          "maxFontSize": 72
+        }
+      }
+    ]
+  }
+}

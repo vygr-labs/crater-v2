@@ -1,0 +1,110 @@
+{
+  "name": "GCCC Presentation Lower Third",
+  "kind": "presentation",
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [
+      {
+        "id": "scrim",
+        "kind": "container",
+        "style": { "x": 0, "y": 56, "width": 100, "height": 44, "z": 1, "opacity": 1 },
+        "data": {
+          "layerName": "Scrim",
+          "fill": {
+            "type": "gradient",
+            "gradient": {
+              "style": "linear",
+              "angle": 90,
+              "colors": ["#00060d14", "#59060d14", "#d9060d14", "#f5060d14"],
+              "animate": false
+            }
+          }
+        }
+      },
+      {
+        "id": "accentRed",
+        "kind": "container",
+        "style": {
+          "x": 6.5, "y": 82, "width": 0.5, "height": 6, "z": 4, "opacity": 1,
+          "backgroundColor": "#eb3b40",
+          "borderTopLeftRadius": 4, "borderTopRightRadius": 4
+        },
+        "data": { "layerName": "Accent (red)" }
+      },
+      {
+        "id": "accentBlue",
+        "kind": "container",
+        "style": {
+          "x": 6.5, "y": 88, "width": 0.5, "height": 6, "z": 4, "opacity": 1,
+          "backgroundColor": "#36abe2",
+          "borderBottomLeftRadius": 4, "borderBottomRightRadius": 4
+        },
+        "data": { "layerName": "Accent (blue)" }
+      },
+      {
+        "id": "card",
+        "kind": "container",
+        "style": { "x": 8.6, "y": 58, "width": 84, "height": 36, "z": 2, "opacity": 1 },
+        "data": {
+          "layerName": "Slide card",
+          "group": {
+            "members": ["title", "body"],
+            "gap": 1.6,
+            "padTop": 0,
+            "padBottom": 0,
+            "padX": 0,
+            "anchor": "bottom"
+          }
+        }
+      },
+      {
+        "id": "title",
+        "kind": "text",
+        "style": {
+          "x": 8.6, "y": 74, "width": 84, "height": 9, "z": 3, "opacity": 1,
+          "color": "#ffffff",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 62,
+          "fontWeight": 700,
+          "letterSpacing": -0.3,
+          "lineHeightMultiplier": 1.12,
+          "textAlign": "left",
+          "verticalAlign": "end",
+          "textShadowColor": "#a6000000",
+          "textShadowOffsetY": 2,
+          "textShadowBlur": 10
+        },
+        "data": {
+          "layerName": "Title",
+          "linkage": "presentationTitle",
+          "autoResize": true,
+          "maxFontSize": 76
+        }
+      },
+      {
+        "id": "body",
+        "kind": "text",
+        "style": {
+          "x": 8.6, "y": 84, "width": 84, "height": 12, "z": 3, "opacity": 1,
+          "color": "#e8eef5",
+          "fontFamily": "Segoe UI Variable Display",
+          "fontPixelSize": 40,
+          "fontWeight": 400,
+          "lineHeightMultiplier": 1.3,
+          "textAlign": "left",
+          "verticalAlign": "end",
+          "textShadowColor": "#8c000000",
+          "textShadowOffsetY": 2,
+          "textShadowBlur": 8
+        },
+        "data": {
+          "layerName": "Body",
+          "linkage": "presentationBody",
+          "autoResize": true,
+          "maxFontSize": 48
+        }
+      }
+    ]
+  }
+}
