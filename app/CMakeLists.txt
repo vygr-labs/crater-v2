@@ -89,6 +89,7 @@ qt_add_qml_module(crater
         qml/ModalLayer.qml
         qml/GlobalSearchOverlay.qml
         qml/ProjectionWindow.qml
+        qml/OutputWindow.qml
         qml/NdiCanvas.qml
 
         # ── Reusable control atoms ────────────────────────────────────
@@ -115,6 +116,7 @@ qt_add_qml_module(crater
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
         qml/components/ProjectionScene.qml
+        qml/components/StageScene.qml
         qml/components/ProjectionContentLayer.qml
         qml/components/ThemedNodeGraph.qml
         qml/components/NodeRenderer.qml
@@ -176,6 +178,7 @@ qt_add_qml_module(crater
         qml/tabs/strongs/StrongsReaderView.qml
         qml/tabs/MediaTab.qml
         qml/tabs/ThemesTab.qml
+        qml/tabs/PresentationsTab.qml
 
         # ── Modal dialogs ─────────────────────────────────────────────
         qml/dialogs/ModalShell.qml
@@ -185,6 +188,7 @@ qt_add_qml_module(crater
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/MediaEditDialog.qml
+        qml/dialogs/PresentationEditorDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
 

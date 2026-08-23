@@ -26,6 +26,13 @@ Item {
         sourceComponent: SongEditorDialog { }
     }
 
+    // ── Presentation (sermon-notes) editor ──────────────────────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "presentationEditor"
+        sourceComponent: PresentationEditorDialog { }
+    }
+
     // The theme editor is now a full-screen workspace, not a modal —
     // see ThemeEditorWorkspace.qml mounted in Main.qml under the
     // AppState.workspaceMode === "themeEditor" gate.
