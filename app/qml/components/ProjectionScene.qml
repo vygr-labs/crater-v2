@@ -158,6 +158,12 @@ Item {
                      + (r.verseStart || 0)       + "-"
                      + (r.verseEnd || 0)
             }
+            case "presentation":
+                // Without this the default branch below keys a deck by its
+                // TITLE, so two decks named the same (a series where every
+                // week is "Week 1") would read as one item and the
+                // transition controller would debounce the swap between them.
+                return "presentation:" + (item.presentationId || 0)
             case "image":
             case "video":
                 return kind + ":" + (item.mediaPath || "")

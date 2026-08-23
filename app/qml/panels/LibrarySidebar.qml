@@ -21,6 +21,7 @@ Rectangle {
             case "scripture": return qsTr("Search verses…")
             case "strongs":   return qsTr("Search Strong's…")
             case "media":     return qsTr("Search media…")
+            case "presentations": return qsTr("Search decks…")
             case "themes":    return qsTr("Search themes…")
         }
         return qsTr("Search…")
@@ -176,6 +177,18 @@ Rectangle {
                     { id: "images",    iconName: "image",  label: qsTr("Images"),    count: imgN },
                     { id: "videos",    iconName: "video",  label: qsTr("Videos"),    count: vidN },
                     { id: "favorites", iconName: "heart",  label: qsTr("Favorites"), count: favN }
+                ]
+            }
+            case "presentations": {
+                // One group. A deck library has no natural sub-division the
+                // way media splits by type or themes split by builtin —
+                // decks are all the same shape, and the search box above
+                // does the narrowing. A row is still worth showing because
+                // it carries the live count.
+                return [
+                    { id: "all-presentations", iconName: "presentation",
+                      label: qsTr("All Decks"),
+                      count: PresentationService.presentations.length }
                 ]
             }
             case "themes": {

@@ -45,6 +45,7 @@
 #include "crater/BibleService.h"
 #include "crater/StrongsService.h"
 #include "crater/CollectionService.h"
+#include "crater/PresentationService.h"
 #include "crater/Bootstrap.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
@@ -343,6 +344,11 @@ int main(int argc, char* argv[])
     // Song collections — named groupings over songs.sqlite (its own connection,
     // separate from SongService's). No construction-order dependency.
     crater::CollectionService collectionService;
+    // Presentation decks (sermon notes). Opens its own connection to
+    // app.sqlite, so it has no construction-order dependency on the other
+    // app-DB services -- same pattern CollectionService follows against
+    // songs.sqlite.
+    crater::PresentationService presentationService;
     crater::ScheduleService   scheduleService;
     crater::ThemeService      themeService;
     crater::MediaService      mediaService;
@@ -431,6 +437,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "StrongsService",     &strongsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SongService",        &songService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "CollectionService",  &collectionService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "PresentationService", &presentationService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ScheduleService",    &scheduleService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ThemeService",       &themeService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaService",       &mediaService);

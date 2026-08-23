@@ -30,7 +30,11 @@ files via JSON — those use the `.craterheme` bundle export/import instead.
 
 `kind` decides which content the text boxes can bind to (see `linkage`, §4):
 `scripture` themes bind reference + verse text; `song` themes bind lyric text;
-`presentation` themes typically use custom text.
+`presentation` themes bind a deck slide's title + body.
+
+> `kind` is a *default*, not a restriction. Linkage is validated globally, so a
+> song theme may legitimately use `scriptureRef` — for a song item that resolves
+> to the song title, which is how several themes show the title above the lyric.
 
 ---
 
@@ -129,16 +133,24 @@ node — this is how a scrim works (see §6).
 
 | Field        | Required | Type / values                                          |
 |--------------|----------|--------------------------------------------------------|
-| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `custom` |
+| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `presentationTitle` \| `presentationBody` \| `custom` |
 | `text`       | when `custom` | string (the literal text to show)                 |
 | `autoResize` | no       | boolean — binary-search shrink-to-fit the box          |
 | `maxFontSize`| no       | integer `> 0` — cap when `autoResize` is true          |
 
 `linkage` decides what the box shows at runtime:
-- `scriptureRef` → the reference label (e.g. "John 3:16").
+- `scriptureRef` → the reference label (e.g. "John 3:16"). For non-scripture
+  items this is the item's **title**, which is the usual way to show a song name.
 - `scriptureText` → the verse body (the live verse text).
 - `lyric` → the current song stanza.
+- `presentationTitle` → the current slide's heading (presentation decks).
+- `presentationBody` → the current slide's body text.
 - `custom` → the literal `data.text`.
+
+> A deck slide's **speaker notes** have no linkage on purpose. They are never
+> rendered to the audience — only the stage / confidence display shows them, and
+> that display is deliberately unthemed. There is no way to author a theme that
+> leaks them onto the main screen.
 
 **Inline formatting** in `custom`/content text supports a small DSL:
 `**bold**`, and `{color=yellow}…{/color}` (named or `#hex`). Plain text is valid.
@@ -202,9 +214,27 @@ keep **auto-fit** and are positioned by the card — no per-node linking.
   "members": ["reference", "verse"],  // node ids, top → bottom
   "gap": 1.5,                          // % between members
   "padTop": 4, "padBottom": 4, "padX": 8,   // % inset
-  "anchor": "bottom"                   // card pinned to its box bottom, grows up
+  "anchor": "bottom"                   // "bottom" (default) | "center"
 }
 ```
+
+`anchor` picks where the hugged card sits inside the container's configured box:
+
+- **bottom** (default) — the card's bottom edge pins to the box bottom and the
+  card grows upward. This is the lower-third look: the screen margin under the
+  text is fixed, so a long verse eats space *above* rather than sliding the whole
+  block toward the screen edge.
+- **center** — the card centres vertically in the box and grows both ways. This
+  is what slide content wants, and what the built-in **presentation** themes use:
+  a slide with a heading and two lines and a slide with a heading and eight lines
+  should both read as centred. Bottom-anchoring a title-only slide would drop a
+  lone heading to the floor of its box.
+
+Because the card hugs its members, an empty member collapses to nothing. That is
+the whole layout system for presentation decks: one theme with a centred
+`["title", "body"]` card renders a title-only slide as a section divider, a
+body-only slide as plain content, and both together as a heading over content —
+with no per-slide layout setting for the deck and the theme to disagree about.
 
 - Put it on the **container** that carries the scrim (its gradient fill renders
   behind the whole card). The container's configured box: its **bottom edge**

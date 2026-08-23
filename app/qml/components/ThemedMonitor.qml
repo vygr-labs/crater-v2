@@ -76,14 +76,28 @@ Item {
     readonly property string _refText:
         _hasItem ? (item.title || item.reference || "") : ""
 
+    // Presentation slide heading. Mirrors _pageText, reading `title` off the
+    // same page map, so the Preview and Live mini-monitors show exactly what
+    // the audience output will.
+    readonly property string _slideTitle: {
+        if (!_hasItem) return ""
+        const pages = item.pages
+        if (!pages || pages.length === 0) return ""
+        const i = Math.max(0, Math.min(pageIndex, pages.length - 1))
+        const p = pages[i]
+        return (p && p.title) || ""
+    }
+
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":  return _refText
-            case "scriptureText": return _pageText
-            case "lyric":         return _pageText
-            case "custom":        return data.text || ""
+            case "scriptureRef":      return _refText
+            case "scriptureText":     return _pageText
+            case "lyric":             return _pageText
+            case "presentationTitle": return _slideTitle
+            case "presentationBody":  return _pageText
+            case "custom":            return data.text || ""
         }
         return data.text || ""
     }

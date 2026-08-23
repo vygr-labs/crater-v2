@@ -1,9 +1,9 @@
 # Crater (Qt) — Remaining Work
 
 Punch-list of what's left before v1 / v1.1. Crater is essentially
-feature-complete for a v1 core (Bible, Songs, Themes + editor, Schedule,
-Media, Fonts, Projection + transitions, multi-display output incl. a stage
-monitor, NDI, and the operator console are all done). What remains splits into: a couple of
+feature-complete for a v1 core (Bible, Songs, Presentations, Themes + editor,
+Schedule, Media, Fonts, Projection + transitions, multi-display output incl. a
+stage monitor, NDI, and the operator console are all done). What remains splits into: a couple of
 genuinely-unbuilt features, a set of settings toggles that render but do
 nothing yet ("Soon"), v1.1-deferred items, tuning/loose ends, and a
 forward-looking competitive-parity roadmap (what ProPresenter has that we don't).
@@ -68,6 +68,33 @@ existing `Q_INVOKABLE` searches, so it inherits any ranking work from the
       mounted through the exit via a `closed()` signal, respecting Reduce Motion).
 - [ ] Follow-ups: fuzzy/typo-tolerant matching; a "recent searches" row; include
       current **schedule items** as a searchable group.
+
+### Presentation decks (sermon notes) — DONE
+Crater had three ways to put words on a screen (song lyrics, a scripture
+passage, a Strong's definition) and all three were *lookups* — the operator
+finds text that already exists. A deck is the missing fourth case, where the
+words do not exist until somebody writes them: sermon points, announcements, a
+welcome slide.
+- [x] `PresentationService` + `Presentation` value type over a new
+      `presentations` table (**V010**). Slides live in one JSON column: a deck is
+      read and written whole, is a few KB, and nothing queries across slides.
+- [x] Slide shape is `{title, body, notes}`. `title`/`body` are what the
+      congregation sees; **`notes` are the preacher's**, read only by
+      `StageScene`, so they reach a confidence monitor and never the audience.
+- [x] `PresentationsTab` (library, between Media and Themes) + a
+      `PresentationEditorDialog` with slide reorder / duplicate / delete, a
+      per-deck theme override, and a dot marking slides that carry notes.
+- [x] `AppState.buildPresentationItem` emits the same canonical item shape every
+      other kind uses, so Preview / Live / Schedule / projection needed no
+      special case — decks just fill two page fields the other kinds leave unset.
+- [x] **Presentation themes.** New `presentationTitle` / `presentationBody` text
+      linkages (validated in `ThemeService`, resolved in the live layer, the
+      library monitors, the tile previews and the editor canvas), a new
+      `group.anchor: "center"` in `ThemedNodeGraph`, and three built-in themes in
+      V010 — the V001 "Stage Bold" row is rewritten in place because its v1
+      single-`custom`-text-node shape could not render a slide even in principle.
+- [ ] Follow-ups: decks are not in the `Ctrl+K` global search yet; no import
+      from PowerPoint / Google Slides; slide reorder is buttons, not drag.
 
 ### Onboarding & shortcut discoverability — not built
 Nothing today teaches a new operator the app, and its power features are

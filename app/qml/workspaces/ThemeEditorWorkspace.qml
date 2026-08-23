@@ -105,9 +105,10 @@ Rectangle {
     }
 
     function _newThemeTokens(kind) {
-        const linkage = kind === "song"      ? "lyric"
-                      : kind === "scripture" ? "scriptureText"
-                                             : "custom"
+        const linkage = kind === "song"         ? "lyric"
+                      : kind === "scripture"    ? "scriptureText"
+                      : kind === "presentation" ? "presentationBody"
+                                                : "custom"
         return {
             version: 2,
             canvas: { width: 1920, height: 1080 },
@@ -156,15 +157,19 @@ Rectangle {
     readonly property string mockScriptureRef:  "John 3:16"
     readonly property string mockScriptureText: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."
     readonly property string mockLyric:         "Amazing grace, how sweet the sound\nThat saved a wretch like me"
+    readonly property string mockSlideTitle:    "The God Who Pursues"
+    readonly property string mockSlideBody:     "He does not wait at the edge of the far country.\nHe runs."
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":  return mockScriptureRef
-            case "scriptureText": return mockScriptureText
-            case "lyric":         return mockLyric
-            case "custom":        return data.text || qsTr("(empty)")
+            case "scriptureRef":      return mockScriptureRef
+            case "scriptureText":     return mockScriptureText
+            case "lyric":             return mockLyric
+            case "presentationTitle": return mockSlideTitle
+            case "presentationBody":  return mockSlideBody
+            case "custom":            return data.text || qsTr("(empty)")
         }
         return ""
     }
