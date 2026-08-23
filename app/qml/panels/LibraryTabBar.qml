@@ -1,6 +1,6 @@
 import QtQuick
 
-// The 5-tab strip at the top of the library area. Tab activation routes
+// The tab strip at the top of the library area. Tab activation routes
 // through AppState.setActiveTab so the shortcut-bound and click-bound
 // paths share the same code.
 Item {
@@ -17,15 +17,18 @@ Item {
         z: -1
     }
 
-    // Canonical 5-tab list. Strong's is filtered out when the operator's
-    // "Show Strong's tab" setting is off; the visible `tabs` array shrinks
-    // to 4 entries. Indices in `tabs` line up 1:1 with AppState.tabKeys
-    // so click-to-setActiveTab(index) routes correctly without remapping.
+    // Canonical tab list. Strong's is filtered out when the operator's
+    // "Show Strong's tab" setting is off, so the visible `tabs` array is one
+    // shorter. Indices in `tabs` line up 1:1 with AppState.tabKeys — which
+    // applies the same filter — so click-to-setActiveTab(index) routes
+    // correctly without remapping. Adding a tab means adding it in BOTH
+    // places, in the same position.
     readonly property var allTabs: [
         { key: "songs",     label: qsTr("Songs"),     iconName: "music"     },
         { key: "scripture", label: qsTr("Scripture"), iconName: "book-open" },
         { key: "strongs",   label: qsTr("Strong's"),  iconName: "",           customGlyph: "S" },
         { key: "media",     label: qsTr("Media"),     iconName: "film"      },
+        { key: "presentations", label: qsTr("Presentations"), iconName: "presentation" },
         { key: "themes",    label: qsTr("Themes"),    iconName: "palette"   }
     ]
     readonly property var tabs: SettingsService.showStrongsTab
@@ -104,8 +107,8 @@ Item {
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.bodySize
                         // Inactive tabs read as firmer body — Medium not
-                        // Regular — so the strip feels like five legible
-                        // siblings rather than four ghosted ones plus one.
+                        // Regular — so the strip feels like a row of legible
+                        // siblings rather than ghosted ones around one active.
                         font.weight: tabItem.isActive ? Theme.font.weightSemiBold
                                                       : Theme.font.weightMedium
 

@@ -25,9 +25,14 @@ QtObject {
     // slot. activeTab fix-up lives in Main.qml's Connections (QtObject
     // can't host child objects, so the bookkeeping moves up to the
     // ApplicationWindow which can).
+    // "presentations" sits between media and themes: it is CONTENT, like the
+    // three tabs before it, whereas themes is the design surface those tabs
+    // feed into. Appended after index 2 on purpose — _onStrongsTabVisibilityChanged
+    // below shifts everything at or past index 2, so inserting here needs no
+    // change to that arithmetic.
     readonly property var tabKeys: SettingsService.showStrongsTab
-        ? ["songs", "scripture", "strongs", "media", "themes"]
-        : ["songs", "scripture", "media", "themes"]
+        ? ["songs", "scripture", "strongs", "media", "presentations", "themes"]
+        : ["songs", "scripture", "media", "presentations", "themes"]
     readonly property int tabCount: tabKeys.length
 
     property int activeTab: 0
@@ -176,6 +181,57 @@ QtObject {
             // per-song theme override (set via the editor). 0 means "use the
             // user's default for kind=song" — the fallback case.
             themeId:  song.themeId || 0
+        }
+    }
+
+    // Build the canonical schedule-item shape from a presentation deck plus
+    // the slides PresentationService returned for it.
+    //
+    // The shape is the same one songs and scriptures produce, which is the
+    // point: every downstream consumer — the preview panel, the live panel,
+    // the schedule, the projection scene, the stage display — already knows
+    // how to walk `pages`, so a deck needed no special case in any of them.
+    // Two fields the other kinds leave unset carry the extra information:
+    //
+    //   pages[i].title — the slide heading, bound by a presentation theme's
+    //                    `presentationTitle` text node.
+    //   pages[i].notes — the preacher's speaker notes. Read ONLY by
+    //                    StageScene, so they reach a confidence monitor and
+    //                    never the audience render.
+    //
+    // `label` is what the Preview pane lists down its side, so it falls back
+    // to a slide number rather than showing a column of blanks for a deck
+    // whose slides are body-only.
+    function buildPresentationItem(deck, slides) {
+        if (!deck || (deck.id || 0) === 0) return null
+        const list = slides || []
+        let pages = []
+        for (let i = 0; i < list.length; i++) {
+            const s = list[i] || {}
+            const t = s.title || ""
+            pages.push({
+                label:   t.length > 0 ? t : qsTr("Slide %1").arg(i + 1),
+                content: s.body  || "",
+                title:   t,
+                notes:   s.notes || ""
+            })
+        }
+        // A deck with no slides is still projectable — as its own title. The
+        // alternative (returning null) makes an empty deck silently do
+        // nothing when double-clicked, which reads as a broken row.
+        if (pages.length === 0) {
+            pages = [{ label: "", content: "", title: deck.title, notes: "" }]
+        }
+        return {
+            kind:     "presentation",
+            title:    deck.title,
+            subtitle: pages.length === 1 ? qsTr("1 slide")
+                                         : qsTr("%1 slides").arg(pages.length),
+            pages:    pages,
+            presentationId: deck.id,
+            // Per-deck override, resolved the same way song.themeId is: 0
+            // falls through to the output pin and then the per-kind default.
+            themeId:  deck.themeId || 0
         }
     }
 
@@ -755,15 +811,17 @@ QtObject {
     // Stored as JS objects keyed by tabKey. Switching tabs and back
     // preserves where you were.
     property var searchText: ({
-        "songs": "", "scripture": "", "strongs": "", "media": "", "themes": ""
+        "songs": "", "scripture": "", "strongs": "", "media": "",
+        "presentations": "", "themes": ""
     })
 
     property var activeLibraryGroup: ({
-        "songs":     "all-songs",
-        "scripture": "kjv",
-        "strongs":   "greek",
-        "media":     "all-media",
-        "themes":    "all-themes"
+        "songs":         "all-songs",
+        "scripture":     "kjv",
+        "strongs":       "greek",
+        "media":         "all-media",
+        "presentations": "all-presentations",
+        "themes":        "all-themes"
     })
 
     // Seed the active scripture translation from the persisted operator default
@@ -791,11 +849,12 @@ QtObject {
     // inside the library list (independent of selection). Arrow keys move it
     // without leaving the search input. -1 means no row is focused.
     property var libraryFluidIndex: ({
-        "songs":     -1,
-        "scripture": -1,
-        "strongs":   -1,
-        "media":     -1,
-        "themes":    -1
+        "songs":         -1,
+        "scripture":     -1,
+        "strongs":       -1,
+        "media":         -1,
+        "presentations": -1,
+        "themes":        -1
     })
 
     // Per-tab multi-selection — additional row indices beyond the fluid anchor
@@ -848,7 +907,12 @@ QtObject {
     // Songs supports: "none" | "recent" (updated_at DESC) | "oldest"
     // (created_at ASC) | "newest" (created_at DESC).
     property var librarySortMode: ({
-        "songs": "none"
+        "songs": "none",
+        // Decks default to most-recently-edited, which is what the service
+        // already returns. On a Sunday morning the deck the operator wants is
+        // the one somebody was editing on Saturday night, not the one whose
+        // title happens to sort first.
+        "presentations": "recent"
     })
 
     function setSearch(tabKey, text) {

@@ -178,6 +178,7 @@ qt_add_qml_module(crater
         qml/tabs/strongs/StrongsReaderView.qml
         qml/tabs/MediaTab.qml
         qml/tabs/ThemesTab.qml
+        qml/tabs/PresentationsTab.qml
 
         # ── Modal dialogs ─────────────────────────────────────────────
         qml/dialogs/ModalShell.qml
@@ -187,6 +188,7 @@ qt_add_qml_module(crater
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
         qml/dialogs/MediaEditDialog.qml
+        qml/dialogs/PresentationEditorDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
 

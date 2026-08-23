@@ -5,24 +5,25 @@ import QtQuick.Layouts
 // is a Loader that becomes active only after first visit and stays active
 // afterward (preserving scroll position and other transient UI state).
 //
-// All 5 children share the same geometry via StackLayout; only the child
-// at currentIndex is shown. Inactive Loaders cost nothing until first viewed.
+// Every child shares the same geometry via StackLayout; only the child at
+// currentIndex is shown. Inactive Loaders cost nothing until first viewed.
 StackLayout {
     id: root
 
-    // Fixed slot order of the five Loader children below — this never
-    // changes, not even when the Strong's tab is hidden. The operator's
-    // current tab is identified by KEY via AppState.tabKeys[activeTab];
-    // _slotKeys maps that key back to its StackLayout slot.
+    // Fixed slot order of the Loader children below — this never changes,
+    // not even when the Strong's tab is hidden. The operator's current tab
+    // is identified by KEY via AppState.tabKeys[activeTab]; _slotKeys maps
+    // that key back to its StackLayout slot.
     //
     // Binding currentIndex straight to AppState.activeTab would be wrong:
-    // when "Show Strong's tab" is off, AppState.tabKeys has only 4 entries,
-    // so activeTab counts 0..3 over {songs, scripture, media, themes} — but
-    // these children still number 5 with strongs at slot 2. Indexing by the
+    // when "Show Strong's tab" is off, AppState.tabKeys drops an entry, so
+    // activeTab counts over {songs, scripture, media, presentations, themes}
+    // — but these children still include strongs at slot 2. Indexing by the
     // raw activeTab would then render Strong's for "media" and Media for
-    // "themes". Resolving through the key keeps the tab strip and the
+    // "presentations". Resolving through the key keeps the tab strip and the
     // content panel in agreement.
-    readonly property var _slotKeys: ["songs", "scripture", "strongs", "media", "themes"]
+    readonly property var _slotKeys: ["songs", "scripture", "strongs", "media",
+                                      "presentations", "themes"]
 
     currentIndex: Math.max(0, _slotKeys.indexOf(AppState.tabKeys[AppState.activeTab]))
 
@@ -76,6 +77,13 @@ StackLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         asynchronous: true
+        active: AppState.viewedTabs.indexOf("presentations") !== -1
+        sourceComponent: presentationsComp
+    }
+    Loader {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        asynchronous: true
         active: AppState.viewedTabs.indexOf("themes") !== -1
         sourceComponent: themesComp
     }
@@ -87,5 +95,6 @@ StackLayout {
     Component { id: scriptureComp; ScriptureTab { } }
     Component { id: strongsComp;   StrongsTab   { } }
     Component { id: mediaComp;     MediaTab     { } }
+    Component { id: presentationsComp; PresentationsTab { } }
     Component { id: themesComp;    ThemesTab    { } }
 }

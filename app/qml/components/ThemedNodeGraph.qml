@@ -201,9 +201,28 @@ Item {
 
             // ── Group / card layout ─────────────────────────────────────
             // This node is a group CONTAINER when it has data.group: it stacks
-            // its members by measured content, hugs the total, and bottom-anchors
-            // to its configured box bottom. Members keep their own auto-fit
-            // (bounded by their own height) and are positioned by the card.
+            // its members by measured content, hugs the total, and anchors the
+            // hugged card inside its configured box. Members keep their own
+            // auto-fit (bounded by their own height) and are positioned by the
+            // card.
+            //
+            // data.group.anchor picks WHERE the hugged card sits in that box:
+            //
+            //   "bottom" (default) — the card's bottom edge pins to the box
+            //     bottom and the card grows upward. This is the lower-third
+            //     scripture/song card: the screen margin under the text is
+            //     fixed, so a long verse eats space above rather than sliding
+            //     the whole block down toward the screen edge.
+            //
+            //   "center" — the card centers vertically in the box and grows
+            //     both ways. This is what slide content wants: a presentation
+            //     with a title and two lines and a presentation with a title
+            //     and eight lines should both look centered, not both hang
+            //     from the same lower edge. Bottom-anchoring a title-only
+            //     slide would drop a single heading to the floor of its box.
+            //
+            // Additive: an unrecognised or absent anchor keeps the original
+            // bottom behaviour, so every existing theme lays out unchanged.
             readonly property var _group: _data.group || null
             readonly property var _groupMembers: (_group && _group.members) ? _group.members : []
             readonly property var groupComp: {
@@ -212,14 +231,19 @@ Item {
                 const padX = parent.width * ((_group.padX || 0) / 100)
                 const gap  = _pct(_group.gap)
                 const contentW = _baseW - 2 * padX
-                const cardBottom = _baseY + _baseH      // bottom-anchored here
                 let total = padT + padB + Math.max(0, _groupMembers.length - 1) * gap
                 const heights = []
                 for (let i = 0; i < _groupMembers.length; i++) {
                     const h = root._measuredHOf(_groupMembers[i])
                     heights.push(h); total += h
                 }
-                const cardTop = cardBottom - total
+                // Anchor the hugged card inside the configured box. Only the
+                // card's TOP is computed differently; everything downstream
+                // (member stacking, published layout, the container's own
+                // painted rect) reads cardTop, so the two modes share one path.
+                const cardTop = (_group.anchor === "center")
+                    ? (_baseY + (_baseH - total) / 2)
+                    : (_baseY + _baseH - total)
                 const lay = {}
                 let y = cardTop + padT
                 for (let i = 0; i < _groupMembers.length; i++) {

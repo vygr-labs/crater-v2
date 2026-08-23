@@ -13,6 +13,36 @@ Column {
     function _setStyle(f, v) { workspace.workingTheme.setNodeStyle(node.id, f, v); workspace.saveToHistory() }
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
 
+    // ── Content linkage ────────────────────────────────────────────────
+    // What this text node actually shows at render time. Six values no
+    // longer fit the segmented row this used to be: the properties panel is
+    // 240 px wide and SegmentedControl divides that evenly with a label that
+    // does not elide, so a sixth option clipped its own text.
+    //
+    // The list is flat rather than scoped to the theme's kind on purpose.
+    // Linkage is already cross-kind by design -- scriptureRef resolves to
+    // the ITEM TITLE for every kind, which is how several song themes show
+    // the song name -- so filtering by kind would hide a working technique
+    // and orphan the linkage on any theme already using it.
+    readonly property var _linkageOptions: [
+        { label: qsTr("Reference / title"), value: "scriptureRef"      },
+        { label: qsTr("Verse text"),        value: "scriptureText"     },
+        { label: qsTr("Lyric"),             value: "lyric"             },
+        { label: qsTr("Slide title"),       value: "presentationTitle" },
+        { label: qsTr("Slide body"),        value: "presentationBody"  },
+        { label: qsTr("Custom text"),       value: "custom"            }
+    ]
+    readonly property string _linkageLabel: {
+        const cur = (node && node.data && node.data.linkage) || "custom"
+        for (let i = 0; i < _linkageOptions.length; i++) {
+            if (_linkageOptions[i].value === cur) return _linkageOptions[i].label
+        }
+        // A linkage this build does not know (theme authored by a newer
+        // version) shows its raw key rather than silently reading as
+        // "Custom text", which would invite the operator to overwrite it.
+        return cur
+    }
+
     // Live / commit pair for continuous inputs (numeric / slider). live
     // writes the canonical model directly (no history snapshot); commit
     // snapshots history once. Discrete inputs (SegmentedControl alignment,
@@ -417,18 +447,13 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
-            SegmentedControl {
+            Combobox {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: 28
-                options: [
-                    { value: "scriptureRef",  label: qsTr("Ref")    },
-                    { value: "scriptureText", label: qsTr("Verse")  },
-                    { value: "lyric",         label: qsTr("Lyric")  },
-                    { value: "custom",        label: qsTr("Custom") }
-                ]
-                current: (node && node.data && node.data.linkage) || "custom"
-                onChanged: function(v) { root._setData("linkage", v) }
+                searchable: false
+                options: root._linkageOptions
+                value: root._linkageLabel
+                onValueSelected: function(v) { root._setData("linkage", v) }
             }
 
             // Custom text editor (only when linkage === "custom")

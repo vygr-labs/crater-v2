@@ -57,11 +57,18 @@ QString mapVerticalAlign(const QString& v1)
 }
 
 // Returns the default text linkage for a theme kind. song -> lyric,
-// scripture -> scriptureText, presentation -> custom (with empty text).
+// scripture -> scriptureText, presentation -> presentationBody.
+//
+// Presentation used to default to `custom` (a literal string baked into
+// the theme) because there was no presentation CONTENT for a linkage to
+// point at -- decks did not exist. Now they do, so a new presentation
+// theme's text node binds the live slide body instead of a fixed string
+// that would show the same words on every slide.
 QString defaultLinkageFor(const QString& kind)
 {
     if (kind == QLatin1String("song"))      return QStringLiteral("lyric");
     if (kind == QLatin1String("scripture")) return QStringLiteral("scriptureText");
+    if (kind == QLatin1String("presentation")) return QStringLiteral("presentationBody");
     return QStringLiteral("custom");
 }
 
@@ -124,9 +131,10 @@ QVariantMap buildV2FromV1(const QString& kind, const QVariantMap& v1)
     textStyle["verticalAlign"]        = vAlign;
 
     QVariantMap textData;
-    textData["layerName"]   = (kind == QLatin1String("song"))      ? QStringLiteral("Lyric")
-                            : (kind == QLatin1String("scripture")) ? QStringLiteral("Verse")
-                                                                   : QStringLiteral("Text");
+    textData["layerName"]   = (kind == QLatin1String("song"))         ? QStringLiteral("Lyric")
+                            : (kind == QLatin1String("scripture"))    ? QStringLiteral("Verse")
+                            : (kind == QLatin1String("presentation")) ? QStringLiteral("Body")
+                                                                      : QStringLiteral("Text");
     textData["linkage"]     = defaultLinkageFor(kind);
     textData["autoResize"]  = true;
     textData["maxFontSize"] = 220;
@@ -263,9 +271,18 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
     if (style.contains("textTransform") && !tCases.contains(style.value("textTransform").toString()))
         errs << QStringLiteral("nodes[%1].style.textTransform must be none|uppercase|lowercase|capitalize").arg(idx);
 
-    static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric", "custom" };
+    // presentationTitle / presentationBody bind a deck slide's heading and
+    // content. Deliberately NOT scoped to presentation-kind themes: linkage
+    // is already cross-kind by design (scriptureRef resolves to the item
+    // title for every kind, which is how several song themes show the song
+    // name), and a per-kind whitelist here would reject themes the renderer
+    // handles perfectly well.
+    static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric",
+                                         "presentationTitle", "presentationBody",
+                                         "custom" };
     if (!data.contains("linkage") || !linkages.contains(data.value("linkage").toString()))
-        errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|custom").arg(idx);
+        errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|"
+                               "presentationTitle|presentationBody|custom").arg(idx);
 
     if (data.value("autoResize").toBool() && data.contains("maxFontSize") &&
         data.value("maxFontSize").toInt() <= 0)

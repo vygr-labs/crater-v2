@@ -29,15 +29,22 @@ Item {
     readonly property string mockScriptureRef:  "John 3:16"
     readonly property string mockScriptureText: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."
     readonly property string mockLyric:         "Amazing grace, how sweet the sound\nThat saved a wretch like me"
+    // Short heading, longer body -- a presentation tile has to show the
+    // title/body SIZE relationship, which is the whole thing an operator
+    // judges a presentation theme on at thumbnail scale.
+    readonly property string mockSlideTitle:    "The God Who Pursues"
+    readonly property string mockSlideBody:     "He does not wait at the edge of the far country.\nHe runs."
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":  return mockScriptureRef
-            case "scriptureText": return mockScriptureText
-            case "lyric":         return mockLyric
-            case "custom":        return data.text || ""
+            case "scriptureRef":      return mockScriptureRef
+            case "scriptureText":     return mockScriptureText
+            case "lyric":             return mockLyric
+            case "presentationTitle": return mockSlideTitle
+            case "presentationBody":  return mockSlideBody
+            case "custom":            return data.text || ""
         }
         return data.text || ""
     }

@@ -144,6 +144,22 @@ Item {
         return layerItem.title || layerItem.reference || ""
     }
 
+    // A presentation slide's heading, read off the SAME pages array every
+    // other kind uses -- pages[i].title alongside pages[i].content. Nothing
+    // in ProjectionService needed to change for this: pages are QVariantMaps
+    // already, so a deck simply fills a field the other kinds leave unset,
+    // and a song or scripture page (no title key) resolves to "" here and
+    // renders an empty title box, which the theme's group card then hugs
+    // away to nothing.
+    readonly property string _slideTitle: {
+        if (!layerItem) return ""
+        const pages = layerItem.pages
+        if (!pages || pages.length === 0) return ""
+        const idx = Math.min(layerPage, pages.length - 1)
+        const p = pages[idx]
+        return (p && p.title) || ""
+    }
+
     // Composed "Book chapter:verse[-verse]" for the optional footer overlay.
     // Prefers the structured scriptureRef (drops the translation parenthetical
     // the title carries) and falls back to the title/reference.
@@ -165,10 +181,12 @@ Item {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":  return _refText
-            case "scriptureText": return _pageText
-            case "lyric":         return _pageText
-            case "custom":        return data.text || ""
+            case "scriptureRef":      return _refText
+            case "scriptureText":     return _pageText
+            case "lyric":             return _pageText
+            case "presentationTitle": return _slideTitle
+            case "presentationBody":  return _pageText
+            case "custom":            return data.text || ""
         }
         return data.text || ""
     }

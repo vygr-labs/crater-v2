@@ -39,6 +39,7 @@ add_library(crater-core STATIC
     src/StrongsService.cpp
     src/SongService.cpp
     src/CollectionService.cpp
+    src/PresentationService.cpp
     src/ScheduleService.cpp
     src/ThemeService.cpp
     src/MediaService.cpp
@@ -57,6 +58,7 @@ add_library(crater-core STATIC
     include/crater/StrongsService.h
     include/crater/SongService.h
     include/crater/CollectionService.h
+    include/crater/PresentationService.h
     include/crater/ScheduleService.h
     include/crater/ThemeService.h
     include/crater/MediaService.h
@@ -78,6 +80,7 @@ add_library(crater-core STATIC
     include/crater/value/Song.h
     include/crater/value/SongSection.h
     include/crater/value/Collection.h
+    include/crater/value/Presentation.h
     include/crater/value/SavedSchedule.h
     include/crater/value/Theme.h
     include/crater/value/ThemeImportReport.h
@@ -177,6 +180,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V006__remove_builtin_themes.sql
         src/db/migrations/app/V008__user_fonts.sql
         src/db/migrations/app/V009__media_display.sql
+        src/db/migrations/app/V010__presentations.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)
