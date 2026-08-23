@@ -33,6 +33,15 @@ Item {
         sourceComponent: PresentationEditorDialog { }
     }
 
+    // ── Schedule item editor ────────────────────────────────────────────
+    // Edits ONE schedule row's own copy of its slides (the song editor
+    // above edits the library record instead). Song + scripture rows.
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "scheduleItemEditor"
+        sourceComponent: ScheduleItemEditorDialog { }
+    }
+
     // The theme editor is now a full-screen workspace, not a modal —
     // see ThemeEditorWorkspace.qml mounted in Main.qml under the
     // AppState.workspaceMode === "themeEditor" gate.

@@ -26,6 +26,11 @@ Item {
     property bool isSelected: false           // a member of the multi-selection set
     property bool isPrimarySelected: false    // the anchor (drives Preview pane)
     property bool hasThemeOverride: false
+    // Row has operator edits that no longer match its library source
+    // (set by ScheduleItemEditorDialog). Worth surfacing: an edited
+    // row silently stops following the song it came from, so without a
+    // mark the divergence is invisible until it is on screen.
+    property bool hasContentOverride: false
 
     // Drag state. The row translates by dragOffsetY while a drag is in
     // progress; ListView delegate positioning isn't touched so the operator
@@ -202,7 +207,9 @@ Item {
             id: titleText
             anchors.left: kindIcon.right
             anchors.leftMargin: Theme.space.sm
-            anchors.right: themeMark.visible ? themeMark.left : parent.right
+            anchors.right: themeMark.visible ? themeMark.left
+                         : editMark.visible  ? editMark.left
+                                             : parent.right
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             text: root.title
@@ -228,6 +235,24 @@ Item {
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             name: "palette"
+            size: Theme.icon.sm
+            color: Qt.lighter(root._kindColor, 1.1)
+            opacity: 0.85
+        }
+
+        // ── Edited glyph ─────────────────────────────────────────────────
+        // Same annotation language as themeMark above: tinted in the row's
+        // kind color so it reads as a note about this item rather than a
+        // separate semantic class. Sits inboard of the theme mark so the
+        // two stack in a fixed order when a row carries both.
+        AppIcon {
+            id: editMark
+            visible: root.hasContentOverride
+            anchors.right: themeMark.visible ? themeMark.left : parent.right
+            anchors.rightMargin: themeMark.visible ? Theme.space.xs
+                                                   : Theme.space.md
+            anchors.verticalCenter: parent.verticalCenter
+            name: "edit-3"
             size: Theme.icon.sm
             color: Qt.lighter(root._kindColor, 1.1)
             opacity: 0.85

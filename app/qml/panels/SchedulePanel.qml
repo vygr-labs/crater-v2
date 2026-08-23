@@ -286,6 +286,7 @@ Rectangle {
                     return (typeof t === "number" && t > 0)
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
+                hasContentOverride: modelData.contentOverride === true
 
                 // Click DELIBERATELY does NOT call setActiveFocus("schedule").
                 // The operator typically clicks a schedule row to load it into
@@ -388,14 +389,23 @@ Rectangle {
                     AppState.openContextMenuAt(this, mouseX, mouseY, [
                         { label: qsTr("Send to Live"), iconName: "play",
                           action: function() { AppState.goLive() } },
-                        // Edit routes by kind (song editor / media options /
-                        // back to the verse picker) — see
-                        // AppState.editScheduleItem. Dimmed rather than hidden
-                        // when a row has nothing editable, so the entry keeps a
-                        // stable position in the menu.
+                        // Edit routes by kind — song / scripture rows open
+                        // the schedule item editor (edits THIS row's slides,
+                        // not the library record), media rows open their
+                        // options. See AppState.editScheduleItem. Dimmed
+                        // rather than hidden when a row has nothing editable,
+                        // so the entry keeps a stable position in the menu.
                         { label: qsTr("Edit…"), iconName: "edit",
                           enabled: AppState.canEditScheduleItem(index),
                           action: function() { AppState.editScheduleItem(index) } },
+                        // Scripture only: swap WHICH verses the row holds.
+                        // Distinct from Edit, which marks up the text the row
+                        // already has. Hidden (not dimmed) on other kinds —
+                        // there is no passage to re-pick, so the entry would
+                        // be noise rather than a disabled affordance.
+                        { label: qsTr("Change passage…"), iconName: "book-open",
+                          visible: (item.kind || "") === "scripture" && !!item.scriptureRef,
+                          action: function() { AppState.repickSchedulePassage(index) } },
                         // Retitles THIS row only; the library record keeps its
                         // own name (see AppState.renameScheduleItem).
                         { label: qsTr("Rename…"), iconName: "type",
@@ -430,7 +440,12 @@ Rectangle {
                                   onConfirm: function() { ScheduleService.removeAt(index) }
                               })
                           } }
-                    ])
+                    // PopoverMenu has no `visible` in its row schema (only
+                    // `enabled`), so kind-specific entries are filtered out
+                    // here rather than handed over to be ignored. Entries
+                    // without the key are kept, so this only affects rows
+                    // that opt in.
+                    ].filter(function(e) { return e.visible !== false }))
                 }
 
                 onDragStarted: function(i) {

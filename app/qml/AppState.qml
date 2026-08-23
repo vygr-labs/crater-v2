@@ -319,7 +319,11 @@ QtObject {
         // renameScheduleItem); everything else follows the library.
         if (!row.titleOverride) merged.title = rebuilt.title
         merged.subtitle = rebuilt.subtitle
-        merged.pages    = rebuilt.pages
+        // Same contract one field over: a row edited in the schedule item
+        // editor keeps its own slides. Without this, the next edit to the
+        // underlying song would silently discard the operator's markup —
+        // which for a highlighted verse means it vanishes mid-service.
+        if (!row.contentOverride) merged.pages = rebuilt.pages
         // The row's own theme pin wins; adopt the song's only when the row
         // never had one.
         if (!merged.themeId) merged.themeId = rebuilt.themeId
@@ -492,13 +496,18 @@ QtObject {
         const item = items[index]
         const kind = item.kind || ""
 
-        if (kind === "song") {
-            const songId = Number(item.songId || 0)
-            if (songId <= 0) return false
-            // Edits the library song, not a detached copy — which is what an
-            // operator fixing a typo mid-rehearsal wants. The schedule row
-            // picks the new lyrics up through refreshStagedSong.
-            openModal("songEditor", { songId: songId })
+        if (kind === "song" || kind === "scripture") {
+            // Edits a DETACHED copy: the row's own pages, not the library
+            // record. That is the point of editing from the schedule —
+            // marking up a verse or retiming a song for one service must
+            // not rewrite what every future service inherits. The dialog
+            // offers "Save to Library" for song rows when the operator does
+            // want the change to stick everywhere.
+            //
+            // This used to open the library song editor for songs, and to
+            // do nothing at all for scripture. See ScheduleItemEditorDialog.
+            if (!(item.pages && item.pages.length > 0)) return false
+            openModal("scheduleItemEditor", { itemIndex: index })
             return true
         }
         if (kind === "image" || kind === "video" || kind === "pdf") {
@@ -507,27 +516,35 @@ QtObject {
             openModal("mediaEdit", { mediaId: mediaId })
             return true
         }
-        if (kind === "scripture" && item.scriptureRef) {
-            // No scripture editor exists (and none should — the text is the
-            // translation's). Editing a passage means re-picking it, so this
-            // lands the operator in the Scripture tab on that exact verse,
-            // in that exact translation, ready to adjust the range.
-            //
-            // revealResult wants the global-search row shape, whose verse
-            // field is `verse`; a schedule ref spells it `verseStart`.
-            const r = item.scriptureRef
-            revealResult({
-                type: "scripture",
-                scriptureRef: {
-                    book:            r.book,
-                    chapter:         r.chapter,
-                    verse:           r.verseStart,
-                    translationCode: r.translationCode || ""
-                }
-            })
-            return true
-        }
         return false
+    }
+
+    // Re-pick a scripture row's passage. Editing the row's TEXT is
+    // ScheduleItemEditorDialog's job; changing WHICH verses it holds is
+    // this, because the range lives in the Bible DB rather than on the row.
+    // Split out of editScheduleItem when that started opening a real editor
+    // for scripture — both are useful, so both get a menu entry.
+    //
+    // Lands the operator in the Scripture tab on that exact verse, in that
+    // exact translation, ready to adjust the range.
+    function repickSchedulePassage(index) {
+        const items = ScheduleService.currentItems
+        if (index < 0 || index >= items.length) return false
+        const item = items[index]
+        if ((item.kind || "") !== "scripture" || !item.scriptureRef) return false
+        // revealResult wants the global-search row shape, whose verse field
+        // is `verse`; a schedule ref spells it `verseStart`.
+        const r = item.scriptureRef
+        revealResult({
+            type: "scripture",
+            scriptureRef: {
+                book:            r.book,
+                chapter:         r.chapter,
+                verse:           r.verseStart,
+                translationCode: r.translationCode || ""
+            }
+        })
+        return true
     }
 
     // Menu-enablement companion to editScheduleItem — same routing, no
@@ -538,11 +555,13 @@ QtObject {
         if (index < 0 || index >= items.length) return false
         const item = items[index]
         switch (item.kind || "") {
-            case "song":      return Number(item.songId  || 0) > 0
+            // Text rows edit their own pages, so a library id is no longer
+            // required — only something to edit.
+            case "song":
+            case "scripture": return !!(item.pages && item.pages.length > 0)
             case "image":
             case "video":
             case "pdf":       return Number(item.mediaId || 0) > 0
-            case "scripture": return !!item.scriptureRef
         }
         return false
     }
@@ -730,7 +749,7 @@ QtObject {
     }
 
     // ─── Modal stack ────────────────────────────────────────────────────
-    property string activeModal: ""        // "" | "settings" | "songEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
+    property string activeModal: ""        // "" | "settings" | "songEditor" | "scheduleItemEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
 

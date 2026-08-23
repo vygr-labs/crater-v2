@@ -184,6 +184,7 @@ qt_add_qml_module(crater
         qml/dialogs/ModalShell.qml
         qml/dialogs/SettingsDialog.qml
         qml/dialogs/SongEditorDialog.qml
+        qml/dialogs/ScheduleItemEditorDialog.qml
         qml/dialogs/NamingDialog.qml
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
