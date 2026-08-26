@@ -1123,6 +1123,14 @@ QtObject {
         // Width of AppScrollBar's overlay lane. Scrollable views inset their
         // content by this so the bar rides the right gutter, not the content.
         readonly property int scrollBar:         14
+        // How far one arrow-button tick scrolls, in CONTENT PIXELS. Roughly
+        // one schedule row plus its gap — small enough to land on the row you
+        // meant, large enough that holding the button still covers ground.
+        // AppScrollBar converts it into the fraction-of-content units
+        // ScrollBar.stepSize actually wants; expressing it in pixels here is
+        // what keeps a tick the same physical distance in a 12-row list and a
+        // 12000-verse one.
+        readonly property int scrollStep:        48
     }
 
     // Schedule-item display helpers — derive label + color from item `kind`
