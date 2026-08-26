@@ -28,8 +28,13 @@ Rectangle {
     // suppress empty rows here. ThemedMonitor reads item.pages directly,
     // so the bottom thumbnail still renders the media. Mirrors the same
     // filter in PreviewPanel.
+    // Presentation decks skip the filter entirely — every authored slide is
+    // projectable, including title-only and not-yet-written ones, and the
+    // card index has to stay in step with ProjectionService's page index.
+    // Same reasoning as PreviewPanel; see the longer note there.
     readonly property var pages: {
         const raw = liveItem && liveItem.pages ? liveItem.pages : []
+        if (liveItem && liveItem.kind === "presentation") return raw
         return raw.filter(function(p) {
             return p && p.content && String(p.content).length > 0
         })

@@ -245,7 +245,12 @@ QtObject {
         // alternative (returning null) makes an empty deck silently do
         // nothing when double-clicked, which reads as a broken row.
         if (pages.length === 0) {
-            pages = [{ label: "", content: "", title: deck.title, notes: "" }]
+            // `label` carries the deck title too: the Preview / Live cards
+            // list `label` down their left side, and Preview and Live no
+            // longer drop content-free pages for this kind (see
+            // PreviewPanel.pages), so a blank label would render as an
+            // unlabelled empty card instead of a readable one.
+            pages = [{ label: deck.title, content: "", title: deck.title, notes: "" }]
         }
         return {
             kind:     "presentation",

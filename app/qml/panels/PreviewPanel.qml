@@ -35,8 +35,23 @@ Rectangle {
     // bordered row for them is just visual noise. ThemedMonitor reads
     // item.pages directly (not this filtered list), so the bottom
     // thumbnail keeps rendering media correctly.
+    //
+    // Presentations are exempt from the filter. A deck's slides are AUTHORED
+    // — the operator made each one and can project each one — where a media
+    // item's single page is a synthetic placeholder this filter exists to
+    // suppress. A slide legitimately carries no body (a title-only slide
+    // renders as a section divider — see V010__presentations.sql), and a
+    // slide still being written may be blank entirely, so `content` is the
+    // wrong test for this kind: it dropped every such slide, leaving the
+    // library row reading "6 slides" and the pane showing one card.
+    //
+    // Exempting them also re-aligns two indexes that had silently diverged.
+    // The cards index into THIS list; ThemedMonitor, ProjectionService and
+    // every arrow-key step index into the unfiltered item.pages. One dropped
+    // slide put every card after it on the wrong slide.
     readonly property var pages: {
         const raw = selectedItem && selectedItem.pages ? selectedItem.pages : []
+        if (selectedItem && selectedItem.kind === "presentation") return raw
         return raw.filter(function(p) {
             return p && p.content && String(p.content).length > 0
         })
