@@ -73,6 +73,19 @@ Item {
         else      AppState.clearLibraryPreview()
     }
 
+    // Incidental-path sibling of pushPreviewFor. Resolves the same item, but
+    // routes through AppState.refreshLibraryPreview so it can only UPDATE a
+    // preview the library already owns — never take the pane off a schedule
+    // row the operator staged (and possibly marked up in the schedule item
+    // editor). Used by every path the operator did not directly ask for: a
+    // model reload, this tab's async Loader finishing, switching back into
+    // the tab.
+    function refreshPreviewFor(idx) {
+        if (AppState.tabKeys[AppState.activeTab] !== tabKey) return
+        var e = (idx >= 0 && idx < results.length) ? results[idx] : null
+        AppState.refreshLibraryPreview(buildItem(e))
+    }
+
     function pushLiveFor(idx) {
         var e = (idx >= 0 && idx < results.length) ? results[idx] : null
         var item = buildItem(e)
@@ -83,18 +96,18 @@ Item {
         if (results.length === 0) { selIndex = -1; return }
         var idx = (selIndex >= 0 && selIndex < results.length) ? selIndex : 0
         selIndex = idx
-        if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
+        refreshPreviewFor(idx)
     }
 
     Component.onCompleted: {
-        if (results.length > 0) { selIndex = 0; pushPreviewFor(0) }
+        if (results.length > 0) { selIndex = 0; refreshPreviewFor(0) }
     }
 
     Connections {
         target: AppState
         function onActiveTabChanged() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
-            if (root.selIndex >= 0) root.pushPreviewFor(root.selIndex)
+            if (root.selIndex >= 0) root.refreshPreviewFor(root.selIndex)
         }
         function onLibraryNavigateDown() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return

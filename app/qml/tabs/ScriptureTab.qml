@@ -54,7 +54,35 @@ Item {
         interval: 120
         onTriggered: root._debouncedQuery = root.queryText
     }
+    // Text last written into the search input BY a sync rather than typed.
+    // _syncInputToVerse rewrites the box after a schedule click, a verse
+    // click and an arrow step, and that rewrite drives parsedRef exactly as
+    // a keystroke would — so onParsedRefChanged fires one debounce tick
+    // later and, before this, CLAIMED the Preview pane with the library's
+    // copy of the verse. That is the same schedule-edit-disappears bug the
+    // refreshPreviewFor split fixes elsewhere, arriving by a slower route.
+    //
+    // Held only while the box still contains exactly what the sync wrote:
+    // the moment the operator types anything else it clears below, and the
+    // parser handlers go back to treating the edit as real intent.
+    property string _syncedInputText: ""
+
+    // Deliberately a FUNCTION, not a `readonly property bool` binding. As a
+    // binding this read stale: _syncInputToVerse writes _syncedInputText and
+    // the search text in one go, _reconcileQueryTranslation pushes
+    // _debouncedQuery synchronously behind it, and onParsedRefChanged then
+    // runs in that same cascade — BEFORE the binding re-evaluates. It
+    // reported false with both strings already equal, so the push went
+    // through and the schedule row's markup vanished anyway. A function is
+    // evaluated at the call, so it cannot lag its own inputs.
+    function _inputIsSyncEcho() {
+        return _syncedInputText.length > 0 && _debouncedQuery === _syncedInputText
+    }
+
     onQueryTextChanged: {
+        // Anything that isn't verbatim the synced text is the operator
+        // typing, so the echo grace ends here.
+        if (queryText !== _syncedInputText) _syncedInputText = ""
         queryDebounce.restart()
         // Translation switch is INTENTIONALLY un-debounced — the operator
         // should see the sidebar flip the instant they finish typing the
@@ -543,6 +571,19 @@ Item {
         else      AppState.clearLibraryPreview()
     }
 
+    // Incidental-path sibling of pushPreviewFor. Resolves the same item, but
+    // routes through AppState.refreshLibraryPreview so it can only UPDATE a
+    // preview the library already owns — never take the pane off a schedule
+    // row the operator staged (and possibly marked up in the schedule item
+    // editor). Used by every path the operator did not directly ask for: a
+    // model reload, this tab's async Loader finishing, switching back into
+    // the tab.
+    function refreshPreviewFor(idx) {
+        if (AppState.tabKeys[AppState.activeTab] !== tabKey) return
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        AppState.refreshLibraryPreview((sel.length > 0) ? _activeItem() : verseItemAt(idx))
+    }
+
     function pushLiveFor(idx) {
         const sel = AppState.librarySelectedIndices[tabKey] || []
         const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
@@ -578,6 +619,7 @@ Item {
         // active override keeps the typed-code state alive as long as the
         // operator is still navigating the synced reference.
         if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
+        _syncedInputText = text
         AppState.setSearch(tabKey, text)
     }
 
@@ -602,7 +644,8 @@ Item {
             AppState.setLibraryFluid(tabKey, lo)
             AppState.setLibrarySelected(tabKey, range)
             list.positionViewAtIndex(lo, ListView.Contain)
-            pushPreviewFor(lo)
+            if (_inputIsSyncEcho()) refreshPreviewFor(lo)
+            else                    pushPreviewFor(lo)
         } else if (_rangeFromInput) {
             _rangeFromInput = false
             AppState.clearLibrarySelected(tabKey)
@@ -616,7 +659,8 @@ Item {
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
             list.positionViewAtIndex(idx, ListView.Contain)
-            pushPreviewFor(idx)
+            if (_inputIsSyncEcho()) refreshPreviewFor(idx)
+            else                    pushPreviewFor(idx)
         }
     }
 
@@ -653,7 +697,7 @@ Item {
             if (syncIdx >= 0) {
                 AppState.setLibraryFluid(tabKey, syncIdx)
                 Qt.callLater(function() { list.positionViewAtIndex(syncIdx, ListView.Contain) })
-                if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(syncIdx)
+                refreshPreviewFor(syncIdx)
                 _syncInputToVerse(syncIdx)
                 return
             }
@@ -693,7 +737,7 @@ Item {
         // what it did (search-mode keystrokes, mode flips).
         if (idx < 0) idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
-        if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
+        refreshPreviewFor(idx)
 
         // Force-resync list.currentIndex with fluidIndex AND re-center the
         // viewport — but only when needed. ListView's model-swap path
@@ -726,7 +770,7 @@ Item {
         target: AppState
         function onActiveTabChanged() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
-            if (root.fluidIndex >= 0) root.pushPreviewFor(root.fluidIndex)
+            if (root.fluidIndex >= 0) root.refreshPreviewFor(root.fluidIndex)
         }
 
         // Schedule → scripture sync: clicking a scripture row in the schedule
@@ -744,9 +788,7 @@ Item {
                 if (idx >= 0) {
                     AppState.setLibraryFluid(root.tabKey, idx)
                     Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Contain) })
-                    if (AppState.tabKeys[AppState.activeTab] === root.tabKey) {
-                        root.pushPreviewFor(idx)
-                    }
+                    root.refreshPreviewFor(idx)
                     root._syncInputToVerse(idx)
                 }
                 return

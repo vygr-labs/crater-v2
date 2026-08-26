@@ -146,6 +146,31 @@ QtObject {
         libraryPreviewItem = null
     }
 
+    // Refresh-only sibling of pushLibraryPreview. Updates the library's
+    // preview ONLY when the library already owns the Preview pane; when the
+    // schedule owns it (libraryPreviewItem === null, set by
+    // selectScheduleItem) this is a no-op.
+    //
+    // Why the distinction exists: every library tab re-pushes its focused row
+    // into Preview on events the operator did not make — the tab's Loader
+    // finishing its async build, a corpus/model reload, switching back into
+    // the tab, and (Scripture only) a schedule row asking the picker to
+    // scroll to its verse. Each of those used pushLibraryPreview, so they
+    // CLAIMED the pane. The visible failure: mark up a scripture row in the
+    // schedule item editor, and moments later Preview silently reverts to the
+    // library's unmarked copy of the same verse — the row still holds the
+    // edit, but the operator can no longer see or project it, and a Go Live
+    // from Preview pushes the library text instead.
+    //
+    // Explicit library gestures (clicking a row, arrowing the list, typing a
+    // reference) still call pushLibraryPreview and still take the pane. Only
+    // the incidental paths route through here.
+    function refreshLibraryPreview(item) {
+        if (libraryPreviewItem === null) return   // schedule owns Preview
+        if (item) libraryPreviewItem = item
+        else      libraryPreviewItem = null
+    }
+
     // Canonical song → schedule-item builder. Lives here rather than in a tab
     // because three surfaces need the identical shape: SongsTab (library rows),
     // GlobalSearchOverlay (palette hits), and refreshStagedSong() below. Those

@@ -162,6 +162,18 @@ Item {
         else      AppState.clearLibraryPreview()
     }
 
+    // Incidental-path sibling of pushPreviewFor. Resolves the same item, but
+    // routes through AppState.refreshLibraryPreview so it can only UPDATE a
+    // preview the library already owns — never take the pane off a schedule
+    // row the operator staged (and possibly marked up in the schedule item
+    // editor). Used by every path the operator did not directly ask for: a
+    // model reload, this tab's async Loader finishing, switching back into
+    // the tab.
+    function refreshPreviewFor(idx) {
+        if (AppState.tabKeys[AppState.activeTab] !== tabKey) return
+        AppState.refreshLibraryPreview(mediaItemAt(idx))
+    }
+
     function pushLiveFor(idx) {
         const item = mediaItemAt(idx)
         if (item) AppState.pushLibraryLive(item)
@@ -376,7 +388,7 @@ Item {
 
         const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
-        if (AppState.tabKeys[AppState.activeTab] === tabKey) pushPreviewFor(idx)
+        refreshPreviewFor(idx)
     }
 
     // Refresh preview when the operator switches into this tab.
@@ -384,7 +396,7 @@ Item {
         target: AppState
         function onActiveTabChanged() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
-            if (root.fluidIndex >= 0) root.pushPreviewFor(root.fluidIndex)
+            if (root.fluidIndex >= 0) root.refreshPreviewFor(root.fluidIndex)
         }
     }
 
