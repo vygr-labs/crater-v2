@@ -126,6 +126,7 @@ qt_add_qml_module(crater
         qml/components/MediaMonitor.qml
         qml/components/ThemedMonitor.qml
         qml/components/ThemePreview.qml
+        qml/components/LayoutStrip.qml
         qml/components/LogoView.qml
         qml/components/LyricSectionEditor.qml
         qml/components/LyricsToolbar.qml

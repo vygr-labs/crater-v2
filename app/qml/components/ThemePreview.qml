@@ -20,9 +20,17 @@ Item {
     property var  theme               // crater::Theme value
     property bool autoPlayVideos: false   // off for tiles, on for the editor
 
+    // Which of the theme's designs to preview. Empty renders the theme's
+    // DEFAULT layout, which is the right answer for a Themes-tab tile: a
+    // theme whose first design happened to be "Blank" would otherwise show
+    // up in the picker as an empty rectangle. The slide editor's layout
+    // chooser sets this per thumbnail so an operator picks a design by
+    // looking at it rather than by reading its name.
+    property string layoutId: ""
+
     readonly property var  _tokens: theme && theme.tokens ? theme.tokens : ({})
     readonly property var  _canvas: _tokens.canvas || ({ width: 1920, height: 1080 })
-    readonly property var  _nodes:  _tokens.nodes  || []
+    readonly property var  _nodes:  ThemeService.layoutNodes(_tokens, layoutId)
 
     // Mock content for the live linkage values. Same mock strings shared by
     // every text node so the preview is deterministic per theme.
@@ -34,6 +42,11 @@ Item {
     // judges a presentation theme on at thumbnail scale.
     readonly property string mockSlideTitle:    "The God Who Pursues"
     readonly property string mockSlideBody:     "He does not wait at the edge of the far country.\nHe runs."
+    // Distinct mock strings per slot, so a two-column design reads as two
+    // columns in the thumbnail instead of the same sentence twice, and a
+    // title design's subtitle is visibly subordinate to its title.
+    readonly property string mockSlideSubtitle:   "Luke 15"
+    readonly property string mockSlideBodyRight:  "The elder son stayed home and was just as lost."
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -44,6 +57,8 @@ Item {
             case "lyric":             return mockLyric
             case "presentationTitle": return mockSlideTitle
             case "presentationBody":  return mockSlideBody
+            case "presentationSubtitle":  return mockSlideSubtitle
+            case "presentationBodyRight": return mockSlideBodyRight
             case "custom":            return data.text || ""
         }
         return data.text || ""

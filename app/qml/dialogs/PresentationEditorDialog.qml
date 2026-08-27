@@ -6,13 +6,27 @@ import Crater
 // projects. Bound to modalProps:
 //   presentationId: the deck to edit.
 //
-// Three fields per slide, and the split between them is the whole feature:
+// Each slide picks a DESIGN from the theme, the way a PowerPoint slide picks
+// a layout from its template, and the fields on offer follow from that
+// choice:
 //
-//   Title / Body   — what the CONGREGATION sees. Bound by a presentation
-//                    theme's presentationTitle / presentationBody text nodes.
+//   Design         — which of the theme's layouts draws this slide. Chosen
+//                    from live thumbnails of the real designs (LayoutStrip),
+//                    because an operator picks "the one with the big centred
+//                    heading", not the words "Section divider".
+//   Title / Body /
+//   Subtitle /
+//   Right column /
+//   Picture        — what the CONGREGATION sees. Which of these appear is
+//                    DERIVED from the chosen design by scanning its nodes
+//                    (ThemeService.layoutSlots), so a section divider does
+//                    not offer a body box that renders nowhere, and nothing
+//                    has to be kept in sync by hand.
 //   Speaker notes  — what only the PREACHER sees. Never reaches the audience
 //                    render; read solely by StageScene, so it appears on an
 //                    output whose contentMode is "stage" and nowhere else.
+//                    Always offered, whatever the design: notes are for the
+//                    person talking, not for the layout.
 //
 // Everything is edited against an in-memory working copy and committed on
 // Save. That is not just tidiness: the deck being edited may be the one
@@ -23,8 +37,8 @@ import Crater
 ModalShell {
     id: root
 
-    dialogWidth: 960
-    dialogHeight: 660
+    dialogWidth: 1040
+    dialogHeight: 760
     title: qsTr("Edit presentation")
 
     readonly property int deckId: AppState.modalProps.presentationId || 0
@@ -40,8 +54,22 @@ ModalShell {
     // would otherwise cause while we are loading a slide INTO the fields.
     property bool   _loading: false
 
+    // The selected slide, for READS. Deliberately not the dependency any
+    // derived property binds to: _setField reassigns _slides with slice(),
+    // which is a SHALLOW copy, so this re-evaluates to the very same object
+    // reference and QML suppresses the change signal. Anything that has to
+    // update when a field changes must read through _slides itself - see
+    // _slideOf below - or it will silently never fire.
     readonly property var _cur:
         (_sel >= 0 && _sel < _slides.length) ? _slides[_sel] : null
+
+    // Same slide, reached in a way that DOES create a dependency on _slides
+    // (and on _sel). Bindings that call this re-evaluate on every notifying
+    // _setField, because QML captures property reads made inside a called
+    // function just as it does inline ones.
+    function _slideOf() {
+        return (_sel >= 0 && _sel < _slides.length) ? _slides[_sel] : null
+    }
 
     Component.onCompleted: {
         if (!_valid) return
@@ -52,34 +80,69 @@ ModalShell {
         // true by construction rather than by trusting the service.
         const src = PresentationService.slides(deckId)
         let out = []
-        for (let i = 0; i < src.length; i++) {
-            const s = src[i] || {}
-            out.push({ title: s.title || "", body: s.body || "", notes: s.notes || "" })
-        }
-        if (out.length === 0) out.push({ title: "", body: "", notes: "" })
+        for (let i = 0; i < src.length; i++) out.push(_copySlide(src[i]))
+        if (out.length === 0) out.push(_blankSlide(""))
         _slides = out
         _sel = 0
         _loadSlideIntoFields()
     }
 
+    // One place that knows a slide's shape. Everything that mints or copies
+    // a slide goes through these two, so adding a field later cannot leave
+    // one of the four creation paths behind.
+    function _blankSlide(layoutId) {
+        return { title: "", body: "", notes: "",
+                 layout: layoutId || "", subtitle: "", bodyRight: "", mediaId: 0 }
+    }
+
+    function _copySlide(s) {
+        const v = s || {}
+        return { title:     v.title     || "",
+                 body:      v.body      || "",
+                 notes:     v.notes     || "",
+                 layout:    v.layout    || "",
+                 subtitle:  v.subtitle  || "",
+                 bodyRight: v.bodyRight || "",
+                 mediaId:   v.mediaId   || 0 }
+    }
+
     function _loadSlideIntoFields() {
         _loading = true
-        const s = _cur || { title: "", body: "", notes: "" }
-        titleField.text = s.title
-        bodyField.text  = s.body
-        notesField.text = s.notes
+        const s = _cur || _blankSlide("")
+        titleField.text     = s.title
+        bodyField.text      = s.body
+        notesField.text     = s.notes
+        subtitleField.text  = s.subtitle
+        bodyRightField.text = s.bodyRight
         _loading = false
     }
+
+    // Fields that something OTHER than their own input reads, and so must
+    // notify when they change:
+    //   title / subtitle - the slide list's row label (subtitle is its
+    //                      second fallback)
+    //   layout           - the design strip's selection, the derived slot
+    //                      set, and the row's design caption
+    //   mediaId          - the picture row's name and clear button
+    //
+    // Mutating _slides[_sel] in place does NOT fire a binding: QML never
+    // notifies on a sub-path of a `property var`, so the array has to be
+    // reassigned to re-emit. Getting this wrong is silent - the value is
+    // stored correctly and simply nothing on screen moves, which is exactly
+    // how picking a design did nothing at all the first time round.
+    //
+    // body / bodyRight / notes are deliberately NOT in the list. Nothing but
+    // their own TextEdit displays them, and reassigning on every keystroke
+    // would rebuild every visible slide-list delegate mid-sentence.
+    readonly property var _notifyingFields: ({
+        "title": true, "subtitle": true, "layout": true, "mediaId": true
+    })
 
     function _setField(field, value) {
         if (_loading) return
         if (_sel < 0 || _sel >= _slides.length) return
         _slides[_sel][field] = value
-        // Only the title shows in the slide list, so only a title edit needs
-        // the model to re-emit. Reassigning the array on every body or notes
-        // keystroke would rebuild every visible delegate for a change none of
-        // them display.
-        if (field === "title") _slides = _slides.slice()
+        if (_notifyingFields[field]) _slides = _slides.slice()
     }
 
     function _select(i) {
@@ -88,9 +151,14 @@ ModalShell {
         _loadSlideIntoFields()
     }
 
+    // A new slide inherits the current slide's DESIGN rather than resetting
+    // to the theme default. Decks are built in runs — five content slides,
+    // then a divider — so inheriting is right far more often than not, and
+    // the strip is one click away when it is not. It also means there is no
+    // second layout picker hiding behind the + button.
     function _addSlide() {
         let out = _slides.slice()
-        out.splice(_sel + 1, 0, { title: "", body: "", notes: "" })
+        out.splice(_sel + 1, 0, _blankSlide(_cur ? _cur.layout : ""))
         _slides = out
         _select(_sel + 1)
         titleField.forceActiveFocus()
@@ -99,8 +167,7 @@ ModalShell {
     function _duplicateSlide() {
         if (!_cur) return
         let out = _slides.slice()
-        out.splice(_sel + 1, 0,
-                   { title: _cur.title, body: _cur.body, notes: _cur.notes })
+        out.splice(_sel + 1, 0, _copySlide(_cur))
         _slides = out
         _select(_sel + 1)
     }
@@ -110,7 +177,7 @@ ModalShell {
         // projected, and an empty editor gives the operator nothing to type
         // into. Deleting the last one clears it instead.
         if (_slides.length <= 1) {
-            _slides = [{ title: "", body: "", notes: "" }]
+            _slides = [_blankSlide(_cur ? _cur.layout : "")]
             _select(0)
             return
         }
@@ -143,6 +210,73 @@ ModalShell {
         PresentationService.saveSlides(deckId, _slides)
         PresentationService.setThemeId(deckId, _themeId)
         AppState.closeModal()
+    }
+
+    // ── Resolved theme + the current slide's design ─────────────────────
+    // The strip and the derived field set both need the theme this deck will
+    // actually render with. That is the per-deck override when set, and the
+    // per-kind default otherwise — the same fall-through
+    // AppState.resolveItemTheme performs, minus the per-output slot, which
+    // the editor has no single answer for (a deck can go to two outputs with
+    // different pins). Editing against the default is the honest choice: it
+    // is what the operator sees in Preview.
+    //
+    // The revision int forces re-evaluation when a theme is edited or the
+    // default-for-kind changes while this dialog is open, mirroring the
+    // pattern ThemedMonitor and ProjectionWindow already use.
+    property int _themeRevision: 0
+
+    Connections {
+        target: ThemeService
+        function onAllThemesChanged() { root._themeRevision++ }
+        function onDefaultsChanged()  { root._themeRevision++ }
+    }
+
+    readonly property var _resolvedTheme: {
+        _themeRevision   // dependency
+        if (_themeId > 0) {
+            const t = ThemeService.theme(_themeId)
+            if (t && (t.id || 0) > 0) return t
+        }
+        return ThemeService.defaultFor("presentation")
+    }
+
+    readonly property var _themeTokens:
+        _resolvedTheme && _resolvedTheme.tokens ? _resolvedTheme.tokens : ({})
+
+    readonly property string _curLayout: {
+        const s = _slideOf()
+        return s ? (s.layout || "") : ""
+    }
+
+    // Likewise for the picture: the row's label, its clear button and the
+    // popover's current selection all have to move when the slide's media
+    // changes, and all three read this rather than _cur.mediaId.
+    readonly property int _curMediaId: {
+        const s = _slideOf()
+        return s ? (s.mediaId || 0) : 0
+    }
+
+    // Which fields this design binds. Derived from the design's nodes, never
+    // declared — see crater::tokens::layoutSlots. A design with no body node
+    // yields body:false and the body box simply is not offered.
+    readonly property var _slots: ThemeService.layoutSlots(_themeTokens, _curLayout)
+
+    // True when the slide names a design this theme does not have, which
+    // happens whenever a deck is moved between themes. The renderer falls
+    // back to the theme's default; the editor says so rather than letting
+    // the fallback pass for a choice.
+    readonly property bool _layoutMissing:
+        _curLayout.length > 0 && !ThemeService.hasLayout(_themeTokens, _curLayout)
+
+    function _layoutNameOf(slide) {
+        const id = (slide && slide.layout) || ""
+        if (id.length === 0) return ""
+        const all = ThemeService.themeLayouts(_themeTokens)
+        for (let i = 0; i < all.length; i++) {
+            if (all[i].id === id) return all[i].name
+        }
+        return ThemeService.defaultLayoutName(id)
     }
 
     // ── Theme picker options ────────────────────────────────────────────
@@ -291,7 +425,7 @@ ModalShell {
 
                 delegate: Item {
                     width: slideList.width - Theme.size.scrollBar
-                    height: 44
+                    height: 52
 
                     readonly property bool _isSel: index === root._sel
 
@@ -333,6 +467,7 @@ ModalShell {
                                 const s = modelData || {}
                                 if ((s.title || "").length > 0) return s.title
                                 if ((s.body || "").length > 0)  return s.body
+                                if ((s.subtitle || "").length > 0) return s.subtitle
                                 return qsTr("Empty slide")
                             }
                             elide: Text.ElideRight
@@ -344,6 +479,22 @@ ModalShell {
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
                             font.weight: Theme.font.weightMedium
+                        }
+
+                        // Which design draws this slide. Shown per row so a
+                        // deck reads as a structure at a glance -- title,
+                        // divider, three content slides -- instead of as an
+                        // undifferentiated stack. Blank for a slide on the
+                        // theme's default, which needs no label.
+                        Text {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: root._layoutNameOf(modelData)
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize - 1
                         }
                     }
 
@@ -387,7 +538,11 @@ ModalShell {
         }
 
         // ── Slide fields ─────────────────────────────────────────────────
+        // Which boxes appear is driven entirely by root._slots, derived from
+        // the chosen design. Column skips invisible children outright, so a
+        // hidden field costs no gap either.
         Column {
+            id: fields
             anchors.top: header.bottom
             anchors.topMargin: Theme.space.md
             anchors.bottom: footer.top
@@ -397,9 +552,66 @@ ModalShell {
             anchors.right: parent.right
             spacing: Theme.space.sm
 
-            FieldLabel { label: qsTr("Slide title") }
+            // Multiline boxes share whatever is left after the design strip
+            // and the single-line rows, so a design with four text fields
+            // and one with two both fill the pane instead of overflowing or
+            // leaving a gap.
+            //
+            // Measuring against `height` is safe here specifically because
+            // this Column is anchored top AND bottom: its height comes from
+            // the anchors, not from its children, so reading it back inside
+            // a child's height is not the binding loop it would be in a
+            // Column that sized itself to its content.
+            readonly property int _labelH: Theme.font.smallSize + 5
+            readonly property int _multiCount:
+                (root._slots.body ? 1 : 0) + (root._slots.bodyRight ? 1 : 0)
+
+            // Everything that is NOT a multiline box, plus the gaps between
+            // every visible row. Counted from the same _slots the fields
+            // themselves are gated on, so hiding a field cannot leave its
+            // height reserved.
+            readonly property int _fixedH: {
+                let h = _labelH + 96            // Design label + strip
+                let rows = 2
+                if (root._slots.title)     { h += _labelH + 36; rows += 2 }
+                if (root._slots.subtitle)  { h += _labelH + 36; rows += 2 }
+                if (root._slots.image)     { h += _labelH + 40; rows += 2 }
+                if (root._slots.body)      { h += _labelH;      rows += 1 }
+                if (root._slots.bodyRight) { h += _labelH;      rows += 1 }
+                h += _labelH + 90; rows += 2    // Speaker notes label + box
+                rows += _multiCount
+                return h + Math.max(0, rows - 1) * spacing
+            }
+
+            // The floor matters more than the split: a design with two
+            // columns AND a picture leaves little room, and a box too short
+            // to show one line is worse than a pane that scrolls slightly
+            // out of view.
+            readonly property int _multiH:
+                _multiCount <= 0 ? 0
+                                 : Math.max(72, Math.floor((height - _fixedH) / _multiCount))
+
+            // ── Design ───────────────────────────────────────────────────
+            FieldLabel {
+                label:  qsTr("Design")
+                detail: root._layoutMissing
+                            ? qsTr("this theme has no such design, showing its default")
+                            : qsTr("from the theme")
+            }
+
+            LayoutStrip {
+                width: parent.width
+                height: 96
+                theme: root._resolvedTheme
+                layoutId: root._curLayout
+                onLayoutPicked: function(id) { root._setField("layout", id) }
+            }
+
+            // ── Title ────────────────────────────────────────────────────
+            FieldLabel { visible: root._slots.title; label: qsTr("Slide title") }
 
             Rectangle {
+                visible: root._slots.title
                 width: parent.width
                 height: 36
                 color: Theme.color.canvas
@@ -430,12 +642,111 @@ ModalShell {
                 }
             }
 
-            FieldLabel { label: qsTr("Slide body") }
+            // ── Subtitle ─────────────────────────────────────────────────
+            FieldLabel { visible: root._slots.subtitle; label: qsTr("Subtitle") }
 
             Rectangle {
+                visible: root._slots.subtitle
                 width: parent.width
-                // Body gets the larger share: it is the thing on screen.
-                height: Math.max(80, (parent.height - 210) * 0.55)
+                height: 36
+                color: Theme.color.canvas
+                border.color: subtitleField.activeFocus ? Theme.color.brand
+                                                        : Theme.color.borderStrong
+                border.width: 1
+
+                TextInput {
+                    id: subtitleField
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.md
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
+                    selectByMouse: true
+                    onTextChanged: root._setField("subtitle", text)
+
+                    Text {
+                        visible: subtitleField.text.length === 0
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Series, date or reference")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                    }
+                }
+            }
+
+            // ── Picture ──────────────────────────────────────────────────
+            FieldLabel { visible: root._slots.image; label: qsTr("Picture") }
+
+            Rectangle {
+                id: pictureSlot
+                visible: root._slots.image
+                width: parent.width
+                height: 40
+                color: Theme.color.canvas
+                border.color: pictureMa.containsMouse ? Theme.color.borderStrong
+                                                      : Theme.color.borderSubtle
+                border.width: 1
+
+                // The chosen media's own title, looked up per render rather
+                // than copied onto the slide: renaming a picture in the Media
+                // tab should not leave a stale name sitting in a deck.
+                readonly property string _mediaTitle: {
+                    const id = root._curMediaId
+                    if (id <= 0) return ""
+                    const m = MediaService.byId(id)
+                    return (m && m.title) || ""
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.space.md
+                    anchors.right: clearPic.left
+                    anchors.rightMargin: Theme.space.sm
+                    anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    text: pictureSlot._mediaTitle.length > 0
+                              ? pictureSlot._mediaTitle
+                              : qsTr("Choose a picture")
+                    color: pictureSlot._mediaTitle.length > 0 ? Theme.color.textPrimary
+                                                              : Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.bodySize
+                }
+
+                GhostButton {
+                    id: clearPic
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.space.xs
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root._curMediaId > 0
+                    iconName: "x"
+                    onClicked: root._setField("mediaId", 0)
+                }
+
+                MouseArea {
+                    id: pictureMa
+                    anchors.fill: parent
+                    anchors.rightMargin: clearPic.visible ? clearPic.width : 0
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: mediaPicker.openAt(pictureSlot)
+                }
+            }
+
+            // ── Body ─────────────────────────────────────────────────────
+            FieldLabel {
+                visible: root._slots.body
+                label: root._slots.bodyRight ? qsTr("Left column") : qsTr("Slide body")
+            }
+
+            Rectangle {
+                visible: root._slots.body
+                width: parent.width
+                height: fields._multiH
                 color: Theme.color.canvas
                 border.color: bodyField.activeFocus ? Theme.color.brand
                                                     : Theme.color.borderStrong
@@ -463,7 +774,9 @@ ModalShell {
 
                         Text {
                             visible: bodyField.text.length === 0
-                            text: qsTr("What the congregation reads. One point per slide.")
+                            text: root._slots.bodyRight
+                                      ? qsTr("Left-hand text.")
+                                      : qsTr("What the congregation reads. One point per slide.")
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
@@ -472,14 +785,58 @@ ModalShell {
                 }
             }
 
+            // ── Right column ─────────────────────────────────────────────
+            FieldLabel { visible: root._slots.bodyRight; label: qsTr("Right column") }
+
+            Rectangle {
+                visible: root._slots.bodyRight
+                width: parent.width
+                height: fields._multiH
+                color: Theme.color.canvas
+                border.color: bodyRightField.activeFocus ? Theme.color.brand
+                                                         : Theme.color.borderStrong
+                border.width: 1
+
+                Flickable {
+                    id: bodyRightScroll
+                    anchors.fill: parent
+                    anchors.margins: Theme.space.sm
+                    contentHeight: Math.max(height, bodyRightField.contentHeight)
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: AppScrollBar {}
+
+                    TextEdit {
+                        id: bodyRightField
+                        width: bodyRightScroll.width - Theme.size.scrollBar
+                        height: Math.max(contentHeight, bodyRightScroll.height)
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        onTextChanged: root._setField("bodyRight", text)
+
+                        Text {
+                            visible: bodyRightField.text.length === 0
+                            text: qsTr("Right-hand text.")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize
+                        }
+                    }
+                }
+            }
+
+            // ── Speaker notes ────────────────────────────────────────────
             FieldLabel {
                 label:  qsTr("Speaker notes")
-                detail: qsTr("stage monitor only — never shown to the audience")
+                detail: qsTr("stage monitor only, never shown to the audience")
             }
 
             Rectangle {
                 width: parent.width
-                height: Math.max(60, (parent.height - 210) * 0.45)
+                height: 90
                 color: Theme.color.canvas
                 border.color: notesField.activeFocus ? Theme.color.brand
                                                      : Theme.color.borderStrong
@@ -516,6 +873,14 @@ ModalShell {
                 }
             }
         }
+    }
+
+    // Floating picture picker, reparented to the window root on openAt() so
+    // the list is not clipped by the dialog's own bounds.
+    MediaPickerPopover {
+        id: mediaPicker
+        targetId: root._curMediaId
+        onMediaChosen: function(id) { root._setField("mediaId", id) }
     }
 
     // Small label + optional muted qualifier. Inline component rather than a

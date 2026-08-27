@@ -28,6 +28,12 @@ constexpr int kMaxSlides = 500;
 // into one slide cannot produce a multi-megabyte JSON column.
 constexpr int kMaxFieldChars = 20000;
 
+// A layout id is a short slug naming which of the theme's designs this
+// slide is drawn with (see docs/theme-schema.md §10). Clamped far shorter
+// than a content field: it is an identifier, not prose, and a runaway value
+// here would be stored on every slide of every deck.
+constexpr int kMaxLayoutIdChars = 64;
+
 QString clampField(const QVariant& v)
 {
     QString s = v.toString();
@@ -37,18 +43,44 @@ QString clampField(const QVariant& v)
 
 // The single normalization boundary. Everything QML sends passes through
 // here before it becomes stored JSON, so the on-disk shape is exactly the
-// three known string keys regardless of what a model, a paste, or a future
-// build put in the map.
+// known keys regardless of what a model, a paste, or a future build put in
+// the map.
+//
+// `layout` names the theme design this slide is drawn with. It is a SOFT
+// reference and deliberately not validated against any theme here: a deck
+// resolves its theme through a per-deck override, then the output's
+// presentation slot, then the per-kind default, and an operator may swap
+// any of those mid-service. A slide therefore routinely outlives the theme
+// it was authored against, and the renderer falls back to the theme's
+// default layout when the named one is absent (see ThemeService::layout).
+// Storing the id regardless means swapping BACK restores the design.
+//
+// An empty `layout` means "the theme's default", which is what every slide
+// written before v3 reads as.
+//
+// `subtitle` / `bodyRight` are the extra text slots two-column and
+// title-slide designs bind; `mediaId` is the picture a picture design
+// shows. All are optional — a design that declares no such node simply
+// never reads them, and the editor derives which fields to offer from the
+// layout's nodes rather than from anything stored here.
 QString slidesToJson(const QVariantList& slides)
 {
     QJsonArray arr;
     const int n = qMin(slides.size(), kMaxSlides);
     for (int i = 0; i < n; ++i) {
         const QVariantMap m = slides.at(i).toMap();
+        QString layout = m.value(QStringLiteral("layout")).toString();
+        if (layout.size() > kMaxLayoutIdChars) layout.truncate(kMaxLayoutIdChars);
+
         QJsonObject o;
-        o.insert(QStringLiteral("title"), clampField(m.value(QStringLiteral("title"))));
-        o.insert(QStringLiteral("body"),  clampField(m.value(QStringLiteral("body"))));
-        o.insert(QStringLiteral("notes"), clampField(m.value(QStringLiteral("notes"))));
+        o.insert(QStringLiteral("title"),     clampField(m.value(QStringLiteral("title"))));
+        o.insert(QStringLiteral("body"),      clampField(m.value(QStringLiteral("body"))));
+        o.insert(QStringLiteral("notes"),     clampField(m.value(QStringLiteral("notes"))));
+        o.insert(QStringLiteral("layout"),    layout);
+        o.insert(QStringLiteral("subtitle"),  clampField(m.value(QStringLiteral("subtitle"))));
+        o.insert(QStringLiteral("bodyRight"), clampField(m.value(QStringLiteral("bodyRight"))));
+        o.insert(QStringLiteral("mediaId"),
+                 static_cast<qint64>(m.value(QStringLiteral("mediaId")).toLongLong()));
         arr.append(o);
     }
     return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
@@ -69,9 +101,19 @@ QVariantList slidesFromJson(const QString& text)
         if (!v.isObject()) continue;
         const auto o = v.toObject();
         QVariantMap m;
-        m.insert(QStringLiteral("title"), o.value(QStringLiteral("title")).toString());
-        m.insert(QStringLiteral("body"),  o.value(QStringLiteral("body")).toString());
-        m.insert(QStringLiteral("notes"), o.value(QStringLiteral("notes")).toString());
+        // Every key is read with a default so a pre-v3 deck — which has
+        // only title/body/notes on disk — loads with the new slots empty
+        // rather than absent. QML reads `slide.subtitle` either way.
+        m.insert(QStringLiteral("title"),     o.value(QStringLiteral("title")).toString());
+        m.insert(QStringLiteral("body"),      o.value(QStringLiteral("body")).toString());
+        m.insert(QStringLiteral("notes"),     o.value(QStringLiteral("notes")).toString());
+        m.insert(QStringLiteral("layout"),    o.value(QStringLiteral("layout")).toString());
+        m.insert(QStringLiteral("subtitle"),  o.value(QStringLiteral("subtitle")).toString());
+        m.insert(QStringLiteral("bodyRight"), o.value(QStringLiteral("bodyRight")).toString());
+        // toInteger, not toDouble: QJsonValue stores every number as a
+        // double, and toDouble would silently round a large row id.
+        m.insert(QStringLiteral("mediaId"),
+                 o.value(QStringLiteral("mediaId")).toInteger(0));
         out.append(m);
     }
     return out;

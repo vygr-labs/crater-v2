@@ -24,6 +24,7 @@
 #include "crater/FontService.h"
 #include "crater/MediaService.h"
 #include "crater/ThemeService.h"
+#include "crater/ThemeTokens.h"
 #include "crater/value/ThemeImportReport.h"
 
 #include "bundle/Zip.h"
@@ -119,6 +120,10 @@ QVariantMap makeTokensWithMediaId(qint64 mediaId, const QString& fontFamily = QS
     canvas["width"] = 1920;
     canvas["height"] = 1080;
 
+    // Deliberately authored as v2, the shape every theme in an existing
+    // install has. ThemeService upgrades it to v3 on write, so leaving this
+    // at v2 means the whole bundle suite also exercises that upgrade rather
+    // than only ever seeing tokens that were born current.
     QVariantMap tokens;
     tokens["version"] = 2;
     tokens["canvas"]  = canvas;
@@ -126,12 +131,26 @@ QVariantMap makeTokensWithMediaId(qint64 mediaId, const QString& fontFamily = QS
     return tokens;
 }
 
+// Every node in a theme, flattened across layouts. Tokens reach these
+// helpers in either shape: the fixture below authors v2 (one top-level
+// `nodes` array) and ThemeService upgrades it to v3 (`layouts[].nodes`) on
+// the way into the database, so a test that reads only one of the two
+// silently stops checking anything the moment the other is in play.
+// crater::tokens::layoutsOf normalises both.
+QVariantList allNodesIn(const QVariantMap& tokens)
+{
+    QVariantList out;
+    for (const QVariant& l : crater::tokens::layoutsOf(tokens))
+        out += l.toMap().value(QStringLiteral("nodes")).toList();
+    return out;
+}
+
 // Walks a tokens map and returns the mediaId from the first container
 // node. Returns 0 when there isn't one — used to verify post-import
 // rewrite produced a non-zero new id.
 qint64 firstMediaIdIn(const QVariantMap& tokens)
 {
-    const QVariantList nodes = tokens.value(QStringLiteral("nodes")).toList();
+    const QVariantList nodes = allNodesIn(tokens);
     for (const QVariant& n : nodes) {
         const QVariantMap node = n.toMap();
         if (node.value(QStringLiteral("kind")).toString() == QLatin1String("container")) {
@@ -481,7 +500,7 @@ private slots:
             tokensBeforeRestart = ts.theme(importedId).tokens;
             // Precondition: the fresh import really does carry custom nodes
             // and a resolved media id, so a post-restart regression is visible.
-            QVERIFY(tokensBeforeRestart.value(QStringLiteral("nodes")).toList().size() >= 2);
+            QVERIFY(allNodesIn(tokensBeforeRestart).size() >= 2);
             QVERIFY(firstMediaIdIn(tokensBeforeRestart) > 0);
         }
         // ts/media/fonts destroyed here — connections closed, like app exit.
@@ -494,8 +513,8 @@ private slots:
             // Custom layout must persist: same node count, same media ref.
             // Pre-fix this collapsed to the 2-node blank default with a null
             // mediaId, so these comparisons are the teeth of the test.
-            QCOMPARE(after.tokens.value(QStringLiteral("nodes")).toList().size(),
-                     tokensBeforeRestart.value(QStringLiteral("nodes")).toList().size());
+            QCOMPARE(allNodesIn(after.tokens).size(),
+                     allNodesIn(tokensBeforeRestart).size());
             QCOMPARE(firstMediaIdIn(after.tokens), firstMediaIdIn(tokensBeforeRestart));
             QVERIFY(firstMediaIdIn(after.tokens) > 0);
         }

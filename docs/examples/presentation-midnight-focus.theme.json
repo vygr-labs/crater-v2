@@ -1,5 +1,5 @@
 {
-  "name": "Stage Bold",
+  "name": "Midnight Focus",
   "kind": "presentation",
   "tokens": {
     "version": 3,
@@ -22,23 +22,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -79,16 +76,16 @@
               "height": 30,
               "z": 3,
               "opacity": 1,
-              "color": "#fff8e7",
+              "color": "#7dd3fc",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 110,
-              "fontWeight": 700,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.05,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Title",
@@ -107,16 +104,16 @@
               "height": 12,
               "z": 2,
               "opacity": 1,
-              "color": "#b9a4c9",
+              "color": "#94a3b8",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 44,
               "fontWeight": 400,
               "lineHeightMultiplier": 1.25,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Subtitle",
@@ -141,23 +138,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -172,7 +166,7 @@
               "height": 40,
               "z": 1,
               "opacity": 1.0,
-              "backgroundColor": "#33123f"
+              "backgroundColor": "#0b1a3a"
             },
             "data": {
               "layerName": "Accent band"
@@ -188,7 +182,7 @@
               "height": 0.8,
               "z": 2,
               "opacity": 1.0,
-              "backgroundColor": "#f5c36b"
+              "backgroundColor": "#38bdf8"
             },
             "data": {
               "layerName": "Accent rule"
@@ -229,16 +223,16 @@
               "height": 28,
               "z": 4,
               "opacity": 1,
-              "color": "#fff8e7",
+              "color": "#7dd3fc",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 96,
-              "fontWeight": 700,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.05,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Title",
@@ -263,23 +257,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -320,16 +311,16 @@
               "height": 22,
               "z": 3,
               "opacity": 1,
-              "color": "#fff8e7",
+              "color": "#7dd3fc",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 88,
-              "fontWeight": 700,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.1,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Title",
@@ -348,16 +339,16 @@
               "height": 36,
               "z": 2,
               "opacity": 1,
-              "color": "#e9dff2",
+              "color": "#f1f5f9",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 54,
               "fontWeight": 400,
               "lineHeightMultiplier": 1.35,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Body",
@@ -383,23 +374,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -414,16 +402,16 @@
               "height": 16,
               "z": 3,
               "opacity": 1,
-              "color": "#fff8e7",
+              "color": "#7dd3fc",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 72,
-              "fontWeight": 700,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.1,
               "textAlign": "center",
               "verticalAlign": "center",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Title",
@@ -442,7 +430,7 @@
               "height": 56,
               "z": 1,
               "opacity": 0.45,
-              "backgroundColor": "#f5c36b"
+              "backgroundColor": "#38bdf8"
             },
             "data": {
               "layerName": "Column divider"
@@ -458,16 +446,16 @@
               "height": 56,
               "z": 2,
               "opacity": 1,
-              "color": "#e9dff2",
+              "color": "#f1f5f9",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 46,
               "fontWeight": 400,
               "lineHeightMultiplier": 1.4,
               "textAlign": "left",
               "verticalAlign": "start",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Left column",
@@ -486,16 +474,16 @@
               "height": 56,
               "z": 2,
               "opacity": 1,
-              "color": "#e9dff2",
+              "color": "#f1f5f9",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 46,
               "fontWeight": 400,
               "lineHeightMultiplier": 1.4,
               "textAlign": "left",
               "verticalAlign": "start",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Right column",
@@ -520,23 +508,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -577,7 +562,7 @@
               "height": 40,
               "z": 3,
               "opacity": 1,
-              "color": "#fff8e7",
+              "color": "#7dd3fc",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 76,
               "fontWeight": 500,
@@ -585,9 +570,9 @@
               "textAlign": "center",
               "verticalAlign": "center",
               "fontItalic": true,
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Quote",
@@ -606,7 +591,7 @@
               "height": 10,
               "z": 2,
               "opacity": 1,
-              "color": "#b9a4c9",
+              "color": "#94a3b8",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 38,
               "fontWeight": 500,
@@ -615,9 +600,9 @@
               "verticalAlign": "center",
               "letterSpacing": 2,
               "textTransform": "uppercase",
-              "textShadowColor": "#cc000000",
-              "textShadowOffsetY": 3,
-              "textShadowBlur": 18
+              "textShadowColor": "#b3000000",
+              "textShadowOffsetY": 2,
+              "textShadowBlur": 14
             },
             "data": {
               "layerName": "Attribution",
@@ -642,23 +627,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }
@@ -745,7 +727,7 @@
               "color": "#ffffff",
               "fontFamily": "Segoe UI Variable Display",
               "fontPixelSize": 64,
-              "fontWeight": 700,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.1,
               "textAlign": "center",
               "verticalAlign": "center",
@@ -804,23 +786,20 @@
               "height": 100,
               "z": 0,
               "opacity": 1.0,
-              "backgroundColor": "#1a0b1f"
+              "backgroundColor": "#020617"
             },
             "data": {
               "layerName": "Background",
               "fill": {
                 "type": "gradient",
                 "gradient": {
-                  "style": "mesh",
+                  "style": "radial",
                   "colors": [
-                    "#1a0b1f",
-                    "#3b0f4d",
-                    "#241038",
-                    "#120818"
+                    "#0b1a3a",
+                    "#020617"
                   ],
                   "angle": 0,
-                  "speed": 0.18,
-                  "animate": true
+                  "animate": false
                 }
               }
             }

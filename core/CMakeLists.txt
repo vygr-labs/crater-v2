@@ -42,6 +42,7 @@ add_library(crater-core STATIC
     src/PresentationService.cpp
     src/ScheduleService.cpp
     src/ThemeService.cpp
+    src/ThemeTokens.cpp
     src/MediaService.cpp
     src/FontService.cpp
     src/OutputService.cpp
@@ -181,6 +182,7 @@ qt_add_resources(crater-core "crater_migrations"
         src/db/migrations/app/V008__user_fonts.sql
         src/db/migrations/app/V009__media_display.sql
         src/db/migrations/app/V010__presentations.sql
+        src/db/migrations/app/V011__presentation_layouts.sql
 )
 
 add_library(Crater::Core ALIAS crater-core)

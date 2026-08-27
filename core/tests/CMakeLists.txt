@@ -78,3 +78,22 @@ target_link_libraries(test_checksums PRIVATE
 )
 
 add_test(NAME checksums COMMAND test_checksums)
+
+# -- Theme layouts (tokens v3) -- crater/ThemeTokens.h ------------------
+# Pure token-shape logic behind presentation layouts: which design a slide
+# renders with, and what happens when the theme underneath it changes. No
+# database and no Gui, so it is Core-only and among the cheapest tests
+# here; and it covers the one path with a silent failure mode, where a deck
+# authored under one theme is projected under another that never heard of
+# the layout it asks for.
+qt_add_executable(test_theme_layouts
+    test_theme_layouts.cpp
+)
+
+target_link_libraries(test_theme_layouts PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME theme_layouts COMMAND test_theme_layouts)

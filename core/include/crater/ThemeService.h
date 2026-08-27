@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
 #include <QVariantMap>
 
 #include <memory>
@@ -62,6 +63,45 @@ public:
     // exposed to the editor so users see field-level errors before
     // attempting Save. Returns an empty list when tokens are well-formed.
     Q_INVOKABLE QStringList validateTokens(QVariantMap tokens);
+
+    // ── Layouts (tokens v3) ─────────────────────────────────────────────
+    // Thin QML-facing wrappers over crater::tokens (crater/ThemeTokens.h),
+    // which is where the reasoning lives. They are on ThemeService purely
+    // because it is the singleton QML already has in scope; none of them
+    // touch the database, and the C++ side should call crater::tokens
+    // directly rather than routing through here.
+    //
+    // Every one accepts v2 tokens too — a v2 theme reads as a single
+    // default layout — so a render surface never has to branch on version.
+
+    // All layouts of a theme, in author order: [{ id, name, default, nodes }].
+    Q_INVOKABLE QVariantList themeLayouts(QVariantMap tokens);
+
+    // The nodes to render for `layoutId`, falling back to the theme's
+    // default layout when it has no such id. This is the one call the
+    // three render surfaces make. `slideMediaId` fills a picture
+    // placeholder from the current slide; pass 0 (or omit) for every other
+    // content kind.
+    Q_INVOKABLE QVariantList layoutNodes(QVariantMap tokens,
+                                         QString     layoutId,
+                                         qint64      slideMediaId = 0);
+
+    // Which per-slide fields the resolved layout binds, derived by scanning
+    // its nodes: { title, body, subtitle, bodyRight, image } -> bool. The
+    // slide editor uses this to show only the fields a design actually
+    // renders.
+    Q_INVOKABLE QVariantMap layoutSlots(QVariantMap tokens, QString layoutId);
+
+    // True only when the theme really defines this layout id, as opposed to
+    // layoutNodes() having fallen back. Lets the editor flag a slide whose
+    // design is missing from the current theme instead of showing the
+    // fallback as though it had been chosen.
+    Q_INVOKABLE bool hasLayout(QVariantMap tokens, QString layoutId);
+
+    // Presentation-layout vocabulary shared across themes, for pickers and
+    // for the "add a standard design" path in the theme editor.
+    Q_INVOKABLE QStringList standardLayoutIds();
+    Q_INVOKABLE QString     defaultLayoutName(QString layoutId);
 
     // ── Export (ARCHITECTURE.md §10) ────────────────────────────────────
     // Returns the proposed contents of a .craterheme v2 bundle for theme

@@ -62,7 +62,11 @@ Item {
 
     readonly property var _tokens: _theme && _theme.tokens ? _theme.tokens : ({})
     readonly property var _canvas: _tokens.canvas || ({ width: 1920, height: 1080 })
-    readonly property var _nodes:  _tokens.nodes  || []
+    // Resolved per PAGE, exactly as ProjectionContentLayer does it — the
+    // mini-monitor's whole job is to show what the audience output will
+    // show, so it must pick the same design for the same slide.
+    readonly property var _nodes: ThemeService.layoutNodes(
+        _tokens, root._slideLayout, root._slideMediaId)
 
     // ── Linkage resolution (theme placeholder -> real item content) ─────
     readonly property string _pageText: {
@@ -79,13 +83,25 @@ Item {
     // Presentation slide heading. Mirrors _pageText, reading `title` off the
     // same page map, so the Preview and Live mini-monitors show exactly what
     // the audience output will.
-    readonly property string _slideTitle: {
-        if (!_hasItem) return ""
+    readonly property string _slideTitle:     _slideField("title")
+    readonly property string _slideSubtitle:  _slideField("subtitle")
+    readonly property string _slideBodyRight: _slideField("bodyRight")
+    readonly property string _slideLayout:    _slideField("layout")
+    readonly property int    _slideMediaId: {
+        const p = _currentPage()
+        return (p && p.mediaId) || 0
+    }
+
+    function _currentPage() {
+        if (!_hasItem) return null
         const pages = item.pages
-        if (!pages || pages.length === 0) return ""
-        const i = Math.max(0, Math.min(pageIndex, pages.length - 1))
-        const p = pages[i]
-        return (p && p.title) || ""
+        if (!pages || pages.length === 0) return null
+        return pages[Math.max(0, Math.min(pageIndex, pages.length - 1))] || null
+    }
+
+    function _slideField(key) {
+        const p = _currentPage()
+        return (p && p[key]) || ""
     }
 
     function resolveText(node) {
@@ -97,6 +113,8 @@ Item {
             case "lyric":             return _pageText
             case "presentationTitle": return _slideTitle
             case "presentationBody":  return _pageText
+            case "presentationSubtitle":  return _slideSubtitle
+            case "presentationBodyRight": return _slideBodyRight
             case "custom":            return data.text || ""
         }
         return data.text || ""

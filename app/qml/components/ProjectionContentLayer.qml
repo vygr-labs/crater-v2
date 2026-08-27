@@ -93,7 +93,14 @@ Item {
     }
     readonly property var _tokens : theme && theme.tokens ? theme.tokens : ({})
     readonly property var _canvas : _tokens.canvas || ({ width: 1920, height: 1080 })
-    readonly property var _nodes  : _tokens.nodes  || []
+    // The nodes for THIS page's layout, not the theme's whole node list.
+    // A v3 theme carries several designs; ThemeService.layoutNodes picks the
+    // one the slide names, falls back to the theme's default when the slide
+    // was authored under a different theme, and binds the picture
+    // placeholder to the slide's own media. A v2 theme resolves to its
+    // single implicit layout, so nothing here branches on version.
+    readonly property var _nodes: ThemeService.layoutNodes(
+        _tokens, root._slideLayout, root._slideMediaId)
 
     // ── Content classification ──────────────────────────────────────────
     // True when the live item is itself a picture / video / PDF (vs a
@@ -151,13 +158,29 @@ Item {
     // and a song or scripture page (no title key) resolves to "" here and
     // renders an empty title box, which the theme's group card then hugs
     // away to nothing.
-    readonly property string _slideTitle: {
-        if (!layerItem) return ""
+    readonly property string _slideTitle: _slideField("title")
+
+    // The rest of the per-slide state, read off the same page map. Every one
+    // of these is "" / 0 for a song or scripture page, which is what lets the
+    // shared renderer stay kind-agnostic.
+    readonly property string _slideSubtitle:  _slideField("subtitle")
+    readonly property string _slideBodyRight: _slideField("bodyRight")
+    readonly property string _slideLayout:    _slideField("layout")
+    readonly property int    _slideMediaId: {
+        const p = _currentPage()
+        return (p && p.mediaId) || 0
+    }
+
+    function _currentPage() {
+        if (!layerItem) return null
         const pages = layerItem.pages
-        if (!pages || pages.length === 0) return ""
-        const idx = Math.min(layerPage, pages.length - 1)
-        const p = pages[idx]
-        return (p && p.title) || ""
+        if (!pages || pages.length === 0) return null
+        return pages[Math.min(layerPage, pages.length - 1)] || null
+    }
+
+    function _slideField(key) {
+        const p = _currentPage()
+        return (p && p[key]) || ""
     }
 
     // Composed "Book chapter:verse[-verse]" for the optional footer overlay.
@@ -186,6 +209,8 @@ Item {
             case "lyric":             return _pageText
             case "presentationTitle": return _slideTitle
             case "presentationBody":  return _pageText
+            case "presentationSubtitle":  return _slideSubtitle
+            case "presentationBodyRight": return _slideBodyRight
             case "custom":            return data.text || ""
         }
         return data.text || ""

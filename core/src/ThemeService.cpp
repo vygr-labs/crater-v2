@@ -1,4 +1,5 @@
 #include "crater/ThemeService.h"
+#include "crater/ThemeTokens.h"
 
 #include "bundle/Zip.h"
 #include "crater/FontService.h"
@@ -277,12 +278,21 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
     // title for every kind, which is how several song themes show the song
     // name), and a per-kind whitelist here would reject themes the renderer
     // handles perfectly well.
+    //
+    // presentationSubtitle / presentationBodyRight are the v3 slots a title
+    // design and a two-column design bind. They are plain text linkages
+    // like the rest; nothing in the paint path had to change for them. A
+    // theme that never declares one simply leaves that slide field unread,
+    // and the editor derives which fields to offer by scanning for exactly
+    // these linkages (crater::tokens::layoutSlots).
     static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric",
                                          "presentationTitle", "presentationBody",
+                                         "presentationSubtitle", "presentationBodyRight",
                                          "custom" };
     if (!data.contains("linkage") || !linkages.contains(data.value("linkage").toString()))
         errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|"
-                               "presentationTitle|presentationBody|custom").arg(idx);
+                               "presentationTitle|presentationBody|presentationSubtitle|"
+                               "presentationBodyRight|custom").arg(idx);
 
     if (data.value("autoResize").toBool() && data.contains("maxFontSize") &&
         data.value("maxFontSize").toInt() <= 0)
@@ -302,21 +312,32 @@ void validateContainerNode(const QVariantMap& n, int idx, QStringList& errs)
         if (style.contains(corner) && style.value(corner).toDouble() < 0)
             errs << QStringLiteral("nodes[%1].style.%2 must be >= 0").arg(idx).arg(corner);
     }
+
+    // A container's linkage is optional and has exactly one legal value.
+    // "presentationImage" turns the container into a per-slide picture
+    // placeholder: the renderer feeds it the slide's mediaId instead of the
+    // theme's own data.mediaId. Anything else is a typo worth reporting --
+    // silently ignoring it would leave an author staring at a picture
+    // design that never shows a picture.
+    const auto data = n.value("data").toMap();
+    if (data.contains("linkage")) {
+        const QString lk = data.value("linkage").toString();
+        if (!lk.isEmpty() && lk != QLatin1String("presentationImage"))
+            errs << QStringLiteral("nodes[%1].data.linkage on a container must be "
+                                   "presentationImage or absent").arg(idx);
+    }
 }
 
-QStringList validateTokensV2(const QVariantMap& t)
+// One layout's worth of nodes. Node ids are unique WITHIN this list, not
+// across the theme: duplicating a design is how a template is actually
+// authored ("Title + content", duplicate, shrink the title -> "Section
+// divider"), and theme-wide uniqueness would make every duplicate collide
+// on every id. Nothing needs cross-layout uniqueness — a layout is
+// resolved before the renderer ever sees a node, and data.group members
+// are looked up inside the rendered list.
+QStringList validateNodeList(const QVariantList& nodes)
 {
     QStringList errs;
-    if (t.value("version").toInt() != 2) {
-        errs << QStringLiteral("version must be 2");
-        // Don't bail — other errors are still useful for diagnostics.
-    }
-
-    const auto canvas = t.value("canvas").toMap();
-    if (canvas.value("width").toInt()  <= 0) errs << QStringLiteral("canvas.width must be > 0");
-    if (canvas.value("height").toInt() <= 0) errs << QStringLiteral("canvas.height must be > 0");
-
-    const auto nodes = t.value("nodes").toList();
     if (nodes.isEmpty()) {
         errs << QStringLiteral("nodes must be a non-empty array");
         return errs;
@@ -342,6 +363,85 @@ QStringList validateTokensV2(const QVariantMap& t)
     return errs;
 }
 
+QStringList validateCanvas(const QVariantMap& t)
+{
+    QStringList errs;
+    const auto canvas = t.value("canvas").toMap();
+    if (canvas.value("width").toInt()  <= 0) errs << QStringLiteral("canvas.width must be > 0");
+    if (canvas.value("height").toInt() <= 0) errs << QStringLiteral("canvas.height must be > 0");
+    return errs;
+}
+
+QStringList validateTokensV2(const QVariantMap& t)
+{
+    QStringList errs;
+    if (t.value("version").toInt() != 2) {
+        errs << QStringLiteral("version must be 2");
+        // Don't bail — other errors are still useful for diagnostics.
+    }
+    errs += validateCanvas(t);
+    errs += validateNodeList(t.value("nodes").toList());
+    return errs;
+}
+
+// v3 — the same node rules, applied per LAYOUT. See ThemeTokens.h for why
+// layouts exist and how a slide names one.
+QStringList validateTokensV3(const QVariantMap& t)
+{
+    QStringList errs;
+    if (t.value("version").toInt() != 3)
+        errs << QStringLiteral("version must be 3");
+    errs += validateCanvas(t);
+
+    const auto layouts = t.value("layouts").toList();
+    if (layouts.isEmpty()) {
+        errs << QStringLiteral("layouts must be a non-empty array");
+        return errs;
+    }
+
+    QSet<QString> seenLayoutIds;
+    int defaults = 0;
+    for (int i = 0; i < layouts.size(); ++i) {
+        const auto l    = layouts[i].toMap();
+        const QString id   = l.value("id").toString();
+        const QString name = l.value("name").toString();
+
+        if (id.isEmpty())
+            errs << QStringLiteral("layouts[%1].id missing").arg(i);
+        else if (seenLayoutIds.contains(id))
+            errs << QStringLiteral("duplicate layout id: %1").arg(id);
+        seenLayoutIds.insert(id);
+
+        // A nameless layout is unpickable: the slide editor and the theme
+        // editor both list designs by name, so an empty one renders as a
+        // blank row the operator cannot tell apart from its neighbours.
+        if (name.isEmpty())
+            errs << QStringLiteral("layouts[%1].name must be non-empty").arg(i);
+
+        if (l.value("default").toBool()) ++defaults;
+
+        // Per-node errors are collected against this layout, then prefixed
+        // with the layout's own identity. An author fixing "nodes[3].style
+        // .color" needs to know WHICH design it is in, and naming it beats
+        // an index they would have to count out by hand.
+        const QStringList sub = validateNodeList(l.value("nodes").toList());
+        const QString where = name.isEmpty()
+            ? QStringLiteral("layouts[%1]").arg(i)
+            : QStringLiteral("layouts[%1] \"%2\"").arg(i).arg(name);
+        for (const QString& e : sub) errs << QStringLiteral("%1: %2").arg(where, e);
+    }
+
+    // Zero defaults is legal and resolves to the first layout (see
+    // tokens::resolveLayout), which keeps a hand-authored theme working
+    // without the flag. Two or more is an authoring mistake with a silent
+    // outcome — whichever comes first in the array quietly wins — so it is
+    // worth naming.
+    if (defaults > 1)
+        errs << QStringLiteral("only one layout may be marked \"default\" (found %1)").arg(defaults);
+
+    return errs;
+}
+
 }  // namespace
 
 struct ThemeService::Impl
@@ -358,6 +458,8 @@ struct ThemeService::Impl
     db::Statement setKv;
     db::Statement selectV1Rows;
     db::Statement updateRowToV2;
+    db::Statement selectV2Rows;
+    db::Statement updateRowToV3;
     db::Statement countByKindName;
     db::Statement selectIsBuiltin;
 
@@ -370,17 +472,19 @@ struct ThemeService::Impl
         , selectById(conn.prepare(QStringLiteral(
             "SELECT id, kind, name, tokens_json, is_builtin FROM themes WHERE id = ?")))
         , insertTheme(conn.prepare(QStringLiteral(
-            // tokens_version = 2 is written explicitly. create()/import always
-            // produce current v2 tokens, but the column DEFAULTs to 1 (V003).
+            // tokens_version is written explicitly. create()/import always
+            // produce current tokens, but the column DEFAULTs to 1 (V003).
             // Omitting it tagged every new theme "v1", so the startup
             // migrateRowsToV2() pass re-ran buildV2FromV1() over already-v2
             // JSON and clobbered it to a blank default on the NEXT launch.
+            // The same trap applies one version up, which is why this now
+            // stamps 3 rather than 2.
             "INSERT INTO themes (kind, name, tokens_json, is_builtin, tokens_version, created_at, updated_at) "
-            "VALUES (?, ?, ?, 0, 2, ?, ?)")))
+            "VALUES (?, ?, ?, 0, 3, ?, ?)")))
         , updateTheme(conn.prepare(QStringLiteral(
-            // Stamp tokens_version = 2 on every write so an edited row is never
-            // left at the DEFAULT 1 and re-migrated (clobbered) next launch.
-            "UPDATE themes SET name = ?, tokens_json = ?, tokens_version = 2, updated_at = ? WHERE id = ?")))
+            // Stamp tokens_version = 3 on every write so an edited row is never
+            // left behind and re-migrated (clobbered) next launch.
+            "UPDATE themes SET name = ?, tokens_json = ?, tokens_version = 3, updated_at = ? WHERE id = ?")))
         , deleteTheme(conn.prepare(QStringLiteral(
             "DELETE FROM themes WHERE id = ? AND is_builtin = 0")))
         , selectFirstBuiltinOfKind(conn.prepare(QStringLiteral(
@@ -396,6 +500,14 @@ struct ThemeService::Impl
         , updateRowToV2(conn.prepare(QStringLiteral(
             "UPDATE themes SET tokens_json = ?, tokens_version = 2, updated_at = ? "
             "WHERE id = ?")))
+        , selectV2Rows(conn.prepare(QStringLiteral(
+            "SELECT id, tokens_json FROM themes WHERE tokens_version < 3")))
+        , updateRowToV3(conn.prepare(QStringLiteral(
+            // updated_at is deliberately NOT touched here. A format upgrade
+            // is not an edit the operator made, and bumping it would reshuffle
+            // every "recently edited" ordering on the first launch after an
+            // update, for no change they would recognise.
+            "UPDATE themes SET tokens_json = ?, tokens_version = 3 WHERE id = ?")))
         , countByKindName(conn.prepare(QStringLiteral(
             "SELECT COUNT(*) FROM themes WHERE kind = ? AND name = ?")))
         , selectIsBuiltin(conn.prepare(QStringLiteral(
@@ -465,6 +577,49 @@ struct ThemeService::Impl
             qWarning().noquote() << "ThemeService::migrateRowsToV2(): tx failed —" << e.message();
         }
     }
+
+    // Rewrites every row with tokens_version < 3 into the layouts shape.
+    // Runs AFTER migrateRowsToV2, so a v1 row arrives here already wrapped
+    // to v2 and is upgraded the rest of the way in the same launch.
+    //
+    // Purely structural: a v2 theme's single `nodes` array becomes one
+    // default layout holding exactly those nodes, so every existing theme —
+    // built-in, user-edited or imported — renders byte-identically after the
+    // upgrade. The design only gains siblings when somebody adds one.
+    void migrateRowsToV3()
+    {
+        QList<std::pair<qint64, QString>> rows;   // id, oldJson
+        try {
+            auto& sel = selectV2Rows;
+            sel.reset();
+            while (sel.step()) rows.append({ sel.columnInt64(0), sel.columnText(1) });
+        } catch (const db::Error& e) {
+            qWarning().noquote() << "ThemeService::migrateRowsToV3(): SELECT failed —" << e.message();
+            return;
+        }
+        if (rows.isEmpty()) return;
+
+        try {
+            db::Transaction tx(conn);
+            for (const auto& [id, oldJson] : rows) {
+                // tokens::upgradeToV3 carries its own idempotency guard, so a
+                // row whose JSON already holds layouts while its column lagged
+                // is merely re-tagged rather than wrapped a second time.
+                const QString json =
+                    serializeTokens(tokens::upgradeToV3(parseTokens(oldJson)));
+                auto& upd = updateRowToV3;
+                upd.reset();
+                upd.bind(1, json);
+                upd.bind(2, id);
+                upd.step();
+            }
+            tx.commit();
+            qInfo().noquote() << "ThemeService: migrated" << rows.size()
+                              << "themes from tokens v2 -> v3";
+        } catch (const db::Error& e) {
+            qWarning().noquote() << "ThemeService::migrateRowsToV3(): tx failed —" << e.message();
+        }
+    }
 };
 
 ThemeService::ThemeService(QObject* parent)
@@ -472,9 +627,14 @@ ThemeService::ThemeService(QObject* parent)
 {
     try {
         m_impl = std::make_unique<Impl>(db::DbPaths::appDbPath());
-        // Lazy v1 -> v2 token rewrite. Runs once after V003 SQL migration
-        // bumps user_version + adds tokens_version column (defaulted to 1).
+        // Lazy token rewrites, oldest first. v1 -> v2 runs after the V003
+        // SQL migration bumps user_version + adds tokens_version (defaulted
+        // to 1); v2 -> v3 then wraps every theme's nodes into a single
+        // default layout. Ordering matters: a v1 row must reach v2 before
+        // the v3 pass reads it, and both are idempotent so a partially
+        // migrated database converges on the next launch.
         m_impl->migrateRowsToV2();
+        m_impl->migrateRowsToV3();
     } catch (const db::Error& e) {
         qCritical().noquote() << "ThemeService: failed to open DB —" << e.message();
     }
@@ -576,7 +736,14 @@ qint64 ThemeService::create(QString kind, QString name, QVariantMap tokens)
 {
     if (!m_impl) return 0;
     try {
-        const QStringList errs = validateTokensV2(tokens);
+        // Normalise BEFORE validating and before the INSERT stamps
+        // tokens_version = 3. Callers legitimately hand us v2 tokens — a
+        // hand-authored JSON theme, a .craterheme exported by an older
+        // build — and writing those under a v3 stamp would leave a row the
+        // migration pass never revisits. upgradeToV3 is idempotent, so
+        // already-v3 tokens pass through untouched.
+        tokens = tokens::upgradeToV3(tokens);
+        const QStringList errs = validateTokensV3(tokens);
         if (!errs.isEmpty()) {
             qWarning().noquote() << "ThemeService::create(): validation failed:"
                                  << errs.join(QStringLiteral("; "));
@@ -621,7 +788,10 @@ void ThemeService::update(qint64 id, QString name, QVariantMap tokens)
             return;
         }
 
-        const QStringList errs = validateTokensV2(tokens);
+        // Same normalisation as create(): the UPDATE stamps
+        // tokens_version = 3, so what it writes has to actually be v3.
+        tokens = tokens::upgradeToV3(tokens);
+        const QStringList errs = validateTokensV3(tokens);
         if (!errs.isEmpty()) {
             qWarning().noquote() << "ThemeService::update(): validation failed:"
                                  << errs.join(QStringLiteral("; "));
@@ -657,7 +827,48 @@ void ThemeService::destroy(qint64 id)
 
 QStringList ThemeService::validateTokens(QVariantMap tokens)
 {
-    return validateTokensV2(tokens);
+    // Dispatch on shape, not only on the declared version: a theme whose
+    // JSON carries `layouts` is v3 regardless of what its version field
+    // says, and validating it as v2 would report the useless "nodes must be
+    // a non-empty array" instead of the real problem.
+    const bool looksV3 = tokens.value(QStringLiteral("version")).toInt() >= 3
+                      || tokens.contains(QStringLiteral("layouts"));
+    return looksV3 ? validateTokensV3(tokens) : validateTokensV2(tokens);
+}
+
+// ── Layout wrappers (tokens v3) ────────────────────────────────────────
+// Delegation only — see crater/ThemeTokens.h for the model and the reason
+// each of these behaves the way it does.
+
+QVariantList ThemeService::themeLayouts(QVariantMap tokens)
+{
+    return tokens::layoutsOf(tokens);
+}
+
+QVariantList ThemeService::layoutNodes(QVariantMap tokens, QString layoutId,
+                                       qint64 slideMediaId)
+{
+    return tokens::layoutNodes(tokens, layoutId, slideMediaId);
+}
+
+QVariantMap ThemeService::layoutSlots(QVariantMap tokens, QString layoutId)
+{
+    return tokens::layoutSlotsFor(tokens, layoutId);
+}
+
+bool ThemeService::hasLayout(QVariantMap tokens, QString layoutId)
+{
+    return tokens::hasLayout(tokens, layoutId);
+}
+
+QStringList ThemeService::standardLayoutIds()
+{
+    return tokens::standardLayoutIds();
+}
+
+QString ThemeService::defaultLayoutName(QString layoutId)
+{
+    return tokens::defaultLayoutName(layoutId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -709,12 +920,52 @@ QString sha256Hex(QByteArrayView bytes)
         QCryptographicHash::Sha256).toHex());
 }
 
-// Walks tokens.nodes and collects every numeric mediaId that container
-// nodes refer to. Skips nulls and zeros (the "no media" sentinel).
+// ── Node traversal across layouts ──────────────────────────────────────
+// A v3 theme holds its nodes inside `layouts[].nodes` rather than one
+// top-level `nodes` array, and four functions below walk every node to
+// collect or rewrite asset references. Routing all four through these two
+// helpers is what keeps a later layout from being silently skipped — the
+// failure mode being a bundle that exports cleanly and imports with the
+// pictures missing from every design except the first.
+//
+// Both accept a v2 map as well, via tokens::layoutsOf.
+
+// Every node in the theme, flattened across every layout. Read-only uses.
+QVariantList allNodesOf(const QVariantMap& tokens)
+{
+    QVariantList out;
+    const QVariantList layouts = tokens::layoutsOf(tokens);
+    for (const QVariant& lv : layouts)
+        out += lv.toMap().value(QStringLiteral("nodes")).toList();
+    return out;
+}
+
+// A copy of `tokens` with `fn` applied to every node of every layout.
+// Normalises to v3 on the way through, so an older bundle's tokens come
+// back in the current shape rather than keeping a stale top-level `nodes`
+// array alongside the rewritten layouts.
+template <typename F>
+QVariantMap mapNodesOf(const QVariantMap& tokens, F&& fn)
+{
+    QVariantMap out = tokens::upgradeToV3(tokens);
+    QVariantList layouts = out.value(QStringLiteral("layouts")).toList();
+    for (int li = 0; li < layouts.size(); ++li) {
+        QVariantMap  layout = layouts[li].toMap();
+        QVariantList nodes  = layout.value(QStringLiteral("nodes")).toList();
+        for (int i = 0; i < nodes.size(); ++i) nodes[i] = fn(nodes[i].toMap());
+        layout[QStringLiteral("nodes")] = nodes;
+        layouts[li] = layout;
+    }
+    out[QStringLiteral("layouts")] = layouts;
+    return out;
+}
+
+// Collects every numeric mediaId that container nodes refer to, across
+// every layout. Skips nulls and zeros (the "no media" sentinel).
 QSet<qint64> collectMediaIds(const QVariantMap& tokens)
 {
     QSet<qint64> out;
-    const QVariantList nodes = tokens.value(QStringLiteral("nodes")).toList();
+    const QVariantList nodes = allNodesOf(tokens);
     for (const QVariant& n : nodes) {
         const QVariantMap node = n.toMap();
         if (node.value(QStringLiteral("kind")).toString() != QLatin1String("container")) continue;
@@ -734,7 +985,7 @@ QSet<qint64> collectMediaIds(const QVariantMap& tokens)
 QSet<QString> collectFontFamilies(const QVariantMap& tokens)
 {
     QSet<QString> out;
-    const QVariantList nodes = tokens.value(QStringLiteral("nodes")).toList();
+    const QVariantList nodes = allNodesOf(tokens);
     for (const QVariant& n : nodes) {
         const QVariantMap node = n.toMap();
         if (node.value(QStringLiteral("kind")).toString() != QLatin1String("text")) continue;
@@ -754,10 +1005,7 @@ QVariantMap rewriteTokensForExport(const QVariantMap& tokens,
                                    const QHash<qint64, QString>& mediaIdToHash,
                                    const QHash<QString, QString>& fontFamilyToHash)
 {
-    QVariantMap out = tokens;
-    QVariantList nodes = out.value(QStringLiteral("nodes")).toList();
-    for (int i = 0; i < nodes.size(); ++i) {
-        QVariantMap node = nodes[i].toMap();
+    return mapNodesOf(tokens, [&](QVariantMap node) {
         const QString kind = node.value(QStringLiteral("kind")).toString();
         if (kind == QLatin1String("container")) {
             QVariantMap data = node.value(QStringLiteral("data")).toMap();
@@ -791,10 +1039,8 @@ QVariantMap rewriteTokensForExport(const QVariantMap& tokens,
             }
             node[QStringLiteral("style")] = style;
         }
-        nodes[i] = node;
-    }
-    out[QStringLiteral("nodes")] = nodes;
-    return out;
+        return node;
+    });
 }
 
 // Returns a deep-rewritten copy of `tokens` for IMPORT into the live DB:
@@ -810,10 +1056,7 @@ QVariantMap rewriteTokensForExport(const QVariantMap& tokens,
 QVariantMap rewriteTokensForImport(const QVariantMap& tokens,
                                    const QHash<QString, qint64>& hashToMediaId)
 {
-    QVariantMap out = tokens;
-    QVariantList nodes = out.value(QStringLiteral("nodes")).toList();
-    for (int i = 0; i < nodes.size(); ++i) {
-        QVariantMap node = nodes[i].toMap();
+    return mapNodesOf(tokens, [&](QVariantMap node) {
         const QString kind = node.value(QStringLiteral("kind")).toString();
         if (kind == QLatin1String("container")) {
             QVariantMap data = node.value(QStringLiteral("data")).toMap();
@@ -840,10 +1083,8 @@ QVariantMap rewriteTokensForImport(const QVariantMap& tokens,
             style.remove(QStringLiteral("fontRef"));
             node[QStringLiteral("style")] = style;
         }
-        nodes[i] = node;
-    }
-    out[QStringLiteral("nodes")] = nodes;
-    return out;
+        return node;
+    });
 }
 
 // QFile::readAll() wrapper that handles open-failure with a populated
@@ -1351,7 +1592,13 @@ ThemeImportReport ThemeService::importThemeFile(QString filePath)
     // bundle's token shape is corrupt independently of media availability,
     // and creating the theme row with broken tokens would yield an
     // unusable artifact that the editor would later refuse to save.
-    const QStringList errs = validateTokensV2(runtimeTokens);
+    //
+    // Dispatching on shape rather than pinning v2: a bundle written by an
+    // older build carries v2 tokens, a current one carries v3, and
+    // rewriteTokensForImport above normalises whatever it was handed. Both
+    // have to pass here or importing an old .craterheme starts failing on
+    // "version must be 2" the day exports move on.
+    const QStringList errs = validateTokens(runtimeTokens);
     if (!errs.isEmpty()) {
         report.errorMessage = QStringLiteral("theme.json schema errors: %1")
                                   .arg(errs.join(QStringLiteral("; ")));
@@ -1467,7 +1714,10 @@ qint64 ThemeService::importThemeJsonFile(QString filePath)
 
     // Field-level validation up front so the operator sees a precise message
     // (create() also validates, but only logs + returns 0 — we want the text).
-    const QStringList errs = validateTokensV2(tokens);
+    // Dispatched on shape, because a hand-authored JSON theme is legitimately
+    // either version: the v2 documented before layouts existed still imports,
+    // and create() upgrades it on the way in.
+    const QStringList errs = validateTokens(tokens);
     if (!errs.isEmpty()) {
         m_lastImportError = QStringLiteral("invalid theme tokens: %1")
                                 .arg(errs.join(QStringLiteral("; ")));

@@ -234,11 +234,23 @@ QtObject {
         for (let i = 0; i < list.length; i++) {
             const s = list[i] || {}
             const t = s.title || ""
+            // `content` stays the body for every kind — it is the field the
+            // shared renderers read for lyric / scriptureText / presentationBody
+            // alike. The v3 slots ride ALONGSIDE it rather than replacing it,
+            // so a song or scripture page (which sets none of them) resolves
+            // each to "" and renders an empty box the theme's card hugs away.
             pages.push({
-                label:   t.length > 0 ? t : qsTr("Slide %1").arg(i + 1),
-                content: s.body  || "",
-                title:   t,
-                notes:   s.notes || ""
+                label:     t.length > 0 ? t : qsTr("Slide %1").arg(i + 1),
+                content:   s.body  || "",
+                title:     t,
+                notes:     s.notes || "",
+                // Which of the theme's designs draws this slide. Empty means
+                // the theme's default, which is what every pre-v3 slide and
+                // every non-presentation page carries.
+                layout:    s.layout    || "",
+                subtitle:  s.subtitle  || "",
+                bodyRight: s.bodyRight || "",
+                mediaId:   s.mediaId   || 0
             })
         }
         // A deck with no slides is still projectable — as its own title. The
@@ -250,7 +262,8 @@ QtObject {
             // longer drop content-free pages for this kind (see
             // PreviewPanel.pages), so a blank label would render as an
             // unlabelled empty card instead of a readable one.
-            pages = [{ label: deck.title, content: "", title: deck.title, notes: "" }]
+            pages = [{ label: deck.title, content: "", title: deck.title, notes: "",
+                       layout: "", subtitle: "", bodyRight: "", mediaId: 0 }]
         }
         return {
             kind:     "presentation",
