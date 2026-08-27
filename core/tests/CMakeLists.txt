@@ -97,3 +97,21 @@ target_link_libraries(test_theme_layouts PRIVATE
 )
 
 add_test(NAME theme_layouts COMMAND test_theme_layouts)
+
+# -- Theme editor working copy -- crater/WorkingTheme.h -----------------
+# The editor's in-memory theme once it grew from one flat node list to a set
+# of named layouts. Core-only (QObject + QVariant, no database, no Gui), and
+# aimed squarely at the quiet failures: an edit landing in the wrong design,
+# a save dropping the designs the author was not looking at, and an undo
+# bouncing them out of the design they were working on.
+qt_add_executable(test_working_theme
+    test_working_theme.cpp
+)
+
+target_link_libraries(test_working_theme PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME working_theme COMMAND test_working_theme)

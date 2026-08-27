@@ -35,6 +35,9 @@ namespace crater::tokens {
 //
 // `canvas` stays at the top level: every layout of one theme paints to the
 // same output, so a per-layout canvas could only ever be wrong.
+//
+// The authoring contract for all of this — the one handed to whoever writes
+// a theme by hand — is qt/docs/theme-schema.md §9.
 
 // ── Standard layout ids ────────────────────────────────────────────────
 // A slide stores its layout as an id string, and that id is a SOFT

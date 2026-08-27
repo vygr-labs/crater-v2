@@ -104,15 +104,24 @@ Rectangle {
         savedIndex = historyIndex
     }
 
+    // A new theme starts with ONE design. The rail's Add builds the rest,
+    // and each one inherits this design's background and text styling, so
+    // seeding all seven standard layouts up front would only hand the author
+    // six more designs to curate before they have decided what the first one
+    // looks like.
     function _newThemeTokens(kind) {
         const linkage = kind === "song"         ? "lyric"
                       : kind === "scripture"    ? "scriptureText"
                       : kind === "presentation" ? "presentationBody"
                                                 : "custom"
         return {
-            version: 2,
+            version: 3,
             canvas: { width: 1920, height: 1080 },
-            nodes: [
+            layouts: [{
+              id: "content",
+              name: qsTr("Title + content"),
+              "default": true,
+              nodes: [
                 { id: "bg",  kind: "container",
                   style: { x: 0, y: 0, width: 100, height: 100, z: 0, opacity: 1,
                            backgroundColor: "#0a0a0d" },
@@ -127,7 +136,8 @@ Rectangle {
                   data:  { layerName: "Text", linkage: linkage,
                            text: linkage === "custom" ? qsTr("New text") : "",
                            autoResize: true, maxFontSize: 220 } }
-            ]
+              ]
+            }]
         }
     }
 
@@ -159,6 +169,11 @@ Rectangle {
     readonly property string mockLyric:         "Amazing grace, how sweet the sound\nThat saved a wretch like me"
     readonly property string mockSlideTitle:    "The God Who Pursues"
     readonly property string mockSlideBody:     "He does not wait at the edge of the far country.\nHe runs."
+    // Distinct strings per slot, matching ThemePreview's, so a two-column
+    // design reads as two columns on the canvas instead of the same sentence
+    // twice and the author can judge the balance between them.
+    readonly property string mockSlideSubtitle:  "Luke 15"
+    readonly property string mockSlideBodyRight: "The elder son stayed home and was just as lost."
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -169,9 +184,19 @@ Rectangle {
             case "lyric":             return mockLyric
             case "presentationTitle": return mockSlideTitle
             case "presentationBody":  return mockSlideBody
+            case "presentationSubtitle":  return mockSlideSubtitle
+            case "presentationBodyRight": return mockSlideBodyRight
             case "custom":            return data.text || qsTr("(empty)")
         }
         return ""
+    }
+
+    // A node id only means anything within the design it belongs to, so a
+    // selection cannot survive a switch: keeping it would leave the
+    // properties panel bound to a node the canvas is no longer drawing.
+    Connections {
+        target: workspace.workingTheme
+        function onCurrentLayoutChanged() { workspace.selectedNodeId = "" }
     }
 
     // ── Save / cancel ─────────────────────────────────────────────────
@@ -277,8 +302,25 @@ Rectangle {
             anchors.right: propsPanel.left
             color: Theme.color.bgContent
 
+            // Presentation themes only. Every other kind renders one design
+            // and has no way to name a second — a lyric slide is a lyric
+            // slide — so a rail there would let an author build layouts
+            // nothing could ever select, which is worse than not offering it.
+            LayoutRail {
+                id: layoutRail
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: workspace.themeKind === "presentation"
+                height: visible ? implicitHeight : 0
+                workspace: workspace
+            }
+
             EditorCanvas {
-                anchors.fill: parent
+                anchors.top: layoutRail.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
                 workspace: workspace
             }
         }

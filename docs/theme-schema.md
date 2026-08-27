@@ -1,4 +1,4 @@
-# Crater Theme JSON Schema (v2)
+# Crater Theme JSON Schema (v3)
 
 This document is the **authoring contract** for a Crater theme. Hand it to a
 designer — or to Claude — and ask for a theme; the output is a single JSON file
@@ -12,6 +12,12 @@ colors, **animated gradients** (including transparent fade-to-black scrims), and
 **system fonts**. It does **not** support bundled images/videos/custom font
 files via JSON — those use the `.craterheme` bundle export/import instead.
 
+Since **v3** a theme carries a list of named **layouts** rather than a single
+node graph, which is what lets one presentation theme hold a title slide, a
+section divider, a two-column slide and so on — see §9. Everything below
+describes one layout's nodes, and applies unchanged. A v2 file still imports:
+it reads as a theme with exactly one layout.
+
 ---
 
 ## 1. File format
@@ -21,16 +27,38 @@ files via JSON — those use the `.craterheme` bundle export/import instead.
   "name": "Aurora Scripture",                 // required, non-empty
   "kind": "scripture",                        // required: song | scripture | presentation
   "tokens": {
-    "version": 2,                             // required, exactly 2
+    "version": 3,                             // required, exactly 3
     "canvas": { "width": 1920, "height": 1080 },   // required, both > 0
-    "nodes": [ /* one or more nodes, see §2 */ ]    // required, non-empty
+    "layouts": [                              // required, non-empty — see §9
+      {
+        "id": "content",                      // required, unique within the theme
+        "name": "Title + content",            // required, non-empty
+        "default": true,                      // at most one layout may set this
+        "nodes": [ /* one or more nodes, see §2 */ ]   // required, non-empty
+      }
+    ]
   }
 }
 ```
 
+A **v2** file is still accepted and is the smaller thing to write when a theme
+only ever needs one design:
+
+```jsonc
+  "tokens": {
+    "version": 2,
+    "canvas": { "width": 1920, "height": 1080 },
+    "nodes": [ /* ... */ ]
+  }
+```
+
+It is read as a theme with a single default layout, and is rewritten to v3 the
+first time the app saves it.
+
 `kind` decides which content the text boxes can bind to (see `linkage`, §4):
 `scripture` themes bind reference + verse text; `song` themes bind lyric text;
-`presentation` themes bind a deck slide's title + body.
+`presentation` themes bind a deck slide's title, subtitle, body, second column
+and picture.
 
 > `kind` is a *default*, not a restriction. Linkage is validated globally, so a
 > song theme may legitimately use `scriptureRef` — for a song item that resolves
@@ -105,6 +133,29 @@ is dropped to transparent, so transparent stops reveal whatever is *behind* the
 node — this is how a scrim works (see §6).
 
 > Color format: `#rgb`, `#rrggbb`, or `#aarrggbb` (alpha first, Qt-native).
+
+### The picture placeholder
+
+A container may also carry a `data.linkage`, and it has exactly one legal
+value:
+
+```jsonc
+"data": { "linkage": "presentationImage" }
+```
+
+That turns the container into the design's **picture box**: at render time it is
+handed the slide's own picture instead of the theme's. A container already
+paints whatever `data.mediaId` points at, so this changes only where the id
+comes from — which is the entire implementation of per-slide pictures.
+
+The theme's own `data.mediaId` stays in place underneath and is what renders
+when a slide has picked nothing, so a picture design can ship a stock image
+rather than an empty box. (JSON themes cannot reference media — see §1 — so a
+stock image means a `.craterheme` bundle.)
+
+Anything other than `presentationImage` is rejected on import rather than
+ignored: a typo here leaves an author staring at a picture design that never
+shows a picture.
 > `#00000000` = transparent, `#000000` = opaque black, `#e6000000` = ~90% black.
 
 ---
@@ -133,7 +184,7 @@ node — this is how a scrim works (see §6).
 
 | Field        | Required | Type / values                                          |
 |--------------|----------|--------------------------------------------------------|
-| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `presentationTitle` \| `presentationBody` \| `custom` |
+| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `presentationTitle` \| `presentationSubtitle` \| `presentationBody` \| `presentationBodyRight` \| `custom` |
 | `text`       | when `custom` | string (the literal text to show)                 |
 | `autoResize` | no       | boolean — binary-search shrink-to-fit the box          |
 | `maxFontSize`| no       | integer `> 0` — cap when `autoResize` is true          |
@@ -144,8 +195,15 @@ node — this is how a scrim works (see §6).
 - `scriptureText` → the verse body (the live verse text).
 - `lyric` → the current song stanza.
 - `presentationTitle` → the current slide's heading (presentation decks).
+- `presentationSubtitle` → the slide's subtitle. A title slide's second line.
 - `presentationBody` → the current slide's body text.
+- `presentationBodyRight` → the slide's second column, for a two-column design.
 - `custom` → the literal `data.text`.
+
+> Which of these a layout binds is what decides **which fields the slide editor
+> offers** for a slide on that design. That is derived by scanning the layout's
+> nodes, not declared anywhere — delete the `presentationBodyRight` box and the
+> Right column field stops appearing, with nothing else to keep in step.
 
 > A deck slide's **speaker notes** have no linkage on purpose. They are never
 > rendered to the audience — only the stage / confidence display shows them, and
@@ -311,10 +369,120 @@ better than four-line ones.
 
 ---
 
-## 9. Checklist before importing
+## 9. Layouts — one theme, several designs
 
-- [ ] `version` is `2`; `canvas.width`/`height` > 0; `nodes` non-empty.
-- [ ] Every node has a unique `id`, a `kind`, and `style.x/y/width/height` in `0..100`.
+A PowerPoint template does not hold one slide design, it holds a set: a title
+slide, a section header, a two-content slide, a picture slide. Crater themes
+work the same way from **v3** on. `tokens.layouts` is that set, in the order a
+picker offers them:
+
+```jsonc
+"tokens": {
+  "version": 3,
+  "canvas": { "width": 1920, "height": 1080 },
+  "layouts": [
+    { "id": "title",   "name": "Title slide",     "nodes": [ /* ... */ ] },
+    { "id": "section", "name": "Section divider", "nodes": [ /* ... */ ] },
+    { "id": "content", "name": "Title + content", "default": true,
+                                                  "nodes": [ /* ... */ ] }
+  ]
+}
+```
+
+| Field     | Required | Notes |
+|-----------|----------|-------|
+| `id`      | **yes**  | Unique within the theme. Prefer a standard id — see below |
+| `name`    | **yes**  | Non-empty. What both editors list the design by |
+| `default` | no       | At most one layout. Omitted everywhere → the first layout wins |
+| `nodes`   | **yes**  | Non-empty; the same node graph §2–§7 describe |
+
+`canvas` stays at the top level, outside the layouts. Every design of one theme
+paints to the same output, so a per-layout canvas could only ever be wrong.
+
+Node `id`s only have to be unique **within** a layout. Two designs may both call
+their heading `title`, and a `group`'s `members` (§7) always refer to node ids in
+the same layout.
+
+### Which design a slide gets
+
+A presentation slide stores a layout **id**. Every other content kind — songs,
+scripture, media — stores nothing and always renders the default, which is why a
+song theme is fine with the single implicit layout a v2 file gives it.
+
+Resolution, in order:
+
+1. the layout whose `id` matches the slide's,
+2. the layout flagged `"default": true`,
+3. the first layout.
+
+Step 2 is the load-bearing one. A slide's layout id is a **soft reference**: it
+is looked up in whatever theme is rendering at the time, and if that theme has
+never heard of it, the slide falls back to that theme's default rather than
+failing. Crater lets a deck and a theme move independently — per-deck override,
+per-output slot, per-kind default, all swappable mid-service — so a slide is
+routinely drawn by a theme authored somewhere else entirely. PowerPoint never
+has to solve this, because there a deck owns its template.
+
+The id **stays stored** through the fallback, so switching back restores the
+intended design. The slide editor marks such a slide "Not in this theme" rather
+than quietly showing the fallback as though it were chosen, so an operator does
+not "fix" a theme swap by clicking around and overwrite ids that would have come
+back on their own.
+
+### The standard ids
+
+Because ids are matched across themes, a shared vocabulary is what makes a deck
+portable. A theme that names its designs with these will render another theme's
+deck the way its author intended:
+
+| `id`         | Default name      | Typically binds |
+|--------------|-------------------|-----------------|
+| `title`      | Title slide       | title + subtitle |
+| `section`    | Section divider   | title |
+| `content`    | Title + content   | title + body |
+| `twoColumn`  | Two columns       | title + body + right column |
+| `quote`      | Quote             | body large, title as attribution |
+| `picture`    | Picture           | picture + title + body |
+| `blank`      | Blank             | background only |
+
+Custom ids are legal and the theme editor creates them freely. They simply do
+not carry across a theme swap, and fall back to the default design.
+
+`name` is free text and does not have to match the table — a Yoruba-language
+theme can call `section` whatever it likes and portability is unaffected, since
+matching is on `id` alone.
+
+### What a design binds
+
+There is no field listing which slide fields a layout uses. It is **derived** by
+scanning the layout's nodes for the presentation linkages (§3, §4):
+
+| Node | Linkage | Slide field |
+|------|---------|-------------|
+| text      | `presentationTitle`     | Title |
+| text      | `presentationSubtitle`  | Subtitle |
+| text      | `presentationBody`      | Body |
+| text      | `presentationBodyRight` | Right column |
+| container | `presentationImage`     | Picture |
+
+Derivation rather than declaration is deliberate. A declared slot list is a
+second source of truth that drifts the moment someone deletes a node in the
+visual editor and forgets the manifest, and it drifts silently: the slide editor
+would offer a field that renders nowhere, or hide one the design needs.
+
+**Speaker notes** are on every design and are not in the table. They have no
+linkage at all — see the note in §4.
+
+---
+
+## 10. Checklist before importing
+
+- [ ] `version` is `3` with a non-empty `layouts` (or `2` with a non-empty
+      `nodes`); `canvas.width`/`height` > 0.
+- [ ] Every layout has a unique `id` and a non-empty `name`; at most one sets
+      `"default": true`; each holds a non-empty `nodes`.
+- [ ] Every node has an `id` unique **within its layout**, a `kind`, and
+      `style.x/y/width/height` in `0..100`.
 - [ ] Every text node has `style.color` and `data.linkage`.
 - [ ] Colors are `#rrggbb` or `#aarrggbb`; gradients have 2–6 stops.
 - [ ] `z` orders: background (low) → scrim → text (high).

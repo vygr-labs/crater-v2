@@ -29,7 +29,7 @@ constexpr int kMaxSlides = 500;
 constexpr int kMaxFieldChars = 20000;
 
 // A layout id is a short slug naming which of the theme's designs this
-// slide is drawn with (see docs/theme-schema.md §10). Clamped far shorter
+// slide is drawn with (see docs/theme-schema.md §9). Clamped far shorter
 // than a content field: it is an identifier, not prose, and a runaway value
 // here would be stored on every slide of every deck.
 constexpr int kMaxLayoutIdChars = 64;

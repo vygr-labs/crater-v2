@@ -575,6 +575,62 @@ Column {
             anchors.topMargin: Theme.space.sm
             spacing: 6
 
+            // Turns this container into the design's PICTURE placeholder.
+            // A container already paints whatever data.mediaId points at, so
+            // this only changes where that id comes from: the slide instead
+            // of the theme. That is the whole implementation of per-slide
+            // pictures, which is why the toggle lives beside Media rather
+            // than in a section of its own.
+            //
+            // The theme's own media stays set underneath and is what renders
+            // when a slide has picked nothing, so a design can ship a stock
+            // image rather than an empty box.
+            Item {
+                id: slidePicRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 32
+                readonly property bool _on: !!(node && node.data
+                                               && node.data.linkage === "presentationImage")
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        radius: 0
+                        color: slidePicRow._on ? Theme.color.brand : Theme.color.canvas
+                        border.color: slidePicRow._on ? Theme.color.brand : Theme.color.borderStrong
+                        border.width: 1
+                        Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: slidePicRow._on
+                            name: "check"; size: Theme.icon.sm
+                            color: "#ffffff"   // check on the deep-teal box
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Use the slide's picture")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    // Cleared to "" rather than removed: setNodeData writes
+                    // whole fields and has no delete, and the validator
+                    // accepts an empty linkage on a container precisely so
+                    // this toggle has an off position.
+                    onClicked: root._setData("linkage",
+                        slidePicRow._on ? "" : "presentationImage")
+                }
+            }
+
             Rectangle {
                 id: mediaSlot
                 anchors.left: parent.left

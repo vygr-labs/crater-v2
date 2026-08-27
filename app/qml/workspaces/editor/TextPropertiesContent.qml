@@ -14,10 +14,16 @@ Column {
     function _setData (f, v) { workspace.workingTheme.setNodeData (node.id, f, v); workspace.saveToHistory() }
 
     // ── Content linkage ────────────────────────────────────────────────
-    // What this text node actually shows at render time. Six values no
-    // longer fit the segmented row this used to be: the properties panel is
+    // What this text node actually shows at render time. Eight values do
+    // not fit the segmented row this used to be: the properties panel is
     // 240 px wide and SegmentedControl divides that evenly with a label that
-    // does not elide, so a sixth option clipped its own text.
+    // does not elide, so even a sixth option clipped its own text.
+    //
+    // Slide subtitle and slide right column are the v3 layout slots. Which
+    // per-slide fields the slide editor offers is DERIVED by scanning a
+    // design for exactly these linkages (crater::tokens::layoutSlots), so
+    // setting one here is what makes that field appear on the slide — there
+    // is no separate manifest to keep in step.
     //
     // The list is flat rather than scoped to the theme's kind on purpose.
     // Linkage is already cross-kind by design -- scriptureRef resolves to
@@ -25,12 +31,14 @@ Column {
     // the song name -- so filtering by kind would hide a working technique
     // and orphan the linkage on any theme already using it.
     readonly property var _linkageOptions: [
-        { label: qsTr("Reference / title"), value: "scriptureRef"      },
-        { label: qsTr("Verse text"),        value: "scriptureText"     },
-        { label: qsTr("Lyric"),             value: "lyric"             },
-        { label: qsTr("Slide title"),       value: "presentationTitle" },
-        { label: qsTr("Slide body"),        value: "presentationBody"  },
-        { label: qsTr("Custom text"),       value: "custom"            }
+        { label: qsTr("Reference / title"), value: "scriptureRef"          },
+        { label: qsTr("Verse text"),        value: "scriptureText"         },
+        { label: qsTr("Lyric"),             value: "lyric"                 },
+        { label: qsTr("Slide title"),       value: "presentationTitle"     },
+        { label: qsTr("Slide subtitle"),    value: "presentationSubtitle"  },
+        { label: qsTr("Slide body"),        value: "presentationBody"      },
+        { label: qsTr("Slide right column"), value: "presentationBodyRight" },
+        { label: qsTr("Custom text"),       value: "custom"                }
     ]
     readonly property string _linkageLabel: {
         const cur = (node && node.data && node.data.linkage) || "custom"
