@@ -191,17 +191,26 @@ jobs:
         env:
           TAG:     ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
-        # Identity: the GitHub-blessed bot account. Using a personal
-        # account would require a PAT in secrets; the bot identity works
-        # with the default GITHUB_TOKEN.
+        # Identity: the repo owner, not the CI bot. No PAT is needed for
+        # this. GITHUB_TOKEN authenticates the *push*; author and committer
+        # are just strings git writes into the commit object, so a real
+        # name here costs nothing and keeps a bot account out of the repo's
+        # Contributors list for what is only an automated bump of the
+        # owner's own release. The commit lands unverified either way, the
+        # bot's did too.
+        #
+        # The one thing this does NOT change is who the Releases page
+        # credits as publisher: softprops/action-gh-release below creates
+        # the release through the API as whoever owns the token, so that
+        # still reads github-actions. Fixing that would need a PAT.
         # The annotated tag (`-a`) means `git describe` returns the tag
         # name on the commit; a lightweight tag would silently degrade to
         # the SHA. softprops/action-gh-release tolerates either, but the
         # rest of the toolchain (and `git log --decorate`) is cleaner with
         # annotated tags.
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'Eyetu Kingsley'
+          git config user.email 'eyetukingsley330@gmail.com'
           git add CMakeLists.txt
           git commit -m "release $TAG"
           git tag -a "$TAG" -m "Crater $TAG"
