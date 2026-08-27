@@ -115,3 +115,23 @@ target_link_libraries(test_working_theme PRIVATE
 )
 
 add_test(NAME working_theme COMMAND test_working_theme)
+
+# -- Design with AI -- crater/ThemePrompt.h ------------------------------
+# The prompt handed to an outside model, and the parse that reads its reply
+# back. Both fail quietly: a rule dropped from the prompt shows up as a chat
+# window arguing with the user, and a reply shape the parser refuses reads as
+# the AI having got it wrong. Neither surfaces anywhere else in the suite.
+qt_add_executable(test_theme_prompt
+    test_theme_prompt.cpp
+)
+
+target_link_libraries(test_theme_prompt PRIVATE
+    Qt6::Core
+    # ThemeService's validation path reaches QFontDatabase, which needs a
+    # QGuiApplication -- same reason test_theme_bundle restates Gui here.
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME theme_prompt COMMAND test_theme_prompt)

@@ -84,6 +84,16 @@ Rectangle {
             }
         }
 
+        // Enabled on built-ins too. Save is not, but copying the prompt is
+        // still useful there, and loading a reply gives a look at it on the
+        // canvas exactly the way dragging a built-in's nodes already does.
+        GhostButton {
+            text: qsTr("Design with AI")
+            iconName: "sparkles"
+            anchors.verticalCenter: parent.verticalCenter
+            onClicked: workspace.openAiDesign()
+        }
+
         PrimaryButton {
             text: qsTr("Save Theme")
             enabled: workspace.themeName.length > 0

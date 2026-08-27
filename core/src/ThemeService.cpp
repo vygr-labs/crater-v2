@@ -1,4 +1,5 @@
 #include "crater/ThemeService.h"
+#include "crater/ThemePrompt.h"
 #include "crater/ThemeTokens.h"
 
 #include "bundle/Zip.h"
@@ -1667,6 +1668,133 @@ qint64 ThemeService::duplicateTheme(qint64 id, QString newName)
     return create(src.kind, name, src.tokens);
 }
 
+namespace {
+
+// ── Reading an authored theme out of arbitrary text ────────────────────
+// Shared by the file importer and the editor's paste-from-AI path. One
+// reader because the two must agree on what a theme file IS: a paste that
+// the editor accepts and a file that the importer rejects would send the
+// user hunting for a difference that has no reason to exist.
+
+// Pulls the JSON object out of text that may carry chat-UI packaging.
+// Returns empty when there is no object in there at all.
+QByteArray extractJsonObject(const QString& raw)
+{
+    QString s = raw.trimmed();
+
+    // Chat UIs fence code, usually as ```json ... ```. Take the inside of
+    // the first fenced block when there is one.
+    const int fenceOpen = s.indexOf(QStringLiteral("```"));
+    if (fenceOpen >= 0) {
+        const int lineEnd = s.indexOf(QLatin1Char('\n'), fenceOpen);
+        if (lineEnd > 0) {
+            const int fenceClose = s.indexOf(QStringLiteral("```"), lineEnd);
+            if (fenceClose > lineEnd) {
+                s = s.mid(lineEnd + 1, fenceClose - lineEnd - 1);
+            }
+        }
+    }
+
+    // Then take the outermost braces, which also absorbs any "Here is your
+    // theme:" preamble that came through without a fence.
+    const int first = s.indexOf(QLatin1Char('{'));
+    const int last  = s.lastIndexOf(QLatin1Char('}'));
+    if (first < 0 || last <= first) return {};
+    return s.mid(first, last - first + 1).toUtf8();
+}
+
+struct ThemeEnvelope
+{
+    QString     name;
+    QString     kind;
+    QVariantMap tokens;
+    QString     error;      // non-empty means nothing usable came back
+};
+
+// Reads { name, kind, tokens } out of the object, deliberately WITHOUT
+// judging whether name and kind are acceptable. Each caller enforces that
+// itself, because the two paths disagree on purpose: a file becomes a new
+// library row and needs a name, while a paste lands in an editor that
+// already has one.
+ThemeEnvelope readThemeEnvelope(const QByteArray& bytes)
+{
+    ThemeEnvelope out;
+    if (bytes.isEmpty()) {
+        out.error = QStringLiteral("no JSON object found");
+        return out;
+    }
+
+    QJsonParseError perr{};
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &perr);
+    if (doc.isNull() || !doc.isObject()) {
+        out.error = QStringLiteral("not valid JSON: %1").arg(perr.errorString());
+        return out;
+    }
+
+    const QJsonObject root = doc.object();
+    out.name = root.value(QStringLiteral("name")).toString();
+    out.kind = root.value(QStringLiteral("kind")).toString();
+
+    const QJsonValue tv = root.value(QStringLiteral("tokens"));
+    if (tv.isObject()) {
+        out.tokens = tv.toObject().toVariantMap();
+        return out;
+    }
+
+    // A model asked for a theme quite often returns the tokens object on its
+    // own, with no envelope around it. That is unambiguous to detect, so
+    // recognise it rather than rejecting a reply that is only missing a
+    // wrapper. `tokens` stays empty when it is neither, and the caller
+    // reports the missing-tokens error in its own words.
+    if (root.contains(QStringLiteral("layouts"))
+        || root.contains(QStringLiteral("nodes"))
+        || root.contains(QStringLiteral("version"))) {
+        out.tokens = root.toVariantMap();
+        out.name.clear();
+        out.kind.clear();
+    }
+    return out;
+}
+
+}  // namespace
+
+QString ThemeService::designPrompt(QString kind, QString brief, QVariantMap startFrom)
+{
+    return prompt::designPrompt(kind, brief, startFrom);
+}
+
+QVariantMap ThemeService::parseThemeJsonText(QString text)
+{
+    QVariantMap out;
+    out[QStringLiteral("ok")] = false;
+
+    const ThemeEnvelope env = readThemeEnvelope(extractJsonObject(text));
+    if (!env.error.isEmpty()) {
+        out[QStringLiteral("error")] = env.error;
+        return out;
+    }
+    if (env.tokens.isEmpty()) {
+        out[QStringLiteral("error")] =
+            QStringLiteral("no \"tokens\" object in the reply");
+        return out;
+    }
+
+    // Same validator the importer and Save both run, so anything accepted
+    // here is already known to survive the trip to the database.
+    const QStringList errs = validateTokens(env.tokens);
+    if (!errs.isEmpty()) {
+        out[QStringLiteral("error")] = errs.join(QStringLiteral(" · "));
+        return out;
+    }
+
+    out[QStringLiteral("ok")]     = true;
+    out[QStringLiteral("error")]  = QString();
+    out[QStringLiteral("name")]   = env.name;
+    out[QStringLiteral("kind")]   = env.kind;
+    out[QStringLiteral("tokens")] = env.tokens;
+    return out;
+}
+
 qint64 ThemeService::importThemeJsonFile(QString filePath)
 {
     // Plain-JSON theme import — the format a designer (or Claude) authors by
@@ -1684,16 +1812,17 @@ qint64 ThemeService::importThemeJsonFile(QString filePath)
     const QByteArray bytes = f.readAll();
     f.close();
 
-    QJsonParseError perr{};
-    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &perr);
-    if (doc.isNull() || !doc.isObject()) {
-        m_lastImportError = QStringLiteral("not valid JSON: %1").arg(perr.errorString());
+    // Shared with the editor's paste-from-AI path, so a reply saved straight
+    // to a .json file imports on the same terms it would have pasted on --
+    // markdown fences and a stray preamble included.
+    const ThemeEnvelope env = readThemeEnvelope(extractJsonObject(QString::fromUtf8(bytes)));
+    if (!env.error.isEmpty()) {
+        m_lastImportError = env.error;
         return 0;
     }
-    const QJsonObject root = doc.object();
 
-    const QString name = root.value(QStringLiteral("name")).toString();
-    const QString kind = root.value(QStringLiteral("kind")).toString();
+    const QString name = env.name;
+    const QString kind = env.kind;
     if (name.isEmpty()) {
         m_lastImportError = QStringLiteral("missing top-level \"name\"");
         return 0;
@@ -1705,12 +1834,11 @@ qint64 ThemeService::importThemeJsonFile(QString filePath)
         return 0;
     }
 
-    const QJsonValue tv = root.value(QStringLiteral("tokens"));
-    if (!tv.isObject()) {
+    if (env.tokens.isEmpty()) {
         m_lastImportError = QStringLiteral("missing \"tokens\" object");
         return 0;
     }
-    const QVariantMap tokens = tv.toObject().toVariantMap();
+    const QVariantMap tokens = env.tokens;
 
     // Field-level validation up front so the operator sees a precise message
     // (create() also validates, but only logs + returns 0 — we want the text).

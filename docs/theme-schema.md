@@ -6,6 +6,15 @@ that imports via **Themes tab → Import JSON**. The app validates on import and
 reports any field-level error (e.g. `nodes[2].style.opacity must be 0..1`), so a
 malformed theme is rejected cleanly rather than rendering broken.
 
+> **In-app shortcut.** The theme editor's **Design with AI** button copies a
+> self-contained version of this contract to the clipboard, ready to paste into
+> any assistant, and takes the reply straight back into the editor. The prompt
+> it builds lives in `qt/core/src/ThemePrompt.cpp` and restates the rules below
+> rather than linking to them, because the model on the other end cannot read
+> this file. **Anything you change here has to be changed there too** — the
+> `theme_prompt` test suite pins the parts a wrong answer hinges on, but it
+> cannot know about a rule that was never written down twice.
+
 A theme is a **node graph**: containers and text boxes positioned by *percent*
 on a fixed canvas. There is no HTML/CSS — just this JSON. It supports solid
 colors, **animated gradients** (including transparent fade-to-black scrims), and

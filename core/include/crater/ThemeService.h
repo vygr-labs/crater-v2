@@ -103,6 +103,33 @@ public:
     Q_INVOKABLE QStringList standardLayoutIds();
     Q_INVOKABLE QString     defaultLayoutName(QString layoutId);
 
+    // ── Design with AI ──────────────────────────────────────────────────
+    // The brief a user copies out of the theme editor and pastes into an AI
+    // to have a theme designed. Pure text assembly, no database. See
+    // crater/ThemePrompt.h for why the whole schema is restated inside it.
+    //
+    // `brief` is the user's own description, empty meaning "your call".
+    // `startFrom` is an optional tokens map to evolve rather than replace.
+    Q_INVOKABLE QString designPrompt(QString     kind,
+                                     QString     brief     = {},
+                                     QVariantMap startFrom = {});
+
+    // Parses the AI's reply back into a theme, WITHOUT touching the
+    // database. Returns:
+    //   { "ok": bool, "error": "...",
+    //     "name": "...", "kind": "...", "tokens": { ... } }
+    //
+    // Separate from importThemeJsonFile because the editor's paste path
+    // wants the tokens in hand to load into the working copy, so the user
+    // can look at the result and undo it, rather than having a new row
+    // appear in the themes list before anyone has seen it.
+    //
+    // Tolerant of what a chat UI actually produces: surrounding prose and
+    // ```json fences are stripped before parsing. Everything past that is
+    // the same validation the file importer runs, so a paste that succeeds
+    // here cannot fail on save.
+    Q_INVOKABLE QVariantMap parseThemeJsonText(QString text);
+
     // ── Export (ARCHITECTURE.md §10) ────────────────────────────────────
     // Returns the proposed contents of a .craterheme v2 bundle for theme
     // `id`. Used by the export confirmation dialog (Stage 6b) to show the

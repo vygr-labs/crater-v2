@@ -199,6 +199,32 @@ Rectangle {
         function onCurrentLayoutChanged() { workspace.selectedNodeId = "" }
     }
 
+    // ── Design with AI ──────────────────────────────────
+    // Opens the copy-a-prompt / paste-the-reply dialog. What comes back
+    // lands in the WORKING copy as a single undo step, so a design that
+    // misses is one Ctrl+Z away and never reaches the themes list. The
+    // dialog validates the paste with ThemeService before calling this, so
+    // anything arriving here is already known to survive Save.
+    function openAiDesign() {
+        AppState.openModal("aiDesign", {
+            kind:          workspace.themeKind,
+            currentTokens: workspace.workingTheme.toTokens(),
+            onApply: function(tokens, name, kind) {
+                workspace.workingTheme.loadFrom(tokens)
+                workspace.selectedNodeId = ""
+                // The AI names what it designs. On a theme still sitting at
+                // its placeholder name that beats "Untitled", but on one the
+                // user has already named it is not ours to overwrite.
+                if (name && workspace._isNew
+                    && (workspace.themeName === ""
+                        || workspace.themeName === qsTr("Untitled"))) {
+                    workspace.themeName = name
+                }
+                workspace.saveToHistory()
+            }
+        })
+    }
+
     // ── Save / cancel ─────────────────────────────────────────────────
     // Surfaced when ThemeService refuses the tokens (validation) or the
     // write itself fails. The C++ side logs to qWarning and returns a

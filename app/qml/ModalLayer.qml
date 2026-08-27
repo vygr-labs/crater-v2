@@ -81,6 +81,13 @@ Item {
         sourceComponent: ExportThemeDialog { }
     }
 
+    // ── Design with AI (theme editor) ───────────────────────────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "aiDesign"
+        sourceComponent: AiDesignDialog { }
+    }
+
     // ── Schedule dropdown popover (anchored under TopBar) ───────────────
     Loader {
         anchors.fill: parent

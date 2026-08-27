@@ -194,6 +194,7 @@ qt_add_qml_module(crater
         qml/dialogs/PresentationEditorDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
+        qml/dialogs/AiDesignDialog.qml
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml

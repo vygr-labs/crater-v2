@@ -43,6 +43,7 @@ add_library(crater-core STATIC
     src/ScheduleService.cpp
     src/ThemeService.cpp
     src/ThemeTokens.cpp
+    src/ThemePrompt.cpp
     src/MediaService.cpp
     src/FontService.cpp
     src/OutputService.cpp
