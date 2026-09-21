@@ -21,8 +21,9 @@ class NdiRenderer;
 // Qt6::Quick-free. The companion services here (FileDialogService,
 // MediaPlaybackService, VideoThumbnailer) follow the same pattern.
 //
-// Runtime loading: `Processing.NDI.Lib.x64.dll` (Windows) is dynamically
-// loaded via QLibrary at construction. If absent (NDI Tools not installed),
+// Runtime loading: `Processing.NDI.Lib.x64.dll` (Windows), `libndi.dylib`
+// (macOS) or `libndi.so.6` (Linux) is dynamically loaded via QLibrary at
+// construction. If absent (NDI Tools not installed),
 // `available` stays false and start() refuses; the Settings dialog reflects
 // that via `diagnostic`. We never link against the NDI SDK at build time —
 // the ABI we need is mirrored in src/NdiAbi.h.
@@ -47,7 +48,7 @@ class NdiService : public QObject
 {
     Q_OBJECT
 
-    // True when the NDI runtime (Processing.NDI.Lib.x64.dll) loaded
+    // True when the NDI runtime library loaded
     // successfully AND initialised. Drives the dialog's "is this section
     // operable" guard.
     Q_PROPERTY(bool    available    READ available    NOTIFY availableChanged)
