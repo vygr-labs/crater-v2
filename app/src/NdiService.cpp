@@ -115,29 +115,33 @@ NdiService::NdiService(QObject* parent)
     : QObject(parent)
     , m_impl(std::make_unique<Impl>())
 {
-    // Locate the NDI runtime. Standard `Processing.NDI.Lib.x64.dll` on PATH
-    // is the happy path; in practice the installer's PATH update doesn't
-    // always propagate to a running app, so we probe known install paths
-    // + the env vars NDI sets system-wide. We log each attempt so the log
-    // tells a clear story when load still fails despite NDI being present.
+    // Locate the NDI runtime. We log each attempt so the log tells a clear
+    // story when load still fails despite NDI being present.
     QStringList candidates;
-    candidates << QStringLiteral("Processing.NDI.Lib.x64");  // PATH search
 
-    // Env vars set by the NDI 5 / NDI 6 installers — these survive any
-    // PATH issues. Strip trailing slash defensively before appending.
-    auto appendFromEnv = [&candidates](const char* envName) {
+    // Env vars set by the NDI 5 / NDI 6 installers on every platform — these
+    // survive any PATH issues. Strip trailing slash defensively before
+    // appending.
+    auto appendFromEnv = [&candidates](const char* envName, const QString& fileName) {
         const QByteArray raw = qgetenv(envName);
         if (raw.isEmpty()) return;
         QString dir = QString::fromLocal8Bit(raw);
         while (dir.endsWith(QLatin1Char('/')) || dir.endsWith(QLatin1Char('\\'))) {
             dir.chop(1);
         }
-        candidates << (dir + QStringLiteral("/Processing.NDI.Lib.x64.dll"));
+        candidates << (dir + QLatin1Char('/') + fileName);
     };
-    appendFromEnv("NDI_RUNTIME_DIR_V6");
-    appendFromEnv("NDI_RUNTIME_DIR_V5");
-    appendFromEnv("NDI_RUNTIME_DIR_V4");
-    appendFromEnv("NDI_SDK_DIR");
+
+#if defined(Q_OS_WIN)
+    // `Processing.NDI.Lib.x64.dll` on PATH is the happy path; in practice
+    // the installer's PATH update doesn't always propagate to a running app,
+    // so we also probe the env vars and the known install paths.
+    const QString dllName = QStringLiteral("Processing.NDI.Lib.x64.dll");
+    candidates << QStringLiteral("Processing.NDI.Lib.x64");  // PATH search
+    appendFromEnv("NDI_RUNTIME_DIR_V6", dllName);
+    appendFromEnv("NDI_RUNTIME_DIR_V5", dllName);
+    appendFromEnv("NDI_RUNTIME_DIR_V4", dllName);
+    appendFromEnv("NDI_SDK_DIR", dllName);
 
     // Standard install paths, derived from %ProgramFiles% so the search
     // works on systems where Windows isn't on C:\ (or where Program Files
@@ -175,8 +179,29 @@ NdiService::NdiService(QObject* parent)
     };
     withPrefix(qEnvironmentVariable("ProgramFiles"));
     withPrefix(qEnvironmentVariable("ProgramFiles(x86)"));
+#elif defined(Q_OS_MACOS)
+    // The NDI runtime that NDI Tools installs is expected at
+    // /usr/local/lib/libndi.dylib, which the bare-name dlopen also reaches
+    // through dyld's default fallback path. The SDK keeps its own copy.
+    const QString dylibName = QStringLiteral("libndi.dylib");
+    appendFromEnv("NDI_RUNTIME_DIR_V6", dylibName);
+    appendFromEnv("NDI_RUNTIME_DIR_V5", dylibName);
+    candidates << dylibName
+               << QStringLiteral("/usr/local/lib/libndi.dylib")
+               << QStringLiteral("/Library/NDI SDK for Apple/lib/macOS/libndi.dylib");
+#else
+    // Linux ships the library versioned per major (libndi.so.6 for NDI 6).
+    // Bare names go through the normal ld.so search, which covers the
+    // distro packages and an SDK install registered with ldconfig.
+    appendFromEnv("NDI_RUNTIME_DIR_V6", QStringLiteral("libndi.so.6"));
+    appendFromEnv("NDI_RUNTIME_DIR_V5", QStringLiteral("libndi.so.5"));
+    candidates << QStringLiteral("libndi.so.6")
+               << QStringLiteral("libndi.so.5")
+               << QStringLiteral("/usr/local/lib/libndi.so.6")
+               << QStringLiteral("/usr/local/lib/libndi.so.5");
+#endif
 
-    qInfo() << "NDI: probing for runtime DLL across" << candidates.size() << "candidate paths";
+    qInfo() << "NDI: probing for runtime library across" << candidates.size() << "candidate paths";
     QString lastError;
     for (const QString& path : std::as_const(candidates)) {
         m_impl->lib.setFileName(path);
@@ -189,10 +214,22 @@ NdiService::NdiService(QObject* parent)
     }
 
     if (!m_impl->lib.isLoaded()) {
+        // The Windows wording is kept verbatim: the translation catalogs key
+        // on it. The other platforms name their own library file.
+#if defined(Q_OS_WIN)
         m_impl->diagnostic = tr(
             "NDI runtime not found. Install NDI Tools (ndi.video/tools) or set "
             "NDI_RUNTIME_DIR_V6 / V5 to the directory containing "
             "Processing.NDI.Lib.x64.dll.");
+#elif defined(Q_OS_MACOS)
+        m_impl->diagnostic = tr(
+            "NDI runtime not found. Install NDI Tools (ndi.video/tools) or set "
+            "NDI_RUNTIME_DIR_V6 to the directory containing libndi.dylib.");
+#else
+        m_impl->diagnostic = tr(
+            "NDI runtime not found. Install the NDI SDK for Linux (ndi.video) or "
+            "set NDI_RUNTIME_DIR_V6 to the directory containing libndi.so.6.");
+#endif
         qWarning().noquote() << "NDI: all probe paths failed; last error =" << lastError;
         return;
     }

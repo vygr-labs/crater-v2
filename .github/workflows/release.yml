@@ -3,13 +3,13 @@ name: Release
 # One-click release driver. Click "Run workflow", choose patch / minor /
 # major, and:
 #   1. Compute the next version from the latest `v*` git tag.
-#   2. Build Windows + macOS in parallel with that version baked in.
-#   3. Only if BOTH builds succeed: commit the CMakeLists.txt bump, tag,
+#   2. Build Windows, macOS and Linux in parallel with that version baked in.
+#   3. Only if EVERY build succeeds: commit the CMakeLists.txt bump, tag,
 #      push, and create a draft GitHub release with all artifacts attached.
 #
 # Failure modes do NOT touch main or create a tag. The "increment only on
 # success" guarantee falls out of the job graph: the `publish` job needs
-# both build jobs to pass.
+# every build job to pass.
 
 on:
   workflow_dispatch:
@@ -106,9 +106,16 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
 
+  build-linux:
+    name: Build Linux
+    needs: version
+    uses: ./.github/workflows/release-build-linux.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
   publish:
     name: Bump, tag, draft release
-    needs: [version, build-windows, build-macos]
+    needs: [version, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -131,7 +138,7 @@ jobs:
         # The in-app updater (app/src/UpdateService.cpp) refuses to run an
         # installer it cannot verify, and this is the file it verifies
         # against. Generated in the publish job rather than in each build
-        # job because only this one has all four artifacts in one place, and
+        # job because only this one has all five artifacts in one place, and
         # a single file covering every platform means the updater fetches
         # one small extra object instead of one per asset.
         #
@@ -153,17 +160,18 @@ jobs:
           find . -type f \( -name 'Crater-*-win64.zip' \
                          -o -name 'Crater-Setup-*.exe' \
                          -o -name 'Crater-*-macos.zip' \
-                         -o -name 'Crater-*-macos.dmg' \) -print0 \
+                         -o -name 'Crater-*-macos.dmg' \
+                         -o -name 'Crater-*-x86_64.AppImage' \) -print0 \
             | sort -z \
             | xargs -0 sha256sum \
             | awk '{ n = $2; sub(/^\*/, "", n); sub(/.*\//, "", n); printf "%s  %s\n", $1, n }' \
             > ../SHA256SUMS.txt
           echo '--- SHA256SUMS.txt ---'
           cat ../SHA256SUMS.txt
-          # Four artifacts in, four lines out. A short file here means an
+          # Five artifacts in, five lines out. A short file here means an
           # upload job silently produced nothing, which must fail the
           # release rather than ship an unverifiable download.
-          test "$(wc -l < ../SHA256SUMS.txt)" -eq 4
+          test "$(wc -l < ../SHA256SUMS.txt)" -eq 5
 
       - name: Bump CMakeLists.txt
         # Identical edit to the one each build job made locally — we redo
@@ -222,7 +230,7 @@ jobs:
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: Crater ${{ needs.version.outputs.tag }}
-          # Draft so the human can eyeball the four artifacts before users
+          # Draft so the human can eyeball the five artifacts before users
           # see them. Switch to `draft: false` to ship straight to public.
           draft: true
           generate_release_notes: true
@@ -232,4 +240,5 @@ jobs:
             artifacts/**/Crater-Setup-*.exe
             artifacts/**/Crater-*-macos.zip
             artifacts/**/Crater-*-macos.dmg
+            artifacts/**/Crater-*-x86_64.AppImage
             SHA256SUMS.txt

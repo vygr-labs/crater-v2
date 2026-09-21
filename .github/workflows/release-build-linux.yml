@@ -1,0 +1,190 @@
+name: Build Linux (reusable)
+
+# Reusable build for the Linux platform. Called by release.yml (the
+# orchestrator); workflow_dispatch is there to iterate on this platform
+# alone, same as the Windows and macOS builds.
+#
+# Contract:
+#   inputs.version  -- semver (no leading 'v') used to name the artifact and
+#                      pinned into CMakeLists.txt's VERSION before building
+#                      so the binary reports the same version the AppImage
+#                      filename advertises.
+#
+# Output: a single workflow artifact `crater-linux-<version>` holding the
+#   AppImage. The orchestrator picks it up via actions/download-artifact and
+#   attaches it to the GitHub release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Semver to build (no leading v)'
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for this debug build (e.g. 0.6.0-test)'
+        type: string
+        required: true
+
+jobs:
+  build:
+    name: Build, package
+    # The oldest runner image still offered, on purpose. An AppImage carries
+    # its libraries but not glibc, so the build host's glibc (2.35 here) is
+    # the floor for every user: Ubuntu 22.04, Debian 12, Fedora 36 and newer.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pin CMakeLists.txt to v${{ inputs.version }}
+        # Same local-only edit as the macOS job; the orchestrator's publish
+        # job commits the identical change to main after every build passes.
+        shell: bash
+        env:
+          NEW_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path('CMakeLists.txt')
+          text = p.read_text()
+          new = re.sub(
+              r'(project\(Crater\s+VERSION\s+)\d+\.\d+\.\d+',
+              r'\g<1>' + os.environ['NEW_VERSION'],
+              text, count=1)
+          if new == text:
+              raise SystemExit('CMakeLists.txt VERSION not replaced')
+          p.write_text(new)
+          PY
+          echo ">>> CMakeLists.txt pinned to $NEW_VERSION"
+
+      - name: Install build and bundling dependencies
+        # Build side: OpenGL/EGL/Vulkan and xkbcommon headers that Qt6Gui's
+        # CMake package looks for. Bundle side: the xcb helper libraries the
+        # Qt xcb platform plugin links, which linuxdeploy copies into the
+        # AppImage so users don't need them (libxcb-cursor0 in particular is
+        # missing from many desktops and is required since Qt 6.5). xvfb is
+        # for the launch smoke test below.
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            libxkbcommon-dev libxkbcommon-x11-0 \
+            libfontconfig1-dev libfreetype6-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 libxcb-sync1 libxcb-xfixes0 libxcb-shm0 libxcb-util1 \
+            libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+            libpulse0 libdbus-1-3 \
+            xvfb
+
+      - name: Install Qt 6.11
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.1'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          # Same add-on set as the Windows and macOS jobs. The Wayland client
+          # platform plugin is part of the base kit.
+          modules: 'qtmultimedia qtpdf qtwebsockets qtshadertools'
+          cache: true
+          extra: '--base https://download.qt.io/'
+          # Same aqt pin as the Windows job; see comment there.
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b'
+
+      - name: Cache bibles.sqlite
+        uses: actions/cache@v4
+        with:
+          path: packaging/bibles.sqlite
+          key: bibles-sqlite-data-v1-${{ runner.os }}
+
+      - name: Cache Strong's databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            packaging/strongs-dictionary.sqlite
+            packaging/strongs-bible.sqlite
+          key: strongs-sqlite-data-v1-${{ runner.os }}
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Run release script
+        shell: bash
+        env:
+          CMAKE_C_COMPILER_LAUNCHER:   sccache
+          CMAKE_CXX_COMPILER_LAUNCHER: sccache
+        run: |
+          bash ./scripts/release-linux.sh \
+            --qt-dir "$QT_ROOT_DIR" \
+            --version '${{ inputs.version }}' \
+            --clean
+
+      - name: sccache stats
+        if: always()
+        shell: bash
+        run: sccache --show-stats
+
+      - name: Smoke-test the AppImage
+        # Launches the packaged app on a virtual X display and requires it to
+        # reach the event loop with its QML intact. This is what catches a
+        # bundle that builds fine but is missing a plugin, a QML module or a
+        # library, which otherwise only shows up on a user's machine.
+        #
+        # The AppImage is extracted and its AppRun started directly, so the
+        # timeout signal reaches the app itself instead of the AppImage
+        # runtime wrapped around it. Surviving the full timeout (exit 124)
+        # is the pass condition; exiting earlier means it crashed or quit.
+        # The runner is a fresh profile, so this is also a first launch: the
+        # Bible import has to find the databases staged inside the bundle.
+        shell: bash
+        run: |
+          set -u
+          appimage=$(ls dist/Crater-*-x86_64.AppImage)
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null
+          Xvfb :99 -screen 0 1920x1080x24 &
+          xvfb_pid=$!
+          sleep 2
+          set +e
+          DISPLAY=:99 QT_QPA_PLATFORM=xcb timeout 90 ./squashfs-root/AppRun
+          code=$?
+          set -e
+          kill "$xvfb_pid" || true
+          log=$(find "$HOME/.local/share" -name crater.log -print -quit 2>/dev/null || true)
+          if [[ -n "$log" ]]; then cat "$log"; else echo 'crater.log was never written'; fi
+          if [[ $code -ne 124 ]]; then
+            echo "::error::Crater exited with code $code before the 90 s smoke window ended"
+            exit 1
+          fi
+          [[ -n "$log" ]] || exit 1
+          fail=0
+          grep -q 'entering event loop' "$log" || {
+            echo '::error::Crater never reached its event loop'; fail=1; }
+          grep -q 'Importer: using legacy DB at' "$log" || {
+            echo '::error::First-run import did not find the bundled bibles.sqlite'; fail=1; }
+          if grep -E 'failed to load component|is not installed|module ".*" plugin ".*" not found|Could not load the Qt platform plugin|StrongsService: .* not found' "$log"; then
+            echo '::error::Loading errors in crater.log (matched lines above)'
+            fail=1
+          fi
+          [[ $fail -eq 0 ]]
+          echo '>>> AppImage launched, imported its Bible data and reached the event loop'
+
+      - name: List artifacts
+        shell: bash
+        run: ls -lh dist/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crater-linux-${{ inputs.version }}
+          path: dist/Crater-*-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 14

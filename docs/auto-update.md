@@ -42,7 +42,7 @@ The rest follows from the same rule:
 | Checksum lookup | `core/src/Checksums.cpp` | Same reasoning. |
 | Operator UI | `app/qml/dialogs/settings/UpdatesSection.qml` | Holds no update logic; it chooses which service state to render. |
 | The dot | `app/qml/panels/TopBar.qml` | Bound to `UpdateService.state`. |
-| Checksum generation | `.github/workflows/release.yml` (publish job) | Only that job has all four artifacts in one place. |
+| Checksum generation | `.github/workflows/release.yml` (publish job) | Only that job has all five artifacts in one place. |
 | Relaunch after install | `packaging/crater.iss` (`LaunchRequested`) | Inno needs to know an in-app update wants the app back. |
 
 `architecture.md` §4 lists `UpdateService` in the service catalog. It is
@@ -222,7 +222,12 @@ not a second read of the finished file.
   across. A running `.app` cannot replace itself without a separate helper
   binary, and shipping one to save a drag is not a trade worth making.
 
-- **`unsupported`** — no installer artifact is published for this platform.
+- **`unsupported`** (Linux, and anything else) — the service offers no
+  in-app install. Releases do publish `Crater-<version>-x86_64.AppImage`,
+  but `platformAssetName` does not name it yet, so a Linux build reports the
+  update and points the operator at the release page. Replacing the
+  running AppImage in place (it lives at `$APPIMAGE`) is the natural next
+  step; it has not been built.
 
 ## 8. Settings and persistence
 

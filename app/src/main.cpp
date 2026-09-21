@@ -219,6 +219,22 @@ void registerBodyFont()
     qInfo().noquote() << "Funnel Sans registered as:" << families.join(", ");
 }
 
+// Where the pre-Qt bootstrap trace goes. Windows keeps the relative path it
+// has always used, so the file lands in the working directory. A Linux
+// desktop launch starts in $HOME and a macOS one in the read-only /, so
+// there it goes to the temp dir instead of littering the operator's home
+// folder or silently failing.
+QByteArray bootstrapLogPath()
+{
+#ifdef Q_OS_WIN
+    return QByteArrayLiteral("crater-bootstrap.log");
+#else
+    QByteArray dir = qgetenv("TMPDIR");
+    if (dir.isEmpty()) dir = QByteArrayLiteral("/tmp");
+    return dir + QByteArrayLiteral("/crater-bootstrap.log");
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -229,12 +245,13 @@ int main(int argc, char* argv[])
     QElapsedTimer startupClock;
     startupClock.start();
 
-    // Early bootstrap trace — writes to a fixed file beside the exe BEFORE
-    // any Qt code runs. If the main log is empty but this file exists, the
-    // exe loaded fine and the crash is inside Qt initialization. If even
-    // this file doesn't appear, the binary failed to load (most often a
-    // missing DLL on Windows — check QtWidgets.dll deployment).
-    if (FILE* boot = std::fopen("crater-bootstrap.log", "w")) {
+    // Early bootstrap trace — writes to a fixed file (see bootstrapLogPath)
+    // BEFORE any Qt code runs. If the main log is empty but this file
+    // exists, the exe loaded fine and the crash is inside Qt initialization.
+    // If even this file doesn't appear, the binary failed to load (most
+    // often a missing DLL on Windows — check QtWidgets.dll deployment).
+    const QByteArray bootLog = bootstrapLogPath();
+    if (FILE* boot = std::fopen(bootLog.constData(), "w")) {
         std::fprintf(boot, "main() entered (argc=%d)\n", argc);
         std::fflush(boot);
         std::fclose(boot);
@@ -255,6 +272,23 @@ int main(int argc, char* argv[])
     // falls back to the native backend — so this is safe to set.
     qputenv("QT_MEDIA_BACKEND", "ffmpeg");
 
+#ifdef Q_OS_LINUX
+    // Prefer X11 (XWayland on a Wayland session) unless the operator picked
+    // a platform. Wayland never lets a client place or stack its own
+    // windows, and the projection window depends on both: it parks itself
+    // off the desktop while NDI still needs frames, anchors its windowed
+    // thumbnail to a corner of the target screen, and uses the stay-on-top
+    // and stay-on-bottom hints. "xcb;wayland" still falls back to native
+    // Wayland on a session with no XWayland, and QT_QPA_PLATFORM=wayland
+    // opts in explicitly.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "xcb;wayland");
+
+    // Matches packaging/linux/crater.desktop, so the dock and task switcher
+    // group Crater's windows under the launcher's icon.
+    QGuiApplication::setDesktopFileName(QStringLiteral("crater"));
+#endif
+
     QApplication app(argc, argv);
 
     // Brand mark for every Qt-managed window surface (title bar, taskbar
@@ -267,7 +301,7 @@ int main(int argc, char* argv[])
     // Second bootstrap marker — confirms QApplication constructed without
     // dying. Anything past this point logs to the normal log file via
     // qInstallMessageHandler in initLogging().
-    if (FILE* boot = std::fopen("crater-bootstrap.log", "a")) {
+    if (FILE* boot = std::fopen(bootLog.constData(), "a")) {
         std::fprintf(boot, "QApplication constructed\n");
         std::fclose(boot);
     }

@@ -51,6 +51,14 @@ cmake --build build --config Release
 On Linux/macOS, set `CMAKE_PREFIX_PATH` to your Qt install (e.g.
 `~/Qt/6.11.0/gcc_64`) and use the standard `cmake --build build` flow.
 
+Release packages come from one script per platform, each run verbatim by
+the Release workflow: `scripts/release.ps1` (Windows installer + ZIP),
+`scripts/release.sh` (macOS DMG + ZIP) and `scripts/release-linux.sh`
+(Linux AppImage). The Linux AppImage needs glibc 2.35 or newer (Ubuntu
+22.04, Debian 12, Fedora 36 and up) and runs on X11 by default, through
+XWayland on a Wayland session, because Wayland does not let the projection
+window place itself. Set `QT_QPA_PLATFORM=wayland` to run natively.
+
 ## Layout
 
 ```

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Crater
+GenericName=Worship Projection
+Comment=Project scripture, songs and media to a second screen
+Exec=crater
+Icon=crater
+Terminal=false
+Categories=Office;Presentation;
+Keywords=church;worship;projection;lyrics;bible;scripture;presentation;
+StartupWMClass=Crater
