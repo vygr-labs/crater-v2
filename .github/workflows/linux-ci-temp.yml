@@ -12,4 +12,4 @@ jobs:
   linux:
     uses: ./.github/workflows/release-build-linux.yml
     with:
-      version: '0.7.2'
+      version: '0.7.99'
