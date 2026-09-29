@@ -191,19 +191,24 @@ bool isHexColor(const QString& s)
 
 void validateStyleCommon(const QVariantMap& style, int idx, QStringList& errs)
 {
-    const auto must01to100 = [&](const char* field) {
+    const auto mustBeIn = [&](const char* field, double lo, double hi) {
         if (!isFiniteNumber(style.value(field))) {
             errs << QStringLiteral("nodes[%1].style.%2 must be a number").arg(idx).arg(field);
             return;
         }
         const double v = style.value(field).toDouble();
-        if (!inRange(v, 0.0, 100.0))
-            errs << QStringLiteral("nodes[%1].style.%2 must be 0..100").arg(idx).arg(field);
+        if (!inRange(v, lo, hi))
+            errs << QStringLiteral("nodes[%1].style.%2 must be %3..%4")
+                        .arg(idx).arg(field).arg(lo).arg(hi);
     };
-    must01to100("x");
-    must01to100("y");
-    must01to100("width");
-    must01to100("height");
+    // A node may start off the canvas (a slide-in lower third, an image
+    // bleeding past the edge). The editor's drag, arrow-nudge and X/Y
+    // inputs all allow -200..200, so saving has to accept the same range
+    // or a theme the editor built can never be saved.
+    mustBeIn("x", -200.0, 200.0);
+    mustBeIn("y", -200.0, 200.0);
+    mustBeIn("width",  0.0, 100.0);
+    mustBeIn("height", 0.0, 100.0);
 
     if (style.contains("opacity")) {
         if (!isFiniteNumber(style.value("opacity")) ||

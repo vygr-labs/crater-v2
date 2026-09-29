@@ -92,8 +92,8 @@ Every node:
 
 | Field      | Required | Type / range                         | Notes |
 |------------|----------|--------------------------------------|-------|
-| `x`        | **yes**  | number `0..100`                      | Left edge, % of canvas width |
-| `y`        | **yes**  | number `0..100`                      | Top edge, % of canvas height |
+| `x`        | **yes**  | number `-200..200`                   | Left edge, % of canvas width. Negative or past 100 sits off the canvas |
+| `y`        | **yes**  | number `-200..200`                   | Top edge, % of canvas height |
 | `width`    | **yes**  | number `0..100`                      | % of canvas width |
 | `height`   | **yes**  | number `0..100`                      | % of canvas height |
 | `z`        | no       | integer                              | Paint order; higher = on top. Default 0 |
@@ -492,7 +492,7 @@ linkage at all — see the note in §4.
 - [ ] Every layout has a unique `id` and a non-empty `name`; at most one sets
       `"default": true`; each holds a non-empty `nodes`.
 - [ ] Every node has an `id` unique **within its layout**, a `kind`, and
-      `style.x/y/width/height` in `0..100`.
+      `style.x/y` in `-200..200` and `style.width/height` in `0..100`.
 - [ ] Every text node has `style.color` and `data.linkage`.
 - [ ] Colors are `#rrggbb` or `#aarrggbb`; gradients have 2–6 stops.
 - [ ] `z` orders: background (low) → scrim → text (high).

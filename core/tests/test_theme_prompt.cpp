@@ -303,6 +303,27 @@ private slots:
         QVERIFY(!r.value(QStringLiteral("error")).toString().isEmpty());
     }
 
+    // The editor lets a layer sit partly off the canvas (drag, arrow keys
+    // and the X/Y inputs all allow -200..200). Save has to accept what the
+    // editor can build, or the theme can never be saved (issue #15).
+    void acceptsNodesPlacedOffTheCanvas()
+    {
+        ThemeService ts;
+        auto tokensWithTitleAt = [](const QString& x) {
+            QString json = bareTokensJson();
+            json.replace(QStringLiteral("\"x\": 8"), QStringLiteral("\"x\": ") + x);
+            return QJsonDocument::fromJson(json.toUtf8()).object().toVariantMap();
+        };
+        QVERIFY2(ts.validateTokens(tokensWithTitleAt(QStringLiteral("-40"))).isEmpty(),
+                 "a node partly off the left edge was refused");
+        QVERIFY2(ts.validateTokens(tokensWithTitleAt(QStringLiteral("150"))).isEmpty(),
+                 "a node past the right edge was refused");
+
+        const QStringList far = ts.validateTokens(tokensWithTitleAt(QStringLiteral("-250")));
+        QVERIFY2(!far.isEmpty(), "a node beyond the editor's own range was accepted");
+        QVERIFY(far.join(QLatin1Char(' ')).contains(QStringLiteral("style.x")));
+    }
+
     void rejectsTextWithNoJsonInIt()
     {
         ThemeService ts;
