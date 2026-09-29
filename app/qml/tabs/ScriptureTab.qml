@@ -374,15 +374,15 @@ Item {
         // not designed for multi-verse content.
         //
         // The verse number is wrapped in DSL markup — bold (**…**) so it
-        // reads as the heaviest run on the slide, and {color=yellow} (the
-        // palette's #fdd835, the same gold the default theme uses for its
-        // reference label) so it stands distinct from the verse body. This
-        // is build-time, not render-time, on purpose: every surface that
-        // shows this content (ProjectionContentLayer, ThemedMonitor, and the
-        // Preview/Live page-list cards) feeds it through LyricsService.dslToHtml,
-        // so a concrete color marker renders identically on all of them. A
-        // per-theme "match the scriptureRef node color" scheme would only
-        // reach the two resolveText paths and skip the thumbnail cards.
+        // reads as the heaviest run on the slide, and {color=verse} so it
+        // stands distinct from the verse body. `verse` is a semantic palette
+        // name: every surface that shows this content (ProjectionContentLayer,
+        // ThemedMonitor, and the Preview/Live page-list cards) feeds it
+        // through LyricsService.dslToHtml, where it resolves to the palette's
+        // gold, so the cards always have a colour. The theme surfaces go
+        // through NodeRenderer, which swaps in the verse node's
+        // data.verseNumberColor when the theme sets one, so the projector
+        // matches the theme and the operator's cards stay gold.
         // dslToHtml HTML-escapes the body text, so only our own markers are
         // interpreted; the verse body already flowed through the DSL parser
         // before this change, so no new escaping surface is introduced.
@@ -400,7 +400,7 @@ Item {
         // always use; a light-background theme would want the inverse.)
         const composePassage = function(activeIndex) {
             return usable.map(function(v, j) {
-                const num  = "{color=yellow}**" + v.verse + ".**{/color} "
+                const num  = "{color=verse}**" + v.verse + ".**{/color} "
                 const body = (activeIndex < 0 || j === activeIndex)
                     ? v.text
                     : "{color=gray}" + v.text + "{/color}"
