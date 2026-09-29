@@ -337,6 +337,25 @@ set_target_properties(crater PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}"
 )
 
+# macOS bundle identity. Left unset, Qt fills the Info.plist with
+# placeholders: com.yourcompany.crater, a two-part "0.7" version and no icon
+# (issue #21). The identifier matches the organisation domain QSettings
+# already uses (tech.voyagerlabs.Crater). crater.icns is rendered from
+# resources/brand/crater.svg, the same source as packaging/crater.ico.
+if(APPLE)
+    set(CRATER_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.icns")
+    target_sources(crater PRIVATE "${CRATER_ICNS}")
+    set_source_files_properties("${CRATER_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources")
+    set_target_properties(crater PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER       "tech.voyagerlabs.Crater"
+        MACOSX_BUNDLE_BUNDLE_NAME          "Crater"
+        MACOSX_BUNDLE_ICON_FILE            "crater.icns"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION       "${PROJECT_VERSION}"
+    )
+endif()
+
 # Qt's auto-deploy for the build tree copies most Qt-Quick modules but
 # does NOT follow recent additions to target_link_libraries (Qt6::Widgets)
 # or QML-only imports outside its scanned set (QtMultimedia). Without
