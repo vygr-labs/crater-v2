@@ -40,6 +40,7 @@ struct MediaItem
     Q_PROPERTY(QRectF  cropRect   MEMBER crop)
     Q_PROPERTY(bool    loopVideo  MEMBER loopVideo)
     Q_PROPERTY(bool    muted      MEMBER muted)
+    Q_PROPERTY(qint64  fileSize   MEMBER fileSize)
 
 public:
     qint64  id         = 0;
@@ -54,6 +55,7 @@ public:
     QRectF  crop       = QRectF(0, 0, 1, 1);         // normalized 0..1 crop sub-region
     bool    loopVideo  = true;                        // video: restart at end
     bool    muted      = false;                       // video: force-mute
+    qint64  fileSize   = 0;   // bytes on disk, read when the row is loaded; 0 if missing
 };
 
 }  // namespace crater
