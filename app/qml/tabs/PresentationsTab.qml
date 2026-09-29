@@ -130,7 +130,7 @@ Item {
     // same deck.
     function deckMenuItems(deck, index) {
         return [
-            { label: qsTr("Edit Presentation"), iconName: "edit", kbd: "E",
+            { label: qsTr("Edit Presentation"), iconName: "edit",
               action: function() {
                   AppState.openModal("presentationEditor", { presentationId: deck.id })
               } },
@@ -142,7 +142,7 @@ Item {
             { label: qsTr("Push to Live"), iconName: "play",
               action: function() { root.pushLiveFor(index) } },
             { separator: true },
-            { label: qsTr("Delete"), iconName: "trash", kbd: "Del",
+            { label: qsTr("Delete"), iconName: "trash",
               destructive: true,
               action: function() { root.confirmDelete(deck) } }
         ]

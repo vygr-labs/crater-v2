@@ -124,17 +124,17 @@ Item {
                           if (id) { workspace.selectedNodeId = id; workspace.saveToHistory() }
                       } },
                     { separator: true },
-                    { label: qsTr("Zoom in"),  iconName: "zoom-in",  kbd: "+",
+                    { label: qsTr("Zoom in"),  iconName: "zoom-in",  kbd: "Ctrl++",
                       action: function() {
                           workspace.zoom = Math.min(4.0,
                               Math.round((workspace.zoom + 0.1) * 10) / 10)
                       } },
-                    { label: qsTr("Zoom out"), iconName: "zoom-out", kbd: "-",
+                    { label: qsTr("Zoom out"), iconName: "zoom-out", kbd: "Ctrl+-",
                       action: function() {
                           workspace.zoom = Math.max(0.1,
                               Math.round((workspace.zoom - 0.1) * 10) / 10)
                       } },
-                    { label: qsTr("Reset zoom"), iconName: "maximize-2", kbd: "0",
+                    { label: qsTr("Reset zoom"), iconName: "maximize-2", kbd: "Ctrl+0",
                       action: function() { workspace.zoom = 1.0 } }
                 ]
             }

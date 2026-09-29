@@ -314,7 +314,6 @@ Item {
                     : qsTr("Add to Favorites"),
               iconName: media.isFavorite ? "heart-off" : "heart",
               action: function() { MediaService.toggleFavorite(media.id) } },
-            { label: qsTr("Add to Collection…"), iconName: "folder" },
             { separator: true },
             { label: qsTr("Delete"), iconName: "trash", destructive: true,
               action: function() {

@@ -328,7 +328,10 @@ Item {
     // etc.), so a single check is enough.
     readonly property string shortcutLabel: {
         const mod = Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
-        return tabKey === "scripture" ? (mod + "F") : (mod + "A")
+        // Only Scripture has a shortcut behind its box (Ctrl+F switches
+        // search mode). Other tabs show no chip rather than a key that
+        // does nothing.
+        return tabKey === "scripture" ? (mod + "F") : ""
     }
 
     // Interpreted reference (scripture tab, reference mode only). The
@@ -856,7 +859,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
-            visible: inputField.text.length === 0
+            visible: inputField.text.length === 0 && root.shortcutLabel.length > 0
             width: hintText.implicitWidth + 12
             height: 18
             radius: 0

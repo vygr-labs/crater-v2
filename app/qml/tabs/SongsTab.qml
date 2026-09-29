@@ -399,14 +399,14 @@ Item {
 
                         let items = []
                         if (focusedSong) {
-                            items.push({ label: qsTr("Edit Song"), iconName: "edit", kbd: "E",
+                            items.push({ label: qsTr("Edit Song"), iconName: "edit",
                                 action: function() {
                                     AppState.openModal("songEditor", { songId: focusedSong.id })
                                 }})
                             items.push({ label: qsTr("Duplicate Song"), iconName: "copy",
                                 action: function() { SongService.duplicate(focusedSong.id) }})
                             items.push({ separator: true })
-                            items.push({ label: qsTr("Delete Song"), iconName: "trash", kbd: "Del",
+                            items.push({ label: qsTr("Delete Song"), iconName: "trash",
                                 destructive: true,
                                 action: function() {
                                     AppState.openModal("confirm", {
@@ -434,8 +434,6 @@ Item {
                         items.push({ label: qsTr("Sort by Oldest"),      iconName: "sort-asc",
                             detail: cur === "oldest" ? "✓" : "",
                             action: function() { AppState.setLibrarySortMode("songs", "oldest") }})
-                        items.push({ separator: true })
-                        items.push({ label: qsTr("Refresh"), iconName: "refresh-cw" })
 
                         AppState.openContextMenuAt(gearBtn,
                             gearBtn.width, gearBtn.height + 4,
@@ -825,7 +823,7 @@ Item {
                 // song") and parks the destructive option at the bottom
                 // where slip-clicks are least likely.
                 menuItems: [
-                    { label: qsTr("Edit Song"), iconName: "edit", kbd: "E",
+                    { label: qsTr("Edit Song"), iconName: "edit",
                       action: function() {
                           AppState.openModal("songEditor", { songId: modelData.id })
                       } },
@@ -854,7 +852,7 @@ Item {
                         }
                     }] : []),
                     { separator: true },
-                    { label: qsTr("Delete Song"), iconName: "trash", kbd: "Del", destructive: true,
+                    { label: qsTr("Delete Song"), iconName: "trash", destructive: true,
                       action: function() {
                           AppState.openModal("confirm", {
                               title:       qsTr("Delete song?"),
