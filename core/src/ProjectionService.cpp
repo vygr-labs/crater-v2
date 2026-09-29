@@ -59,7 +59,10 @@ ProjectionService::ProjectionService(QObject* parent)
 {
     try {
         m_kv = std::make_unique<KvImpl>(db::DbPaths::appDbPath());
-        m_logoBgPath = m_kv->get(QString::fromLatin1(kLogoBgPathKey));
+        // The logo is always a managed media file, stored by its absolute
+        // path at the time it was picked.
+        m_logoBgPath = db::DbPaths::relocate(m_kv->get(QString::fromLatin1(kLogoBgPathKey)),
+                                             db::DbPaths::mediaDir());
         m_logoBgKind = m_kv->get(QString::fromLatin1(kLogoBgKindKey));
         // Forward-compat: pre-kind kv rows have a path but no kind. Default
         // to "image" since that was the only supported case before. The
