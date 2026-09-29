@@ -85,6 +85,26 @@ ModalShell {
         _slides = out
         _sel = 0
         _loadSlideIntoFields()
+        _baseline = _digest()
+        AppState.modalCloseOwner = root
+    }
+
+    // ── Unsaved-changes check ───────────────────────────────────────────
+    // Body, second column and notes are written into _slides in place
+    // without notifying (see _notifyingFields), so a live "dirty" binding
+    // would miss typing. Compare a digest taken at open against one taken
+    // when the operator tries to leave.
+    property string _baseline: ""
+    function _digest() {
+        return JSON.stringify([_title, _themeId, _slides])
+    }
+
+    // Called by AppState.requestCloseModal (Escape, backdrop, X) and Cancel.
+    function requestClose() {
+        // A second Escape while the prompt is up backs out of the prompt.
+        if (discardConfirm.visible) { discardConfirm.close(); return }
+        if (!_valid || _digest() === _baseline) { AppState.closeModal(); return }
+        discardConfirm.openConfirm()
     }
 
     // One place that knows a slide's shape. Everything that mints or copies
@@ -322,7 +342,7 @@ ModalShell {
 
                 GhostButton {
                     text: qsTr("Cancel")
-                    onClicked: AppState.closeModal()
+                    onClicked: root.requestClose()
                 }
                 PrimaryButton {
                     text: qsTr("Save")
@@ -881,6 +901,15 @@ ModalShell {
         id: mediaPicker
         targetId: root._curMediaId
         onMediaChosen: function(id) { root._setField("mediaId", id) }
+    }
+
+    ConfirmationOverlay {
+        id: discardConfirm
+        anchors.fill: parent
+        title:        qsTr("Discard changes?")
+        body:         qsTr("This presentation has unsaved changes. Close without saving?")
+        confirmLabel: qsTr("Discard")
+        onConfirmed:  AppState.closeModal()
     }
 
     // Small label + optional muted qualifier. Inline component rather than a

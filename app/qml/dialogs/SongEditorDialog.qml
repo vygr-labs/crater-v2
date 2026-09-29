@@ -112,7 +112,19 @@ ModalShell {
     property int _historyIndex: -1
     readonly property bool _canUndo: _historyIndex > 0
     readonly property bool _canRedo: _historyIndex < _history.length - 1
+    // Title, theme and the credit fields sit outside the section history,
+    // so they are compared against what the song opened with.
+    property string _baseTitle: ""
+    property int    _baseThemeId: 0
+    property string _baseAuthor: ""
+    property string _baseCopyright: ""
+    property string _baseCcli: ""
     readonly property bool _isDirty: _historyIndex > 0
+                                     || _title !== _baseTitle
+                                     || _themeId !== _baseThemeId
+                                     || _author !== _baseAuthor
+                                     || _copyright !== _baseCopyright
+                                     || _ccli !== _baseCcli
 
     // ── Theme list filtered to song-kind themes ─────────────────────────
     // Read once via ThemeService.allThemes and refiltered via the revision
@@ -170,7 +182,11 @@ ModalShell {
         if (_isEditMode) _loadExisting(_songId)
         else             _initFresh()
         titleInput.forceActiveFocus()
+        AppState.modalCloseOwner = root
     }
+
+    // Called by AppState.requestCloseModal (Escape, backdrop, X).
+    function requestClose() { _requestClose() }
 
     function _initFresh() {
         _title  = ""
@@ -178,6 +194,11 @@ ModalShell {
         _copyright = ""
         _ccli   = ""
         _themeId = 0
+        _baseTitle   = ""
+        _baseThemeId = 0
+        _baseAuthor    = ""
+        _baseCopyright = ""
+        _baseCcli      = ""
         const empty = [{ label: "", kind: "other", lines: [""] }]
         _sections = empty
         _history = [_clone(empty)]
@@ -203,6 +224,11 @@ ModalShell {
         _copyright = song.copyright || ""
         _ccli    = song.ccli || ""
         _themeId = song.themeId || 0
+        _baseTitle   = _title
+        _baseThemeId = _themeId
+        _baseAuthor    = _author
+        _baseCopyright = _copyright
+        _baseCcli      = _ccli
 
         const secs = []
         for (let i = 0; i < song.sections.length; i++) {
@@ -479,21 +505,13 @@ ModalShell {
     }
 
     function _requestClose() {
+        // A second Escape while the prompt is up backs out of the prompt.
+        if (discardConfirm.visible) { discardConfirm.close(); return }
         if (!_isDirty) { AppState.closeModal(); return }
-        // Stage a confirm dialog before tearing this one down. Closing the
-        // current modal then opening the confirm one fires the Loader churn,
-        // but our state vanishes with the dialog — so the onConfirm closure
-        // captures _isDirty by value before the modal teardown.
-        const sId = _songId
-        AppState.openModal("confirm", {
-            title:       qsTr("Discard changes?"),
-            body:        qsTr("You have unsaved changes to this song. Close without saving?"),
-            confirmText: qsTr("Discard"),
-            onConfirm:   function() {
-                // The confirm dialog calls closeModal() itself when its
-                // onConfirm returns — nothing else to do here.
-            }
-        })
+        // Ask in place. The shared "confirm" modal would replace this
+        // dialog (one modal slot), so Cancel there could never bring the
+        // edits back.
+        discardConfirm.openConfirm()
     }
 
     // ── Shortcuts (Qt.WindowShortcut while dialog is loaded) ────────────
@@ -1340,6 +1358,15 @@ ModalShell {
                 onClicked: root._saveSong()
             }
         }
+    }
+
+    ConfirmationOverlay {
+        id: discardConfirm
+        anchors.fill: parent
+        title:        qsTr("Discard changes?")
+        body:         qsTr("You have unsaved changes to this song. Close without saving?")
+        confirmLabel: qsTr("Discard")
+        onConfirmed:  AppState.closeModal()
     }
 
     function qmlWarn(msg) { console.warn(msg) }
