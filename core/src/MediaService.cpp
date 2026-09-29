@@ -10,12 +10,15 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QLocale>
 #include <QPdfDocument>
 #include <QSet>
 #include <QUrl>
+#include <QVariantMap>
 #include <QtConcurrent>
 
 #include <algorithm>
@@ -152,45 +155,57 @@ struct PendingImport {
 // Side effect: a successful return has already copied the file into
 // `destDirCanonical`. Callers must roll that copy back on subsequent
 // INSERT failure (existing behavior in importPaths' main-thread phase).
+//
+// `outUserReason` gets a short operator-facing phrase ("unsupported
+// format"); `outReason` keeps the detailed one for logs and lastImportError.
 std::optional<PendingImport> tryStageOneFile(const QString& raw,
                                              qint64         sizeCap,
                                              const QString& destDirCanonical,
-                                             QString*       outReason = nullptr)
+                                             QString*       outReason = nullptr,
+                                             QString*       outUserReason = nullptr)
 {
-    const auto fail = [&](QString why) -> std::optional<PendingImport> {
-        if (outReason) *outReason = std::move(why);
+    const auto fail = [&](QString why, QString user) -> std::optional<PendingImport> {
+        if (outReason)     *outReason     = std::move(why);
+        if (outUserReason) *outUserReason = std::move(user);
         return std::nullopt;
     };
 
     const QString src = normalizeInputPath(raw);
     if (src.isEmpty())
-        return fail(QStringLiteral("unreadable path: %1").arg(raw));
+        return fail(QStringLiteral("unreadable path: %1").arg(raw),
+                    QStringLiteral("couldn't be read"));
 
     const QFileInfo info(src);
     if (info.size() > sizeCap)
-        return fail(QStringLiteral("exceeds size cap (%1 > %2)").arg(info.size()).arg(sizeCap));
+        return fail(QStringLiteral("exceeds size cap (%1 > %2)").arg(info.size()).arg(sizeCap),
+                    QStringLiteral("larger than %1").arg(QLocale().formattedDataSize(
+                        sizeCap, 0, QLocale::DataSizeTraditionalFormat)));
 
     const QString type = sniffMediaType(src);
     if (type.isEmpty())
-        return fail(QStringLiteral("unrecognized media type (magic-byte sniff failed)"));
+        return fail(QStringLiteral("unrecognized media type (magic-byte sniff failed)"),
+                    QStringLiteral("unsupported format"));
 
     const QString dst = pickDestinationName(QDir(destDirCanonical).absolutePath(),
                                             info.fileName());
     const QString dstClean = QDir::cleanPath(dst);
     if (!dstClean.startsWith(destDirCanonical + QStringLiteral("/"))
         && !dstClean.startsWith(destDirCanonical + QStringLiteral("\\"))) {
-        return fail(QStringLiteral("destination escapes media dir: %1").arg(dstClean));
+        return fail(QStringLiteral("destination escapes media dir: %1").arg(dstClean),
+                    QStringLiteral("couldn't be copied"));
     }
 
     if (!QFile::copy(src, dstClean))
-        return fail(QStringLiteral("copy failed: %1 -> %2").arg(src, dstClean));
+        return fail(QStringLiteral("copy failed: %1 -> %2").arg(src, dstClean),
+                    QStringLiteral("couldn't be copied"));
 
     int pageCount = 1;
     if (type == QStringLiteral("pdf")) {
         pageCount = probePdfPageCount(dstClean);
         if (pageCount <= 0) {
             QFile::remove(dstClean);
-            return fail(QStringLiteral("PDF probe returned 0 pages (corrupt or encrypted)"));
+            return fail(QStringLiteral("PDF probe returned 0 pages (corrupt or encrypted)"),
+                        QStringLiteral("damaged or password-protected PDF"));
         }
     }
 
@@ -201,6 +216,34 @@ std::optional<PendingImport> tryStageOneFile(const QString& raw,
         QDateTime::currentMSecsSinceEpoch(),
         pageCount
     };
+}
+
+// Replace each dropped folder with the files under it, subfolders included,
+// in name order. Hidden and system files (Thumbs.db, desktop.ini) are left
+// out so a folder drop doesn't report them as skipped. Anything that isn't
+// a folder passes through untouched for tryStageOneFile to judge.
+QStringList expandFolders(const QStringList& paths)
+{
+    QStringList out;
+    for (const QString& raw : paths) {
+        QString local = raw;
+        if (local.startsWith(QStringLiteral("file:"))) {
+            const QUrl url(local);
+            if (url.isLocalFile()) local = url.toLocalFile();
+        }
+        const QFileInfo info(local);
+        if (!info.isDir()) { out.append(raw); continue; }
+
+        QStringList files;
+        QDirIterator it(info.absoluteFilePath(), QDir::Files | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) files.append(it.next());
+        std::sort(files.begin(), files.end(), [](const QString& a, const QString& b) {
+            return QString::compare(a, b, Qt::CaseInsensitive) < 0;
+        });
+        out.append(files);
+    }
+    return out;
 }
 
 }  // namespace
@@ -520,32 +563,45 @@ int MediaService::importPaths(QStringList paths)
     // don't write from the worker's own sqlite3 handle.
     QtConcurrent::run([this, paths, cap, destDirCanonical]() {
         QList<PendingImport> pending;
-        int skipped = 0;
+        // One { name, reason } per rejected file, for the operator's notice.
+        QVariantList skippedFiles;
 
-        for (const QString& raw : paths) {
-            QString reason;
-            auto staged = tryStageOneFile(raw, cap, destDirCanonical, &reason);
+        const auto skip = [&](const QString& path, const QString& reason) {
+            QString name = path;
+            if (name.startsWith(QStringLiteral("file:"))) name = QUrl(name).toLocalFile();
+            name = QFileInfo(name).fileName();
+            skippedFiles.append(QVariantMap{
+                { QStringLiteral("name"),   name.isEmpty() ? path : name },
+                { QStringLiteral("reason"), reason },
+            });
+        };
+
+        // Walking a big folder touches the disk, so it happens here on the
+        // worker rather than in the QML drop handler.
+        for (const QString& raw : expandFolders(paths)) {
+            QString reason, userReason;
+            auto staged = tryStageOneFile(raw, cap, destDirCanonical, &reason, &userReason);
             if (!staged) {
                 qWarning().noquote() << "MediaService: skipping" << raw << "—" << reason;
-                ++skipped;
+                skip(raw, userReason);
                 continue;
             }
             pending.append(*staged);
         }
 
         qInfo().noquote() << "MediaService::importPaths worker done — pending="
-                          << pending.size() << "skipped=" << skipped
+                          << pending.size() << "skipped=" << skippedFiles.size()
                           << "(posting main-thread INSERTs)";
 
         // INSERT on the owning connection on the main thread. Microsecond-
         // scale work even for batched imports; well under the 16 ms frame
         // budget for a single drag-drop of dozens of files.
         QMetaObject::invokeMethod(this,
-            [this, pending = std::move(pending), skipped]() mutable {
+            [this, pending = std::move(pending),
+             skippedFiles = std::move(skippedFiles)]() mutable {
             qInfo().noquote() << "MediaService::importPaths main-thread INSERTs starting ("
                               << pending.size() << "rows)";
             int imported = 0;
-            int insertFails = 0;
             for (const PendingImport& p : pending) {
                 try {
                     auto& s = m_impl->insertItem;
@@ -562,11 +618,14 @@ int MediaService::importPaths(QStringList paths)
                                          << "—" << e.message();
                     // Roll back the worker's file copy so we don't leak.
                     QFile::remove(p.dst);
-                    ++insertFails;
+                    skippedFiles.append(QVariantMap{
+                        { QStringLiteral("name"),   QFileInfo(p.dst).fileName() },
+                        { QStringLiteral("reason"), QStringLiteral("couldn't be saved") },
+                    });
                 }
             }
             if (imported > 0) invalidateCache();
-            emit importFinished(imported, skipped + insertFails);
+            emit importFinished(imported, int(skippedFiles.size()), skippedFiles);
         }, Qt::QueuedConnection);
     });
 

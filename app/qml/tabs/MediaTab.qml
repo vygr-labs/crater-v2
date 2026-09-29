@@ -402,6 +402,23 @@ Item {
 
     // No importFinished hook needed for the snap-to-newest: the
     // onFilteredMediaChanged handler above detects model growth on its own.
+    // The hook below is only for telling the operator what was left out.
+
+    // ── Skipped-files notice ────────────────────────────────────────────
+    // A rejected file used to vanish with only a log line, so dropping a
+    // folder of wmv files looked like nothing happened. The notice stays
+    // until dismissed or the next import finishes, because it names files
+    // the operator may need to go and convert.
+    property int  _lastImported: 0
+    property var  _lastSkipped: []
+
+    Connections {
+        target: MediaService
+        function onImportFinished(imported, skipped, skippedFiles) {
+            root._lastImported = imported
+            root._lastSkipped  = skippedFiles || []
+        }
+    }
 
     // ── Import affordance ───────────────────────────────────────────────
     // Two paths feed importPaths(): drag-drop on the DropArea below, and the
@@ -789,7 +806,7 @@ Item {
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: qsTr("Images and videos will be imported")
+                    text: qsTr("Files and folders of images and videos will be imported")
                     color: Theme.color.textSecondary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize
@@ -1539,6 +1556,96 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    Rectangle {
+        id: skippedNotice
+        readonly property int maxNames: 4
+        visible: root._lastSkipped.length > 0
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: Theme.space.sm
+        height: noticeCol.implicitHeight + Theme.space.md * 2
+        z: 50
+        radius: 0
+        color: Theme.color.raised
+        border.color: Theme.color.borderStrong
+        border.width: 1
+
+        // Swallow clicks so they don't select the grid tile underneath.
+        MouseArea { anchors.fill: parent }
+
+        AppIcon {
+            id: noticeIcon
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.space.md
+            anchors.top: parent.top
+            anchors.topMargin: Theme.space.md
+            name: "alert-triangle"
+            color: Theme.color.warning
+            size: Theme.icon.sm
+        }
+
+        Column {
+            id: noticeCol
+            anchors.left: noticeIcon.right
+            anchors.leftMargin: Theme.space.sm
+            anchors.right: dismissBtn.left
+            anchors.rightMargin: Theme.space.sm
+            anchors.top: parent.top
+            anchors.topMargin: Theme.space.md
+            spacing: 2
+
+            Text {
+                width: parent.width
+                wrapMode: Text.Wrap
+                text: {
+                    const n = root._lastSkipped.length
+                    const skippedText = n === 1 ? qsTr("1 file was skipped")
+                                                : qsTr("%1 files were skipped").arg(n)
+                    if (root._lastImported === 0) return skippedText
+                    return (root._lastImported === 1 ? qsTr("Imported 1 file.")
+                                : qsTr("Imported %1 files.").arg(root._lastImported))
+                           + " " + skippedText
+                }
+                color: Theme.color.textPrimary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.bodySize
+                font.weight: Theme.font.weightMedium
+            }
+
+            Repeater {
+                model: root._lastSkipped.slice(0, skippedNotice.maxNames)
+                delegate: ElidedText {
+                    required property var modelData
+                    width: noticeCol.width
+                    text: modelData.name + "  (" + modelData.reason + ")"
+                    color: Theme.color.textSecondary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+            }
+
+            Text {
+                visible: root._lastSkipped.length > skippedNotice.maxNames
+                text: qsTr("and %1 more").arg(root._lastSkipped.length - skippedNotice.maxNames)
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+            }
+        }
+
+        IconButton {
+            id: dismissBtn
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space.xs
+            anchors.top: parent.top
+            anchors.topMargin: Theme.space.xs
+            iconName: "x"
+            iconSize: Theme.icon.sm
+            onClicked: root._lastSkipped = []
         }
     }
 
