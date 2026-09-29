@@ -1,6 +1,7 @@
 #include "db/DbPaths.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QStandardPaths>
 
 namespace crater::db {
@@ -64,6 +65,15 @@ QString DbPaths::fontsDir()
 QString DbPaths::importStagingDir()
 {
     return ensureDir(QDir(dataDir()).filePath(QStringLiteral(".import-staging")));
+}
+
+QString DbPaths::relocate(const QString& storedPath, const QString& managedDir)
+{
+    if (storedPath.isEmpty()) return storedPath;
+    const QString name = QFileInfo(storedPath).fileName();
+    if (name.isEmpty()) return storedPath;
+    const QString current = QDir::cleanPath(QDir(managedDir).filePath(name));
+    return QFileInfo::exists(current) ? current : storedPath;
 }
 
 }  // namespace crater::db

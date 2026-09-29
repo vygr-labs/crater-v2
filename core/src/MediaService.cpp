@@ -218,6 +218,11 @@ struct MediaService::Impl
     // Cached allMedia() — invalidated on every mutation.
     std::optional<QList<MediaItem>> cachedAll;
 
+    // Where managed files live now. Stored paths are resolved against it
+    // (DbPaths::relocate) so a data folder restored under another profile
+    // still finds its files.
+    const QString mediaDir = db::DbPaths::mediaDir();
+
     // The full column list, shared by selectAll / selectById so their readRow
     // indices stay in lock-step. Display columns (V009) trail the original
     // eight so pre-V009 index positions are untouched.
@@ -249,11 +254,11 @@ struct MediaService::Impl
             "crop_h = ?, loop_video = ?, muted = ? WHERE id = ?")))
     {}
 
-    static MediaItem readRow(db::Statement& s)
+    static MediaItem readRow(db::Statement& s, const QString& mediaDir)
     {
         MediaItem m;
         m.id         = s.columnInt64 (0);
-        m.path       = s.columnText  (1);
+        m.path       = db::DbPaths::relocate(s.columnText(1), mediaDir);
         m.title      = s.columnText  (2);
         m.type       = s.columnText  (3);
         m.isFavorite = s.columnInt   (4) != 0;
@@ -480,7 +485,7 @@ QList<MediaItem> MediaService::allMedia()
     try {
         auto& s = m_impl->selectAll;
         s.reset();
-        while (s.step()) out.append(Impl::readRow(s));
+        while (s.step()) out.append(Impl::readRow(s, m_impl->mediaDir));
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::allMedia():" << e.message();
     }
@@ -620,7 +625,7 @@ void MediaService::remove(qint64 id)
             auto& sel = m_impl->selectById;
             sel.reset();
             sel.bind(1, id);
-            if (sel.step()) path = sel.columnText(1);
+            if (sel.step()) path = db::DbPaths::relocate(sel.columnText(1), m_impl->mediaDir);
             sel.reset();   // close cursor before the DELETE transaction below
         }
 
@@ -663,7 +668,7 @@ qint64 MediaService::duplicate(qint64 id)
         auto& sel = m_impl->selectById;
         sel.reset();
         sel.bind(1, id);
-        if (sel.step()) src = Impl::readRow(sel);
+        if (sel.step()) src = Impl::readRow(sel, m_impl->mediaDir);
         sel.reset();
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::duplicate() read:" << e.message();
@@ -743,12 +748,15 @@ void MediaService::sweepOrphans()
 {
     if (!m_impl) return;
     try {
-        // Snapshot every (id, path) the table still references. selectAll
-        // is the already-prepared statement; reusing it avoids spinning
-        // up an ad-hoc Statement for a one-shot pass. Paths are stored
-        // post-cleanPath at import time (see line ~96), so cleanPath
-        // again on the disk-walk side gives a like-for-like comparison
-        // across OS path-separator quirks.
+        // Snapshot every (id, file name) the table still references.
+        // selectAll is the already-prepared statement; reusing it avoids
+        // spinning up an ad-hoc Statement for a one-shot pass.
+        //
+        // Match on the file NAME, never the stored absolute path. The
+        // layout is flat and names are unique within it, while the stored
+        // path is wherever the data folder lived at import time. After a
+        // restore under another profile no absolute path matches, and
+        // comparing those deleted every managed file on first launch.
         QSet<QString> referenced;
         QSet<qint64>  referencedIds;
         {
@@ -756,7 +764,7 @@ void MediaService::sweepOrphans()
             sel.reset();
             while (sel.step()) {
                 referencedIds.insert(sel.columnInt64(0));
-                referenced.insert(QDir::cleanPath(sel.columnText(1)));
+                referenced.insert(QFileInfo(sel.columnText(1)).fileName());
             }
         }
 
@@ -774,8 +782,7 @@ void MediaService::sweepOrphans()
         const auto files = mediaDir.entryInfoList(
             QDir::Files | QDir::NoDotAndDotDot);
         for (const auto& fi : files) {
-            const QString cleaned = QDir::cleanPath(fi.absoluteFilePath());
-            if (referenced.contains(cleaned)) continue;
+            if (referenced.contains(fi.fileName())) continue;
             if (QFile::remove(fi.absoluteFilePath())) {
                 ++removed;
                 qInfo().noquote() << "MediaService::sweepOrphans: removed orphan"
@@ -946,7 +953,7 @@ MediaItem MediaService::byId(qint64 id)
         auto& s = m_impl->selectById;
         s.reset();
         s.bind(1, id);
-        if (s.step()) m = Impl::readRow(s);
+        if (s.step()) m = Impl::readRow(s, m_impl->mediaDir);
         s.reset();   // close cursor: an open SELECT here pins the media
                      // connection's snapshot, failing the next import INSERT
     } catch (const db::Error& e) {

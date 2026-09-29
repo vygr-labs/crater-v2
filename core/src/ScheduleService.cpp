@@ -36,6 +36,24 @@ QVariantList toVariantList(const QJsonArray& arr)
     return out;
 }
 
+// Media rows snapshot the managed file's absolute path (`mediaPath`) at the
+// time they were added. Repoint them at the current media folder so a data
+// folder restored under another profile keeps playing its pictures and video.
+QJsonArray relocateMediaPaths(QJsonArray items)
+{
+    const QString mediaDir = db::DbPaths::mediaDir();
+    for (auto it = items.begin(); it != items.end(); ++it) {
+        QJsonObject o = it->toObject();
+        const QString stored = o.value(QStringLiteral("mediaPath")).toString();
+        if (stored.isEmpty()) continue;
+        const QString current = db::DbPaths::relocate(stored, mediaDir);
+        if (current == stored) continue;
+        o.insert(QStringLiteral("mediaPath"), current);
+        *it = o;
+    }
+    return items;
+}
+
 }  // namespace
 
 struct ScheduleService::Impl
@@ -104,7 +122,7 @@ struct ScheduleService::Impl
         if (loadCurrent.step()) {
             const QByteArray json = loadCurrent.columnText(0).toUtf8();
             const auto doc = QJsonDocument::fromJson(json);
-            if (doc.isArray()) items = doc.array();
+            if (doc.isArray()) items = relocateMediaPaths(doc.array());
         }
         // Close the cursor. This SELECT is only ever stepped here, so leaving
         // it in the SQLITE_ROW state would hold a read transaction open and
@@ -331,7 +349,7 @@ void ScheduleService::load(qint64 scheduleId)
         const QByteArray json = stmt.columnText(0).toUtf8();
         stmt.reset();   // close cursor before the saveCurrentNow() write below
         const auto doc = QJsonDocument::fromJson(json);
-        m_impl->items = doc.isArray() ? doc.array() : QJsonArray{};
+        m_impl->items = doc.isArray() ? relocateMediaPaths(doc.array()) : QJsonArray{};
 
         // Round-trip to fetch the name. We could thread the name through
         // every load() call site, but the round-trip is sub-ms and keeps

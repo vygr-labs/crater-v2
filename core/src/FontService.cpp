@@ -67,6 +67,10 @@ struct FontService::Impl
 {
     db::Connection conn;
 
+    // Rows keep the absolute path from import time. Resolve them against
+    // the current fonts folder so a restored data folder still loads.
+    const QString fontsDir = db::DbPaths::fontsDir();
+
     db::Statement selectAll;
     db::Statement selectByHash;
     db::Statement selectByFamily;
@@ -101,13 +105,13 @@ struct FontService::Impl
             "DELETE FROM user_fonts WHERE id = ?")))
     {}
 
-    static UserFont readRow(db::Statement& s)
+    static UserFont readRow(db::Statement& s, const QString& fontsDir)
     {
         UserFont f;
         f.id      = s.columnInt64(0);
         f.hash    = s.columnText (1);
         f.family  = s.columnText (2);
-        f.path    = s.columnText (3);
+        f.path    = db::DbPaths::relocate(s.columnText(3), fontsDir);
         f.addedAt = s.columnInt64(4);
         return f;
     }
@@ -172,7 +176,7 @@ QList<UserFont> FontService::allFonts()
     try {
         auto& s = m_impl->selectAll;
         s.reset();
-        while (s.step()) out.append(Impl::readRow(s));
+        while (s.step()) out.append(Impl::readRow(s, m_impl->fontsDir));
     } catch (const db::Error& e) {
         qWarning().noquote() << "FontService::allFonts():" << e.message();
     }
@@ -211,7 +215,7 @@ UserFont FontService::importFontFile(QString path)
         s.bind(1, hash);
         const bool hit = s.step();
         UserFont existing;
-        if (hit) existing = Impl::readRow(s);
+        if (hit) existing = Impl::readRow(s, m_impl->fontsDir);
         s.reset();   // close cursor before the insertFont write / dedup return
         if (hit) return existing;
     } catch (const db::Error& e) {
@@ -302,7 +306,7 @@ bool FontService::removeFont(qint64 id)
             m_lastError = QStringLiteral("no font with id %1").arg(id);
             return false;
         }
-        path = s.columnText(3);
+        path = db::DbPaths::relocate(s.columnText(3), m_impl->fontsDir);
         s.reset();   // close cursor before the DELETE write below
     } catch (const db::Error& e) {
         m_lastError = QStringLiteral("DB lookup failed: %1").arg(e.message());
@@ -353,7 +357,7 @@ UserFont FontService::byHash(QString hash)
         s.reset();
         s.bind(1, hash);
         UserFont f;
-        if (s.step()) f = Impl::readRow(s);
+        if (s.step()) f = Impl::readRow(s, m_impl->fontsDir);
         s.reset();   // release read txn (WAL snapshot pin)
         return f;
     } catch (const db::Error& e) {
@@ -370,7 +374,7 @@ QString FontService::filePathForFamily(QString family)
         s.reset();
         s.bind(1, family);
         QString path;
-        if (s.step()) path = s.columnText(3);
+        if (s.step()) path = db::DbPaths::relocate(s.columnText(3), m_impl->fontsDir);
         s.reset();   // release read txn (WAL snapshot pin)
         return path;
     } catch (const db::Error& e) {

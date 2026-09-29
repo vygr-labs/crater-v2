@@ -179,3 +179,26 @@ target_include_directories(test_bible_cache PRIVATE
 )
 
 add_test(NAME bible_cache COMMAND test_bible_cache)
+
+# -- Media relocation -- issue #14 ----------------------------------------
+# Rows store the absolute path a managed file had at import. A data folder
+# restored under another profile made the startup orphan sweep delete every
+# imported picture and video. Covers the sweep, remove(), schedule rows and
+# the logo, all against a faked foreign profile path.
+qt_add_executable(test_media_relocation
+    test_media_relocation.cpp
+)
+
+target_link_libraries(test_media_relocation PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# Drives db::Connection and DbPaths directly, both private to crater-core.
+target_include_directories(test_media_relocation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME media_relocation COMMAND test_media_relocation)

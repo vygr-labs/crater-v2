@@ -28,6 +28,14 @@ public:
     static QString mediaDir();             // media/  (MediaService destination)
     static QString fontsDir();             // fonts/  (FontService destination)
     static QString importStagingDir();     // .import-staging/  (.craterheme v2 temp)
+
+    // Current location of a file Crater manages in a flat directory such as
+    // mediaDir() or fontsDir(). Rows store the absolute path the file had
+    // when it was imported, which goes stale when the whole data folder is
+    // restored somewhere else (another user profile, another machine). The
+    // managed copy is looked up by file name in `managedDir` first; the
+    // stored path is returned unchanged when no such file exists there.
+    static QString relocate(const QString& storedPath, const QString& managedDir);
 };
 
 }  // namespace crater::db
