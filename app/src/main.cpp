@@ -417,6 +417,13 @@ int main(int argc, char* argv[])
     // any other early bindings have a populated source. No service deps;
     // it owns its own QSettings instance.
     crater::SettingsService   settingsService;
+    // Translation preloading is an operator choice; BibleService stays
+    // unaware of settings and just takes the flag.
+    bibleService.setPreloadAll(settingsService.preloadTranslations());
+    QObject::connect(&settingsService, &crater::SettingsService::preloadTranslationsChanged,
+                     &bibleService, [&] {
+                         bibleService.setPreloadAll(settingsService.preloadTranslations());
+                     });
     // NDI sender. Dynamic-loads Processing.NDI.Lib.x64.dll at construction;
     // if absent, NdiService.available stays false and the dialog reflects
     // that. Source window is wired from Main.qml's Component.onCompleted.

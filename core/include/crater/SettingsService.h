@@ -141,6 +141,11 @@ private:
     // so the global toggle is always meaningful. Default off.
     Q_PROPERTY(bool    showScriptureFooter READ showScriptureFooter WRITE setShowScriptureFooter NOTIFY showScriptureFooterChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
+    // Keep every installed Bible translation in memory so the first switch
+    // to any of them is instant. Default off: Crater aims to stay light, and
+    // this costs ~13 MB per installed translation. With it off the few most
+    // recently used translations stay cached. See BibleService::setPreloadAll.
+    Q_PROPERTY(bool    preloadTranslations READ preloadTranslations WRITE setPreloadTranslations NOTIFY preloadTranslationsChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
     Q_PROPERTY(bool    showSongCcli       READ showSongCcli       WRITE setShowSongCcli       NOTIFY showSongCcliChanged)
     // Auto-advance — when true, a live song steps to its next slide on a
@@ -224,6 +229,7 @@ public:
     bool    highlightCurrentVerse() const;
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
+    bool    preloadTranslations() const;
     bool    showSongAuthor() const;
     bool    showSongCcli() const;
     bool    autoAdvance() const;
@@ -260,6 +266,7 @@ public:
     void setHighlightCurrentVerse(bool v);
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
+    void setPreloadTranslations(bool v);
     void setShowSongAuthor(bool v);
     void setShowSongCcli(bool v);
     void setAutoAdvance(bool v);
@@ -298,6 +305,7 @@ signals:
     void highlightCurrentVerseChanged();
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
+    void preloadTranslationsChanged();
     void showSongAuthorChanged();
     void showSongCcliChanged();
     void autoAdvanceChanged();

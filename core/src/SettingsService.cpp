@@ -88,6 +88,7 @@ struct SettingsService::Impl
     bool    highlightVerse   = false;
     bool    showScriptureFooter = false;
     bool    showStrongs      = true;
+    bool    preloadTranslations = false;
     bool    showSongAuthor   = true;
     bool    showSongCcli     = true;
     // Auto-advance defaults: off, 20 s between slides, no looping.
@@ -132,6 +133,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
     static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
+    static constexpr const char* kPreloadTranslations = "Settings/preloadTranslations";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
     static constexpr const char* kShowSongCcli   = "Settings/showSongCcli";
     static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
@@ -170,6 +172,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightVerse   = s.value(QString::fromLatin1(Impl::kHighlightVerse),   m_impl->highlightVerse).toBool();
     m_impl->showScriptureFooter = s.value(QString::fromLatin1(Impl::kShowScriptureFooter), m_impl->showScriptureFooter).toBool();
     m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
+    m_impl->preloadTranslations = s.value(QString::fromLatin1(Impl::kPreloadTranslations), m_impl->preloadTranslations).toBool();
     m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
     m_impl->showSongCcli   = s.value(QString::fromLatin1(Impl::kShowSongCcli),  m_impl->showSongCcli).toBool();
     m_impl->autoAdvance      = s.value(QString::fromLatin1(Impl::kAutoAdvance),      m_impl->autoAdvance).toBool();
@@ -220,6 +223,7 @@ bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNum
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
+bool    SettingsService::preloadTranslations() const { return m_impl->preloadTranslations; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
 bool    SettingsService::showSongCcli() const      { return m_impl->showSongCcli; }
 bool    SettingsService::autoAdvance() const             { return m_impl->autoAdvance; }
@@ -412,6 +416,14 @@ void SettingsService::setShowStrongsTab(bool v)
     m_impl->showStrongs = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kShowStrongs), v);
     emit showStrongsTabChanged();
+}
+
+void SettingsService::setPreloadTranslations(bool v)
+{
+    if (m_impl->preloadTranslations == v) return;
+    m_impl->preloadTranslations = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kPreloadTranslations), v);
+    emit preloadTranslationsChanged();
 }
 
 void SettingsService::setShowSongAuthor(bool v)
