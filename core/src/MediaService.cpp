@@ -69,6 +69,10 @@ QString sniffMediaType(const QString& path)
     if (starts("\x00\x00\x01\xb3", 4))                   return QStringLiteral("video");   // MPEG-1/2
     if (starts("OggS", 4))                               return QStringLiteral("video");   // Ogg (may be audio; treat as video for picker)
     if (starts("FLV\x01", 4))                            return QStringLiteral("video");
+    // ASF header object GUID: wmv (and wma, treated as video like Ogg).
+    // The bundled FFmpeg carries the wmv1-3, vc1 and wma decoders.
+    if (starts("\x30\x26\xb2\x75\x8e\x66\xcf\x11"
+               "\xa6\xd9\x00\xaa\x00\x62\xce\x6c", 16))  return QStringLiteral("video");
 
     return {};
 }
