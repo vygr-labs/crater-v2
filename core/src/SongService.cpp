@@ -298,12 +298,15 @@ struct SongService::Impl
             "WHERE songs_fts MATCH ? "
             "ORDER BY score ASC LIMIT 100")))
         , insertSong(conn.prepare(QStringLiteral(
-            "INSERT INTO songs (title, author, ccli, theme_id, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)")))
+            // Binds: 1=title, 2=author, 3=ccli, 4=theme_id, 5=created_at,
+            // 6=updated_at, 7=copyright
+            "INSERT INTO songs (title, author, ccli, theme_id, created_at, updated_at, copyright) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)")))
         , updateSong(conn.prepare(QStringLiteral(
-            // Binds: 1=title, 2=author, 3=ccli, 4=theme_id, 5=updated_at, 6=id
+            // Binds: 1=title, 2=author, 3=ccli, 4=theme_id, 5=updated_at, 6=id,
+            // 7=copyright
             "UPDATE songs SET title = ?, author = ?, ccli = ?, "
-            "       theme_id = ?, updated_at = ? WHERE id = ?")))
+            "       theme_id = ?, updated_at = ?, copyright = ?7 WHERE id = ?6")))
         , deleteSong(conn.prepare(QStringLiteral(
             "DELETE FROM songs WHERE id = ?")))
         , toggleFavorite(conn.prepare(QStringLiteral(
@@ -644,7 +647,8 @@ qint64 SongService::create(QString title, QString author, QString ccli)
 }
 
 qint64 SongService::createWithSections(QString title, QString author, QString ccli,
-                                       qint64 themeId, QVariantList sections)
+                                       qint64 themeId, QVariantList sections,
+                                       QString copyright)
 {
     if (!m_impl) return 0;
     try {
@@ -659,6 +663,7 @@ qint64 SongService::createWithSections(QString title, QString author, QString cc
         if (themeId <= 0)   songStmt.bindNull(4); else songStmt.bind(4, themeId);
         songStmt.bind(5, nowMs);
         songStmt.bind(6, nowMs);
+        if (copyright.isEmpty()) songStmt.bindNull(7); else songStmt.bind(7, copyright);
         songStmt.step();
 
         const qint64 newId = m_impl->conn.lastInsertRowId();
@@ -703,7 +708,7 @@ qint64 SongService::createWithSections(QString title, QString author, QString cc
 }
 
 bool SongService::update(qint64 id, QString title, QString author, QString ccli,
-                         qint64 themeId, QVariantList sections)
+                         qint64 themeId, QVariantList sections, QString copyright)
 {
     if (!m_impl || id <= 0) return false;
     try {
@@ -751,6 +756,7 @@ bool SongService::update(qint64 id, QString title, QString author, QString ccli,
         if (themeId <= 0)     upd.bindNull(4); else upd.bind(4, themeId);
         upd.bind(5, nowMs);
         upd.bind(6, id);
+        if (copyright.isEmpty()) upd.bindNull(7); else upd.bind(7, copyright);
         upd.step();
 
         // Replace sections wholesale. Cheaper + simpler than diffing the small

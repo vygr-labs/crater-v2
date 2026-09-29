@@ -263,7 +263,8 @@ ModalShell {
         }
 
         const ok = SongService.update(songId, fresh.title, fresh.author,
-                                      fresh.ccli, fresh.themeId || 0, sections)
+                                      fresh.ccli, fresh.themeId || 0, sections,
+                                      fresh.copyright || "")
         if (!ok) {
             console.warn("ScheduleItemEditorDialog: library save failed"
                        + " songId=" + songId + " pages=" + root._pages.length)

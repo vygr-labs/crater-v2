@@ -202,3 +202,18 @@ target_include_directories(test_media_relocation PRIVATE
 )
 
 add_test(NAME media_relocation COMMAND test_media_relocation)
+
+# -- Song credits -- issue #20 --------------------------------------------
+# Author, copyright and CCLI through the editor's create and update paths.
+qt_add_executable(test_song_credits
+    test_song_credits.cpp
+)
+
+target_link_libraries(test_song_credits PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME song_credits COMMAND test_song_credits)
