@@ -160,9 +160,6 @@ Rectangle {
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
-                    { label: qsTr("Sort by index"),   iconName: "sliders" },
-                    { label: qsTr("Refresh"),         iconName: "refresh-cw" },
-                    { separator: true },
                     { label: qsTr("Preview settings…"), iconName: "settings",
                       action: function() { AppState.openModal("settings", {}) } }
                 ], { dx: -220 })

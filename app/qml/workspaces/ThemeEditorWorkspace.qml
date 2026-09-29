@@ -395,6 +395,12 @@ Rectangle {
             else workspace.requestClose()
         } }
     Shortcut { sequence: "Ctrl+0";          onActivated: workspace.zoom = 1.0 }
+    // Same 10% steps and 10-400% range as the toolbar and canvas menu.
+    // Ctrl+= is the unshifted key Ctrl++ lives on.
+    Shortcut { sequences: ["Ctrl++", "Ctrl+="]
+        onActivated: workspace.zoom = Math.min(4.0, Math.round((workspace.zoom + 0.1) * 10) / 10) }
+    Shortcut { sequence: "Ctrl+-"
+        onActivated: workspace.zoom = Math.max(0.1, Math.round((workspace.zoom - 0.1) * 10) / 10) }
 
     // Arrow nudge — 1% normally, 5% with Shift. Range matches the drag
     // and direct-input clamps (-200..200) so all three movement paths

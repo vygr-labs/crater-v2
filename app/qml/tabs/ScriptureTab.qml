@@ -1032,8 +1032,7 @@ Item {
                                              ? "controlled" : "crater"
                                   AppState.setScriptureInputMode(next)
                                   AppState.setSearch(root.tabKey, "")
-                              } },
-                            { separator: true }
+                              } }
                         ] : []),
                         // FTS-search-only: scope toggle across translations.
                         ...(root.mode === "search" ? [
@@ -1043,10 +1042,8 @@ Item {
                               action: function() {
                                   AppState.setScriptureSearchAllTranslations(
                                       !AppState.scriptureSearchAllTranslations)
-                              } },
-                            { separator: true }
-                        ] : []),
-                        { label: qsTr("Refresh"), iconName: "refresh-cw" }
+                              } }
+                        ] : [])
                     ]
                     AppState.openContextMenuAt(gearBtn,
                         gearBtn.width, gearBtn.height + 4,
@@ -1310,25 +1307,15 @@ Item {
                 // runs there first); consumed and cleared in onDoubleClicked.
                 property var _collapseStash: null
 
-                // Group order matches SongsTab and MediaTab: row-edit
-                // actions first (Mark Up — closest scripture analogue to
-                // Edit), then projection (Add to Schedule / Push to Live),
-                // then organization (Favorites / Collection), then utility
-                // (Refresh) last. Verses have no destructive action — they
-                // come from immutable Bible DBs — so the bottom slot stays
-                // safe rather than dangerous.
+                // Projection actions only. Verses come from read-only Bible
+                // databases, so there is nothing to edit or delete, and
+                // favourites and collections are song features. Rows that
+                // would do nothing stay out of the menu (issue #17).
                 menuItems: [
-                    { label: qsTr("Mark Up"),            iconName: "edit-3" },
-                    { separator: true },
                     { label: qsTr("Add to Schedule"), iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
                     { label: qsTr("Push to Live"), iconName: "play",
-                      action: function() { root.pushLiveFor(index) } },
-                    { separator: true },
-                    { label: qsTr("Add to Favorites"),   iconName: "heart" },
-                    { label: qsTr("Add to Collection…"), iconName: "folder" },
-                    { separator: true },
-                    { label: qsTr("Refresh"), iconName: "refresh-cw" }
+                      action: function() { root.pushLiveFor(index) } }
                 ]
 
                 // Single-row focus path — used by plain clicks AND by
