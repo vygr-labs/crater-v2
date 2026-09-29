@@ -56,15 +56,21 @@ public:
     // are a QVariantList of objects: { label: QString, kind: QString optional,
     // lines: QStringList }. Missing/unrecognized `kind` defaults to "other" so
     // the schema CHECK constraint passes. Returns the new song id (0 on failure).
+    //
+    // `copyright` is last so the older positional arguments keep their
+    // meaning: two adjacent QString parameters swapped by a caller would
+    // compile and silently store the CCLI number as the copyright line.
     Q_INVOKABLE qint64 createWithSections(QString title, QString author, QString ccli,
-                                          qint64 themeId, QVariantList sections);
+                                          qint64 themeId, QVariantList sections,
+                                          QString copyright);
 
-    // Updates an existing song's title, author, ccli, themeId, and sections.
+    // Updates an existing song's title, author, ccli, themeId, sections and
+    // copyright (last, for the same reason as createWithSections).
     // Sections are replaced wholesale (delete-then-insert under one transaction).
     // themeId == 0 clears the per-song override (NULL in DB). Returns true on
     // success. FTS row is refreshed so search reflects the new lyrics immediately.
     Q_INVOKABLE bool update(qint64 id, QString title, QString author, QString ccli,
-                            qint64 themeId, QVariantList sections);
+                            qint64 themeId, QVariantList sections, QString copyright);
 
     Q_INVOKABLE void destroy(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);

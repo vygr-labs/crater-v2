@@ -41,6 +41,7 @@ ModalShell {
     // ── Working state ───────────────────────────────────────────────────
     property string _title: ""
     property string _author: ""
+    property string _copyright: ""
     property string _ccli: ""
     property int    _themeId: 0          // 0 = use default-for-kind
     property var    _sections: [{ label: "", kind: "other", lines: [""] }]
@@ -174,6 +175,7 @@ ModalShell {
     function _initFresh() {
         _title  = ""
         _author = ""
+        _copyright = ""
         _ccli   = ""
         _themeId = 0
         const empty = [{ label: "", kind: "other", lines: [""] }]
@@ -198,6 +200,7 @@ ModalShell {
         }
         _title   = song.title || ""
         _author  = song.author || ""
+        _copyright = song.copyright || ""
         _ccli    = song.ccli || ""
         _themeId = song.themeId || 0
 
@@ -444,9 +447,11 @@ ModalShell {
         _saveError = ""
         let ok = false
         if (_isEditMode) {
-            ok = SongService.update(_songId, t, _author, _ccli, _themeId, _sections)
+            ok = SongService.update(_songId, t, _author.trim(), _ccli.trim(), _themeId,
+                                    _sections, _copyright.trim())
         } else {
-            const newId = SongService.createWithSections(t, _author, _ccli, _themeId, _sections)
+            const newId = SongService.createWithSections(t, _author.trim(), _ccli.trim(),
+                                                         _themeId, _sections, _copyright.trim())
             ok = newId > 0
         }
         _isSaving = false
@@ -523,8 +528,9 @@ ModalShell {
         anchors.left: parent.left
         anchors.right: parent.right
         // Taller header to accommodate the bigger title input row below
-        // (row1 stays 44; row2 gets the extra height for a 44-tall input).
-        height: 104
+        // (row1 stays 44; row2 gets the extra height for a 44-tall input;
+        // row3 carries the author / copyright / CCLI credits).
+        height: 148
 
         // Row 1 — dialog title + section count + actions (undo/redo/close)
         Item {
@@ -610,7 +616,7 @@ ModalShell {
             anchors.top: headerRow1.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            height: 60
             anchors.leftMargin: Theme.space.lg
             anchors.rightMargin: Theme.space.lg
 
@@ -757,6 +763,42 @@ ModalShell {
             }
         }
 
+        // Row 3 — credits. Imported songs arrive with these filled in;
+        // this is where songs typed in by hand get them.
+        Row {
+            id: headerRow3
+            anchors.top: headerRow2.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Theme.space.lg
+            anchors.rightMargin: Theme.space.lg
+            height: 32
+            spacing: Theme.space.sm
+
+            readonly property real _ccliWidth: 200
+            readonly property real _flexWidth:
+                (width - _ccliWidth - spacing * 2) / 2
+
+            CreditField {
+                width: headerRow3._flexWidth
+                caption: qsTr("Author")
+                text: root._author
+                onEdited: function(t) { root._author = t }
+            }
+            CreditField {
+                width: headerRow3._flexWidth
+                caption: qsTr("Copyright")
+                text: root._copyright
+                onEdited: function(t) { root._copyright = t }
+            }
+            CreditField {
+                width: headerRow3._ccliWidth
+                caption: qsTr("CCLI #")
+                text: root._ccli
+                onEdited: function(t) { root._ccli = t }
+            }
+        }
+
         // Bottom divider
         Rectangle {
             anchors.bottom: parent.bottom
@@ -764,6 +806,50 @@ ModalShell {
             anchors.right: parent.right
             height: 1
             color: Theme.color.borderSubtle
+        }
+    }
+
+    // One-line credit input: a muted caption on the left, the value after
+    // it. Enter saves, the same as in the title field.
+    component CreditField: Rectangle {
+        id: credit
+        property string caption: ""
+        property alias  text: creditInput.text
+        signal edited(string text)
+
+        height: 32
+        radius: 0
+        color: Theme.color.canvas
+        border.color: creditInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
+        border.width: 1
+        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+
+        Text {
+            id: creditCaption
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.space.md
+            anchors.verticalCenter: parent.verticalCenter
+            text: credit.caption
+            color: Theme.color.textTertiary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
+        }
+        TextInput {
+            id: creditInput
+            anchors.left: creditCaption.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: Theme.space.sm
+            anchors.rightMargin: Theme.space.md
+            verticalAlignment: TextInput.AlignVCenter
+            clip: true
+            color: Theme.color.textPrimary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.bodySize
+            selectByMouse: true
+            onTextEdited: credit.edited(text)
+            onAccepted: root._saveSong()
         }
     }
 
