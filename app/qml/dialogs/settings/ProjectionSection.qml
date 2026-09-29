@@ -1,11 +1,13 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Projection — output display, resolution, fade defaults, multi-output preview.
-// Output display + Projection mode are wired to OutputService (single output
-// today). Resolution is wired to SettingsService.outputResolution and
-// persists; actual render-time enforcement (letterboxing / scaling to the
-// chosen res) is a follow-up. Multi-output is a v1.1 preview.
+// Projection — output display, fade defaults, multi-output.
+// Output display + Projection mode are wired to OutputService.
+//
+// There is no Resolution row. SettingsService.outputResolution still
+// persists, but nothing renders at it: the projection always uses the
+// display's native geometry. A control that changed nothing read as broken,
+// so it stays out of the UI until render-time scaling exists (issue #18).
 Item {
     id: root
 
@@ -135,27 +137,6 @@ Item {
                             ? OutputService.Windowed
                             : OutputService.Fullscreen
                     }
-                }
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            // Resolution — persisted via SettingsService.outputResolution.
-            // Today the projection window always uses the destination
-            // display's native geometry; a follow-up will letterbox /
-            // scale theme content when this preference differs.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Resolution"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Render canvas for theme content"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 180
-                    searchable: false
-                    options: ["3840×2160", "2560×1440", "1920×1080", "1280×720", "1024×768"]
-                    value: SettingsService.outputResolution
-                    onValueSelected: function(v) { SettingsService.outputResolution = v }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
