@@ -414,7 +414,7 @@ Item {
         // image / video signature, so a user typing into the "all files"
         // dropdown can't break us.
         const filter = qsTr("Media (*.png *.jpg *.jpeg *.gif *.bmp *.webp "
-                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi)")
+                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi *.wmv *.asf)")
         const paths = FileDialogService.chooseOpenFiles(
             qsTr("Import media"), [filter])
         if (paths && paths.length > 0) root.importPaths(paths)
