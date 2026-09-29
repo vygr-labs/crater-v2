@@ -270,6 +270,9 @@ struct MediaService::Impl
                               s.columnDouble(11), s.columnDouble(12));
         m.loopVideo  = s.columnInt   (13) != 0;
         m.muted      = s.columnInt   (14) != 0;
+        // Not a column: the size is the managed file's, which is the thing
+        // the operator is weighing when they sort by it.
+        m.fileSize   = QFileInfo(m.path).size();
         return m;
     }
 };

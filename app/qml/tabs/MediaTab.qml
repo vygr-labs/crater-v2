@@ -98,6 +98,7 @@ Item {
             if      (f === "name") cmp = a.title.localeCompare(b.title)
             else if (f === "type") cmp = a.type.localeCompare(b.type)
             else if (f === "date") cmp = (a.addedAt || 0) - (b.addedAt || 0)
+            else if (f === "size") cmp = (a.fileSize || 0) - (b.fileSize || 0)
             else                    cmp = a.id - b.id
             return asc ? cmp : -cmp
         })
