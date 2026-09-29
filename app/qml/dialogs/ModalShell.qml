@@ -5,7 +5,8 @@ import QtQuick
 //
 // Open/close lifecycle is owned by AppState + ModalLayer's Loader. ModalShell
 // only handles the *visual* of being open: fade-in on instantiation, and
-// translating backdrop / X clicks into AppState.closeModal() calls.
+// translating backdrop / X clicks into AppState.requestCloseModal() calls,
+// which let a dialog with unsaved edits (AppState.modalCloseOwner) object.
 Item {
     id: root
 
@@ -61,7 +62,7 @@ Item {
 
         MouseArea {
             anchors.fill: parent
-            onClicked: AppState.closeModal()
+            onClicked: AppState.requestCloseModal()
         }
     }
 
@@ -143,7 +144,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 iconName: "x"
                 iconSize: Theme.icon.md
-                onClicked: AppState.closeModal()
+                onClicked: AppState.requestCloseModal()
             }
 
             Rectangle {

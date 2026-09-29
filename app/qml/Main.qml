@@ -769,7 +769,8 @@ ApplicationWindow {
               && AppState.workspaceMode === ""
         onActivated: {
             if (AppState.activeModal !== "") {
-                AppState.closeModal()
+                // Lets an editor holding unsaved edits ask first.
+                AppState.requestCloseModal()
             } else if (AppState.selectedScheduleIndex >= 0) {
                 AppState.selectScheduleItem(-1)
             }

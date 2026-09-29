@@ -812,6 +812,24 @@ QtObject {
         modalProps = {}
     }
 
+    // A dialog holding unsaved edits registers itself here and exposes
+    // requestClose(). Every way of dismissing a modal other than the dialog's
+    // own buttons (Escape, a backdrop click, the header X) goes through
+    // requestCloseModal(), so that dialog gets to ask before its edits go.
+    //
+    // The prompt has to live INSIDE the dialog: there is one modal slot, so
+    // opening the shared "confirm" modal would replace the editor and take
+    // the edits with it whichever button was pressed. A QtObject-typed
+    // property nulls itself when the dialog is destroyed.
+    property QtObject modalCloseOwner: null
+
+    function requestCloseModal() {
+        if (modalCloseOwner && typeof modalCloseOwner.requestClose === "function")
+            modalCloseOwner.requestClose()
+        else
+            closeModal()
+    }
+
     // Open a context menu anchored at a mouse position inside `originItem`.
     // Replaces the boilerplate every call site used to repeat:
     //

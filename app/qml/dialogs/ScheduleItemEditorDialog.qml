@@ -122,7 +122,11 @@ ModalShell {
         root._baseline = root._digest(root._title, root._pages)
         root._isLoading = false
         titleInput.text = root._title
+        AppState.modalCloseOwner = root
     }
+
+    // Called by AppState.requestCloseModal (Escape, backdrop, X).
+    function requestClose() { _requestClose() }
 
     // ── Mutators ────────────────────────────────────────────────────────
     // Each guards on "did anything actually change" before reassigning, so
@@ -288,15 +292,13 @@ ModalShell {
     }
 
     function _requestClose() {
+        // A second Escape while the prompt is up backs out of the prompt.
+        if (discardConfirm.visible) { discardConfirm.close(); return }
         if (!root._isDirty) { AppState.closeModal(); return }
-        // The confirm dialog replaces this one, taking our state with it —
-        // so the discard branch has nothing left to do but close.
-        AppState.openModal("confirm", {
-            title:       qsTr("Discard changes?"),
-            body:        qsTr("This item has unsaved edits. Closing will lose them."),
-            confirmText: qsTr("Discard"),
-            onConfirm:   function() { AppState.closeModal() }
-        })
+        // Ask in place. The shared "confirm" modal would replace this
+        // dialog (one modal slot), so Cancel there could never bring the
+        // edits back.
+        discardConfirm.openConfirm()
     }
 
     // ── Synthetic preview item ──────────────────────────────────────────
@@ -664,5 +666,14 @@ ModalShell {
     Shortcut {
         sequence: StandardKey.Save
         onActivated: root._save()
+    }
+
+    ConfirmationOverlay {
+        id: discardConfirm
+        anchors.fill: parent
+        title:        qsTr("Discard changes?")
+        body:         qsTr("This item has unsaved edits. Closing will lose them.")
+        confirmLabel: qsTr("Discard")
+        onConfirmed:  AppState.closeModal()
     }
 }
