@@ -217,3 +217,18 @@ target_link_libraries(test_song_credits PRIVATE
 )
 
 add_test(NAME song_credits COMMAND test_song_credits)
+
+# -- Media import report -- issues #23 and #24 ------------------------------
+# wmv sniffing, folder drops, and the skipped-files list importFinished carries.
+qt_add_executable(test_media_import_report
+    test_media_import_report.cpp
+)
+
+target_link_libraries(test_media_import_report PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME media_import_report COMMAND test_media_import_report)

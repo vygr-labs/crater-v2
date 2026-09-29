@@ -10,6 +10,7 @@
 #include <QSize>
 #include <QString>
 #include <QStringList>
+#include <QVariantList>
 
 #include <memory>
 
@@ -46,8 +47,9 @@ public:
 
     // Import one or more files (drag-drop or future file picker). Each path is
     // validated, classified, copied into AppDataLocation/media/, and registered.
-    // Invalid files are skipped with a warning. Returns the number of items
-    // successfully imported.
+    // A folder is replaced by the files under it (subfolders included).
+    // Invalid files are skipped and reported through importFinished().
+    // Returns the number of paths queued.
     //
     // Runs on a worker thread when there's anything to copy; the call returns
     // immediately. Listen on importFinished() if you need a completion hook.
@@ -184,7 +186,10 @@ public:
 signals:
     void allMediaChanged();
     void sizeCapBytesChanged();
-    void importFinished(int imported, int skipped);
+    // `skippedFiles` holds one { name, reason } map per rejected file, with
+    // a short operator-facing reason ("unsupported format"). `skipped` is
+    // its length, kept for listeners that only want the count.
+    void importFinished(int imported, int skipped, QVariantList skippedFiles);
 
 private:
     struct Impl;
