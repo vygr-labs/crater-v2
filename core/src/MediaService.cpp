@@ -20,6 +20,7 @@
 #include <QUrl>
 #include <QVariantMap>
 #include <QtConcurrent>
+#include <QtEndian>
 
 #include <algorithm>
 #include <memory>
@@ -72,10 +73,25 @@ QString sniffMediaType(const QString& path)
     if (starts("\x00\x00\x01\xb3", 4))                   return QStringLiteral("video");   // MPEG-1/2
     if (starts("OggS", 4))                               return QStringLiteral("video");   // Ogg (may be audio; treat as video for picker)
     if (starts("FLV\x01", 4))                            return QStringLiteral("video");
-    // ASF header object GUID: wmv (and wma, treated as video like Ogg).
-    // The bundled FFmpeg carries the wmv1-3, vc1 and wma decoders.
+    // ASF header object GUID: wmv, and also wma. Both open with the same
+    // header, so look inside it for a video stream before calling the file
+    // a video. An audio-only wma would otherwise import as a black "video".
+    // The bundled FFmpeg carries the wmv1-3 and vc1 decoders.
     if (starts("\x30\x26\xb2\x75\x8e\x66\xcf\x11"
-               "\xa6\xd9\x00\xaa\x00\x62\xce\x6c", 16))  return QStringLiteral("video");
+               "\xa6\xd9\x00\xaa\x00\x62\xce\x6c", 16)) {
+        // Header object size, little-endian after the GUID. The stream
+        // properties live inside it, a few KB in practice, so cap the read.
+        constexpr quint64 kMaxHeader = 1 << 20;
+        const quint64 size = head.size() >= 24
+            ? qFromLittleEndian<quint64>(head.constData() + 16) : 0;
+        f.seek(0);
+        const QByteArray header = f.read(qint64(size >= 30 && size <= kMaxHeader
+                                                ? size : kMaxHeader));
+        // ASF_Video_Media stream type, BC19EFC0-5B4D-11CF-A8FD-00805F5C442B.
+        static const QByteArray kVideoStream("\xc0\xef\x19\xbc\x4d\x5b\xcf\x11"
+                                             "\xa8\xfd\x00\x80\x5f\x5c\x44\x2b", 16);
+        return header.contains(kVideoStream) ? QStringLiteral("video") : QString();
+    }
 
     return {};
 }
