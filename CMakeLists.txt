@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Pin the macOS floor rather than inheriting whatever the build machine runs.
-# Releases already require macOS 14, and without this the bundle's
-# Info.plist ships an empty LSMinimumSystemVersion (issue #21). Must be set
-# before project(); ignored on every other platform.
-set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version")
+# Without this the bundle's Info.plist ships an empty LSMinimumSystemVersion
+# (issue #21) and the binary quietly requires the runner's macOS 14. 13.0
+# is the floor of the Qt 6.11 kit the release links against, so going lower
+# would only let the app install where Qt itself can't run. Must be set
+# before project(). Ignored on every other platform.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 
 project(Crater
     VERSION 0.7.2
