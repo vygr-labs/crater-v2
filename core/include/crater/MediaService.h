@@ -51,9 +51,15 @@ public:
     // Invalid files are skipped and reported through importFinished().
     // Returns the number of paths queued.
     //
+    // Folders holding more than kLargeFolderImport files in total stop
+    // before anything is copied and emit largeImportPending() instead, so a
+    // stray drop of a whole Pictures folder asks first. Calling again with
+    // `confirmLarge` imports them.
+    //
     // Runs on a worker thread when there's anything to copy; the call returns
     // immediately. Listen on importFinished() if you need a completion hook.
-    Q_INVOKABLE int importPaths(QStringList paths);
+    Q_INVOKABLE int importPaths(QStringList paths, bool confirmLarge = false);
+    static constexpr int kLargeFolderImport = 200;
 
     // Synchronous single-file import. Used by ThemeService when extracting
     // bundled media from a v2 theme bundle — the bundle importer needs the
@@ -190,6 +196,10 @@ signals:
     // a short operator-facing reason ("unsupported format"). `skipped` is
     // its length, kept for listeners that only want the count.
     void importFinished(int imported, int skipped, QVariantList skippedFiles);
+    // The dropped folders hold `fileCount` files, more than
+    // kLargeFolderImport. Nothing was imported. Pass `paths` back to
+    // importPaths() with confirmLarge to go ahead.
+    void largeImportPending(QStringList paths, int fileCount);
 
 private:
     struct Impl;

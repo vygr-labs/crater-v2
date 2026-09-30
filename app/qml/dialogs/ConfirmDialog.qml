@@ -39,7 +39,8 @@ ModalShell {
             }
 
             PrimaryButton {
-                variant: "destructive"
+                // Red unless the caller says the action destroys nothing.
+                variant: AppState.modalProps.destructive === false ? "brand" : "destructive"
                 text: AppState.modalProps.confirmText || qsTr("Confirm")
                 onClicked: {
                     const cb = AppState.modalProps.onConfirm

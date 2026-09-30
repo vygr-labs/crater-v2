@@ -1,5 +1,6 @@
-// Media import tells the operator what it skipped (issue #24) and accepts
-// wmv files (issue #23).
+// Media import tells the operator what it skipped (issue #24), accepts
+// wmv files but not audio-only wma (issue #23), and asks before copying a
+// very large folder.
 //
 // importPaths() runs on a worker and reports through importFinished(), so
 // each case waits on that signal and reads the { name, reason } list it
@@ -65,6 +66,14 @@ QList<QVariant> importAndWait(MediaService& media, const QStringList& paths)
     QSignalSpy spy(&media, &MediaService::importFinished);
     media.importPaths(paths);
     if (!spy.wait(10000)) return {};
+    return spy.takeFirst();
+}
+
+QList<QVariant> importAndWaitConfirmed(MediaService& media, const QStringList& paths)
+{
+    QSignalSpy spy(&media, &MediaService::importFinished);
+    media.importPaths(paths, true);
+    if (!spy.wait(30000)) return {};
     return spy.takeFirst();
 }
 
@@ -164,6 +173,30 @@ private slots:
         QCOMPARE(args.size(), 3);
         QCOMPARE(args.at(0).toInt(), 2);
         QCOMPARE(names(args.at(2).toList()), QStringList{ QStringLiteral("readme.txt") });
+    }
+
+    void largeFolderAsksBeforeImporting()
+    {
+        QTemporaryDir tmp;
+        const QString folder = tmp.filePath(QStringLiteral("Pictures"));
+        const int count = MediaService::kLargeFolderImport + 1;
+        for (int i = 0; i < count; ++i)
+            QVERIFY(writeFile(folder + QStringLiteral("/p%1.png").arg(i), kPng));
+
+        MediaService media;
+        const int before = int(media.allMedia().size());
+        QSignalSpy pending(&media, &MediaService::largeImportPending);
+        QSignalSpy finished(&media, &MediaService::importFinished);
+        media.importPaths({ folder });
+        QVERIFY(pending.wait(10000));
+        QCOMPARE(pending.first().at(1).toInt(), count);
+        QCOMPARE(finished.size(), 0);
+        QCOMPARE(int(media.allMedia().size()), before);
+
+        // Confirmed, the same paths go through.
+        const auto args = importAndWaitConfirmed(media, pending.first().at(0).toStringList());
+        QCOMPARE(args.size(), 3);
+        QCOMPARE(args.at(0).toInt(), count);
     }
 };
 
