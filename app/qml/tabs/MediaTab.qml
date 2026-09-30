@@ -418,6 +418,19 @@ Item {
             root._lastImported = imported
             root._lastSkipped  = skippedFiles || []
         }
+        // A folder drop with a lot in it (a whole Pictures folder, say)
+        // waits for the operator before copying anything.
+        function onLargeImportPending(paths, fileCount) {
+            AppState.openModal("confirm", {
+                title:       qsTr("Import %1 files?").arg(fileCount),
+                body:        qsTr("The folders you dropped hold %1 files. Everything that is an "
+                              + "image or video will be copied into the media library.")
+                                 .arg(fileCount),
+                confirmText: qsTr("Import"),
+                destructive: false,
+                onConfirm:   function() { MediaService.importPaths(paths, true) }
+            })
+        }
     }
 
     // ── Import affordance ───────────────────────────────────────────────

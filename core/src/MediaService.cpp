@@ -238,9 +238,11 @@ std::optional<PendingImport> tryStageOneFile(const QString& raw,
 // in name order. Hidden and system files (Thumbs.db, desktop.ini) are left
 // out so a folder drop doesn't report them as skipped. Anything that isn't
 // a folder passes through untouched for tryStageOneFile to judge.
-QStringList expandFolders(const QStringList& paths)
+// `outFromFolders` gets how many of the results came out of folders.
+QStringList expandFolders(const QStringList& paths, int* outFromFolders = nullptr)
 {
     QStringList out;
+    int fromFolders = 0;
     for (const QString& raw : paths) {
         QString local = raw;
         if (local.startsWith(QStringLiteral("file:"))) {
@@ -257,8 +259,10 @@ QStringList expandFolders(const QStringList& paths)
         std::sort(files.begin(), files.end(), [](const QString& a, const QString& b) {
             return QString::compare(a, b, Qt::CaseInsensitive) < 0;
         });
+        fromFolders += int(files.size());
         out.append(files);
     }
+    if (outFromFolders) *outFromFolders = fromFolders;
     return out;
 }
 
@@ -560,7 +564,7 @@ QList<MediaItem> MediaService::allMedia()
     return out;
 }
 
-int MediaService::importPaths(QStringList paths)
+int MediaService::importPaths(QStringList paths, bool confirmLarge)
 {
     if (!m_impl || paths.isEmpty()) return 0;
 
@@ -577,7 +581,20 @@ int MediaService::importPaths(QStringList paths)
     // so the UI doesn't freeze. The fast part (INSERT) runs back on the main
     // thread on the owning connection — see PendingImport above for why we
     // don't write from the worker's own sqlite3 handle.
-    QtConcurrent::run([this, paths, cap, destDirCanonical]() {
+    QtConcurrent::run([this, paths, cap, destDirCanonical, confirmLarge]() {
+        // Walking a big folder touches the disk, so it happens here on the
+        // worker rather than in the QML drop handler.
+        int fromFolders = 0;
+        const QStringList files = expandFolders(paths, &fromFolders);
+        if (!confirmLarge && fromFolders > kLargeFolderImport) {
+            qInfo().noquote() << "MediaService::importPaths:" << fromFolders
+                              << "files under the dropped folders, asking first";
+            QMetaObject::invokeMethod(this, [this, paths, fromFolders]() {
+                emit largeImportPending(paths, fromFolders);
+            }, Qt::QueuedConnection);
+            return;
+        }
+
         QList<PendingImport> pending;
         // One { name, reason } per rejected file, for the operator's notice.
         QVariantList skippedFiles;
@@ -592,9 +609,7 @@ int MediaService::importPaths(QStringList paths)
             });
         };
 
-        // Walking a big folder touches the disk, so it happens here on the
-        // worker rather than in the QML drop handler.
-        for (const QString& raw : expandFolders(paths)) {
+        for (const QString& raw : files) {
             QString reason, userReason;
             auto staged = tryStageOneFile(raw, cap, destDirCanonical, &reason, &userReason);
             if (!staged) {
