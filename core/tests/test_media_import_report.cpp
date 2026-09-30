@@ -30,9 +30,24 @@ using crater::MediaService;
 namespace {
 
 const QByteArray kPng("\x89PNG\r\n\x1a\n", 8);
-// ASF header object GUID, the first 16 bytes of every wmv.
-const QByteArray kAsf("\x30\x26\xb2\x75\x8e\x66\xcf\x11"
-                      "\xa6\xd9\x00\xaa\x00\x62\xce\x6c", 16);
+
+// A minimal ASF header: the header object GUID, its 8-byte little-endian
+// size, and one stream type GUID inside it. The sniff only reads that far.
+QByteArray asfWithStream(const QByteArray& streamType)
+{
+    const QByteArray guid("\x30\x26\xb2\x75\x8e\x66\xcf\x11"
+                          "\xa6\xd9\x00\xaa\x00\x62\xce\x6c", 16);
+    QByteArray body(14, '\0');   // object count + reserved bytes
+    body += streamType;
+    const quint64 size = quint64(guid.size() + 8 + body.size());
+    QByteArray sizeLe(8, '\0');
+    for (int i = 0; i < 8; ++i) sizeLe[i] = char((size >> (8 * i)) & 0xff);
+    return guid + sizeLe + body;
+}
+const QByteArray kWmv = asfWithStream(QByteArray("\xc0\xef\x19\xbc\x4d\x5b\xcf\x11"
+                                                 "\xa8\xfd\x00\x80\x5f\x5c\x44\x2b", 16));
+const QByteArray kWma = asfWithStream(QByteArray("\x40\x9e\x69\xf8\x4d\x5b\xcf\x11"
+                                                 "\xa8\xfd\x00\x80\x5f\x5c\x44\x2b", 16));
 
 bool writeFile(const QString& path, const QByteArray& bytes)
 {
@@ -89,12 +104,23 @@ private slots:
     {
         QTemporaryDir tmp;
         const QString src = tmp.filePath(QStringLiteral("worship-loop.wmv"));
-        QVERIFY(writeFile(src, kAsf));
+        QVERIFY(writeFile(src, kWmv));
 
         MediaService media;
         const qint64 id = media.importPathSync(src);
         QVERIFY2(id > 0, qPrintable(media.lastImportError()));
         QCOMPARE(media.byId(id).type, QStringLiteral("video"));
+    }
+
+    // Same container, no video stream: it would play as a black screen.
+    void audioOnlyWmaIsRefused()
+    {
+        QTemporaryDir tmp;
+        const QString src = tmp.filePath(QStringLiteral("hymn.wma"));
+        QVERIFY(writeFile(src, kWma));
+
+        MediaService media;
+        QCOMPARE(media.importPathSync(src), qint64(0));
     }
 
     void skippedFilesAreNamedWithAReason()
@@ -130,7 +156,7 @@ private slots:
         QTemporaryDir tmp;
         const QString folder = tmp.filePath(QStringLiteral("Backgrounds"));
         QVERIFY(writeFile(folder + QStringLiteral("/a.png"), kPng));
-        QVERIFY(writeFile(folder + QStringLiteral("/nested/b.wmv"), kAsf));
+        QVERIFY(writeFile(folder + QStringLiteral("/nested/b.wmv"), kWmv));
         QVERIFY(writeFile(folder + QStringLiteral("/readme.txt"), QByteArray("hi")));
 
         MediaService media;
