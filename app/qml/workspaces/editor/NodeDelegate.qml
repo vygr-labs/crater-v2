@@ -41,16 +41,6 @@ Item {
     // ── Layout role ─────────────────────────────────────────────────────
     readonly property string _role: graph ? graph.layoutRoleOf(nodeId) : ""
     readonly property var    _laid: _role !== "" ? graph.layoutRectOf(nodeId) : null
-    readonly property string _cardId: _role === "member" ? graph.groupParentOf(nodeId) : ""
-    // True when the layout, not style.y, decides where this node's top is.
-    readonly property bool _yComputed: {
-        const d = (node && node.data) || {}
-        if (d.autoPosition) return true
-        const ah = d.autoHeight
-        if (!ah) return false
-        if (ah.from && ah.to) return true
-        return !(ah.source === "self" || ah.source === nodeId)
-    }
     readonly property var _handleIndices:
         _role === "member" ? []
       : _role !== ""       ? [3, 7]   // right + left: width only
@@ -243,14 +233,16 @@ Item {
             // re-enable (see EditorCanvas — MouseAreas don't take focus).
             root.forceActiveFocus()
             if (root._locked) return
-            _dragId = root._cardId || root.nodeId
-            const target = _dragId === root.nodeId
-                ? root.node : workspace.workingTheme.node(_dragId)
-            if (!target || (target.data && target.data.locked)) return
+            // What moves, and whether it moves vertically, is the
+            // workspace's call (layoutRuleOf), shared with the arrow keys
+            // and the align buttons.
+            const rule = workspace.layoutRuleOf(root.nodeId)
+            if (!rule || rule.locked) return
+            const target = workspace.workingTheme.node(rule.target)
+            if (!target) return
+            _dragId = rule.target
+            _dragY  = rule.y
             const ts = target.style || {}
-            // A member rides its card, so the card's own top rule applies.
-            _dragY = _dragId === root.nodeId ? !root._yComputed
-                   : !(target.data && target.data.autoPosition)
             const p = mapToItem(root.parent, m.x, m.y)
             _startStageX = p.x
             _startStageY = p.y

@@ -23,28 +23,30 @@ Rectangle {
         const id = workspace.workingTheme.addNode(kind)
         if (id) { _setSel(id); workspace.saveToHistory() }
     }
-    function _alignH(target) {
+    // Aligns what the author sees: the box the layout drew (a card hugs
+    // its text, so its style height isn't what is on screen), moved by
+    // shifting the layer's style by the difference. A card member aligns
+    // its card. Vertical align does nothing where the layout decides the
+    // top (workspace.layoutRuleOf).
+    function _align(target, axis) {
         const id = workspace.selectedNodeId
         if (!id) return
-        const n = workspace.workingTheme.node(id); if (!n) return
-        const w = (n.style && n.style.width) || 0
-        const x = target === "left"  ? 0
-                : target === "right" ? (100 - w)
-                                     : (100 - w) / 2
-        workspace.workingTheme.setNodeStyle(id, "x", Math.round(x * 10) / 10)
+        const rule = workspace.layoutRuleOf(id)
+        if (!rule || rule.locked || (axis === "y" && !rule.y)) return
+        const n = workspace.workingTheme.node(rule.target); if (!n) return
+        const box  = workspace.shownBoxOf(rule.target)
+        const pos  = axis === "x" ? box.x : box.y
+        const size = axis === "x" ? box.width : box.height
+        const want = (target === "left" || target === "top")      ? 0
+                   : (target === "right" || target === "bottom")  ? (100 - size)
+                                                                  : (100 - size) / 2
+        const cur = (n.style && n.style[axis]) || 0
+        const v = Math.max(-200, Math.min(200, cur + (want - pos)))
+        workspace.workingTheme.setNodeStyle(rule.target, axis, Math.round(v * 10) / 10)
         workspace.saveToHistory()
     }
-    function _alignV(target) {
-        const id = workspace.selectedNodeId
-        if (!id) return
-        const n = workspace.workingTheme.node(id); if (!n) return
-        const h = (n.style && n.style.height) || 0
-        const y = target === "top"    ? 0
-                : target === "bottom" ? (100 - h)
-                                      : (100 - h) / 2
-        workspace.workingTheme.setNodeStyle(id, "y", Math.round(y * 10) / 10)
-        workspace.saveToHistory()
-    }
+    function _alignH(target) { _align(target, "x") }
+    function _alignV(target) { _align(target, "y") }
 
     Row {
         anchors.left: parent.left

@@ -154,7 +154,6 @@ Item {
         }
         return ""
     }
-    function groupParentOf(id) { return _groupParentOf(id) }
 
     // Swap one node's snapshot in place. Only for edits that leave the
     // layout wiring alone (style, text); a change to z, group, autoHeight or

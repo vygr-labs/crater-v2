@@ -18,6 +18,21 @@ Item {
     function _liveStyle  (field, v) { workspace.workingTheme.setNodeStyle(node.id, field, v) }
     function _commitStyle(field, v) { workspace.saveToHistory() }
 
+    // Fields the auto-layout decides are shown but can't be edited, since
+    // a value typed there would change nothing on screen. Same rule the
+    // canvas drag and arrow keys follow (workspace.layoutRuleOf).
+    readonly property var _rule: node ? workspace.layoutRuleOf(node.id) : null
+    readonly property bool _xEditable: !_rule || !_rule.member
+    readonly property bool _yEditable: !_rule || (!_rule.member && _rule.y)
+    readonly property bool _wEditable: !_rule || _rule.size
+    readonly property bool _hEditable: !_rule || (_rule.size && _rule.height)
+    readonly property string _ruleNote:
+        !_rule                   ? ""
+      : _rule.member             ? qsTr("Placed and sized by its card. Drag or nudge it to move the card.")
+      : !_rule.y && !_rule.height ? qsTr("Top and height follow the layer it wraps.")
+      : !_rule.y                 ? qsTr("Top follows the layer it is stacked against.")
+                                 : ""
+
     Column {
         id: col
         anchors.left: parent.left
@@ -38,6 +53,7 @@ Item {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "X"; suffix: "%"
+                enabled: root._xEditable; opacity: enabled ? 1 : 0.45
                 min: -200; max: 200; step: 0.1
                 value: (node && node.style && node.style.x) || 0
                 onLive:   function(v) { root._liveStyle("x", v) }
@@ -47,6 +63,7 @@ Item {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "Y"; suffix: "%"
+                enabled: root._yEditable; opacity: enabled ? 1 : 0.45
                 min: -200; max: 200; step: 0.1
                 value: (node && node.style && node.style.y) || 0
                 onLive:   function(v) { root._liveStyle("y", v) }
@@ -61,6 +78,7 @@ Item {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "W"; suffix: "%"
+                enabled: root._wEditable; opacity: enabled ? 1 : 0.45
                 min: 1; max: 100; step: 0.1
                 value: (node && node.style && node.style.width) || 0
                 onLive:   function(v) { root._liveStyle("width", v) }
@@ -70,11 +88,22 @@ Item {
                 width: (parent.width - 6) / 2
                 workspace: root.workspace
                 label: "H"; suffix: "%"
+                enabled: root._hEditable; opacity: enabled ? 1 : 0.45
                 min: 1; max: 100; step: 0.1
                 value: (node && node.style && node.style.height) || 0
                 onLive:   function(v) { root._liveStyle("height", v) }
                 onCommit: function(v) { root._commitStyle("height", v) }
             }
+        }
+        Text {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            visible: root._ruleNote !== ""
+            text: root._ruleNote
+            wrapMode: Text.Wrap
+            color: Theme.color.textTertiary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
         }
         Row {
             anchors.left: parent.left
