@@ -19,22 +19,23 @@ Item {
     readonly property var _canvas: _wt.canvas || ({ width: 1920, height: 1080 })
     readonly property var _nodes:  _wt.nodes  || []
 
-    // Bumped to hand the graph a fresh node list for the data edits that
-    // rewire a card, hug or stack, which the graph must re-classify for.
-    // setNodeData doesn't emit nodesChanged, so `_nodes` above is stale at
-    // that point and the graph reads workingTheme.nodes itself. A z change
-    // already emits nodesChanged. Every other edit is patched into its one
-    // delegate (graph.updateNode) so dragging doesn't rebuild the canvas.
-    property int _graphRev: 0
-    readonly property var _layoutDataFields: ["group", "autoHeight", "autoPosition"]
+    // The painted graph, for the workspace's align buttons (shownBoxOf).
+    readonly property alias paintGraph: graph
+
+    // The graph gets a fresh node list on structural edits (nodesChanged)
+    // and on the data edits that rewire a card, hug or stack
+    // (workspace.layoutRev), which it must re-classify for. It reads
+    // workingTheme.nodes itself because `_nodes` above only refreshes on
+    // nodesChanged. Every other edit is patched into its one delegate
+    // (graph.updateNode) so dragging doesn't rebuild the canvas.
     Connections {
         target: root._wt
         function onNodeStyleChanged(id, field) {
             if (field !== "z") graph.updateNode(root._wt.node(id))
         }
         function onNodeDataChanged(id, field) {
-            if (root._layoutDataFields.indexOf(field) >= 0) root._graphRev++
-            else graph.updateNode(root._wt.node(id))
+            if (field !== "group" && field !== "autoHeight" && field !== "autoPosition")
+                graph.updateNode(root._wt.node(id))
         }
     }
 
@@ -169,7 +170,7 @@ Item {
                 // Above the deselect area (z -1), under the chrome (z >= 0).
                 z: -0.5
                 anchors.fill: parent
-                nodes: { root._graphRev; return root._wt.nodes || [] }
+                nodes: { root.workspace.layoutRev; return root._wt.nodes || [] }
                 resolveTextFn: node => root.workspace.resolveText(node)
                 dimHidden: true
             }

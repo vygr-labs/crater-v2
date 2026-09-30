@@ -197,6 +197,63 @@ Rectangle {
     Connections {
         target: workspace.workingTheme
         function onCurrentLayoutChanged() { workspace.selectedNodeId = "" }
+        function onNodeDataChanged(id, field) {
+            if (field === "group" || field === "autoHeight" || field === "autoPosition")
+                workspace.layoutRev++
+        }
+    }
+
+    // ── Moving a laid-out layer ─────────────────────────────────────────
+    // Some geometry is decided by the auto-layout, not by style (see
+    // ThemedNodeGraph). Every tool that moves or sizes a layer asks here
+    // (canvas drag, arrow keys, the align buttons, the X/Y/W/H fields), so
+    // they all agree on what an edit to a laid-out layer does:
+    //   card member     : the card moves instead. Its own box isn't editable.
+    //   autoPosition    : its top follows another layer. No y.
+    //   hug of another  : top and height follow the layer it wraps.
+    // A card or a self-hug keeps its height: that box is what the card
+    // anchors inside, and the inspector is the only way to set it.
+    //
+    // layoutRev bumps on the data edits that rewire a card, hug or stack.
+    // setNodeData doesn't emit nodesChanged, so readers of the node list
+    // depend on this as well. Structural edits already emit nodesChanged.
+    property int layoutRev: 0
+    function layoutRuleOf(id) {
+        layoutRev   // dependency
+        const ns = workingTheme.nodes || []
+        let self = null, card = null
+        for (let i = 0; i < ns.length; i++) {
+            const n = ns[i]
+            if (n.id === id) self = n
+            const g = n.data && n.data.group
+            if (!card && g && g.members && g.members.indexOf(id) >= 0) card = n
+        }
+        if (!self) return null
+        const selfLocked = !!(self.data && self.data.locked)
+        if (card) {
+            const cd = card.data || {}
+            return { target: card.id, member: true, locked: selfLocked || !!cd.locked,
+                     y: !cd.autoPosition, size: false, height: false }
+        }
+        const d  = self.data || {}
+        const ah = d.autoHeight
+        const wraps = !!ah && (!!(ah.from && ah.to)
+                               || !(ah.source === "self" || ah.source === id))
+        return { target: id, member: false, locked: selfLocked,
+                 y: !d.autoPosition && !wraps, size: true, height: !wraps }
+    }
+
+    // Where a layer shows on the canvas, in percent of the canvas: the box
+    // the layout put it in, which for a card, hug or stack isn't its style.
+    function shownBoxOf(id) {
+        const g = editorCanvas.paintGraph
+        const r = g ? g.layoutRectOf(id) : null
+        if (r && g.width > 0 && g.height > 0)
+            return { x: r.x / g.width * 100,     y: r.y / g.height * 100,
+                     width: r.width / g.width * 100, height: r.height / g.height * 100 }
+        const n = workingTheme.node(id)
+        const s = (n && n.style) || {}
+        return { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
     }
 
     // ── Design with AI ──────────────────────────────────
@@ -343,6 +400,7 @@ Rectangle {
             }
 
             EditorCanvas {
+                id: editorCanvas
                 anchors.top: layoutRail.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
@@ -405,15 +463,20 @@ Rectangle {
     // Arrow nudge — 1% normally, 5% with Shift. Range matches the drag
     // and direct-input clamps (-200..200) so all three movement paths
     // agree on what's reachable.
+    // Same rule as a canvas drag (layoutRuleOf): a card member nudges its
+    // card, and up / down do nothing where the layout decides the top.
     function _nudge(dx, dy) {
         const id = workspace.selectedNodeId
         if (!id) return
-        const n = workingTheme.node(id)
+        const rule = layoutRuleOf(id)
+        if (!rule || rule.locked) return
+        const n = workingTheme.node(rule.target)
         if (!n || !n.style) return
-        workingTheme.setNodeStyle(id, "x", Math.max(-200, Math.min(200,
+        workingTheme.setNodeStyle(rule.target, "x", Math.max(-200, Math.min(200,
             Math.round(((n.style.x || 0) + dx) * 10) / 10)))
-        workingTheme.setNodeStyle(id, "y", Math.max(-200, Math.min(200,
-            Math.round(((n.style.y || 0) + dy) * 10) / 10)))
+        if (rule.y)
+            workingTheme.setNodeStyle(rule.target, "y", Math.max(-200, Math.min(200,
+                Math.round(((n.style.y || 0) + dy) * 10) / 10)))
     }
     Shortcut { sequence: "Left";        enabled: !workspace.inputFocused; onActivated: workspace._nudge(-1, 0) }
     Shortcut { sequence: "Right";       enabled: !workspace.inputFocused; onActivated: workspace._nudge( 1, 0) }
