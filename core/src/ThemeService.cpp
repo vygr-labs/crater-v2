@@ -24,6 +24,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QUuid>
@@ -294,6 +295,16 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
         errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|"
                                "presentationTitle|presentationBody|presentationSubtitle|"
                                "presentationBodyRight|custom").arg(idx);
+
+    // Recolours scripture verse numbers in this box (NodeRenderer). DSL
+    // colours take #rgb or #rrggbb only, so alpha is refused here rather
+    // than silently falling back to gold on the projector.
+    if (data.contains("verseNumberColor")) {
+        const QString c = data.value("verseNumberColor").toString();
+        static const QRegularExpression dslHex(QStringLiteral("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"));
+        if (!dslHex.match(c).hasMatch())
+            errs << QStringLiteral("nodes[%1].data.verseNumberColor must be #rgb or #rrggbb").arg(idx);
+    }
 
     if (data.value("autoResize").toBool() && data.contains("maxFontSize") &&
         data.value("maxFontSize").toInt() <= 0)

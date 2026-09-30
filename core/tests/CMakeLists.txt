@@ -45,6 +45,28 @@ target_include_directories(test_theme_bundle PRIVATE
 )
 
 add_test(NAME theme_bundle COMMAND test_theme_bundle)
+
+# -- Built-in scripture themes -- V012 --------------------------------------
+# V012 makes Plum & Rose the scripture default on fresh installs only. An
+# upgrade that switched it would change what a congregation sees without
+# anyone choosing it, so both paths run through the real Migrator here.
+qt_add_executable(test_scripture_themes
+    test_scripture_themes.cpp
+)
+
+target_link_libraries(test_scripture_themes PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# Rewinds user_version through the private db/ wrappers.
+target_include_directories(test_scripture_themes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME scripture_themes COMMAND test_scripture_themes)
 # -- Version ordering -- docs/auto-update.md ----------------------------
 # Pure string comparison behind the updater's "is this an upgrade?"
 # decision. No network, no database, no Gui: crater::compareVersions is

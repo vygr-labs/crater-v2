@@ -327,6 +327,14 @@ private slots:
         QVERIFY(resolveColor(QString()).isEmpty());
     }
 
+    void color_verseIsSemanticGold()
+    {
+        // Scripture verse numbers. Resolves where no theme overrides it,
+        // but is not a toolbar swatch, so the canonical list stays at 7.
+        QCOMPARE(resolveColor(QStringLiteral("verse")), QStringLiteral("#fdd835"));
+        QVERIFY(!namedColors().contains(QStringLiteral("verse")));
+    }
+
     void color_namedColorsListIsCanonical()
     {
         const QStringList names = namedColors();

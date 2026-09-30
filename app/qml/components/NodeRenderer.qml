@@ -144,9 +144,17 @@ Item {
                 // markers, so unformatted content still renders as-is. The
                 // service applies the case transform AFTER parsing so that
                 // markers like {color=red} stay lowercase and parseable.
-                readonly property string _renderedText:
-                    LyricsService.dslToHtml(nodeRoot.resolvedText || "",
-                                             _style.textTransform || "")
+                //
+                // A theme may recolour scripture verse numbers. They arrive
+                // as {color=verse} (ScriptureTab composePassage), so the
+                // swap is a marker rewrite before parsing; validateTokens
+                // guarantees the value is a plain hex colour.
+                readonly property string _renderedText: {
+                    let t = nodeRoot.resolvedText || ""
+                    const vc = _data.verseNumberColor
+                    if (vc) t = t.split("{color=verse}").join("{color=" + vc + "}")
+                    return LyricsService.dslToHtml(t, _style.textTransform || "")
+                }
 
                 // Fitted pixel size. Updated by _refit() — kept as a plain
                 // property (not a binding) so the binary search writing to

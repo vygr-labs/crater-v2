@@ -30,6 +30,11 @@ const QHash<QString, QString>& palette()
         { QStringLiteral("blue"),   QStringLiteral("#1e88e5") },
         { QStringLiteral("purple"), QStringLiteral("#8e24aa") },
         { QStringLiteral("gray"),   QStringLiteral("#757575") },
+        // Semantic, not a swatch: scripture verse numbers. The same gold as
+        // yellow wherever nothing overrides it; a theme's verse node can
+        // recolour it (NodeRenderer, data.verseNumberColor). Kept out of
+        // orderedNames() so the editor toolbar never offers it.
+        { QStringLiteral("verse"),  QStringLiteral("#fdd835") },
     };
     return p;
 }

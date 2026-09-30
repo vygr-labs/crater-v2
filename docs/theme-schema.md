@@ -197,9 +197,10 @@ shows a picture.
 | `text`       | when `custom` | string (the literal text to show)                 |
 | `autoResize` | no       | boolean — binary-search shrink-to-fit the box          |
 | `maxFontSize`| no       | integer `> 0` — cap when `autoResize` is true          |
+| `verseNumberColor` | no | `#rgb` or `#rrggbb` — colour of the verse numbers in a multi-verse passage. Unset keeps the default gold |
 
 `linkage` decides what the box shows at runtime:
-- `scriptureRef` → the reference label (e.g. "John 3:16"). For non-scripture
+- `scriptureRef` → the reference label (e.g. "John 3:16 (KJV)"). For non-scripture
   items this is the item's **title**, which is the usual way to show a song name.
 - `scriptureText` → the verse body (the live verse text).
 - `lyric` → the current song stanza.
