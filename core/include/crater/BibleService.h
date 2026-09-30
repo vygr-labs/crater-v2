@@ -57,7 +57,22 @@ public:
     // (chapter, verse). KJV-scale call returns ~31k rows in one indexed scan.
     // ListView consumes the returned QList directly; only visible delegates
     // are instantiated so memory is bounded by row count, not list length.
+    //
+    // Cached, because re-reading a whole Bible costs ~200 ms on the GUI
+    // thread, a visible freeze on the projector at every translation
+    // switch. Bible rows are only written by the first-run import, which
+    // finishes before this service exists, so the cache never goes stale.
+    // It holds the few most recently used translations (~13 MB each)
+    // unless preloading is on; see setPreloadAll.
     Q_INVOKABLE QList<crater::Verse> allVerses(QString translationCode);
+
+    // Row of a verse inside allVerses(translationCode), or -1 when that
+    // translation doesn't carry it. Book names match case-insensitively.
+    // Constant time after the first call per translation; walking the list
+    // from QML instead costs ~200 ms because every element read copies a
+    // Verse into a JS wrapper.
+    Q_INVOKABLE int verseIndex(QString translationCode, QString bookName,
+                               int chapter, int verseNumber);
 
     // Parse a shorthand reference ("Gen 1:1", "jn 3:16", "1 sa 1", "psalm 23")
     // into a single Verse via CanonicalBibleBooks. Missing verse defaults to 1.
@@ -89,6 +104,13 @@ public:
     // thread with its own connection; returns a QFuture<void> that resolves
     // when the worker completes.
     Q_INVOKABLE QFuture<void> rebuildFtsIndex();
+
+    // true: read every installed translation on a worker thread and keep
+    // them all, so even the first switch to one is instant. Costs ~13 MB
+    // per installed translation. false (the default): keep only the few
+    // most recently used, and drop the rest now if they were preloaded.
+    // Wired to SettingsService::preloadTranslations in main.cpp.
+    void setPreloadAll(bool on);
 
 private:
     struct Impl;

@@ -207,6 +207,9 @@ Item {
     // sidebar control: it changes the corpus, it doesn't filter inside.
     readonly property string _parserQuery: _strippedQuery(_debouncedQuery)
 
+    // currentVerses is the full translation rather than a search hit list.
+    readonly property bool _showingWholeTranslation: !(mode === "search" && _parserQuery.length > 0)
+
     readonly property var currentVerses: {
         if (mode === "search" && _parserQuery.length > 0) {
             // Empty filter → search every imported translation at once; the
@@ -308,6 +311,14 @@ Item {
         const normBook = String(book || "").toLowerCase()
         const target   = (typeof targetVerse === "string")
                           ? parseInt(targetVerse) : targetVerse
+
+        // The whole translation is indexed in BibleService. Walking its ~31k
+        // rows here copies each one into a JS wrapper, ~200 ms per call and
+        // several calls per translation switch. Rows there are single whole
+        // verses, so the exact match below is the only one possible. Every
+        // caller passes currentVerses, so the mode tells which list this is.
+        if (root._showingWholeTranslation)
+            return BibleService.verseIndex(activeTranslation, normBook, chapter, target)
 
         let exactIdx = -1
         let rangeIdx = -1

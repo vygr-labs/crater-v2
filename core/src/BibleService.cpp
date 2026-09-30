@@ -9,11 +9,117 @@
 #include "import/CanonicalBibleBooks.h"
 
 #include <QDebug>
+#include <QFutureWatcher>
+#include <QHash>
 #include <QRegularExpression>
 #include <QVariantMap>
 #include <QtConcurrent>
 
 namespace crater {
+
+namespace {
+
+constexpr QStringView kBooksSql = u"SELECT b.name, b.abbrev, b.testament, b.book_number, "
+    u"       COALESCE(MAX(v.chapter), 0) AS chapter_count "
+    u"FROM books b "
+    u"JOIN translations t ON t.id = b.translation_id "
+    u"LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
+    u"WHERE t.code = ? "
+    u"GROUP BY b.id "
+    u"ORDER BY b.book_number";
+
+constexpr QStringView kAllVersesSql = u"SELECT b.name, v.chapter, v.verse, v.text "
+    u"FROM verses v "
+    u"JOIN translations t ON t.id = v.translation_id "
+    u"JOIN books        b ON b.id = v.book_id "
+    u"WHERE t.code = ? "
+    u"ORDER BY b.book_number, v.chapter, v.verse";
+
+// Both throw db::Error; callers decide whether a failure is cached.
+QList<Book> readBooks(db::Statement& stmt, const QString& code)
+{
+    QList<Book> out;
+    stmt.reset();
+    stmt.bind(1, code);
+    while (stmt.step()) {
+        Book b;
+        b.name         = stmt.columnText(0);
+        b.abbrev       = stmt.columnText(1);
+        b.testament    = stmt.columnText(2);
+        b.bookNumber   = stmt.columnInt(3);
+        b.chapterCount = stmt.columnInt(4);
+        out.append(std::move(b));
+    }
+    return out;
+}
+
+QList<Verse> readAllVerses(db::Statement& stmt, const QString& code)
+{
+    QList<Verse> out;
+    stmt.reset();
+    stmt.bind(1, code);
+    // KJV is ~31,103 verses; reserving avoids ~20 reallocs.
+    out.reserve(32000);
+    QString book;
+    while (stmt.step()) {
+        Verse v;
+        v.translationCode = code;
+        // Rows arrive grouped by book, so every verse of a book can share
+        // one name string instead of holding its own copy.
+        const QString name = stmt.columnText(0);
+        if (name != book) book = name;
+        v.book    = book;
+        v.chapter = stmt.columnInt(1);
+        v.verse   = stmt.columnInt(2);
+        v.text    = stmt.columnText(3);
+        out.append(std::move(v));
+    }
+    return out;
+}
+
+// Every translation's verses and books, read on a worker thread when
+// preloading is switched on.
+struct Prefetch
+{
+    QHash<QString, QList<Verse>> verses;
+    QHash<QString, QList<Book>>  books;
+};
+
+Prefetch prefetchAll()
+{
+    Prefetch p;
+    try {
+        // Own connection: connections never cross threads.
+        db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
+                            u"BibleService prefetch");
+        db::Statement codes  = conn.prepare(u"SELECT code FROM translations ORDER BY sort_order, code");
+        db::Statement books  = conn.prepare(kBooksSql);
+        db::Statement verses = conn.prepare(kAllVersesSql);
+        while (codes.step()) {
+            const QString code = codes.columnText(0);
+            p.books.insert(code, readBooks(books, code));
+            p.verses.insert(code, readAllVerses(verses, code));
+        }
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "BibleService prefetch:" << e.message();
+    }
+    return p;
+}
+
+// Row lookup for one translation. Book names map to small ids so the verse
+// key is an integer, which keeps building it to a few ms for a whole Bible.
+struct VerseRows
+{
+    QHash<QString, quint32> bookIds;   // lowercased name
+    QHash<quint64, int>     rows;
+
+    static quint64 key(quint32 book, int chapter, int verse)
+    {
+        return (quint64(book) << 40) | (quint64(quint32(chapter)) << 20) | quint32(verse);
+    }
+};
+
+}  // namespace
 
 // Impl owns the connection + cached prepared statements. PIMPL keeps sqlite3
 // types out of the public header.
@@ -31,21 +137,39 @@ struct BibleService::Impl
     db::Statement searchAll;
     db::Statement searchScoped;
 
+    // Per-translation caches (see allVerses in the header). Books are a few
+    // KB per translation and always kept. Verses and their row index are
+    // the heavy part, bounded by `recent` unless preloadAll is on.
+    QHash<QString, QList<Verse>> verses;
+    QHash<QString, VerseRows>    verseRows;
+    QHash<QString, QList<Book>>  books;
+    QStringList                  recent;   // most recently used first
+    bool                         preloadAll = false;
+    QFutureWatcher<Prefetch>     prefetch;
+
+    // Operators flip between two or three translations in a service, so
+    // that many stay warm without preloading everything.
+    static constexpr int kKeepRecent = 3;
+
+    void touch(const QString& code)
+    {
+        recent.removeOne(code);
+        recent.prepend(code);
+        if (preloadAll) return;
+        while (recent.size() > kKeepRecent) {
+            const QString old = recent.takeLast();
+            verses.remove(old);
+            verseRows.remove(old);
+        }
+    }
+
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
             "SELECT code, name, year, description "
             "FROM translations "
             "ORDER BY sort_order, code")))
-        , selectBooks(conn.prepare(QStringLiteral(
-            "SELECT b.name, b.abbrev, b.testament, b.book_number, "
-            "       COALESCE(MAX(v.chapter), 0) AS chapter_count "
-            "FROM books b "
-            "JOIN translations t ON t.id = b.translation_id "
-            "LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
-            "WHERE t.code = ? "
-            "GROUP BY b.id "
-            "ORDER BY b.book_number")))
+        , selectBooks(conn.prepare(kBooksSql))
         , selectVerse(conn.prepare(QStringLiteral(
             "SELECT v.text "
             "FROM verses v "
@@ -60,13 +184,7 @@ struct BibleService::Impl
             "JOIN books        b ON b.id = v.book_id "
             "WHERE t.code = ? AND b.name = ? AND v.chapter = ? "
             "ORDER BY v.verse")))
-        , selectAllVerses(conn.prepare(QStringLiteral(
-            "SELECT b.name, v.chapter, v.verse, v.text "
-            "FROM verses v "
-            "JOIN translations t ON t.id = v.translation_id "
-            "JOIN books        b ON b.id = v.book_id "
-            "WHERE t.code = ? "
-            "ORDER BY b.book_number, v.chapter, v.verse")))
+        , selectAllVerses(conn.prepare(kAllVersesSql))
         , searchAll(conn.prepare(QStringLiteral(
             "SELECT v.text, b.name, v.chapter, v.verse, t.code, bm25(verses_fts) AS score "
             "FROM verses_fts "
@@ -96,6 +214,38 @@ BibleService::BibleService(QObject* parent)
     } catch (const db::Error& e) {
         qCritical().noquote() << "BibleService: failed to open DB —" << e.message();
         // Leave m_impl null; methods will return empty results.
+        return;
+    }
+    // Anything the UI loaded while the worker ran wins. If preloading was
+    // switched off meanwhile, the result is dropped.
+    connect(&m_impl->prefetch, &QFutureWatcher<Prefetch>::finished, this, [this] {
+        if (!m_impl->preloadAll) return;
+        Prefetch p = m_impl->prefetch.result();
+        for (auto it = p.verses.begin(); it != p.verses.end(); ++it) {
+            if (m_impl->verses.contains(it.key())) continue;
+            m_impl->verses.insert(it.key(), std::move(it.value()));
+            m_impl->recent.append(it.key());
+        }
+        for (auto it = p.books.begin(); it != p.books.end(); ++it)
+            if (!m_impl->books.contains(it.key())) m_impl->books.insert(it.key(), std::move(it.value()));
+    });
+}
+
+void BibleService::setPreloadAll(bool on)
+{
+    if (!m_impl || m_impl->preloadAll == on) return;
+    m_impl->preloadAll = on;
+    if (on) {
+        if (!m_impl->prefetch.isRunning())
+            m_impl->prefetch.setFuture(QtConcurrent::run(prefetchAll));
+        return;
+    }
+    // Back to the recent few. A list QML still shows stays alive through
+    // its own reference, so this never pulls rows out from under the UI.
+    while (m_impl->recent.size() > Impl::kKeepRecent) {
+        const QString old = m_impl->recent.takeLast();
+        m_impl->verses.remove(old);
+        m_impl->verseRows.remove(old);
     }
 }
 
@@ -124,25 +274,17 @@ QList<Translation> BibleService::translations()
 
 QList<Book> BibleService::books(QString translationCode)
 {
-    QList<Book> out;
-    if (!m_impl) return out;
+    if (!m_impl) return {};
+    if (auto it = m_impl->books.constFind(translationCode); it != m_impl->books.cend())
+        return *it;
     try {
-        auto& stmt = m_impl->selectBooks;
-        stmt.reset();
-        stmt.bind(1, translationCode);
-        while (stmt.step()) {
-            Book b;
-            b.name         = stmt.columnText(0);
-            b.abbrev       = stmt.columnText(1);
-            b.testament    = stmt.columnText(2);
-            b.bookNumber   = stmt.columnInt(3);
-            b.chapterCount = stmt.columnInt(4);
-            out.append(std::move(b));
-        }
+        QList<Book> out = readBooks(m_impl->selectBooks, translationCode);
+        m_impl->books.insert(translationCode, out);
+        return out;
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleService::books():" << e.message();
+        return {};
     }
-    return out;
 }
 
 Verse BibleService::verse(QString translationCode, QString bookName, int chapter, int verseNumber)
@@ -198,30 +340,48 @@ QList<Verse> BibleService::chapter(QString translationCode, QString bookName, in
 
 QList<Verse> BibleService::allVerses(QString translationCode)
 {
-    QList<Verse> out;
-    if (!m_impl) return out;
+    if (!m_impl) return {};
+    if (auto it = m_impl->verses.constFind(translationCode); it != m_impl->verses.cend()) {
+        QList<Verse> out = *it;
+        m_impl->touch(translationCode);
+        return out;
+    }
     try {
-        auto& stmt = m_impl->selectAllVerses;
-        stmt.reset();
-        stmt.bind(1, translationCode);
-
-        // Pre-allocate. KJV is ~31,103 verses; reserving avoids ~20 reallocs
-        // during the append loop. Other translations are similar in size.
-        out.reserve(32000);
-
-        while (stmt.step()) {
-            Verse v;
-            v.translationCode = translationCode;
-            v.book    = stmt.columnText(0);
-            v.chapter = stmt.columnInt(1);
-            v.verse   = stmt.columnInt(2);
-            v.text    = stmt.columnText(3);
-            out.append(std::move(v));
-        }
+        QList<Verse> out = readAllVerses(m_impl->selectAllVerses, translationCode);
+        m_impl->verses.insert(translationCode, out);
+        m_impl->touch(translationCode);
+        return out;
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleService::allVerses():" << e.message();
+        return {};
     }
-    return out;
+}
+
+int BibleService::verseIndex(QString translationCode, QString bookName, int chapter, int verseNumber)
+{
+    if (!m_impl) return -1;
+    auto rows = m_impl->verseRows.constFind(translationCode);
+    if (rows == m_impl->verseRows.cend()) {
+        const QList<Verse> list = allVerses(translationCode);
+        VerseRows index;
+        index.rows.reserve(list.size());
+        QString book;
+        quint32 id = 0;
+        for (int i = 0; i < list.size(); ++i) {
+            const Verse& v = list[i];
+            if (v.book != book) {
+                book = v.book;
+                const QString lower = book.toLower();
+                id = index.bookIds.value(lower, quint32(index.bookIds.size()));
+                index.bookIds.insert(lower, id);
+            }
+            index.rows.insert(VerseRows::key(id, v.chapter, v.verse), i);
+        }
+        rows = m_impl->verseRows.insert(translationCode, std::move(index));
+    }
+    const auto book = rows->bookIds.constFind(bookName.toLower());
+    if (book == rows->bookIds.cend()) return -1;
+    return rows->rows.value(VerseRows::key(*book, chapter, verseNumber), -1);
 }
 
 QVariantMap BibleService::parseReferenceRange(QString input)

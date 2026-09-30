@@ -135,3 +135,25 @@ target_link_libraries(test_theme_prompt PRIVATE
 )
 
 add_test(NAME theme_prompt COMMAND test_theme_prompt)
+
+# -- Bible verse cache -- BibleService::allVerses / verseIndex ----------
+# Scripture translation switches read from this cache instead of the whole
+# Bible, so a wrong row or a cache that keeps too much (memory) or too
+# little (a freeze on the projector) would only show up live. Seeds a tiny
+# Bible in the test-mode AppDataLocation.
+qt_add_executable(test_bible_cache
+    test_bible_cache.cpp
+)
+
+target_link_libraries(test_bible_cache PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+# Seeds through the private db/ wrappers, same as test_theme_bundle.
+target_include_directories(test_bible_cache PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME bible_cache COMMAND test_bible_cache)

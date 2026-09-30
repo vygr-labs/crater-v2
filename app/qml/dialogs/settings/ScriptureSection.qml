@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Scripture — default Bible version, verse number display, Strong's tab.
+// Scripture — default Bible version, verse number display, translation
+// preloading, Strong's tab.
 // Highlight-current-verse and footer-line rows are aspirational (no
 // rendering site yet) and carry the "Soon" badge.
 Item {
@@ -90,6 +91,26 @@ Item {
                 ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     value: SettingsService.showScriptureFooter
                     onToggled: SettingsService.showScriptureFooter = !SettingsService.showScriptureFooter }
+            }
+
+            // ── PERFORMANCE ──────────────────────────────────────────────
+            SettingsSectionHeader { title: qsTr("Performance") }
+
+            // The only row here whose description can run long (and grows
+            // with the UI font size), so it wraps and sizes to its text
+            // instead of eliding the memory cost away.
+            Item { Layout.fillWidth: true; Layout.preferredHeight: Math.max(56, preloadText.implicitHeight + Theme.space.lg)
+                Column { id: preloadText
+                         anchors.left: parent.left; anchors.right: preloadToggle.left; anchors.rightMargin: Theme.space.lg
+                         anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Text { text: qsTr("Preload all Bible translations"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
+                    Text { width: parent.width; wrapMode: Text.WordWrap
+                           text: qsTr("Instant first switch to any translation. About 13 MB of memory each.")
+                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
+                }
+                ToggleSwitch { id: preloadToggle; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    value: SettingsService.preloadTranslations
+                    onToggled: SettingsService.preloadTranslations = !SettingsService.preloadTranslations }
             }
 
             // ── TABS ─────────────────────────────────────────────────────
