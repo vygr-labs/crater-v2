@@ -2,8 +2,11 @@ import QtQuick
 import Crater
 
 // The editing canvas. Letterboxes the theme's canvas inside a Flickable +
-// scale transform for zoom, then renders one NodeDelegate per node. Each
-// delegate handles its own selection / drag / resize.
+// scale transform for zoom. The nodes are PAINTED by ThemedNodeGraph, the
+// renderer the live output uses, so cards stack, hug and bottom-anchor here
+// exactly as they will on screen. One NodeDelegate per node sits on top as
+// selection chrome and handles drag / resize, placed on the rect the graph
+// laid the node out at.
 //
 // Background: a tiled checkerboard so the operator can see container
 // transparency, plus a flat rectangle inside the stage so the canvas itself
@@ -15,6 +18,25 @@ Item {
     readonly property var _wt:     workspace.workingTheme
     readonly property var _canvas: _wt.canvas || ({ width: 1920, height: 1080 })
     readonly property var _nodes:  _wt.nodes  || []
+
+    // Bumped to hand the graph a fresh node list. nodesChanged covers
+    // structural edits; this covers the style / data edits that move nodes
+    // between z slots or rewire a card, which the graph must re-sort and
+    // re-classify for. Every other edit is patched into its one delegate
+    // (graph.updateNode) so dragging doesn't rebuild the whole canvas.
+    property int _graphRev: 0
+    readonly property var _layoutDataFields: ["group", "autoHeight", "autoPosition"]
+    Connections {
+        target: root._wt
+        function onNodeStyleChanged(id, field) {
+            if (field === "z") root._graphRev++
+            else graph.updateNode(root._wt.node(id))
+        }
+        function onNodeDataChanged(id, field) {
+            if (root._layoutDataFields.indexOf(field) >= 0) root._graphRev++
+            else graph.updateNode(root._wt.node(id))
+        }
+    }
 
     // Claim keyboard focus when the editor opens. The theme editor is a
     // full-screen workspace mounted over the (now hidden) operator
@@ -139,7 +161,20 @@ Item {
                 ]
             }
 
-            // Nodes — pre-sorted by z so render order matches layer order.
+            // What the nodes look like, laid out the way the output lays
+            // them out. Paint only: it has no MouseAreas, so clicks fall
+            // through to the delegates above and the canvas area below.
+            ThemedNodeGraph {
+                id: graph
+                // Above the deselect area (z -1), under the chrome (z >= 0).
+                z: -0.5
+                anchors.fill: parent
+                nodes: { root._graphRev; return root._nodes }
+                resolveTextFn: node => root.workspace.resolveText(node)
+                dimHidden: true
+            }
+
+            // Chrome — pre-sorted by z so hit-testing matches paint order.
             readonly property var _sortedNodes: {
                 const arr = root._nodes.slice()
                 arr.sort((a, b) => ((a.style && a.style.z) || 0) - ((b.style && b.style.z) || 0))
@@ -150,6 +185,7 @@ Item {
                 model: stage._sortedNodes
                 delegate: NodeDelegate {
                     workspace: root.workspace
+                    graph: graph
                     nodeId: modelData.id
                     stageW: stage.width
                     stageH: stage.height
@@ -164,6 +200,7 @@ Item {
                 anchors.fill: parent
                 z: 1000
                 workspace: root.workspace
+                graph: graph
                 stageW:  stage.width
                 stageH:  stage.height
                 canvasW: root._canvas.width

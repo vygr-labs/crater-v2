@@ -15,6 +15,7 @@ Item {
     id: overlay
 
     property var  workspace
+    property var  graph: null        // canvas ThemedNodeGraph, for laid-out rects
     property real stageW: 0          // stage pixel size (canvas px × zoom)
     property real stageH: 0
     property real canvasW: 1920      // theme canvas resolution — for labels
@@ -63,9 +64,18 @@ Item {
     // Non-interactive — never eats hover/click meant for the nodes below.
     enabled: false
 
-    // Selected / target style maps (geometry in percent of canvas).
-    readonly property var _s: _sel && _sel.style ? _sel.style : ({})
-    readonly property var _t: _tgt && _tgt.style ? _tgt.style : ({})
+    // Selected / target geometry in percent of canvas. A node the layout
+    // places (card member, hugged, stacked) is measured where it renders,
+    // not at its authored box.
+    function _geom(n) {
+        if (!n) return ({})
+        const r = (graph && graph.layoutRoleOf(n.id) !== "") ? graph.layoutRectOf(n.id) : null
+        if (!r || stageW <= 0 || stageH <= 0) return n.style || ({})
+        return { x: r.x / stageW * 100, y: r.y / stageH * 100,
+                 width: r.width / stageW * 100, height: r.height / stageH * 100 }
+    }
+    readonly property var _s: _geom(_sel)
+    readonly property var _t: _geom(_tgt)
 
     // Percent → canvas-pixel rounding for the labels.
     function _pxX(pct) { return Math.round(pct / 100 * canvasW) }

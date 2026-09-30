@@ -119,9 +119,11 @@ Rectangle {
                 if (nh < minSize) nh = minSize
             }
 
-            // Clamp to canvas, snap to 0.1%, write back.
-            nx = Math.max(0, Math.min(100, Math.round(nx * 10) / 10))
-            ny = Math.max(0, Math.min(100, Math.round(ny * 10) / 10))
+            // Snap to 0.1% and write back. Position keeps the -200..200 range
+            // drag and the X/Y inputs allow, so resizing a node that sits
+            // partly off the canvas doesn't snap it back on.
+            nx = Math.max(-200, Math.min(200, Math.round(nx * 10) / 10))
+            ny = Math.max(-200, Math.min(200, Math.round(ny * 10) / 10))
             nw = Math.max(minSize, Math.min(100, Math.round(nw * 10) / 10))
             nh = Math.max(minSize, Math.min(100, Math.round(nh * 10) / 10))
 
