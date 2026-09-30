@@ -70,8 +70,13 @@ QString DbPaths::importStagingDir()
 QString DbPaths::relocate(const QString& storedPath, const QString& managedDir)
 {
     if (storedPath.isEmpty()) return storedPath;
-    const QString name = QFileInfo(storedPath).fileName();
+    const QFileInfo stored(storedPath);
+    const QString name = stored.fileName();
     if (name.isEmpty()) return storedPath;
+    // Already under the managed folder, the usual case: nothing to look up.
+    // Skips a disk hit per row on every media list reload.
+    if (QDir::cleanPath(stored.absolutePath()) == QDir::cleanPath(managedDir))
+        return storedPath;
     const QString current = QDir::cleanPath(QDir(managedDir).filePath(name));
     return QFileInfo::exists(current) ? current : storedPath;
 }
