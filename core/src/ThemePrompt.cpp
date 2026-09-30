@@ -436,8 +436,9 @@ Judge it as a screen seen from the back of a room, not as a page.
 - No "mediaId" and no imported font files. This format carries vector shapes,
   colours, gradients and system fonts only. There is no way to reference an
   image from it.
-- Every node needs an id unique within its design, a kind, and x, y, width
-  and height in 0..100.
+- Every node needs an id unique within its design, a kind, x and y in
+  -200..200 (outside 0..100 sits off the canvas), and width and height in
+  0..100.
 - Every text node needs style.color and data.linkage.
 - Every design needs a non-empty id, a non-empty name, and at least one node.
 - Exactly one design sets "default": true.
