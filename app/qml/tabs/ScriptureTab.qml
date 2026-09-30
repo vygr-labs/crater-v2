@@ -13,8 +13,8 @@ import QtQuick.Controls.Basic
 //   • Single click on a verse pushes it to Preview.
 //   • Double-click or Enter promotes it to Live.
 //   • Arrow Up/Down from the search input moves fluid focus inside the list.
-//   • Right-click opens the standard context menu (Push Live, Add to
-//     Schedule, Mark Up, Add to Favorites, Add to Collection).
+//   • Right-click opens the context menu (Mark Up, Add to Schedule,
+//     Push to Live).
 //   • Switching translation (sidebar) preserves the focused (book, chapter,
 //     verse) coordinates when possible.
 //   • Verse count shows in the action bar.
@@ -1307,11 +1307,22 @@ Item {
                 // runs there first); consumed and cleared in onDoubleClicked.
                 property var _collapseStash: null
 
-                // Projection actions only. Verses come from read-only Bible
-                // databases, so there is nothing to edit or delete, and
-                // favourites and collections are song features. Rows that
-                // would do nothing stay out of the menu (issue #17).
+                // Group order matches SongsTab and MediaTab: row-edit
+                // actions first, then projection. Verses come from
+                // read-only Bible DBs, so markup lives on a schedule row:
+                // Mark Up adds the verse and opens that row's editor, the
+                // same one the schedule's Edit… opens.
                 menuItems: [
+                    { label: qsTr("Mark Up…"), iconName: "edit-3",
+                      action: function() {
+                          // Only open the editor if a row was really added,
+                          // or it would open on whatever row was last.
+                          const before = ScheduleService.currentItems.length
+                          root.addToScheduleFor(index)
+                          const after = ScheduleService.currentItems.length
+                          if (after > before) AppState.editScheduleItem(after - 1)
+                      } },
+                    { separator: true },
                     { label: qsTr("Add to Schedule"), iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
                     { label: qsTr("Push to Live"), iconName: "play",

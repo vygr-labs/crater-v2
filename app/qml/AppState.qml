@@ -1160,7 +1160,7 @@ QtObject {
     property int    mediaGridColumns: 6         // 4 / 6 / 8 / 10 / 12
     property string mediaSortField:  "name"     // "name" | "date" | "size" | "type"
     property string mediaSortOrder:  "asc"      // "asc" | "desc"
-    property string mediaTypeFilter: "all"      // "all" | "image" | "video"
+    property string mediaTypeFilter: "all"      // "all" | "image" | "video" | "pdf"
 
     // Batch selection — list of fluid-list indices currently checked. Plain
     // list rather than Set because QML's property var likes JSON-friendly
@@ -1182,6 +1182,7 @@ QtObject {
         mediaTypeFilter =
             groupId === "images" ? "image" :
             groupId === "videos" ? "video" :
+            groupId === "pdfs"   ? "pdf"   :
                                    "all"
     }
 

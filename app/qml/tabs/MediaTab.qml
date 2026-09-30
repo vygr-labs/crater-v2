@@ -27,7 +27,7 @@ import QtQuick.Controls.Basic
 //   • Click a thumbnail to push it to Preview. Double-click / Enter goes Live.
 //   • Ctrl/Cmd + click toggles batch selection; Shift + click selects a range.
 //   • Right-click opens the context menu (Push Live, Rename, Set as Logo,
-//     Add to Favorites, Add to Collection, Delete).
+//     Add to Favorites, Delete).
 //
 // Sidebar groups drive both type filter and an orthogonal favorites filter:
 //   • "All Media" / "Images" / "Videos" set AppState.mediaTypeFilter via
@@ -87,6 +87,7 @@ Item {
             if (!m) continue
             if (tf === "image" && m.type !== "image") continue
             if (tf === "video" && m.type !== "video") continue
+            if (tf === "pdf"   && m.type !== "pdf")   continue
             if (onlyFavs && !m.isFavorite) continue
             if (q.length > 0 && (m.title || "").toLowerCase().indexOf(q) === -1) continue
             base.push(m)
@@ -441,10 +442,10 @@ Item {
     function openImportDialog() {
         // The filter is purely a UX hint — MediaService still magic-byte
         // sniffs each file and rejects anything that doesn't match a known
-        // image / video signature, so a user typing into the "all files"
+        // image / video / pdf signature, so a user typing into the "all files"
         // dropdown can't break us.
         const filter = qsTr("Media (*.png *.jpg *.jpeg *.gif *.bmp *.webp "
-                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi *.wmv *.asf)")
+                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi *.wmv *.asf *.pdf)")
         const paths = FileDialogService.chooseOpenFiles(
             qsTr("Import media"), [filter])
         if (paths && paths.length > 0) root.importPaths(paths)
@@ -470,6 +471,7 @@ Item {
                     const n = root.filteredMedia.length
                     const noun = root.typeFilter === "image" ? qsTr("images")
                               : root.typeFilter === "video" ? qsTr("videos")
+                              : root.typeFilter === "pdf"   ? qsTr("PDFs")
                                                             : qsTr("items")
                     return n.toLocaleString() + " " + noun
                          + (root.query.length > 0 ? qsTr(" matching") : "")

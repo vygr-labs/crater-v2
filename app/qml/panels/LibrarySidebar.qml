@@ -164,18 +164,21 @@ Rectangle {
                 const all  = MediaService.allMedia
                 let imgN   = 0
                 let vidN   = 0
+                let pdfN   = 0
                 let favN   = 0
                 for (let i = 0; i < all.length; i++) {
                     const m = all[i]
                     if (!m) continue
                     if (m.type === "image") imgN++
                     if (m.type === "video") vidN++
+                    if (m.type === "pdf")   pdfN++
                     if (m.isFavorite)       favN++
                 }
                 return [
                     { id: "all-media", iconName: "folder", label: qsTr("All Media"), count: all.length },
                     { id: "images",    iconName: "image",  label: qsTr("Images"),    count: imgN },
                     { id: "videos",    iconName: "video",  label: qsTr("Videos"),    count: vidN },
+                    { id: "pdfs",      iconName: "file-text", label: qsTr("PDFs"),   count: pdfN },
                     { id: "favorites", iconName: "heart",  label: qsTr("Favorites"), count: favN }
                 ]
             }

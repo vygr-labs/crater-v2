@@ -95,6 +95,6 @@ the high-level state; the detailed remaining-work punch-list lives in
 | NDI sender                         | `electron/src/backend/ndi/`                  | Working — on-demand mode + non-1080p canvas tuning pending |
 | Strong's concordance + interlinear | `electron/src/backend/database/strongs-*.ts` | Done — packaging (ship DBs beside exe) pending |
 | Song collections                   | —                                            | Done — many-to-many, sidebar + add-to-collection |
-| Multi-output (stage / dynamic)     | —                                            | v1.1 — registry done, no render window yet |
+| Multi-output (stage / dynamic)     | `app/qml/OutputWindow.qml`                   | Done — one fullscreen window per assigned output |
 | Remote control server              | `electron/src/backend/remote/`               | v1.1 — preview UI only (view-only BrowserCast works) |
-| Auto-update                        | —                                            | v1.1 — external release scripts only |
+| Auto-update                        | `app/src/UpdateService.cpp`                  | Done — in-app check, download, SHA-256 verify, install on request |
