@@ -20,6 +20,14 @@ import Crater
 //   - autoPlayVideos  : false for thumbnail grids (don't spin up a video
 //                       decoder + gradient animation per tile).
 //   - suppressAnimations / clearActive / passiveFadeMs : see below.
+//   - dimHidden       : the theme editor's canvas only. Draws nodes the author
+//                       hid (data.hidden) at 30% so they stay findable.
+//
+// The theme editor renders its canvas through this graph too, so a card
+// looks the same there as on the output. It reads each node's laid-out rect
+// back (layoutRectOf / layoutRoleOf) to put its selection chrome on it, and
+// pushes per-node style edits through updateNode() so a drag doesn't rebuild
+// every delegate the way reassigning `nodes` would.
 //
 // Percent-of-canvas geometry resolves against this Item's own width/height, so
 // the caller is responsible only for sizing it to the canvas rectangle.
@@ -35,6 +43,7 @@ Item {
     // scene drives this from ProjectionService.isClear). Preview never clears.
     property bool clearActive: false
     property int  passiveFadeMs: 280
+    property bool dimHidden: false
 
     function resolveText(node) {
         return root.resolveTextFn ? root.resolveTextFn(node) : ""
@@ -110,17 +119,68 @@ Item {
         return ""
     }
 
+    // ── Laid-out rects (read by the theme editor) ───────────────────────
+    // Every delegate publishes the box it actually rendered at, in this
+    // Item's pixels, after card stacking / hug / stack have been applied.
+    property var _layoutRects: ({})
+    property int _layoutRectsRev: 0
+    function _publishLayoutRect(id, x, y, w, h) {
+        if (!id) return
+        const c = _layoutRects[id]
+        if (c && Math.abs(c.x - x) < 0.01 && Math.abs(c.y - y) < 0.01
+              && Math.abs(c.width - w) < 0.01 && Math.abs(c.height - h) < 0.01) return
+        _layoutRects[id] = { x: x, y: y, width: w, height: h }
+        _layoutRectsRev++
+    }
+    function layoutRectOf(id) { _layoutRectsRev; return _layoutRects[id] || null }   // dep
+
+    // How a node's geometry is decided, which is what the editor needs to
+    // know to pick its handles:
+    //   "member" : placed and sized by the card that lists it
+    //   "group"  : a card; its height hugs its members
+    //   "hug"    : data.autoHeight, height follows content
+    //   "stack"  : data.autoPosition, top follows another node
+    //   ""       : plain percent box
+    function layoutRoleOf(id) {
+        if (_groupParentOf(id)) return "member"
+        const ns = root._sortedNodes
+        for (let i = 0; i < ns.length; i++) {
+            if (ns[i].id !== id) continue
+            const d = ns[i].data || {}
+            if (d.group && d.group.members && d.group.members.length > 0) return "group"
+            if (d.autoHeight)   return "hug"
+            if (d.autoPosition) return "stack"
+            return ""
+        }
+        return ""
+    }
+    function groupParentOf(id) { return _groupParentOf(id) }
+
+    // Swap one node's snapshot in place. Only for edits that leave the
+    // layout wiring alone (style, text); a change to z, group, autoHeight or
+    // autoPosition must go through `nodes` so ordering and roles recompute.
+    function updateNode(n) {
+        if (!n || !n.id) return
+        for (let i = 0; i < nodeRepeater.count; i++) {
+            const it = nodeRepeater.itemAt(i)
+            if (it && it._nodeId === n.id) { it.node = n; return }
+        }
+    }
+
     // ── Themed node graph ───────────────────────────────────────────────
     // Each node renders inside its own delegate sized to its percent-of-stage
     // rectangle, with skew handled by a center-origin Matrix4x4 that matches
     // the editor's NodeDelegate.
     Repeater {
+        id: nodeRepeater
         model: root._sortedNodes
         delegate: Item {
             id: nodeWrap
-            readonly property var    _style:  modelData.style || ({})
-            readonly property var    _data:   modelData.data  || ({})
-            readonly property string _nodeId: modelData.id || ""
+            // Starts as the model entry; updateNode() may replace it.
+            property var node: modelData
+            readonly property var    _style:  node.style || ({})
+            readonly property var    _data:   node.data  || ({})
+            readonly property string _nodeId: node.id || ""
             readonly property string _vAlign: _style.verticalAlign || "center"
 
             // Configured (authored) rect, in layer px.
@@ -274,10 +334,15 @@ Item {
                 root._publishRect(_nodeId, cTop, cBot)
                 root._publishMeasured(_nodeId, measuredPx)   // for group stacking
             }
-            onYChanged:          _publish()
-            onHeightChanged:     _publish()
+            onYChanged:          { _publish(); _publishBox() }
+            onHeightChanged:     { _publish(); _publishBox() }
             onMeasuredPxChanged: _publish()
-            Component.onCompleted: _publish()
+            onXChanged:          _publishBox()
+            onWidthChanged:      _publishBox()
+            Component.onCompleted: { _publish(); _publishBox() }
+
+            // The rendered box, for the editor's selection chrome.
+            function _publishBox() { root._publishLayoutRect(_nodeId, x, y, width, height) }
 
             // Geometry: a group CONTAINER takes its hugged box from groupComp; a
             // group MEMBER takes its slot from the card (height = its content);
@@ -286,7 +351,8 @@ Item {
             y:        groupComp ? groupComp.top : (_myLayout ? _myLayout.y : _effTop)
             width:    _myLayout ? _myLayout.w : _baseW
             height:   groupComp ? groupComp.height : (_myLayout ? measuredPx : _effHeight)
-            opacity:  _style.opacity !== undefined ? _style.opacity : 1
+            opacity:  (_style.opacity !== undefined ? _style.opacity : 1)
+                      * ((root.dimHidden && _data.hidden) ? 0.3 : 1)
             rotation: _style.rotation || 0
 
             transform: Matrix4x4 {
@@ -311,7 +377,7 @@ Item {
             // cut style yields an instant clear.
             Item {
                 anchors.fill: parent
-                opacity: (root.clearActive && modelData.kind === "text") ? 0 : 1
+                opacity: (root.clearActive && nodeWrap.node.kind === "text") ? 0 : 1
                 Behavior on opacity {
                     NumberAnimation {
                         duration: root.passiveFadeMs
@@ -322,8 +388,8 @@ Item {
                 NodeRenderer {
                     id: renderer
                     anchors.fill: parent
-                    node: modelData
-                    resolvedText: root.resolveText(modelData)
+                    node: nodeWrap.node
+                    resolvedText: root.resolveText(nodeWrap.node)
                     suppressAnimations: root.suppressAnimations
                     autoPlayVideos: root.autoPlayVideos
                     // In a card, the member's box is its hugged content height,

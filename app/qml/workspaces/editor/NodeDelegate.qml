@@ -1,10 +1,21 @@
 import QtQuick
 import Crater
 
-// One node on the canvas. Renders the node via NodeRenderer (the same
-// component the projection window uses) and overlays selection chrome
-// (1px outline + 8 resize handles) when selected. Handles its own
-// drag-and-select via a MouseArea.
+// One node's chrome on the canvas: selection outline, resize / rotate /
+// skew handles, and drag-and-select. The node itself is painted underneath
+// by the canvas's ThemedNodeGraph, and this Item sits on the rect the graph
+// laid it out at, so the outline wraps what the author actually sees.
+//
+// Nodes the layout places (see ThemedNodeGraph.layoutRoleOf) can't be
+// edited like a free box, because some of their geometry is computed:
+//   member : slot and size come from its card. No resize handles, and
+//            dragging it moves the card.
+//   group  : height hugs the members. Width handles only.
+//   hug    : height follows content. Width handles only.
+//   stack  : top follows another node. Width handles only.
+// Where the top is computed (stack, or a hug wrapping another node), a drag
+// moves the node sideways only. Plain nodes keep all 8 handles and a free
+// drag, resolving to the same percent math as before.
 //
 // Reactivity: instead of binding directly to workspace.workingTheme.nodes
 // (which would force the whole Repeater to rebuild on every style change),
@@ -14,6 +25,7 @@ import Crater
 Item {
     id: root
     property var    workspace
+    property var    graph: null   // the canvas's ThemedNodeGraph
     property string nodeId
     property real   stageW: 0
     property real   stageH: 0
@@ -26,12 +38,35 @@ Item {
     readonly property bool   _locked:   !!(node && node.data && node.data.locked)
     readonly property var    _style:    node && node.style ? node.style : ({})
 
-    x:        stageW * ((_style.x      || 0) / 100)
-    y:        stageH * ((_style.y      || 0) / 100)
-    width:    stageW * ((_style.width  || 0) / 100)
-    height:   stageH * ((_style.height || 0) / 100)
+    // ── Layout role ─────────────────────────────────────────────────────
+    readonly property string _role: graph ? graph.layoutRoleOf(nodeId) : ""
+    readonly property var    _laid: _role !== "" ? graph.layoutRectOf(nodeId) : null
+    readonly property string _cardId: _role === "member" ? graph.groupParentOf(nodeId) : ""
+    // True when the layout, not style.y, decides where this node's top is.
+    readonly property bool _yComputed: {
+        const d = (node && node.data) || {}
+        if (d.autoPosition) return true
+        const ah = d.autoHeight
+        if (!ah) return false
+        if (ah.from && ah.to) return true
+        return !(ah.source === "self" || ah.source === nodeId)
+    }
+    readonly property var _handleIndices:
+        _role === "member" ? []
+      : _role !== ""       ? [3, 7]   // right + left: width only
+                           : [0, 1, 2, 3, 4, 5, 6, 7]
+
+    // Authored box in stage px. Where the node sits unless the layout moved it.
+    readonly property real _authX: stageW * ((_style.x      || 0) / 100)
+    readonly property real _authY: stageH * ((_style.y      || 0) / 100)
+    readonly property real _authW: stageW * ((_style.width  || 0) / 100)
+    readonly property real _authH: stageH * ((_style.height || 0) / 100)
+
+    x:        _laid ? _laid.x      : _authX
+    y:        _laid ? _laid.y      : _authY
+    width:    _laid ? _laid.width  : _authW
+    height:   _laid ? _laid.height : _authH
     z:        _style.z || 0
-    opacity:  _hidden ? 0.3 : (_style.opacity !== undefined ? _style.opacity : 1)
     rotation: _style.rotation || 0
 
     // Center-origin skew. Bakes the pivot into the matrix as
@@ -65,11 +100,19 @@ Item {
         function onNodesChanged() { root.node = workspace.workingTheme.node(root.nodeId) }
     }
 
-    // Render
-    NodeRenderer {
-        anchors.fill: parent
-        node: root.node
-        resolvedText: workspace.resolveText(root.node)
+    // The authored box of a card or hugged node, faint, while selected. It
+    // is what the layout anchors against (a card pins to its bottom edge),
+    // so the author can see why the card sits where it does.
+    Rectangle {
+        visible: root._selected && (root._role === "group" || root._role === "hug")
+        x: root._authX - root.x
+        y: root._authY - root.y
+        width:  root._authW
+        height: root._authH
+        color: "transparent"
+        border.color: Theme.color.brand
+        border.width: 1
+        opacity: 0.4
     }
 
     // Selection outline
@@ -186,6 +229,9 @@ Item {
         cursorShape: root._locked ? Qt.ForbiddenCursor : Qt.SizeAllCursor
         property bool _dragging: false
         property bool _moved:    false   // a real drag happened this press
+        // What the drag moves: the node, or its card for a card member.
+        property string _dragId: ""
+        property bool   _dragY:  true
         property real _startStageX: 0
         property real _startStageY: 0
         property real _startNodeX:  0
@@ -197,11 +243,19 @@ Item {
             // re-enable (see EditorCanvas — MouseAreas don't take focus).
             root.forceActiveFocus()
             if (root._locked) return
+            _dragId = root._cardId || root.nodeId
+            const target = _dragId === root.nodeId
+                ? root.node : workspace.workingTheme.node(_dragId)
+            if (!target || (target.data && target.data.locked)) return
+            const ts = target.style || {}
+            // A member rides its card, so the card's own top rule applies.
+            _dragY = _dragId === root.nodeId ? !root._yComputed
+                   : !(target.data && target.data.autoPosition)
             const p = mapToItem(root.parent, m.x, m.y)
             _startStageX = p.x
             _startStageY = p.y
-            _startNodeX  = (root._style.x || 0)
-            _startNodeY  = (root._style.y || 0)
+            _startNodeX  = (ts.x || 0)
+            _startNodeY  = (ts.y || 0)
             _dragging    = true
             _moved       = false
             // No saveToHistory here — a press that only SELECTS the node
@@ -226,8 +280,9 @@ Item {
             // re-selects it.
             const nx = Math.max(-200, Math.min(200, _startNodeX + dxPct))
             const ny = Math.max(-200, Math.min(200, _startNodeY + dyPct))
-            workspace.workingTheme.setNodeStyle(root.nodeId, "x", Math.round(nx * 10) / 10)
-            workspace.workingTheme.setNodeStyle(root.nodeId, "y", Math.round(ny * 10) / 10)
+            workspace.workingTheme.setNodeStyle(_dragId, "x", Math.round(nx * 10) / 10)
+            if (_dragY)
+                workspace.workingTheme.setNodeStyle(_dragId, "y", Math.round(ny * 10) / 10)
         }
         onReleased: {
             // Snapshot the post-drag state once — only when a real drag
@@ -238,13 +293,14 @@ Item {
         }
     }
 
-    // 8 resize handles. Rendered only when selected — the locked check
+    // Resize handles. Rendered only when selected — the locked check
     // disables interaction within each handle individually so we keep the
     // visual affordance even on locked nodes (operator sees it's selected).
+    // Laid-out nodes get fewer (see _handleIndices).
     Repeater {
-        model: root._selected ? 8 : 0
+        model: root._selected ? root._handleIndices : []
         delegate: ResizeHandle {
-            handleIndex: index
+            handleIndex: modelData
             parentNode: root
         }
     }
