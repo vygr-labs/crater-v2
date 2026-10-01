@@ -98,7 +98,7 @@ welcome slide.
 
 ### Onboarding & shortcut discoverability — not built
 Nothing today teaches a new operator the app, and its power features are
-invisible: `Ctrl+K` global search, `Ctrl+L` go-live, the Preview / Live /
+invisible: `Ctrl+K` global search, `Ctrl+L` logo toggle, the Preview / Live /
 Schedule arrow-key navigation, and the palette's `Ctrl+Enter` / `Shift+Enter`
 modifiers are undiscoverable — you only know them if you've read the code.
 - [ ] **In-app tutorial / first-run walkthrough.** A guided onboarding tour

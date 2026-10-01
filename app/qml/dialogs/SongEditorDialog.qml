@@ -813,6 +813,8 @@ ModalShell {
                 width: headerRow3._ccliWidth
                 caption: qsTr("CCLI #")
                 text: root._ccli
+                // CCLI song numbers are digits only.
+                validator: RegularExpressionValidator { regularExpression: /[0-9]*/ }
                 onEdited: function(t) { root._ccli = t }
             }
         }
@@ -833,6 +835,7 @@ ModalShell {
         id: credit
         property string caption: ""
         property alias  text: creditInput.text
+        property alias  validator: creditInput.validator
         signal edited(string text)
 
         height: 32

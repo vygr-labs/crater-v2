@@ -434,6 +434,9 @@ Item {
                         items.push({ label: qsTr("Sort by Oldest"),      iconName: "sort-asc",
                             detail: cur === "oldest" ? "✓" : "",
                             action: function() { AppState.setLibrarySortMode("songs", "oldest") }})
+                        items.push({ separator: true })
+                        items.push({ label: qsTr("Refresh"), iconName: "refresh-cw",
+                            action: function() { SongService.reload() }})
 
                         AppState.openContextMenuAt(gearBtn,
                             gearBtn.width, gearBtn.height + 4,
