@@ -135,14 +135,16 @@ Item {
         let failed = []
         for (let i = 0; i < rows.length; i++) {
             const t = rows[i]
-            // Strip characters Windows refuses in file names; two themes
-            // with the same name get " (2)", " (3)" so neither overwrites
-            // the other.
+            // Strip characters Windows refuses in file names. Two themes
+            // with the same name, or a file already in the folder, get
+            // " (2)", " (3)" so nothing is ever overwritten.
             let base = String(t.name || "").replace(/[\\/:*?"<>|]/g, "_").trim()
             if (base.length === 0) base = qsTr("Theme")
             let name = base
             let k = 2
-            while (used[name.toLowerCase()]) name = base + " (" + (k++) + ")"
+            while (used[name.toLowerCase()]
+                   || FileDialogService.pathExists(dir + "/" + name + ".craterheme"))
+                name = base + " (" + (k++) + ")"
             used[name.toLowerCase()] = true
             if (ThemeService.exportTheme(t.id, dir + "/" + name + ".craterheme", []))
                 exported++

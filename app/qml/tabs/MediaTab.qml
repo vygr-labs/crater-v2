@@ -240,14 +240,24 @@ Item {
         for (let i = 0; i < ids.length; i++) MediaService.duplicate(ids[i])
     }
 
-    function bulkSetFit(mode) {
-        const rows = selection.selectedItems()
-        for (let i = 0; i < rows.length; i++) {
-            // Fit only means something for pictures and video, same as the
-            // single-item menu, which hides it for PDFs.
-            if (rows[i].type === "image" || rows[i].type === "video")
-                MediaService.setFitMode(rows[i].id, mode)
-        }
+    // Replaces each item's fit, so it asks first like Delete.
+    function bulkSetFit(mode, modeLabel) {
+        // Fit only means something for pictures and video, same as the
+        // single-item menu, which hides it for PDFs.
+        const ids = selection.selectedItems()
+            .filter(function(r) { return r.type === "image" || r.type === "video" })
+            .map(function(r) { return r.id })
+        const n = ids.length
+        if (n === 0) return
+        AppState.openModal("confirm", {
+            title:       qsTr("Change the fit of %1 %2?").arg(n).arg(_itemNoun(n)),
+            body:        qsTr("Each item's current fit is replaced with %1.").arg(modeLabel),
+            confirmText: qsTr("Change fit"),
+            destructive: false,
+            onConfirm:   function() {
+                for (let i = 0; i < ids.length; i++) MediaService.setFitMode(ids[i], mode)
+            }
+        })
     }
 
     function bulkDelete() {
@@ -274,7 +284,7 @@ Item {
     function bulkMenuItems() {
         const n = selection.count
         const fit = function(label, mode) {
-            return { label: label, action: function() { root.bulkSetFit(mode) } }
+            return { label: label, action: function() { root.bulkSetFit(mode, label) } }
         }
         return [
             { label: qsTr("Add %1 to Schedule").arg(n), iconName: "plus",

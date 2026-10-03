@@ -58,6 +58,19 @@ Rectangle {
     // rule as the single-row menu). With mixed kinds the kind is named next
     // to each theme so the operator can tell "Classic (song)" from
     // "Classic (scripture)".
+    // Replaces each row's theme, so it asks first like Remove.
+    function _confirmScheduleTheme(rows, tid, tkind, themeName) {
+        AppState.openModal("confirm", {
+            title:       qsTr("Change the theme of %1 items?").arg(rows.length),
+            body:        tid > 0
+                ? qsTr("Each matching item's current theme is replaced with %1.").arg(themeName)
+                : qsTr("Each item's own theme is removed, so it uses the default theme."),
+            confirmText: qsTr("Change theme"),
+            destructive: false,
+            onConfirm:   function() { AppState.setScheduleTheme(rows, tid, tkind) }
+        })
+    }
+
     function bulkThemeSubmenu() {
         const rows = selectedRows()
         const items = ScheduleService.currentItems
@@ -77,12 +90,12 @@ Rectangle {
             out.push({
                 label: kindCount > 1 ? qsTr("%1 (%2)").arg(t.name).arg(t.kind) : t.name,
                 iconName: "palette",
-                action: function() { AppState.setScheduleTheme(rows, tid, tkind) }
+                action: function() { root._confirmScheduleTheme(rows, tid, tkind, t.name) }
             })
         }
         if (out.length > 0) out.push({ separator: true })
         out.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
-                   action: function() { AppState.setScheduleTheme(rows, 0, "") } })
+                   action: function() { root._confirmScheduleTheme(rows, 0, "", "") } })
         return out
     }
 

@@ -198,21 +198,35 @@ Item {
     // deck editor offers, written to every checked deck.
     function _bulkThemeSubmenu() {
         const all = ThemeService.allThemes
-        const apply = function(tid) {
+        // Replaces each deck's theme, so it asks first like Delete.
+        const apply = function(tid, themeName) {
             const ids = selection.selectedIds()
-            for (let k = 0; k < ids.length; k++) PresentationService.setThemeId(ids[k], tid)
+            const n = ids.length
+            if (n === 0) return
+            AppState.openModal("confirm", {
+                title:       qsTr("Change the theme of %1 %2?").arg(n).arg(root._deckNoun(n)),
+                body:        tid > 0
+                    ? qsTr("Each presentation's current theme is replaced with %1.").arg(themeName)
+                    : qsTr("Each presentation's own theme is removed, so it uses the default theme."),
+                confirmText: qsTr("Change theme"),
+                destructive: false,
+                onConfirm:   function() {
+                    for (let k = 0; k < ids.length; k++) PresentationService.setThemeId(ids[k], tid)
+                }
+            })
         }
         let items = []
         for (let i = 0; i < all.length; i++) {
             const t = all[i]
             if (t.kind !== "presentation") continue
             const tid = t.id
+            const tname = t.name
             items.push({ label: t.name, iconName: "palette",
-                         action: function() { apply(tid) } })
+                         action: function() { apply(tid, tname) } })
         }
         if (items.length > 0) items.push({ separator: true })
         items.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
-                     action: function() { apply(0) } })
+                     action: function() { apply(0, "") } })
         return items
     }
 

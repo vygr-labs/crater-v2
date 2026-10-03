@@ -62,4 +62,9 @@ QString FileDialogService::chooseDirectory(QString title)
         initialDir);
 }
 
+bool FileDialogService::pathExists(QString path) const
+{
+    return QFileInfo::exists(path);
+}
+
 }  // namespace crater

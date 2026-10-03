@@ -309,6 +309,22 @@ Item {
     }
 
     // Song themes plus "Use default theme", applied to every checked song.
+    // Replaces whatever theme each song had, so it asks first like Delete.
+    function _confirmBulkTheme(tid, themeName) {
+        const ids = selection.selectedIds()
+        const n = ids.length
+        if (n === 0) return
+        AppState.openModal("confirm", {
+            title:       qsTr("Change the theme of %1 %2?").arg(n).arg(_songNoun(n)),
+            body:        tid > 0
+                ? qsTr("Each song's current theme is replaced with %1.").arg(themeName)
+                : qsTr("Each song's own theme is removed, so it uses the default theme."),
+            confirmText: qsTr("Change theme"),
+            destructive: false,
+            onConfirm:   function() { SongService.setThemeForSongs(ids, tid) }
+        })
+    }
+
     function _bulkThemeSubmenu() {
         const all = ThemeService.allThemes
         let items = []
@@ -316,16 +332,13 @@ Item {
             const t = all[i]
             if (t.kind !== "song") continue
             const tid = t.id
+            const tname = t.name
             items.push({ label: t.name, iconName: "palette",
-                         action: function() {
-                             SongService.setThemeForSongs(selection.selectedIds(), tid)
-                         } })
+                         action: function() { root._confirmBulkTheme(tid, tname) } })
         }
         if (items.length > 0) items.push({ separator: true })
         items.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
-                     action: function() {
-                         SongService.setThemeForSongs(selection.selectedIds(), 0)
-                     } })
+                     action: function() { root._confirmBulkTheme(0, "") } })
         return items
     }
 
