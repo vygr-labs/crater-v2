@@ -307,6 +307,9 @@ ModalShell {
         AppState.closeModal()
     }
 
+    // Called by the Ctrl+Enter double tap (AppState.saveAndCloseModal).
+    function requestSave() { _save() }
+
     // Duplicate = save-then-copy: the edits you see are committed to the
     // original first, so the new "<title> copy" carries the same framing and
     // nothing is lost. Large videos copy synchronously — a brief pause.

@@ -89,7 +89,6 @@ ModalShell {
         _sel = 0
         _loadSlideIntoFields()
         _baseline = _digest()
-        AppState.modalCloseOwner = root
     }
 
     // ── Unsaved-changes check ───────────────────────────────────────────
@@ -102,9 +101,18 @@ ModalShell {
         return JSON.stringify([_title, _themeId, _slides])
     }
 
+    // Called by the Ctrl+Enter double tap (AppState.saveAndCloseModal).
+    // Same path as the Save button: an empty title is refused and the
+    // dialog stays open.
+    function requestSave() {
+        discardConfirm.close()
+        _save()
+    }
+
     // Called by AppState.requestCloseModal (Escape, backdrop, X) and Cancel.
     function requestClose() {
-        // A second Escape while the prompt is up backs out of the prompt.
+        // A slow second Escape while the prompt is up backs out of the
+        // prompt. A fast one is the double tap, which discards (AppState).
         if (discardConfirm.visible) { discardConfirm.close(); return }
         if (!_valid || _digest() === _baseline) { AppState.closeModal(); return }
         discardConfirm.openConfirm()

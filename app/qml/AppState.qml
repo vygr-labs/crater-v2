@@ -1104,7 +1104,7 @@ QtObject {
     }
 
     // ─── Modal stack ────────────────────────────────────────────────────
-    property string activeModal: ""        // "" | "settings" | "songEditor" | "scheduleItemEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
+    property string activeModal: ""        // "" | "settings" | "songEditor" | "scheduleItemEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu" | "shortcuts"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
 
@@ -1124,15 +1124,24 @@ QtObject {
         modalProps = {}
     }
 
-    // A dialog holding unsaved edits registers itself here and exposes
-    // requestClose(). Every way of dismissing a modal other than the dialog's
-    // own buttons (Escape, a backdrop click, the header X) goes through
-    // requestCloseModal(), so that dialog gets to ask before its edits go.
+    // The open dialog. ModalShell registers every dialog here on creation;
+    // what the dialog can do is duck-typed off two optional functions:
     //
-    // The prompt has to live INSIDE the dialog: there is one modal slot, so
-    // opening the shared "confirm" modal would replace the editor and take
-    // the edits with it whichever button was pressed. A QtObject-typed
-    // property nulls itself when the dialog is destroyed.
+    //   requestClose() — a dialog holding unsaved edits defines it. Every
+    //     way of dismissing a modal other than the dialog's own buttons
+    //     (Escape, a backdrop click, the header X) goes through
+    //     requestCloseModal(), so that dialog gets to ask before its edits
+    //     go. The prompt has to live INSIDE the dialog: there is one modal
+    //     slot, so opening the shared "confirm" modal would replace the
+    //     editor and take the edits with it whichever button was pressed.
+    //
+    //   requestSave() — a dialog with a save concept defines it, and it must
+    //     run the SAME function its Save button runs, validation included:
+    //     that function closes the dialog on success and leaves it open
+    //     (showing why) when it refuses. Used by the save-and-close double
+    //     tap below.
+    //
+    // A QtObject-typed property nulls itself when the dialog is destroyed.
     property QtObject modalCloseOwner: null
 
     function requestCloseModal() {
@@ -1187,6 +1196,77 @@ QtObject {
         (!liveDockShown || liveDockFloating) ? 0
             : (liveDockCollapsed ? liveDockCollapsedWidth : liveDockWidth)
               + liveDockMargin * 2
+
+    // Save through the dialog's own save path. A dialog with nothing to save
+    // just closes, through requestCloseModal so a dirty prompt still applies.
+    function saveAndCloseModal() {
+        if (modalCloseOwner && typeof modalCloseOwner.requestSave === "function")
+            modalCloseOwner.requestSave()
+        else
+            requestCloseModal()
+    }
+
+    // ─── Double-tap dialog gestures ─────────────────────────────────────
+    // Two fast presses close the open dialog without the usual ceremony:
+    //
+    //   Escape, Escape         close WITHOUT saving. The first press is an
+    //                          ordinary Escape (it closes a clean dialog or
+    //                          raises the discard prompt, exactly as before),
+    //                          the second one inside the window discards and
+    //                          closes with no prompt.
+    //   Ctrl+Enter, Ctrl+Enter save and close, via saveAndCloseModal(). One
+    //                          Ctrl+Enter alone does nothing.
+    //
+    // Neither key types anything in a text field, which is why they were
+    // picked: a double gesture on a typing key would fire mid-sentence. The
+    // Shortcuts live in Main.qml with autoRepeat off, so a held key is one
+    // press and never a double tap. Listed in ShortcutsDialog.
+    readonly property int doubleTapMs: 400
+    property double _modalEscapeAt: 0
+    property double _modalSaveTapAt: 0
+
+    // Escape while a modal is open.
+    function modalEscape() {
+        const now = Date.now()
+        const second = now - _modalEscapeAt <= doubleTapMs
+        _modalEscapeAt = second ? 0 : now
+        if (second) closeModal()
+        else        requestCloseModal()
+    }
+
+    // True for the second press of a double Escape whose first press already
+    // closed the dialog. The surface underneath (schedule deselect, theme
+    // editor) checks this so the pair does not also act on it.
+    function isTrailingEscape() {
+        if (_modalEscapeAt === 0 || Date.now() - _modalEscapeAt > doubleTapMs) return false
+        _modalEscapeAt = 0
+        return true
+    }
+
+    // Ctrl+Enter while a dialog is open.
+    function modalSaveTap() {
+        const now = Date.now()
+        if (now - _modalSaveTapAt <= doubleTapMs) {
+            _modalSaveTapAt = 0
+            saveAndCloseModal()
+        } else {
+            _modalSaveTapAt = now
+        }
+    }
+
+    // True when a real dialog (a ModalShell form) is open, as opposed to the
+    // command palette or a popover menu. Ctrl+Enter gates on this: the
+    // palette already binds Ctrl+Enter to "go live".
+    readonly property bool dialogOpen: activeModal !== ""
+                                    && activeModal !== "globalSearch"
+                                    && activeModal !== "contextMenu"
+                                    && activeModal !== "scheduleDropdown"
+
+    // ─── Keyboard shortcut reference (F1) ───────────────────────────────
+    function toggleShortcutHelp() {
+        if (activeModal === "shortcuts") closeModal()
+        else if (activeModal === "")     openModal("shortcuts", {})
+    }
 
     // Open a context menu anchored at a mouse position inside `originItem`.
     // Replaces the boilerplate every call site used to repeat:

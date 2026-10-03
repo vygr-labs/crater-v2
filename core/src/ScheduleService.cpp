@@ -427,6 +427,56 @@ void ScheduleService::closeLoaded()
     setDirty(!m_impl->items.isEmpty());
 }
 
+bool ScheduleService::clearWorkingOnShutdown()
+{
+    if (!m_impl) return false;
+    const bool hadItems  = !m_impl->items.isEmpty();
+    const bool hadLoaded = m_impl->loadedScheduleId != 0;
+    if (!hadItems && !hadLoaded) return false;
+
+    try {
+        // Edits to an open saved schedule live only in the working list (the
+        // saved row changes on an explicit Save). Compare against the saved
+        // copy rather than trusting isDirty: the auto-save tick clears the
+        // dirty flag, so it cannot answer "is anything unsaved?" on its own.
+        if (hadLoaded && !workingMatchesLoaded()) {
+            qInfo().noquote() << "ScheduleService: kept the working schedule on close,"
+                              << "it has unsaved edits to" << m_impl->loadedScheduleName;
+            return false;
+        }
+
+        if (hadItems) writeHistoryBackup();
+
+        m_impl->items = {};
+        m_impl->loadedScheduleId = 0;
+        m_impl->loadedScheduleName.clear();
+        persistLoadedKv();
+        // Writes the empty list and clears dirty, so the destructor's
+        // last-gasp save has nothing left to put back.
+        saveCurrentNow();
+        return true;
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "ScheduleService::clearWorkingOnShutdown():" << e.message();
+        return false;
+    }
+}
+
+bool ScheduleService::workingMatchesLoaded()
+{
+    if (!m_impl || m_impl->loadedScheduleId <= 0) return false;
+    auto& stmt = m_impl->loadSchedule;
+    stmt.reset();
+    stmt.bind(1, m_impl->loadedScheduleId);
+    if (!stmt.step()) { stmt.reset(); return false; }
+    const QByteArray json = stmt.columnText(0).toUtf8();
+    stmt.reset();   // release the read txn before the caller writes
+    const auto doc = QJsonDocument::fromJson(json);
+    if (!doc.isArray()) return false;
+    // load() relocates media paths on the way in, so the saved copy gets
+    // the same treatment before the two are compared.
+    return relocateMediaPaths(doc.array()) == m_impl->items;
+}
+
 void ScheduleService::onAutoSaveTick()
 {
     if (!m_impl || !m_impl->dirty) return;
@@ -503,7 +553,12 @@ void ScheduleService::backupHistoryOnce()
 {
     if (!m_impl || m_impl->historyBackedUpThisSession) return;
     m_impl->historyBackedUpThisSession = true;
+    writeHistoryBackup();
+}
 
+void ScheduleService::writeHistoryBackup()
+{
+    if (!m_impl) return;
     const QString dir = db::DbPaths::scheduleHistoryDir();
     const QString ts  = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
     const QString path = QDir(dir).filePath(QStringLiteral("session-%1.json").arg(ts));

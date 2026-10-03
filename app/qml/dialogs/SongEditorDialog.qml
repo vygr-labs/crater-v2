@@ -172,11 +172,18 @@ ModalShell {
         if (_isEditMode) _loadExisting(_songId)
         else             _initFresh()
         titleInput.forceActiveFocus()
-        AppState.modalCloseOwner = root
     }
 
     // Called by AppState.requestCloseModal (Escape, backdrop, X).
     function requestClose() { _requestClose() }
+    // Called by the Ctrl+Enter double tap (AppState.saveAndCloseModal).
+    // Same path as the Save button: an empty title is refused and the
+    // dialog stays open. The discard prompt is dropped first so it cannot
+    // sit over the title error.
+    function requestSave() {
+        discardConfirm.close()
+        _saveSong()
+    }
 
     function _initFresh() {
         _title  = ""
@@ -402,7 +409,8 @@ ModalShell {
     }
 
     function _requestClose() {
-        // A second Escape while the prompt is up backs out of the prompt.
+        // A slow second Escape while the prompt is up backs out of the
+        // prompt. A fast one is the double tap, which discards (AppState).
         if (discardConfirm.visible) { discardConfirm.close(); return }
         if (!_isDirty) { AppState.closeModal(); return }
         // Ask in place. The shared "confirm" modal would replace this
@@ -432,9 +440,9 @@ ModalShell {
     Shortcut { sequence: "Ctrl+I"; onActivated: root._toolbarItalic() }
     Shortcut { sequence: "Ctrl+U"; onActivated: root._toolbarUnderline() }
 
-    // Escape via Modal backdrop is already handled by ModalShell; we add
-    // a Shortcut so the editor's own form fields don't swallow Esc.
-    Shortcut { sequence: "Escape"; onActivated: root._requestClose() }
+    // Escape is Main.qml's window-level Shortcut, which reaches
+    // requestClose() through AppState.modalEscape and also carries the
+    // double-tap discard. A Shortcut here would make the key ambiguous.
 
     // ─── Custom header ──────────────────────────────────────────────────
     Item {

@@ -51,6 +51,12 @@ private:
     Q_PROPERTY(bool    showCcli           READ showCcli           WRITE setShowCcli           NOTIFY showCcliChanged)
     Q_PROPERTY(bool    reduceMotion       READ reduceMotion       WRITE setReduceMotion       NOTIFY reduceMotionChanged)
     Q_PROPERTY(bool    showLogoByDefault  READ showLogoByDefault  WRITE setShowLogoByDefault  NOTIFY showLogoByDefaultChanged)
+    // Start every launch on an empty working schedule. When true, main.cpp
+    // asks ScheduleService::clearWorkingOnShutdown() to reset the working
+    // list on a clean quit (see that method for what is kept and why).
+    // False restores the previous working schedule on launch, the behaviour
+    // before this setting existed. Saved schedules are unaffected either way.
+    Q_PROPERTY(bool    clearScheduleOnClose READ clearScheduleOnClose WRITE setClearScheduleOnClose NOTIFY clearScheduleOnCloseChanged)
     // Operator's preferred render resolution for the projection output. Today
     // this is persisted but not enforced — the projection window always uses
     // the destination display's native geometry. A future pass will letterbox
@@ -237,6 +243,7 @@ public:
     bool    showCcli() const;
     bool    reduceMotion() const;
     bool    showLogoByDefault() const;
+    bool    clearScheduleOnClose() const;
     QString outputResolution() const;
     QString outputMode() const;
     bool    projectionInAltTab() const;
@@ -278,6 +285,7 @@ public:
     void setShowCcli(bool v);
     void setReduceMotion(bool v);
     void setShowLogoByDefault(bool v);
+    void setClearScheduleOnClose(bool v);
     void setOutputResolution(const QString& v);
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
@@ -321,6 +329,7 @@ signals:
     void showCcliChanged();
     void reduceMotionChanged();
     void showLogoByDefaultChanged();
+    void clearScheduleOnCloseChanged();
     void outputResolutionChanged();
     void outputModeChanged();
     void projectionInAltTabChanged();

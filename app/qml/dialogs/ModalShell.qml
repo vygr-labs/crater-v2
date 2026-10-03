@@ -6,7 +6,14 @@ import QtQuick
 // Open/close lifecycle is owned by AppState + ModalLayer's Loader. ModalShell
 // only handles the *visual* of being open: fade-in on instantiation, and
 // translating backdrop / X clicks into AppState.requestCloseModal() calls,
-// which let a dialog with unsaved edits (AppState.modalCloseOwner) object.
+// which let a dialog with unsaved edits object.
+//
+// Every dialog registers itself as AppState.modalCloseOwner on creation. A
+// dialog opts into the shared close gestures by defining, on its root:
+//   function requestClose()  ask before unsaved edits are dropped
+//   function requestSave()   run its Save button's own save (with its
+//                            validation) for the Ctrl+Enter double tap
+// Neither is required. See AppState's "Double-tap dialog gestures".
 Item {
     id: root
 
@@ -39,7 +46,10 @@ Item {
     // closed() once the exit animation has run its Theme.motion.normal course
     // — this is the "way to delay AppState.closeModal" the old note wanted.
     property bool _shown: false
-    Component.onCompleted: _shown = true
+    Component.onCompleted: {
+        _shown = true
+        AppState.modalCloseOwner = root
+    }
     onShowChanged: {
         _shown = show
         if (!show) closeTimer.restart()

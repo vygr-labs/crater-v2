@@ -336,6 +336,10 @@ a debugging trap that almost never works correctly.
 - The schedule auto-saves every 5 seconds while modified, plus on every
   item change. Backup copies of the last 10 versions in
   `AppDataLocation/schedules/.history/`.
+- With "Clear schedule when Crater closes" on (the default), a clean quit
+  empties the working schedule (after a `.history/` backup) so the next
+  launch starts blank. A crash skips that step, so an interrupted service
+  restores, and an open saved schedule with unsaved edits is never cleared.
 
 ---
 

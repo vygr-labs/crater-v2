@@ -18,6 +18,7 @@ QtObject {
         // Top bar / chrome
         "file-text":       "\ue0cc",
         "settings":        "\ue154",
+        "keyboard":        "\ue284",
         "arrow-up-right":  "\ue04d",
         "list-ordered":    "\ue1d1",
         "menu":            "\ue115",

@@ -190,6 +190,17 @@ Item {
                     value: SettingsService.reduceMotion
                     onToggled: SettingsService.reduceMotion = !SettingsService.reduceMotion }
             }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Takes effect at quit (ScheduleService::clearWorkingOnShutdown).
+            // A saved schedule with unsaved edits is kept rather than cleared.
+            SettingRow {
+                title: qsTr("Clear schedule when Crater closes")
+                description: qsTr("Start each launch with an empty schedule. Saved schedules are kept.")
+                ToggleSwitch {
+                    value: SettingsService.clearScheduleOnClose
+                    onToggled: SettingsService.clearScheduleOnClose = !SettingsService.clearScheduleOnClose }
+            }
 
             // ── LOCALE ───────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Locale") }

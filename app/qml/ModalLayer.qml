@@ -88,6 +88,13 @@ Item {
         sourceComponent: AiDesignDialog { }
     }
 
+    // ── Keyboard shortcut reference (F1 / TopBar keyboard button) ───────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "shortcuts"
+        sourceComponent: ShortcutsDialog { }
+    }
+
     // ── Schedule dropdown popover (anchored under TopBar) ───────────────
     Loader {
         anchors.fill: parent

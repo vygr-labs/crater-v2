@@ -62,6 +62,9 @@ struct SettingsService::Impl
     bool    showCcli         = true;
     bool    reduceMotion     = false;
     bool    showLogoByDef    = false;
+    // On by default: operators build a fresh schedule per service, and a
+    // stale one reappearing on launch was the reported annoyance.
+    bool    clearScheduleOnClose = true;
     // 1080p is the safest default — covers a clear majority of projectors
     // and TVs in the worship space. 4K and 720p are picker options in the
     // dialog but the persisted default never silently grows past 1080p.
@@ -127,6 +130,7 @@ struct SettingsService::Impl
     static constexpr const char* kShowCcli       = "Settings/showCcli";
     static constexpr const char* kReduceMotion   = "Settings/reduceMotion";
     static constexpr const char* kShowLogo       = "Settings/showLogoByDefault";
+    static constexpr const char* kClearScheduleOnClose = "Settings/clearScheduleOnClose";
     static constexpr const char* kOutputResolution = "Settings/outputResolution";
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
@@ -170,6 +174,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->showCcli       = s.value(QString::fromLatin1(Impl::kShowCcli),      m_impl->showCcli).toBool();
     m_impl->reduceMotion   = s.value(QString::fromLatin1(Impl::kReduceMotion),  m_impl->reduceMotion).toBool();
     m_impl->showLogoByDef    = s.value(QString::fromLatin1(Impl::kShowLogo),         m_impl->showLogoByDef).toBool();
+    m_impl->clearScheduleOnClose = s.value(QString::fromLatin1(Impl::kClearScheduleOnClose), m_impl->clearScheduleOnClose).toBool();
     m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
@@ -222,6 +227,7 @@ QString SettingsService::fontSize() const          { return m_impl->fontSize; }
 bool    SettingsService::showCcli() const          { return m_impl->showCcli; }
 bool    SettingsService::reduceMotion() const      { return m_impl->reduceMotion; }
 bool    SettingsService::showLogoByDefault() const { return m_impl->showLogoByDef; }
+bool    SettingsService::clearScheduleOnClose() const { return m_impl->clearScheduleOnClose; }
 QString SettingsService::outputResolution() const  { return m_impl->outputResolution; }
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
@@ -339,6 +345,14 @@ void SettingsService::setShowLogoByDefault(bool v)
     m_impl->showLogoByDef = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kShowLogo), v);
     emit showLogoByDefaultChanged();
+}
+
+void SettingsService::setClearScheduleOnClose(bool v)
+{
+    if (m_impl->clearScheduleOnClose == v) return;
+    m_impl->clearScheduleOnClose = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kClearScheduleOnClose), v);
+    emit clearScheduleOnCloseChanged();
 }
 
 void SettingsService::setOutputResolution(const QString& v)

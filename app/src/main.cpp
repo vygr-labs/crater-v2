@@ -425,6 +425,16 @@ int main(int argc, char* argv[])
                      &bibleService, [&] {
                          bibleService.setPreloadAll(settingsService.preloadTranslations());
                      });
+    // "Clear schedule when Crater closes". Hooked to aboutToQuit, which every
+    // clean exit passes through (console close, the updater's quit), and
+    // deliberately not to startup: a crash or a killed process skips it, so
+    // the schedule of an interrupted service is still there on relaunch.
+    // ScheduleService decides what is safe to clear; this only reads the
+    // setting at the moment of quitting.
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &scheduleService, [&] {
+        if (settingsService.clearScheduleOnClose())
+            scheduleService.clearWorkingOnShutdown();
+    });
     // NDI sender. Dynamic-loads Processing.NDI.Lib.x64.dll at construction;
     // if absent, NdiService.available stays false and the dialog reflects
     // that. Source window is wired from Main.qml's Component.onCompleted.

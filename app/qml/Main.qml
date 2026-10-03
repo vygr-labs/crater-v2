@@ -758,28 +758,52 @@ ApplicationWindow {
 
     // Escape: close modal first; if no modal, deselect schedule item.
     //
-    // Deliberately NOT gated on consoleShortcutsActive — ModalShell has
-    // no Escape handling of its own, so settings / naming / confirm /
-    // import / media-edit all rely on this one to close.
+    // Deliberately NOT gated on consoleShortcutsActive. This is the ONE
+    // Escape binding for every modal: ModalShell has no Escape handling of
+    // its own, and dialogs must not add one (two enabled Escape Shortcuts
+    // are ambiguous and neither fires). AppState.modalEscape routes a
+    // single press through requestCloseModal, so an editor holding unsaved
+    // edits still asks first, and turns a fast second press into the
+    // double-tap discard.
     //
-    // The exclusions are the two surfaces that DO bind Escape: the song
-    // editor (which needs to intercept and warn about unsaved lyrics
-    // rather than let a blunt closeModal discard them) and the theme
-    // editor workspace. Leaving those in made Escape ambiguous, which
-    // is worse than either outcome: the key did nothing at all. Any
-    // future dialog that binds its own Escape belongs in this list.
+    // The theme editor workspace binds its own Escape, so it owns the key
+    // while no modal is up and this one owns it while a modal is open
+    // over the workspace. autoRepeat off: a held Escape is one press, never
+    // a double tap that discards.
     Shortcut {
         sequence: "Escape"
-        enabled: AppState.activeModal !== "songEditor"
-              && AppState.workspaceMode === ""
+        autoRepeat: false
+        enabled: AppState.activeModal !== "" || AppState.workspaceMode === ""
         onActivated: {
             if (AppState.activeModal !== "") {
-                // Lets an editor holding unsaved edits ask first.
-                AppState.requestCloseModal()
+                AppState.modalEscape()
+            } else if (AppState.isTrailingEscape()) {
+                // Second half of a double tap that already closed a
+                // dialog. Leave the schedule selection alone.
             } else if (AppState.selectedScheduleIndex >= 0) {
                 AppState.selectScheduleItem(-1)
             }
         }
+    }
+
+    // Ctrl+Enter twice = save the open dialog and close it, through the
+    // dialog's own save path (AppState.saveAndCloseModal). Gated on
+    // dialogOpen so the command palette keeps Ctrl+Enter as "go live".
+    // autoRepeat off for the same reason as Escape above.
+    Shortcut {
+        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        autoRepeat: false
+        enabled: AppState.dialogOpen
+        onActivated: AppState.modalSaveTap()
+    }
+
+    // F1 = the keyboard shortcut reference (ShortcutsDialog). Toggles, and
+    // only opens over nothing: there is one modal slot, so opening it over
+    // an editor would throw the editor's unsaved edits away.
+    Shortcut {
+        sequence: "F1"
+        enabled: AppState.activeModal === "" || AppState.activeModal === "shortcuts"
+        onActivated: AppState.toggleShortcutHelp()
     }
 
     // Delete: prompt to remove the selected schedule item(s) — only when the

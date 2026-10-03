@@ -159,6 +159,29 @@ Rectangle {
             }
         }
 
+        // Keyboard shortcut reference (ShortcutsDialog, also F1). An
+        // IconButton inside a frame drawn like settingsChip, so the pair
+        // reads as one set of chrome. The 1px inset keeps IconButton's
+        // hover fill inside the border.
+        Rectangle {
+            id: shortcutsChip
+            anchors.verticalCenter: parent.verticalCenter
+            height: 34
+            width:  34
+            color: "transparent"
+            border.color: Theme.color.borderStrong
+            border.width: 1
+
+            IconButton {
+                anchors.fill: parent
+                anchors.margins: 1
+                iconName: "keyboard"
+                iconSize: Theme.icon.md
+                tooltip: qsTr("Keyboard shortcuts (F1)")
+                onClicked: AppState.toggleShortcutHelp()
+            }
+        }
+
         // NDI blank / restore — explicit opacity-0 toggle for the broadcast
         // scene. Lives next to Settings because both are "occasional output
         // controls"; chrome matches settingsChip (34px tall, borderStrong

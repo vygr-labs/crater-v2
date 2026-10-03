@@ -114,6 +114,22 @@ public:
     // point for a brand-new schedule.
     Q_INVOKABLE void   closeLoaded();
 
+    // Shutdown half of the "Clear schedule when Crater closes" setting.
+    // main.cpp calls this from QCoreApplication::aboutToQuit while the
+    // setting is on, so the next launch opens on an empty, untitled working
+    // schedule. Only the working list (current_schedule + the loaded-
+    // schedule pointer in kv) is reset: saved schedules are never touched.
+    //
+    // Two deliberate exceptions keep the working list as it is today:
+    //   - a crash or a killed process never reaches aboutToQuit, so a
+    //     schedule lost mid-service comes back on the next launch;
+    //   - when a saved schedule is open and the working list differs from
+    //     its saved copy, those edits exist nowhere else, so nothing is
+    //     cleared and they are restored next launch exactly as before.
+    // The cleared list is written to the .history backups first. Emits no
+    // signals: the UI is being torn down. Returns true when it cleared.
+    bool clearWorkingOnShutdown();
+
 signals:
     void currentItemsChanged();
     void savedSchedulesChanged();
@@ -133,6 +149,8 @@ private:
     void markDirty();
     void saveCurrentNow();
     void backupHistoryOnce();
+    void writeHistoryBackup();
+    bool workingMatchesLoaded();
 };
 
 }  // namespace crater
