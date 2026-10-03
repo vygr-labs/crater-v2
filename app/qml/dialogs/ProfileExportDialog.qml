@@ -15,9 +15,53 @@ ModalShell {
 
     // "choose" -> "running" -> "done"
     property string _phase: "choose"
-    property var    _parts: ({ themes: true, media: true, presentations: true,
+    property var    _parts: ({ themes: true, fonts: true, media: true, presentations: true,
                                scriptures: true, songs: true, schedules: true,
                                settings: true })
+
+    // What each part holds right now ({ songs: { count, bytes }, ... }),
+    // read once when the dialog opens.
+    readonly property var _sizes: ProfileService.partSizes()
+
+    function _fmtBytes(b) {
+        if (b >= 1024 * 1024 * 1024) return qsTr("%1 GB").arg((b / (1024 * 1024 * 1024)).toFixed(1))
+        if (b >= 1024 * 1024)        return qsTr("%1 MB").arg((b / (1024 * 1024)).toFixed(1))
+        if (b >= 1024)               return qsTr("%1 KB").arg(Math.round(b / 1024))
+        return qsTr("%1 bytes").arg(b)
+    }
+
+    function _countText(key, count) {
+        const one = count === 1
+        const n = count.toLocaleString(Qt.locale(), "f", 0)
+        switch (key) {
+        case "songs":         return one ? qsTr("1 song")         : qsTr("%1 songs").arg(n)
+        case "scriptures":    return one ? qsTr("1 Bible")        : qsTr("%1 Bibles").arg(n)
+        case "themes":        return one ? qsTr("1 theme")        : qsTr("%1 themes").arg(n)
+        case "fonts":         return one ? qsTr("1 font")         : qsTr("%1 fonts").arg(n)
+        case "media":         return one ? qsTr("1 file")         : qsTr("%1 files").arg(n)
+        case "presentations": return one ? qsTr("1 presentation") : qsTr("%1 presentations").arg(n)
+        case "schedules":     return one ? qsTr("1 schedule")     : qsTr("%1 schedules").arg(n)
+        case "settings":      return one ? qsTr("1 preference")   : qsTr("%1 preferences").arg(n)
+        }
+        return String(n)
+    }
+
+    // "1,430 songs · 2.1 MB" for a row's right-hand detail.
+    function _sizeText(key) {
+        const s = root._sizes[key]
+        if (!s) return ""
+        let t = root._countText(key, Number(s.count))
+        if (s.bytes > 0) t += " · " + root._fmtBytes(s.bytes)
+        return t
+    }
+
+    // Rough size of the file with the current ticks.
+    readonly property real _totalBytes: {
+        let sum = 0
+        for (const k in root._parts)
+            if (root._parts[k] && root._sizes[k]) sum += Number(root._sizes[k].bytes) || 0
+        return sum
+    }
     property bool   _ok: false
     property string _message: ""
     property var    _warnings: []
@@ -26,10 +70,11 @@ ModalShell {
     readonly property var _rows: [
         { key: "songs",         label: qsTr("Songs"),         detail: qsTr("with collections") },
         { key: "scriptures",    label: qsTr("Scriptures"),    detail: qsTr("installed Bibles") },
-        { key: "themes",        label: qsTr("Themes"),        detail: qsTr("with their fonts") },
+        { key: "themes",        label: qsTr("Themes"),        detail: "" },
+        { key: "fonts",         label: qsTr("Fonts"),         detail: "" },
         { key: "media",         label: qsTr("Media"),         detail: qsTr("pictures, videos, PDFs") },
         { key: "presentations", label: qsTr("Presentations"), detail: "" },
-        { key: "schedules",     label: qsTr("Schedules"),     detail: qsTr("saved schedules") },
+        { key: "schedules",     label: qsTr("Schedules"),     detail: "" },
         { key: "settings",      label: qsTr("Settings"),      detail: qsTr("display preferences") }
     ]
 
@@ -121,7 +166,10 @@ ModalShell {
                     required property var modelData
                     width: chooseCol.width
                     label: modelData.label
-                    detail: modelData.detail
+                    detail: {
+                        const size = root._sizeText(modelData.key)
+                        return size.length > 0 ? size : modelData.detail
+                    }
                     checked: !!root._parts[modelData.key]
                     onToggled: root._toggle(modelData.key)
                 }
@@ -139,7 +187,26 @@ ModalShell {
             }
             Text {
                 width: parent.width
-                visible: !!root._parts.themes
+                topPadding: Theme.space.sm
+                text: qsTr("About %1 in total").arg(root._fmtBytes(root._totalBytes))
+                color: Theme.color.textSecondary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                font.weight: Theme.font.weightMedium
+            }
+            Text {
+                width: parent.width
+                visible: !!root._parts.themes && !root._parts.fonts
+                topPadding: Theme.space.sm
+                text: qsTr("Themes that use your own fonts will show a standard font on the other computer unless Fonts is ticked.")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                visible: !!root._parts.fonts
                 topPadding: Theme.space.sm
                 text: qsTr("Font files may be licensed for this computer only. You are responsible for having the right to share any font you export.")
                 color: Theme.color.textTertiary

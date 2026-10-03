@@ -19,6 +19,7 @@ QtObject {
         "file-text":       "\ue0cc",
         "settings":        "\ue154",
         "keyboard":        "\ue284",
+        "list-checks":     "\ue1d0",
         "arrow-up-right":  "\ue04d",
         "list-ordered":    "\ue1d1",
         "menu":            "\ue115",

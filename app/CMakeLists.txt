@@ -124,6 +124,7 @@ qt_add_qml_module(crater
         qml/controls/Combobox.qml
         qml/controls/SelectCheck.qml
         qml/controls/SelectionBar.qml
+        qml/controls/SelectModeToggle.qml
         qml/controls/CheckRow.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,

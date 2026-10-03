@@ -43,9 +43,14 @@ QtObject {
 
     readonly property var ids: AppState.librarySelection[tabKey] || []
     readonly property int count: ids.length
-    // Selection mode: any row checked. Row checkboxes stay visible while
-    // this holds, not just on hover.
+    // Any row checked.
     readonly property bool active: count > 0
+    // The tab's Select toggle (AppState.librarySelectMode).
+    readonly property bool selectMode: !!AppState.librarySelectMode[tabKey]
+    // Row checkboxes show in select mode, or once Ctrl / Shift+click has
+    // checked something. Never on hover alone.
+    readonly property bool showChecks: selectMode || active
+    function setSelectMode(on) { AppState.setLibrarySelectMode(tabKey, on) }
 
     readonly property var _set: {
         let s = {}
@@ -147,6 +152,12 @@ QtObject {
             } else {
                 toggle(id)
             }
+            return true
+        }
+        if (selectMode) {
+            // Select mode: a plain click ticks the row, like its checkbox.
+            toggle(id)
+            setAnchor(id)
             return true
         }
         clear()

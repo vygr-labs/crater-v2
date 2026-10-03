@@ -1392,14 +1392,20 @@ QtObject {
     readonly property int liveDockCollapsedWidth: 32
     readonly property int liveDockMargin:         12
 
-    // Width ModalShell keeps clear on the right so the card never sits under
-    // the docked panel. ModalShell drops the reservation when honouring it
-    // would squeeze its card too far (small window); the panel then overlaps
-    // and the operator can fold or drag it.
+    // Width the docked panel adds beside the dialog card (panel plus the
+    // gap between them). ModalShell shifts its card left by half of this so
+    // card and panel sit centred as one pair, then publishes the card's
+    // rect in modalCardRect for the panel to attach to. ModalShell drops
+    // the reservation when the window is too narrow for the pair; the panel
+    // then falls back to the window's right edge, over the dialog.
     readonly property int liveDockReservedWidth:
         (!liveDockShown || liveDockFloating) ? 0
             : (liveDockCollapsed ? liveDockCollapsedWidth : liveDockWidth)
-              + liveDockMargin * 2
+              + liveDockMargin
+
+    // The open dialog card's rect in ModalLayer coordinates while the
+    // docked panel is attached to it, else empty.
+    property rect modalCardRect: Qt.rect(0, 0, 0, 0)
 
     // Save through the dialog's own save path. A dialog with nothing to save
     // just closes, through requestCloseModal so a dirty prompt still applies.
@@ -1840,6 +1846,20 @@ QtObject {
         librarySelection = copy
     }
 
+    // Select mode per tab: the Select toggle in the tab's top bar. Row
+    // checkboxes only show while it is on (or something is already checked
+    // through Ctrl / Shift+click), and a plain click then ticks the row
+    // instead of moving Preview. Turning it off drops the ticks.
+    property var librarySelectMode: ({})
+
+    function setLibrarySelectMode(tabKey, on) {
+        if (!!librarySelectMode[tabKey] === !!on) return
+        let copy = Object.assign({}, librarySelectMode)
+        copy[tabKey] = !!on
+        librarySelectMode = copy
+        if (!on) clearLibrarySelection(tabKey)
+    }
+
     function clearLibrarySelection(tabKey) {
         if ((librarySelection[tabKey] || []).length === 0) return
         setLibrarySelection(tabKey, [])
@@ -1873,12 +1893,20 @@ QtObject {
     // Escape, first stage: drop the active library tab's checked rows.
     // Returns false when there was nothing to clear, so the caller can fall
     // through to its older meaning (deselecting the schedule row).
+    // Escape with library focus: drop the ticks first, then leave select
+    // mode on the next press.
     function clearActiveLibrarySelection() {
         if (activeFocusPanel !== "library") return false
         const key = tabKeys[activeTab]
-        if ((librarySelection[key] || []).length === 0) return false
-        clearLibrarySelection(key)
-        return true
+        if ((librarySelection[key] || []).length > 0) {
+            clearLibrarySelection(key)
+            return true
+        }
+        if (librarySelectMode[key]) {
+            setLibrarySelectMode(key, false)
+            return true
+        }
+        return false
     }
 
     // Sidebar group + media type filter move together: clicking "Images" in

@@ -32,9 +32,10 @@ namespace crater::profile {
 //     updated or deleted, and an item that already exists is matched
 //     instead of duplicated (see importArchive).
 
-// The parts a profile archive can carry. "Themes" includes the user fonts
-// themes use. "Settings" are the per-profile preferences listed in
-// ProfileSettings.h.
+// The parts a profile archive can carry. "Fonts" are the user fonts
+// (themes name fonts by family, so themes import fine without them and
+// fall back to the default face). "Settings" are the per-profile
+// preferences listed in ProfileSettings.h.
 enum Part : unsigned {
     PartThemes        = 1u << 0,
     PartMedia         = 1u << 1,
@@ -43,11 +44,12 @@ enum Part : unsigned {
     PartSongs         = 1u << 4,
     PartSchedules     = 1u << 5,
     PartSettings      = 1u << 6,
+    PartFonts         = 1u << 7,
 };
-constexpr unsigned kAllParts = 0x7Fu;
+constexpr unsigned kAllParts = 0xFFu;
 
-// "themes", "media", "presentations", "scriptures", "songs", "schedules",
-// "settings", in the order the UI lists them.
+// "themes", "fonts", "media", "presentations", "scriptures", "songs",
+// "schedules", "settings".
 QStringList partKeys();
 unsigned    partForKey(QStringView key);
 unsigned    partsFromMap(const QVariantMap& map);   // { themes: true, ... }
@@ -75,6 +77,11 @@ struct ArchiveInfo
 // Validate an archive and read its manifest. Cheap: no payload is read
 // beyond the manifest itself.
 ArchiveInfo inspectArchive(const QString& archivePath);
+
+// What each part of the profile at `root` holds, for the export dialog:
+// { "<part key>": { count: <items>, bytes: <approximate size> } }. Read
+// only, and quick: it counts rows and stats files, never hashes them.
+QVariantMap estimateParts(const QString& root);
 
 struct ExportResult
 {

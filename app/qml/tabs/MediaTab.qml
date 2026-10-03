@@ -593,6 +593,12 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
+            // Select mode: shows the row checkboxes (LibrarySelection).
+            SelectModeToggle {
+                anchors.verticalCenter: parent.verticalCenter
+                target: selection
+            }
+
             // Grid view button
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
@@ -1095,13 +1101,12 @@ Item {
                         }
                     }
 
-                    // Batch-select checkbox (top-left, shows on hover or while
+                    // Batch-select checkbox (top-left, shows in select mode or while
                     // anything is checked). Toggles only this tile; the
                     // current tile and Preview stay put.
                     SelectCheck {
                         id: cellCheck
-                        visible: cellMa.containsMouse || cellCheck.hovered
-                              || selection.active
+                        visible: selection.showChecks
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.margins: 4
@@ -1326,8 +1331,7 @@ Item {
                 SelectCheck {
                     id: rowCheckbox
                     z: 1
-                    visible: rowMa.containsMouse || rowCheckbox.hovered
-                          || selection.active
+                    visible: selection.showChecks
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter

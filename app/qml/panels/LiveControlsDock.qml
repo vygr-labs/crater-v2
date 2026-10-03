@@ -44,9 +44,16 @@ Item {
     // ── Frame geometry ──────────────────────────────────────────────────
     readonly property real _expandedW:
         Math.min(AppState.liveDockWidth, width - _margin * 2)
+    // Attached to the dialog card's right edge (see ModalShell), matching
+    // its top and height. Never shorter than 420 so a small dialog still
+    // leaves room for the slide list.
+    readonly property rect _card: AppState.modalCardRect
+    readonly property bool _attached: !_floating && _card.width > 0
     readonly property real _expandedH: _floating
         ? Math.min(560, height - _top - _margin)
-        : height - _top - _margin
+        : _attached
+            ? Math.min(Math.max(_card.height, 420), height - _card.y - _margin)
+            : height - _top - _margin
     readonly property real _tabH: 148
 
     readonly property real _frameW: _collapsed ? AppState.liveDockCollapsedWidth : _expandedW
@@ -101,10 +108,14 @@ Item {
         height: root._frameH
         x: root._floating
            ? root._clamp(AppState.liveDockX, root._margin, root.width - width - root._margin)
-           : root.width - width - root._margin
+           : root._attached
+               ? root._card.x + root._card.width + root._margin
+               : root.width - width - root._margin
         y: root._floating
            ? root._clamp(AppState.liveDockY, root._top, root.height - height - root._margin)
-           : (root._collapsed ? (root.height - height) / 2 : root._top)
+           : root._attached
+               ? root._card.y
+               : (root._collapsed ? (root.height - height) / 2 : root._top)
 
         // Fade in with the dialog rather than blink into place.
         opacity: 0
@@ -537,8 +548,8 @@ Item {
                         readonly property string plain: {
                             const raw = modelData && modelData.content ? String(modelData.content) : ""
                             return raw.split("\n").map(function(l) {
-                                return LyricsService.flattenLine(l)
-                            }).filter(function(l) { return l.length > 0 }).join("  ")
+                                return LyricsService.flattenLine(l).trim()
+                            }).filter(function(l) { return l.length > 0 }).join(" / ")
                         }
 
                         width: slideList.width - Theme.size.scrollBar

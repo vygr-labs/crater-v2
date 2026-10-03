@@ -99,6 +99,10 @@ public:
     //   parts: { themes: bool, ... }, counts: { songs: n, ... } }
     Q_INVOKABLE QVariantMap inspectArchive(QString path);
 
+    // What each part of the current profile holds, keyed like `partKeys`:
+    // { songs: { count, bytes }, ... }. For the export dialog's sizes.
+    Q_INVOKABLE QVariantMap partSizes() const;
+
     // Export the current profile. `parts` is { themes: true, ... }.
     // Async; reports through operationFinished("export", ...).
     Q_INVOKABLE bool exportProfile(QString path, QVariantMap parts);

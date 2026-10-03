@@ -23,6 +23,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QCryptographicHash>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -550,6 +551,69 @@ private slots:
         Connection songs(DbPaths::songsDbPathIn(dst), crater::db::OpenMode::ReadOnly);
         QCOMPARE(scalar(songs, QStringLiteral("SELECT count(*) FROM songs WHERE theme_id IS NULL")), 1);
         QVERIFY(!QFile::exists(DbPaths::importSentinelPathIn(dst)));   // no Bibles came along
+    }
+
+    // Fonts are their own part: themes travel without the font files
+    // unless Fonts is ticked too.
+    void testFontsAreTheirOwnPart()
+    {
+        const QString src = root(QStringLiteral("src-f"));
+        seedProfile(src);
+        QByteArray fontBytes("\x00\x01\x00\x00", 4);
+        fontBytes.append(QByteArray(256, 'f'));
+        const QString sha = QString::fromLatin1(
+            QCryptographicHash::hash(fontBytes, QCryptographicHash::Sha256).toHex());
+        const QString fontPath = QDir(DbPaths::fontsDirIn(src)).filePath(sha + QStringLiteral(".ttf"));
+        QDir().mkpath(DbPaths::fontsDirIn(src));
+        {
+            QFile f(fontPath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(fontBytes);
+        }
+        {
+            Connection app(DbPaths::appDbPathIn(src));
+            auto st = app.prepare(QStringLiteral(
+                "INSERT INTO user_fonts (hash, family, path, added_at) VALUES (?, 'Test Sans', ?, 1)"));
+            st.bind(1, sha);
+            st.bind(2, fontPath);
+            st.step();
+        }
+
+        QTemporaryDir tmp;
+        const auto hasFontEntry = [](const QString& archive) {
+            ZipReader z(archive);
+            for (const QString& n : z.entryNames())
+                if (n.startsWith(QLatin1String("fonts/"))) return true;
+            return false;
+        };
+
+        const QString themesOnly = tmp.filePath(QStringLiteral("t.craterprofile"));
+        QVERIFY(profile::exportArchive(src, QStringLiteral("T"), profile::PartThemes,
+                                       themesOnly, staging()).ok);
+        QCOMPARE(profile::inspectArchive(themesOnly).parts, unsigned(profile::PartThemes));
+        QVERIFY(!hasFontEntry(themesOnly));
+
+        const QString withFonts = tmp.filePath(QStringLiteral("tf.craterprofile"));
+        QVERIFY(profile::exportArchive(src, QStringLiteral("TF"),
+                                       profile::PartThemes | profile::PartFonts,
+                                       withFonts, staging()).ok);
+        QCOMPARE(profile::inspectArchive(withFonts).parts,
+                 unsigned(profile::PartThemes | profile::PartFonts));
+        QVERIFY(hasFontEntry(withFonts));
+
+        const QString dst = root(QStringLiteral("dst-f"));
+        QString err;
+        QVERIFY(profile::initProfileRoot(dst, &err));
+        const auto im = profile::importArchive(withFonts, profile::kAllParts, dst, true, staging());
+        QVERIFY2(im.ok, qPrintable(im.error));
+        Connection app(DbPaths::appDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM user_fonts WHERE hash = '%1'").arg(sha)), 1);
+
+        // The estimate the export dialog shows counts the font and its bytes.
+        const QVariantMap est = profile::estimateParts(src);
+        QCOMPARE(est.value(QStringLiteral("fonts")).toMap().value(QStringLiteral("count")).toLongLong(), 1);
+        QCOMPARE(est.value(QStringLiteral("fonts")).toMap().value(QStringLiteral("bytes")).toLongLong(),
+                 qint64(fontBytes.size()));
     }
 
     void testInspectRejectsHostileArchives()

@@ -275,6 +275,12 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
+            // Select mode: shows the row checkboxes (LibrarySelection).
+            SelectModeToggle {
+                anchors.verticalCenter: parent.verticalCenter
+                target: selection
+            }
+
             Rectangle {
                 id: addBtn
                 width: 28; height: 22
@@ -466,8 +472,7 @@ Item {
             // Checked for bulk actions; shares the selected wash, while the
             // accent bar stays the current row's alone.
             readonly property bool _checked: selection.isSelected(modelData.id)
-            readonly property bool _showCheck:
-                selection.active || rowMa.containsMouse || rowCheck.hovered
+            readonly property bool _showCheck: selection.showChecks
             readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
             // Live comparison keys on presentationId, which only exists on a
             // presentation item — guarding on contentKind keeps the check

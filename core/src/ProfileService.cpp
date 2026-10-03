@@ -567,6 +567,11 @@ QVariantMap ProfileService::inspectArchive(QString path)
     };
 }
 
+QVariantMap ProfileService::partSizes() const
+{
+    return profile::estimateParts(Impl::rootFor(m_impl->currentId));
+}
+
 bool ProfileService::exportProfile(QString path, QVariantMap parts)
 {
     m_impl->lastError.clear();

@@ -35,6 +35,7 @@ ModalShell {
         { key: "songs",         label: qsTr("Songs"),         countKey: "songs",         unit: qsTr("%1 songs") },
         { key: "scriptures",    label: qsTr("Scriptures"),    countKey: "scriptures",    unit: qsTr("%1 Bibles") },
         { key: "themes",        label: qsTr("Themes"),        countKey: "themes",        unit: qsTr("%1 themes") },
+        { key: "fonts",         label: qsTr("Fonts"),         countKey: "fonts",         unit: qsTr("%1 fonts") },
         { key: "media",         label: qsTr("Media"),         countKey: "media",         unit: qsTr("%1 files") },
         { key: "presentations", label: qsTr("Presentations"), countKey: "presentations", unit: qsTr("%1 presentations") },
         { key: "schedules",     label: qsTr("Schedules"),     countKey: "schedules",     unit: qsTr("%1 schedules") },

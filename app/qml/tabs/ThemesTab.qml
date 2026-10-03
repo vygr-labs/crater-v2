@@ -271,6 +271,12 @@ Item {
         spacing: Theme.space.sm
         z: 1
 
+        // Select mode: shows the tile checkboxes (LibrarySelection).
+        SelectModeToggle {
+            anchors.verticalCenter: parent.verticalCenter
+            target: selection
+        }
+
         // Import — one dropdown collapsing the three import paths so the header
         // stays compact (esp. on narrow tabs). Each menu item keeps its own
         // file-picker + result-banner logic. Anchored bottom-right of the
@@ -652,8 +658,7 @@ Item {
 
             // Checked for bulk actions (multi-select, keyed by theme id).
             readonly property bool _checked: selection.isSelected(modelData.id)
-            readonly property bool _showCheck:
-                selection.active || themeMa.containsMouse || tileCheck.hovered
+            readonly property bool _showCheck: selection.showChecks
 
             Rectangle {
                 id: tile

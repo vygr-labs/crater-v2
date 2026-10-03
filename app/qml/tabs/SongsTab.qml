@@ -442,6 +442,12 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
 
+            // Select mode: shows the row checkboxes (LibrarySelection).
+            SelectModeToggle {
+                anchors.verticalCenter: parent.verticalCenter
+                target: selection
+            }
+
             // + (new song)
             Rectangle {
                 id: addBtn
@@ -781,7 +787,7 @@ Item {
             // Checked for bulk actions (multi-select). Shares the selected
             // wash; the brand accent bar stays the current row's alone.
             readonly property bool _checked: selection.isSelected(modelData.id)
-            readonly property bool _showCheck: selection.active || rowMa.containsMouse || rowCheck.hovered
+            readonly property bool _showCheck: selection.showChecks
             // True while the library pane owns keyboard focus. When focus
             // moves to Schedule / Preview / Live, the selected row wash
             // mutes to neutral gray (matches ScriptureTab convention).

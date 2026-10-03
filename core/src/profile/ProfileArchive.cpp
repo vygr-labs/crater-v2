@@ -81,11 +81,12 @@ const QRegularExpression& fontEntryRe()
     return re;
 }
 
-constexpr unsigned kAppParts = PartThemes | PartMedia | PartPresentations | PartSchedules;
+constexpr unsigned kAppParts = PartThemes | PartFonts | PartMedia | PartPresentations | PartSchedules;
 
 struct PartName { unsigned part; const char* key; };
 const PartName kPartNames[] = {
     { PartThemes,        "themes"        },
+    { PartFonts,         "fonts"         },
     { PartMedia,         "media"         },
     { PartPresentations, "presentations" },
     { PartScriptures,    "scriptures"    },
@@ -594,8 +595,8 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                 } else {
                     c.exec(QStringLiteral("DELETE FROM kv"));
                     c.exec(QStringLiteral("DELETE FROM themes"));
-                    c.exec(QStringLiteral("DELETE FROM user_fonts"));
                 }
+                if (!(parts & PartFonts))         c.exec(QStringLiteral("DELETE FROM user_fonts"));
                 if (!(parts & PartMedia))         c.exec(QStringLiteral("DELETE FROM media"));
                 if (!(parts & PartPresentations)) c.exec(QStringLiteral("DELETE FROM presentations"));
                 if (!(parts & PartSchedules))     c.exec(QStringLiteral("DELETE FROM schedules"));
@@ -680,8 +681,8 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                     }
                 }
 
-                // Fonts travel with themes.
-                if (parts & PartThemes) {
+                // Font files, content-addressed like media.
+                if (parts & PartFonts) {
                     const QString fontsDir = db::DbPaths::fontsDirIn(sourceRoot);
                     struct Row { qint64 id; QString path; QString family; };
                     QList<Row> rows;
@@ -723,12 +724,12 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                 tx.commit();
             }
 
-            if (parts & PartThemes) {
+            if (parts & PartThemes)
                 counts.insert(QStringLiteral("themes"),
                               countRows(c, QStringLiteral("SELECT count(*) FROM themes WHERE is_builtin = 0")));
+            if (parts & PartFonts)
                 counts.insert(QStringLiteral("fonts"),
                               countRows(c, QStringLiteral("SELECT count(*) FROM user_fonts")));
-            }
             if (parts & PartMedia)
                 counts.insert(QStringLiteral("media"), countRows(c, QStringLiteral("SELECT count(*) FROM media")));
             if (parts & PartPresentations)
@@ -860,6 +861,54 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
 // Inspect
 // ═══════════════════════════════════════════════════════════════════════
 
+QVariantMap estimateParts(const QString& root)
+{
+    QVariantMap out;
+    const auto put = [&](const char* key, qint64 count, qint64 bytes) {
+        out.insert(QString::fromLatin1(key),
+                   QVariantMap{ { QStringLiteral("count"), count },
+                                { QStringLiteral("bytes"), bytes } });
+    };
+    const auto fileSize = [](const QString& p) { return QFileInfo(p).size(); };
+
+    try {
+        const QString appDb = db::DbPaths::appDbPathIn(root);
+        if (QFileInfo::exists(appDb)) {
+            db::Connection c(appDb, db::OpenMode::ReadOnly, QStringLiteral("ProfileEstimate-app"));
+            put("themes", countRows(c, QStringLiteral("SELECT count(*) FROM themes WHERE is_builtin = 0")), 0);
+            put("presentations", countRows(c, QStringLiteral("SELECT count(*) FROM presentations")), 0);
+            put("schedules", countRows(c, QStringLiteral("SELECT count(*) FROM schedules")), 0);
+
+            const auto sumFiles = [&](const QString& sql, const QString& dir, const char* key) {
+                qint64 n = 0, bytes = 0;
+                auto st = c.prepare(sql);
+                while (st.step()) {
+                    ++n;
+                    bytes += fileSize(db::DbPaths::relocate(st.columnText(0), dir));
+                }
+                put(key, n, bytes);
+            };
+            sumFiles(QStringLiteral("SELECT path FROM media"), db::DbPaths::mediaDirIn(root), "media");
+            sumFiles(QStringLiteral("SELECT path FROM user_fonts"), db::DbPaths::fontsDirIn(root), "fonts");
+        }
+        const QString songsDb = db::DbPaths::songsDbPathIn(root);
+        if (QFileInfo::exists(songsDb)) {
+            db::Connection c(songsDb, db::OpenMode::ReadOnly, QStringLiteral("ProfileEstimate-songs"));
+            put("songs", countRows(c, QStringLiteral("SELECT count(*) FROM songs")), fileSize(songsDb));
+        }
+        const QString biblesDb = db::DbPaths::biblesDbPathIn(root);
+        if (QFileInfo::exists(biblesDb)) {
+            db::Connection c(biblesDb, db::OpenMode::ReadOnly, QStringLiteral("ProfileEstimate-bibles"));
+            put("scriptures", countRows(c, QStringLiteral("SELECT count(*) FROM translations")),
+                fileSize(biblesDb));
+        }
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "ProfileArchive::estimateParts:" << e.message();
+    }
+    put("settings", readProfilePreferences(root).size(), 0);
+    return out;
+}
+
 ArchiveInfo inspectArchive(const QString& archivePath)
 {
     ArchiveInfo info;
@@ -937,6 +986,11 @@ ArchiveInfo inspectArchive(const QString& archivePath)
     unsigned listed = 0;
     for (const QJsonValue& v : m.value(QStringLiteral("parts")).toArray())
         listed |= partForKey(v.toString());
+    // Files written before fonts were their own part carried them inside
+    // "themes"; treat their font list as a Fonts part.
+    if ((listed & PartThemes) && !(listed & PartFonts)
+        && !m.value(QStringLiteral("fonts")).toArray().isEmpty())
+        listed |= PartFonts;
     unsigned present = 0;
     if (zip.hasEntry(kAppDb))    present |= kAppParts;
     if (zip.hasEntry(kSongsDb))  present |= PartSongs;
@@ -1020,7 +1074,7 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
         if (parts & PartSongs)      need += 2 * zip.entrySize(kSongsDb);
         if (parts & PartScriptures) need += 3 * zip.entrySize(kBiblesDb);
         if (parts & PartMedia)  for (const FileRef& f : mediaRefs) need += f.bytes;
-        if (parts & PartThemes) for (const FileRef& f : fontRefs)  need += f.bytes;
+        if (parts & PartFonts)  for (const FileRef& f : fontRefs)  need += f.bytes;
         const QStorageInfo vol(targetRoot);
         if (vol.isValid() && vol.bytesAvailable() >= 0 && vol.bytesAvailable() < need) {
             r.error = QStringLiteral("There is not enough free space to import this profile.");
@@ -1177,7 +1231,7 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
         if (parts & kAppParts)
             appSrc.emplace(stagedApp, db::OpenMode::ReadOnly, QStringLiteral("ProfileImport-src"));
 
-        if ((parts & PartThemes) && appSrc) {
+        if ((parts & PartFonts) && appSrc) {
             report(0.32, QStringLiteral("Adding fonts"));
             QSet<QString> haveHashes;
             {
@@ -1327,7 +1381,7 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
         }
 
         // ── Transaction 1 (app.sqlite): fonts, media, themes, decks ─────
-        if (appSrc && (parts & (PartThemes | PartMedia | PartPresentations))) {
+        if (appSrc && (parts & (PartThemes | PartFonts | PartMedia | PartPresentations))) {
             report(0.76, QStringLiteral("Adding themes and media"));
             db::Connection dst(db::DbPaths::appDbPathIn(targetRoot), db::OpenMode::ReadWrite,
                                QStringLiteral("ProfileImport-app"));
