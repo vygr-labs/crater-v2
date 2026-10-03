@@ -3,9 +3,9 @@
 
 Classic Dark, the scripture default since V001, is white text centred on
 black with no reference: the room never sees which verse is up. These
-themes share one design (reference eyebrow over a short accent rule, the
-passage left-aligned beneath it, Funnel Sans throughout) in two palettes,
-so switching between them never moves the text.
+themes share one design (a heavy reference eyebrow with the passage
+left-aligned beneath it, Funnel Sans throughout) in two palettes, so
+switching between them never moves the text.
 
 Funnel Sans is the one family bundled with Crater (main.cpp registers it),
 so the design renders the same on the Windows and Linux builds.
@@ -67,29 +67,25 @@ def nodes(t):
         {
             "id": "reference", "kind": "text",
             "style": {"x": 9, "y": 11, "width": 82, "height": 7, "z": 3, "opacity": 1,
-                      "color": t["accent"], "fontFamily": FONT, "fontPixelSize": 40,
-                      "fontWeight": 600, "letterSpacing": 5, "lineHeightMultiplier": 1.2,
+                      "color": t["accent"], "fontFamily": FONT, "fontPixelSize": 43,
+                      # 800 is the heaviest Funnel Sans goes.
+                      "fontWeight": 800, "letterSpacing": 5, "lineHeightMultiplier": 1.2,
                       "textTransform": "uppercase",
                       "textAlign": "left", "verticalAlign": "center"},
             "data": {"layerName": "Reference", "linkage": "scriptureRef", "autoResize": False},
         },
         {
-            "id": "rule", "kind": "container",
-            "style": {"x": 9, "y": 20.5, "width": 3.75, "height": 0.4, "z": 2,
-                      "opacity": 1, "backgroundColor": t["accent"]},
-            "data": {"layerName": "Accent rule"},
-        },
-        {
             # Top-aligned so a one-verse slide and a whole passage start on
-            # the same line under the rule; auto-fit only ever shrinks a long
-            # passage, it never pushes the first line down.
+            # the same line under the reference; auto-fit grows a short verse
+            # into the empty space below and shrinks a long passage, but never
+            # pushes the first line down.
             "id": "verse", "kind": "text",
-            "style": {"x": 9, "y": 26, "width": 80, "height": 64, "z": 2, "opacity": 1,
+            "style": {"x": 9, "y": 21, "width": 80, "height": 71, "z": 2, "opacity": 1,
                       "color": t["text"], "fontFamily": FONT, "fontPixelSize": 72,
-                      "fontWeight": 500, "lineHeightMultiplier": 1.26,
+                      "fontWeight": 600, "lineHeightMultiplier": 1.26,
                       "textAlign": "left", "verticalAlign": "start"},
             "data": {"layerName": "Verse", "linkage": "scriptureText",
-                     "autoResize": True, "maxFontSize": 96,
+                     "autoResize": True, "maxFontSize": 120,
                      "verseNumberColor": t["accent"]},
         },
     ]
