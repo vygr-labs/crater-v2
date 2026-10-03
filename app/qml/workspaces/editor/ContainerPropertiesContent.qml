@@ -631,6 +631,58 @@ Column {
                 }
             }
 
+            // Marks this container as the theme's DYNAMIC BACKGROUND: a
+            // picture or video the operator sets from the Media tab paints
+            // here in place of this container's own media, keeping its size,
+            // position, opacity and corners. With nothing marked, the bottom
+            // full-screen container plays the part, so the box reads as
+            // ticked there; unticking it opts the theme out
+            // (crater::tokens::dynamicBackgroundIndices).
+            Item {
+                id: dynBgRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 32
+                visible: !slidePicRow._on
+                readonly property bool _on: {
+                    if (!node || !workspace || !workspace.workingTheme) return false
+                    return ThemeService.dynamicBackgroundIds(workspace.workingTheme.nodes)
+                                       .indexOf(node.id) >= 0
+                }
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        radius: 0
+                        color: dynBgRow._on ? Theme.color.brand : Theme.color.canvas
+                        border.color: dynBgRow._on ? Theme.color.brand : Theme.color.borderStrong
+                        border.width: 1
+                        Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: dynBgRow._on
+                            name: "check"; size: Theme.icon.sm
+                            color: "#ffffff"   // check on the deep-teal box
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Dynamic background")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root._setData("dynamicBackground", !dynBgRow._on)
+                }
+            }
+
             Rectangle {
                 id: mediaSlot
                 anchors.left: parent.left
@@ -714,7 +766,9 @@ Column {
             SimpleSlider {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: !!root._media
+                // Also shown on a dynamic background with no media of its own:
+                // the opacity applies to whatever the operator sets there.
+                visible: !!root._media || dynBgRow._on
                 label: qsTr("Opacity")
                 value: (node && node.data && node.data.bgOpacity !== undefined)
                     ? node.data.bgOpacity : 1.0

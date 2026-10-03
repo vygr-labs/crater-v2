@@ -867,6 +867,24 @@ QVariantList ThemeService::themeLayouts(QVariantMap tokens)
     return tokens::layoutsOf(tokens);
 }
 
+QVariantList ThemeService::applyBackground(QVariantList nodes, qint64 mediaId)
+{
+    return tokens::applyBackground(std::move(nodes), mediaId);
+}
+
+QStringList ThemeService::dynamicBackgroundIds(QVariantList nodes)
+{
+    QStringList ids;
+    for (int i : tokens::dynamicBackgroundIndices(nodes))
+        ids << nodes.at(i).toMap().value(QStringLiteral("id")).toString();
+    return ids;
+}
+
+QVariantMap ThemeService::withBackground(QVariantMap tokens, qint64 mediaId)
+{
+    return tokens::withBackground(std::move(tokens), mediaId);
+}
+
 QVariantList ThemeService::layoutNodes(QVariantMap tokens, QString layoutId,
                                        qint64 slideMediaId)
 {

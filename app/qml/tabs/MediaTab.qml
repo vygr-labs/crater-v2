@@ -331,6 +331,42 @@ Item {
             root._mediaMenuItems(media, isLogo, idx))
     }
 
+    // "Set as Background": paints this picture or video through the
+    // dynamic background container of a theme (AppState.backgroundFor).
+    // The schedule row and theme rows name their target so it is never a
+    // guess which one changes.
+    function _backgroundMenu(media) {
+        const sb = AppState.sessionBackground
+        const idx = AppState.selectedScheduleIndex
+        const row = (idx >= 0 && idx < ScheduleService.currentItems.length)
+                        ? ScheduleService.currentItems[idx] : null
+        const rowOk = !!row && AppState._takesBackground(row.kind || "song")
+        const theme = AppState.backgroundTargetTheme()
+        return { label: qsTr("Set as Background"), iconName: "image",
+                 submenu: [
+            { label: qsTr("For the Rest of the Service"),
+              detail: sb && sb.id === media.id ? "✓" : "",
+              action: function() { AppState.setSessionBackground(media) } },
+            { label: rowOk ? qsTr("For \"%1\" Only").arg(row.title || qsTr("Selected Item"))
+                           : qsTr("For the Selected Schedule Item"),
+              enabled: rowOk,
+              detail: rowOk && row.backgroundMediaId === media.id ? "✓" : "",
+              action: function() { AppState.setScheduleItemBackground(idx, media.id) } },
+            { label: theme ? qsTr("Save into Theme \"%1\"…").arg(theme.name)
+                           : qsTr("Save into Theme…"),
+              enabled: !!theme,
+              action: function() {
+                  AppState.openModal("confirm", {
+                      title:       qsTr("Save background into theme?"),
+                      body:        qsTr("\"%1\" becomes the background of every design in the theme \"%2\". Anything else using this theme changes too.")
+                                       .arg(media.title).arg(theme.name),
+                      confirmText: qsTr("Save into Theme"),
+                      onConfirm:   function() { AppState.saveBackgroundIntoTheme(theme.id, media) }
+                  })
+              } }
+        ] }
+    }
+
     // Shared right-click menu builder — grid and list view both invoke it so
     // the two views stay in lockstep when items are added or reordered.
     // `isLogo` comes from the calling delegate (each view computes it slightly
@@ -385,6 +421,8 @@ Item {
             { label: qsTr("Set as Logo Background"), iconName: "sparkles",
               detail: isLogo ? "✓" : "",
               action: function() { ProjectionService.setLogoBg(media.path, media.type) } },
+            ...((media.type === "image" || media.type === "video")
+                ? [ root._backgroundMenu(media) ] : []),
             { separator: true },
             { label: media.isFavorite
                     ? qsTr("Remove from Favorites")

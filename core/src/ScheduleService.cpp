@@ -318,6 +318,19 @@ void ScheduleService::setItemTheme(int index, qint64 themeId)
     emit currentItemsChanged();
 }
 
+void ScheduleService::setItemBackground(int index, qint64 mediaId)
+{
+    if (!m_impl || index < 0 || index >= m_impl->items.size()) return;
+    QJsonObject obj = m_impl->items[index].toObject();
+    const qint64 was = obj.value(QStringLiteral("backgroundMediaId")).toInteger();
+    if (was == qMax<qint64>(0, mediaId)) return;
+    if (mediaId > 0) obj.insert(QStringLiteral("backgroundMediaId"), mediaId);
+    else             obj.remove(QStringLiteral("backgroundMediaId"));
+    m_impl->items[index] = obj;
+    markDirty();
+    emit currentItemsChanged();
+}
+
 void ScheduleService::replaceItem(int index, QVariantMap item)
 {
     if (!m_impl || index < 0 || index >= m_impl->items.size()) return;
