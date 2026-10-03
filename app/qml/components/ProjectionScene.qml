@@ -438,7 +438,9 @@ Item {
                 id: logoView
                 anchors.fill: parent
                 active: scene._showLogo
-                opacity: scene._showLogo ? 1.0 : 0.0
+                // Wait for a picture logo to finish decoding before fading
+                // in, so the audience never sees the black matte first.
+                opacity: (scene._showLogo && logoView.ready) ? 1.0 : 0.0
                 Behavior on opacity {
                     NumberAnimation {
                         duration: scene._passiveMs

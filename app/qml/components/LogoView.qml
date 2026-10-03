@@ -13,9 +13,13 @@ import Crater
 //   • ProjectionWindow.qml (full-screen audience-facing logo)
 //   • LivePanel.qml mini-monitor (operator-side mirror of the logo)
 //
-// The `active` flag gates the underlying decoder: a logo that isn't
+// The `active` flag gates the video decoder: a video logo that isn't
 // currently displayed releases its MediaPlaybackService token so an
-// always-loaded LogoView never pins GPU memory.
+// always-loaded LogoView never pins a decoder. Picture logos are the
+// opposite: they stay decoded (at screen size, MediaMonitor caps it)
+// whenever a logo is set, because decoding on demand meant the fade-in
+// showed the black matte until a large photo finished loading. `ready`
+// tells the caller when it is safe to fade in.
 Item {
     id: root
 
@@ -27,6 +31,10 @@ Item {
     readonly property string _path: ProjectionService.logoBgPath
     readonly property string _kind: ProjectionService.logoBgKind
     readonly property bool _hasPath: _path && _path.length > 0
+    readonly property bool _isImage: _kind === "image"
+    // Safe to show: the picture is decoded, or there is nothing to wait for
+    // (video, or the "CRATER" placeholder).
+    readonly property bool ready: !_hasPath || !_isImage || monitor.imageReady
 
     // Matte black canvas — matches Electron's LogoBackground (`bg: "black"`)
     // and gives the letterbox bars a deliberate color when the logo
@@ -40,9 +48,12 @@ Item {
     // logo is inactive or no path is set, which trips MediaMonitor's
     // internal Loader and destroys the player — no idle decoder cost.
     MediaMonitor {
+        id: monitor
         anchors.fill: parent
-        mediaKind: (root.active && root._hasPath) ? root._kind : ""
-        mediaPath: (root.active && root._hasPath) ? root._path : ""
+        // Pictures preload while a path is set. Video only runs while active.
+        readonly property bool _load: root._hasPath && (root._isImage || root.active)
+        mediaKind: _load ? root._kind : ""
+        mediaPath: _load ? root._path : ""
         muted: true
         // Logos always letterbox on the black matte above — a fixed "contain"
         // regardless of the operator's global media-fit default, so a logo is
