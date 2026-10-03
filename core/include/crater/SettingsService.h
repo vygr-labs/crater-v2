@@ -39,9 +39,24 @@ private:
     Q_PROPERTY(QString themeMode          READ themeMode          WRITE setThemeMode          NOTIFY themeModeChanged)
     Q_PROPERTY(QString fontSize           READ fontSize           WRITE setFontSize           NOTIFY fontSizeChanged)
     Q_PROPERTY(qreal   fontScale          READ fontScale                                      NOTIFY fontSizeChanged)
+    // UI density: "compact" (default) or "comfortable". densityScale is the
+    // multiplier Theme applies to spacing and chrome sizes, the same split
+    // as fontSize / fontScale.
+    Q_PROPERTY(QString uiDensity          READ uiDensity          WRITE setUiDensity          NOTIFY uiDensityChanged)
+    Q_PROPERTY(qreal   densityScale       READ densityScale                                   NOTIFY uiDensityChanged)
+    // Preview / Live slide card view: "full", "compact" (tiny text) or
+    // "lines" (one line per slide). Each panel keeps its own choice.
+    Q_PROPERTY(QString previewCardMode    READ previewCardMode    WRITE setPreviewCardMode    NOTIFY previewCardModeChanged)
+    Q_PROPERTY(QString liveCardMode       READ liveCardMode       WRITE setLiveCardMode       NOTIFY liveCardModeChanged)
     Q_PROPERTY(bool    showCcli           READ showCcli           WRITE setShowCcli           NOTIFY showCcliChanged)
     Q_PROPERTY(bool    reduceMotion       READ reduceMotion       WRITE setReduceMotion       NOTIFY reduceMotionChanged)
     Q_PROPERTY(bool    showLogoByDefault  READ showLogoByDefault  WRITE setShowLogoByDefault  NOTIFY showLogoByDefaultChanged)
+    // Start every launch on an empty working schedule. When true, main.cpp
+    // asks ScheduleService::clearWorkingOnShutdown() to reset the working
+    // list on a clean quit (see that method for what is kept and why).
+    // False restores the previous working schedule on launch, the behaviour
+    // before this setting existed. Saved schedules are unaffected either way.
+    Q_PROPERTY(bool    clearScheduleOnClose READ clearScheduleOnClose WRITE setClearScheduleOnClose NOTIFY clearScheduleOnCloseChanged)
     // Operator's preferred render resolution for the projection output. Today
     // this is persisted but not enforced — the projection window always uses
     // the destination display's native geometry. A future pass will letterbox
@@ -81,6 +96,15 @@ private:
     // on its own screen must stay on TOP, or a notification toast lands
     // in front of the congregation. See ProjectionWindow.qml.
     Q_PROPERTY(bool    projectionBehindConsole READ projectionBehindConsole WRITE setProjectionBehindConsole NOTIFY projectionBehindConsoleChanged)
+    // Live controls over dialogs. When true, opening an editor or Settings
+    // (anything shown through ModalLayer except menus and small prompts)
+    // brings up a compact live dock beside the dialog: the live item, its
+    // slides, Logo / Clear, and a scripture quick switch. Without it a
+    // dialog covers the whole console and the operator has to close their
+    // edit to advance a slide. Default on: the dock only exists while a
+    // dialog is up, takes space the centred card leaves free, and folds to
+    // a thin tab. See LiveControlsDock.qml.
+    Q_PROPERTY(bool    liveControlsOverDialogs READ liveControlsOverDialogs WRITE setLiveControlsOverDialogs NOTIFY liveControlsOverDialogsChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
     // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
@@ -166,6 +190,12 @@ private:
     // fit; this is only the fallback. Default "contain" reproduces the prior
     // always-letterbox behavior so existing installs look unchanged.
     Q_PROPERTY(QString mediaDefaultFit    READ mediaDefaultFit    WRITE setMediaDefaultFit    NOTIFY mediaDefaultFitChanged)
+    // Output volume for foreground video audio, 0..1 on a perceptual
+    // (slider-position) scale. The app's MediaPlaybackService maps it to a
+    // linear gain and applies it to every shared player, so the Live transport's
+    // volume slider and Settings > Media both drive this one value. Default 1.0
+    // (full) keeps existing installs sounding exactly as before.
+    Q_PROPERTY(double  mediaVolume        READ mediaVolume        WRITE setMediaVolume        NOTIFY mediaVolumeChanged)
     // Per-result-type primary action for the global search palette (Ctrl+K).
     // Maps a result type ("scripture" | "songs" | "strongs" | "media" |
     // "themes") to what its Enter/click fires: "preview" (stage into the
@@ -212,13 +242,19 @@ public:
     QString themeMode() const;
     QString fontSize() const;
     qreal   fontScale() const;
+    QString uiDensity() const;
+    qreal   densityScale() const;
+    QString previewCardMode() const;
+    QString liveCardMode() const;
     bool    showCcli() const;
     bool    reduceMotion() const;
     bool    showLogoByDefault() const;
+    bool    clearScheduleOnClose() const;
     QString outputResolution() const;
     QString outputMode() const;
     bool    projectionInAltTab() const;
     bool    projectionBehindConsole() const;
+    bool    liveControlsOverDialogs() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
     QString ndiPixelFormat() const;
@@ -236,6 +272,7 @@ public:
     int     autoAdvanceDelaySeconds() const;
     bool    autoAdvanceLoop() const;
     QString mediaDefaultFit() const;
+    double  mediaVolume() const;
     bool    showMatchedLyricSnippet() const;
     bool    highlightSongMatches() const;
     bool    highlightScriptureMatches() const;
@@ -249,13 +286,18 @@ public:
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
+    void setUiDensity(const QString& density);
+    void setPreviewCardMode(const QString& mode);
+    void setLiveCardMode(const QString& mode);
     void setShowCcli(bool v);
     void setReduceMotion(bool v);
     void setShowLogoByDefault(bool v);
+    void setClearScheduleOnClose(bool v);
     void setOutputResolution(const QString& v);
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
     void setProjectionBehindConsole(bool v);
+    void setLiveControlsOverDialogs(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
     void setNdiPixelFormat(const QString& v);
@@ -273,6 +315,7 @@ public:
     void setAutoAdvanceDelaySeconds(int v);
     void setAutoAdvanceLoop(bool v);
     void setMediaDefaultFit(const QString& v);
+    void setMediaVolume(double v);
     void setShowMatchedLyricSnippet(bool v);
     void setHighlightSongMatches(bool v);
     void setHighlightScriptureMatches(bool v);
@@ -288,13 +331,18 @@ public:
 signals:
     void themeModeChanged();
     void fontSizeChanged();
+    void uiDensityChanged();
+    void previewCardModeChanged();
+    void liveCardModeChanged();
     void showCcliChanged();
     void reduceMotionChanged();
     void showLogoByDefaultChanged();
+    void clearScheduleOnCloseChanged();
     void outputResolutionChanged();
     void outputModeChanged();
     void projectionInAltTabChanged();
     void projectionBehindConsoleChanged();
+    void liveControlsOverDialogsChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();
     void ndiPixelFormatChanged();
@@ -312,6 +360,7 @@ signals:
     void autoAdvanceDelaySecondsChanged();
     void autoAdvanceLoopChanged();
     void mediaDefaultFitChanged();
+    void mediaVolumeChanged();
     void showMatchedLyricSnippetChanged();
     void highlightSongMatchesChanged();
     void highlightScriptureMatchesChanged();

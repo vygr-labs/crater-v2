@@ -103,6 +103,11 @@ public:
 
 signals:
     void stateChanged();
+    // Fired once per explicit commit (goLive / goLiveWithCrop), after
+    // stateChanged. stateChanged alone can't tell a fresh go-live from a page
+    // step, clear or logo toggle; the app's MediaPlaybackService needs exactly
+    // that edge to cue a live video from its first frame (see main.cpp).
+    void wentLive();
     void logoBgPathChanged();
     void logoBgKindChanged();
 

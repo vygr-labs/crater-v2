@@ -26,14 +26,10 @@ Item {
             // ── DISPLAY ──────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Display"); first: true }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 68
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Default fit"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("How images and videos frame on the projection output"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Default fit")
+                description: qsTr("How images and videos frame on the projection output")
                 SegmentedControl {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 280
                     height: 34
                     options: [
@@ -64,6 +60,25 @@ Item {
                     wrapMode: Text.Wrap
                 }
             }
+
+            // ── PLAYBACK ─────────────────────────────────────────────────
+            // Same value as the Live pane's transport fader (persisted in
+            // SettingsService.mediaVolume, applied by MediaPlaybackService).
+            SettingsSectionHeader { title: qsTr("Playback") }
+
+            SettingRow {
+                title: qsTr("Video volume")
+                description: qsTr("Sound level of videos on the projection output, in percent")
+                SimpleSlider {
+                    width: 280
+                    min: 0
+                    max: 100
+                    step: 5
+                    value: Math.round(SettingsService.mediaVolume * 100)
+                    onLive: function(v) { SettingsService.mediaVolume = v / 100 }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             // ── PER-ITEM ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Per-item overrides") }

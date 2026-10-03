@@ -447,8 +447,13 @@ Rectangle {
             workspace.selectedNodeId = ""
             workspace.saveToHistory()
         } }
+    // Off while a modal is open over the workspace: Main.qml's Escape closes
+    // that modal then. The trailing-Escape check stops the second press of
+    // a double tap that closed a dialog from also deselecting or closing.
     Shortcut { sequence: "Escape"
+        enabled: AppState.activeModal === ""
         onActivated: {
+            if (AppState.isTrailingEscape()) return
             if (workspace.selectedNodeId !== "") workspace.selectedNodeId = ""
             else workspace.requestClose()
         } }

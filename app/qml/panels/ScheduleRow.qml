@@ -31,6 +31,9 @@ Item {
     // row silently stops following the song it came from, so without a
     // mark the divergence is invisible until it is on screen.
     property bool hasContentOverride: false
+    // The panel is in multi-select mode (2+ rows selected): every row shows
+    // its checkbox, not just the hovered one.
+    property bool selectionMode: false
 
     // Drag state. The row translates by dragOffsetY while a drag is in
     // progress; ListView delegate positioning isn't touched so the operator
@@ -52,6 +55,9 @@ Item {
     signal clicked(int mouseButton, int keyboardModifiers)
     signal doubleClicked()
     signal rightClicked(real mouseX, real mouseY)
+    // Row checkbox clicked. Toggles membership without moving the anchor
+    // row (AppState.toggleScheduleChecked), unlike a Ctrl+click.
+    signal checkToggled()
 
     // Drag lifecycle. The panel uses these to compute a drop-target index
     // and call ScheduleService.moveItem on release.
@@ -179,6 +185,23 @@ Item {
             }
         }
 
+        // ── Multi-select checkbox ────────────────────────────────────────
+        // Between the grip and the kind icon, shown on hover and in
+        // selection mode. The grip keeps its column, so the drag affordance
+        // never disappears (the reason the old grip/check swap was dropped).
+        // z above the row's click area so the toggle reaches it.
+        readonly property bool _checkVisible:
+            root.selectionMode || ma.containsMouse || rowCheck.hovered
+        SelectCheck {
+            id: rowCheck
+            z: 2
+            visible: body._checkVisible
+            anchors.left: handle.right
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.isSelected
+            onToggled: root.checkToggled()
+        }
+
         // ── Kind icon ────────────────────────────────────────────────────
         // Small kind-tinted glyph (music / book / image / video / …) that
         // sits at a single muted tone regardless of selection state. The
@@ -188,10 +211,12 @@ Item {
         // already carry that signal — the icon brightening on click read
         // as visual chatter. Keeping it at the darker baseline always
         // leaves the icon as a pure "kind tag" that doesn't shift under
-        // the operator while they're working.
+        // the operator while they're working. Steps right of the checkbox
+        // while it shows.
         AppIcon {
             id: kindIcon
-            anchors.left: handle.right
+            anchors.left: body._checkVisible ? rowCheck.right : handle.right
+            anchors.leftMargin: body._checkVisible ? Theme.space.sm : 0
             anchors.verticalCenter: parent.verticalCenter
             name: root._kindIcon
             size: Theme.icon.md

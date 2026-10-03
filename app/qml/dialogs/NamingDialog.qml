@@ -96,6 +96,10 @@ ModalShell {
         }
     }
 
+    // Called by the Ctrl+Enter double tap (AppState.saveAndCloseModal). An
+    // empty name is refused by confirm() and the dialog stays open.
+    function requestSave() { confirm() }
+
     function confirm() {
         const trimmed = input.text.trim()
         if (trimmed.length === 0) return

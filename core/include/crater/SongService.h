@@ -75,6 +75,20 @@ public:
     Q_INVOKABLE void destroy(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // Bulk delete behind the library's multi-select. One transaction and ONE
+    // allSongsChanged for the whole batch: calling destroy() per id re-queried
+    // the library and re-ran every QML binding on it once per song, which made
+    // deleting a few hundred songs a multi-second stall. QVariantList so a
+    // plain JS array of ids converts. Returns how many songs were removed
+    // (0 when the transaction rolled back).
+    Q_INVOKABLE int destroyMany(QVariantList ids);
+
+    // Sets (themeId > 0) or clears (themeId == 0) the per-song theme override
+    // on every id, in one transaction and one change signal. Touches
+    // updated_at the same way a save from the song editor does. Returns how
+    // many songs were updated.
+    Q_INVOKABLE int setThemeForSongs(QVariantList ids, qint64 themeId);
+
     // Deep-copies an existing song (title becomes "<title> (copy)", favorite
     // resets to false, timestamps reset to now). Sections are copied verbatim
     // preserving sort_order. Returns the new song id, or 0 on failure.

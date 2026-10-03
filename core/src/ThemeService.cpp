@@ -844,6 +844,11 @@ void ThemeService::destroy(qint64 id)
 
 QStringList ThemeService::validateTokens(QVariantMap tokens)
 {
+    return validateThemeTokens(tokens);
+}
+
+QStringList ThemeService::validateThemeTokens(const QVariantMap& tokens)
+{
     // Dispatch on shape, not only on the declared version: a theme whose
     // JSON carries `layouts` is v3 regardless of what its version field
     // says, and validating it as v2 would report the useless "nodes must be

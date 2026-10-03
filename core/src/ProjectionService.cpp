@@ -122,6 +122,7 @@ void ProjectionService::goLiveWithCrop(QVariantMap item, int page, QRectF cropRe
     m_cropRect = cropRect;
 
     emit stateChanged();
+    emit wentLive();
 }
 
 void ProjectionService::clear()

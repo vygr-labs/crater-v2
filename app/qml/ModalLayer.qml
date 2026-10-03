@@ -81,11 +81,36 @@ Item {
         sourceComponent: ExportThemeDialog { }
     }
 
+    // ── Profiles (ARCHITECTURE.md §12) ──────────────────────────────────
+    // Export / import a .craterprofile, and the ask-at-startup picker.
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profileExport"
+        sourceComponent: ProfileExportDialog { }
+    }
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profileImport"
+        sourceComponent: ProfileImportDialog { }
+    }
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profilePicker"
+        sourceComponent: ProfilePickerDialog { }
+    }
+
     // ── Design with AI (theme editor) ───────────────────────────────────
     Loader {
         anchors.fill: parent
         active: AppState.activeModal === "aiDesign"
         sourceComponent: AiDesignDialog { }
+    }
+
+    // ── Keyboard shortcut reference (F1 / TopBar keyboard button) ───────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "shortcuts"
+        sourceComponent: ShortcutsDialog { }
     }
 
     // ── Schedule dropdown popover (anchored under TopBar) ───────────────
@@ -136,5 +161,17 @@ Item {
                     AppState.closeModal()
             }
         }
+    }
+
+    // ── Live controls beside the open dialog ────────────────────────────
+    // Declared last so it stacks above every dialog's backdrop and card.
+    // AppState.liveDockShown carries the setting and the list of modals it
+    // stays out of (menus, the palette, small prompts). Same zero-cost rule
+    // as the dialogs: nothing exists while no dialog is open. The panel
+    // swallows its own clicks, so the backdrop under it never sees them.
+    Loader {
+        anchors.fill: parent
+        active: AppState.liveDockShown
+        sourceComponent: LiveControlsDock { }
     }
 }

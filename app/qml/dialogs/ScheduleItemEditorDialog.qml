@@ -132,11 +132,16 @@ ModalShell {
         root._refreshRawText()
         root._isLoading = false
         titleInput.text = root._title
-        AppState.modalCloseOwner = root
     }
 
     // Called by AppState.requestCloseModal (Escape, backdrop, X).
     function requestClose() { _requestClose() }
+    // Called by the Ctrl+Enter double tap (AppState.saveAndCloseModal).
+    // Same path as "Save to Schedule", never the library write.
+    function requestSave() {
+        discardConfirm.close()
+        _save()
+    }
 
     // ── Mutators ────────────────────────────────────────────────────────
     // Each guards on "did anything actually change" before reassigning, so
@@ -332,7 +337,8 @@ ModalShell {
     }
 
     function _requestClose() {
-        // A second Escape while the prompt is up backs out of the prompt.
+        // A slow second Escape while the prompt is up backs out of the
+        // prompt. A fast one is the double tap, which discards (AppState).
         if (discardConfirm.visible) { discardConfirm.close(); return }
         if (!root._isDirty) { AppState.closeModal(); return }
         // Ask in place. The shared "confirm" modal would replace this

@@ -216,7 +216,7 @@ Item {
             anchors.leftMargin: 6
             anchors.right: parent.right
             anchors.rightMargin: 6
-            height: 30
+            height: Theme.d(30)
             radius: 0
             color: Theme.color.canvas
             border.color: Theme.color.borderSubtle

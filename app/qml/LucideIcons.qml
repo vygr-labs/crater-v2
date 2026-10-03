@@ -18,10 +18,23 @@ QtObject {
         // Top bar / chrome
         "file-text":       "\ue0cc",
         "settings":        "\ue154",
+        "keyboard":        "\ue284",
+        "list-checks":     "\ue1d0",
         "arrow-up-right":  "\ue04d",
         "list-ordered":    "\ue1d1",
         "menu":            "\ue115",
         "play":            "\ue13c",
+
+        // Video transport (MediaTransportBar). "square" (stop) lives in
+        // themeEditorMap below.
+        "pause":           "\ue12e",
+        "skip-back":       "\ue15f",
+        "rewind":          "\ue147",
+        "fast-forward":    "\ue0bd",
+        "repeat":          "\ue146",
+        "volume-2":        "\ue1ab",
+        "volume-1":        "\ue1aa",
+        "volume-x":        "\ue1ac",
 
         // Panel headers
         "grid":            "\ue0e9",

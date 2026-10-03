@@ -53,4 +53,18 @@ QString FileDialogService::chooseSaveFile(QString title,
         filter);
 }
 
+QString FileDialogService::chooseDirectory(QString title)
+{
+    const QString initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    return QFileDialog::getExistingDirectory(
+        /*parent=*/nullptr,
+        title,
+        initialDir);
+}
+
+bool FileDialogService::pathExists(QString path) const
+{
+    return QFileInfo::exists(path);
+}
+
 }  // namespace crater

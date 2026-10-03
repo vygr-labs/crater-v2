@@ -18,6 +18,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <functional>
 #include <optional>
 
 namespace crater {
@@ -248,6 +249,48 @@ void ScheduleService::moveItem(int from, int to)
     emit currentItemsChanged();
 }
 
+int ScheduleService::removeMany(QVariantList indices)
+{
+    if (!m_impl || indices.isEmpty()) return 0;
+    const int n = static_cast<int>(m_impl->items.size());
+    QList<int> rows;
+    for (const QVariant& v : indices) {
+        bool ok = false;
+        const int i = v.toInt(&ok);
+        if (ok && i >= 0 && i < n && !rows.contains(i)) rows.append(i);
+    }
+    if (rows.isEmpty()) return 0;
+    // Highest first so each removal leaves the pending lower indices valid.
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    for (int i : rows) m_impl->items.removeAt(i);
+    markDirty();
+    emit currentItemsChanged();
+    return static_cast<int>(rows.size());
+}
+
+bool ScheduleService::reorder(QVariantList order)
+{
+    if (!m_impl) return false;
+    const int n = static_cast<int>(m_impl->items.size());
+    if (order.size() != n) return false;
+    QList<bool> seen(n, false);
+    QJsonArray next;
+    bool identity = true;
+    for (int k = 0; k < n; ++k) {
+        bool ok = false;
+        const int from = order[k].toInt(&ok);
+        if (!ok || from < 0 || from >= n || seen[from]) return false;
+        seen[from] = true;
+        if (from != k) identity = false;
+        next.append(m_impl->items.at(from));
+    }
+    if (identity) return true;   // nothing moved, nothing to mark dirty
+    m_impl->items = next;
+    markDirty();
+    emit currentItemsChanged();
+    return true;
+}
+
 void ScheduleService::clearAll()
 {
     if (!m_impl) return;
@@ -427,6 +470,56 @@ void ScheduleService::closeLoaded()
     setDirty(!m_impl->items.isEmpty());
 }
 
+bool ScheduleService::clearWorkingOnShutdown()
+{
+    if (!m_impl) return false;
+    const bool hadItems  = !m_impl->items.isEmpty();
+    const bool hadLoaded = m_impl->loadedScheduleId != 0;
+    if (!hadItems && !hadLoaded) return false;
+
+    try {
+        // Edits to an open saved schedule live only in the working list (the
+        // saved row changes on an explicit Save). Compare against the saved
+        // copy rather than trusting isDirty: the auto-save tick clears the
+        // dirty flag, so it cannot answer "is anything unsaved?" on its own.
+        if (hadLoaded && !workingMatchesLoaded()) {
+            qInfo().noquote() << "ScheduleService: kept the working schedule on close,"
+                              << "it has unsaved edits to" << m_impl->loadedScheduleName;
+            return false;
+        }
+
+        if (hadItems) writeHistoryBackup();
+
+        m_impl->items = {};
+        m_impl->loadedScheduleId = 0;
+        m_impl->loadedScheduleName.clear();
+        persistLoadedKv();
+        // Writes the empty list and clears dirty, so the destructor's
+        // last-gasp save has nothing left to put back.
+        saveCurrentNow();
+        return true;
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "ScheduleService::clearWorkingOnShutdown():" << e.message();
+        return false;
+    }
+}
+
+bool ScheduleService::workingMatchesLoaded()
+{
+    if (!m_impl || m_impl->loadedScheduleId <= 0) return false;
+    auto& stmt = m_impl->loadSchedule;
+    stmt.reset();
+    stmt.bind(1, m_impl->loadedScheduleId);
+    if (!stmt.step()) { stmt.reset(); return false; }
+    const QByteArray json = stmt.columnText(0).toUtf8();
+    stmt.reset();   // release the read txn before the caller writes
+    const auto doc = QJsonDocument::fromJson(json);
+    if (!doc.isArray()) return false;
+    // load() relocates media paths on the way in, so the saved copy gets
+    // the same treatment before the two are compared.
+    return relocateMediaPaths(doc.array()) == m_impl->items;
+}
+
 void ScheduleService::onAutoSaveTick()
 {
     if (!m_impl || !m_impl->dirty) return;
@@ -503,7 +596,12 @@ void ScheduleService::backupHistoryOnce()
 {
     if (!m_impl || m_impl->historyBackedUpThisSession) return;
     m_impl->historyBackedUpThisSession = true;
+    writeHistoryBackup();
+}
 
+void ScheduleService::writeHistoryBackup()
+{
+    if (!m_impl) return;
     const QString dir = db::DbPaths::scheduleHistoryDir();
     const QString ts  = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
     const QString path = QDir(dir).filePath(QStringLiteral("session-%1.json").arg(ts));

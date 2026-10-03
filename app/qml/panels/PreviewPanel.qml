@@ -8,6 +8,25 @@ import QtQuick.Controls.Basic
 Rectangle {
     id: root
 
+    // Slide card view, picked from the header gear menu: "full" (as
+    // designed), "compact" (tiny text, tight padding) or "lines" (one
+    // line per slide, label inline).
+    readonly property string _cardMode: SettingsService.previewCardMode
+    readonly property bool   _cardsFull: _cardMode !== "compact" && _cardMode !== "lines"
+    function _cardViewMenu() {
+        const opts = [
+            { mode: "full",    label: qsTr("Full") },
+            { mode: "compact", label: qsTr("Compact") },
+            { mode: "lines",   label: qsTr("One line") }
+        ]
+        return opts.map(function(o) {
+            return { label: o.label,
+                     iconName: (root._cardMode === o.mode
+                                || (o.mode === "full" && root._cardsFull)) ? "check" : "",
+                     action: function() { SettingsService.previewCardMode = o.mode } }
+        })
+    }
+
     // Panel surface — matches electron's `bg.muted` panel container.
     color: Theme.color.elevated
 
@@ -72,13 +91,25 @@ Rectangle {
         selectedItem !== null && selectedItem.kind === "image"
     readonly property bool isCroppableMedia: isPdfMedia
 
+    // The staged clip, keyed the way MediaPlaybackService keys its players.
+    readonly property string previewVideoUrl:
+        (selectedItem !== null && selectedItem.kind === "video"
+         && (selectedItem.mediaPath || "").length > 0)
+            ? "file:///" + selectedItem.mediaPath : ""
+    readonly property bool showTransport: previewVideoUrl.length > 0
+    // Preview and Live share one player per file, so when the staged clip IS
+    // the live clip a Preview pause or seek would move the audience picture.
+    // The bar then only mirrors position and points at the Live controls.
+    readonly property bool transportIsLive:
+        showTransport && previewVideoUrl === AppState.liveVideoUrl
+
     // ── Header ──────────────────────────────────────────────────────────
     Item {
         id: header
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 40
+        height: Theme.d(40)
 
         Row {
             anchors.left: parent.left
@@ -160,6 +191,8 @@ Rectangle {
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
+                    { label: qsTr("Card view"), iconName: "layout-list",
+                      submenu: root._cardViewMenu() },
                     { label: qsTr("Preview settings…"), iconName: "settings",
                       action: function() { AppState.openModal("settings", {}) } }
                 ], { dx: -220 })
@@ -290,7 +323,7 @@ Rectangle {
                     anchors.topMargin:    1
                     anchors.leftMargin:   1
                     anchors.bottomMargin: 1
-                    width: 32
+                    width: root._cardsFull ? 32 : 24
 
                     color: card.isActive && card._paneFocused ? Theme.color.cueRailPreview
                                                               : card.isHover  ? Theme.color.cueRailHover
@@ -308,7 +341,7 @@ Rectangle {
                         color: card.isActive ? Theme.color.textPrimary
                                              : Theme.color.textTertiary
                         font.family:    Theme.font.monoFamily
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.microSize
                         font.weight:    Theme.font.weightSemiBold
                                             }
                 }
@@ -338,8 +371,8 @@ Rectangle {
                 // bodyArea naturally seats flush against the top inset.
                 Rectangle {
                     id: headerBand
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 22 : 0
+                    visible: card.hasHeader && root._cardMode !== "lines"
+                    height:  visible ? (root._cardsFull ? 22 : 16) : 0
                     anchors.top:   parent.top
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -376,8 +409,8 @@ Rectangle {
                 // otherwise it'd render as a stray line at the card top.
                 Rectangle {
                     id: divider
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 1 : 0
+                    visible: headerBand.visible
+                    height:  visible ? 1 : 0
                     anchors.top:   headerBand.bottom
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -394,14 +427,15 @@ Rectangle {
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
                     anchors.rightMargin: 1
-                    height: pageText.implicitHeight + Theme.space.sm * 2
+                    readonly property int _pad: root._cardsFull ? Theme.space.sm : Theme.space.xs
+                    height: pageText.implicitHeight + _pad * 2
 
                     Text {
                         id: pageText
                         anchors.top:   parent.top
                         anchors.left:  parent.left
                         anchors.right: parent.right
-                        anchors.topMargin:   Theme.space.sm
+                        anchors.topMargin:   parent._pad
                         anchors.leftMargin:  Theme.space.sm
                         anchors.rightMargin: Theme.space.sm
                         // Route through dslToHtml so inline formatting
@@ -411,12 +445,21 @@ Rectangle {
                         // valid DSL string with no markers, so unformatted
                         // lyrics still render as themselves.
                         textFormat:     Text.RichText
-                        text:           LyricsService.dslToHtml(modelData.content || "")
+                        // One-line view folds the slide's lines together
+                        // after its label, and clips at one line.
+                        text: root._cardMode === "lines"
+                              ? ((card.headLabel.length > 0
+                                    ? "<b>" + card.headLabel.toUpperCase() + "</b>&nbsp;&nbsp;" : "")
+                                 + LyricsService.dslToHtml(String(modelData.content || "")
+                                                               .split("\n").join(" / ")))
+                              : LyricsService.dslToHtml(modelData.content || "")
+                        maximumLineCount: root._cardMode === "lines" ? 1 : 100000
+                        clip: root._cardMode === "lines"
                         color:          Theme.color.textPrimary
                         font.family:    Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.smallSize
                         wrapMode:       Text.WordWrap
-                        lineHeight:     1.25
+                        lineHeight:     root._cardsFull ? 1.25 : 1.05
                     }
                 }
 
@@ -538,8 +581,10 @@ Rectangle {
     // cleanly toggles between two anchors at runtime).
     Item {
         id: monitorWrap
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.space.lg
+        // Sits on the video transport for a staged clip. The bar collapses
+        // to zero height otherwise, so the monitor keeps its old bottom edge.
+        anchors.bottom: previewTransport.top
+        anchors.bottomMargin: root.showTransport ? Theme.space.sm : 0
         anchors.leftMargin: Theme.space.lg
 
         // Guard on selectedItem — otherwise the empty pages list when
@@ -557,6 +602,9 @@ Rectangle {
         readonly property real maxFullH: parent.height - header.height
                                           - Theme.space.md      // body top gap
                                           - Theme.space.lg      // monitor bottom gap
+                                          - (root.showTransport  // video transport
+                                                 ? previewTransport.implicitHeight + Theme.space.sm
+                                                 : 0)
 
         // Compact size tracks the pane instead of sitting at a hard 160x90.
         // The old constant meant the monitor never grew with the window: on
@@ -816,6 +864,29 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ── Video transport ─────────────────────────────────────────────────
+    // The one place the operator drives a clip. Scrub to a spot, pause or
+    // set loop here and Go Live carries it on from there (marksCue, see
+    // MediaPlaybackService::cueForLive). A clip left alone still goes live
+    // from its first frame. When the staged clip is the one on air the
+    // player is shared, so the bar turns crimson: it now moves the audience
+    // picture. No audio controls (Preview is silent) and no shortcut hints
+    // (the console video shortcuts drive the live clip).
+    MediaTransportBar {
+        id: previewTransport
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.space.lg
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - Theme.space.lg * 2,
+                        Math.max(monitorWrap.width, 320))
+        height: root.showTransport ? implicitHeight : 0
+        visible: root.showTransport
+        source: root.previewVideoUrl
+        accent: root.transportIsLive ? Theme.color.live : Theme.color.preview
+        showAudio: false
+        marksCue: true
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

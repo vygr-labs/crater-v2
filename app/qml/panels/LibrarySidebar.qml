@@ -287,7 +287,7 @@ Rectangle {
                     model: groupContent.isScripture ? root.groups : []
                     delegate: VersionCard {
                         width: versionGrid.cellWidth
-                        height: 36
+                        height: Theme.d(36)
                         label: modelData.label
                         active: AppState.activeLibraryGroup["scripture"] === modelData.id
                         onClicked: AppState.setLibraryGroup("scripture", modelData.id)

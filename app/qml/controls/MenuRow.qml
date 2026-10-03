@@ -22,7 +22,7 @@ Item {
     readonly property bool _enabled:    rowData && rowData.enabled !== false
                                        && !_separator
 
-    height: _separator ? (1 + Theme.space.xs * 2) : 32
+    height: _separator ? (1 + Theme.space.xs * 2) : Theme.size.menuRowHeight
 
     // Intrinsic width for dynamic menu sizing — the parent Column's
     // implicitWidth picks up max(child.implicitWidth) automatically, and

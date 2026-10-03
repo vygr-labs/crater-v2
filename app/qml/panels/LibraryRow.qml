@@ -25,7 +25,7 @@ Item {
     signal clicked()
     signal doubleClicked()
 
-    implicitHeight: 32
+    implicitHeight: Theme.d(32)
     implicitWidth: 220
 
     Rectangle {

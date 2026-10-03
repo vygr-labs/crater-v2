@@ -116,6 +116,18 @@ QtObject {
     // screen.
     property bool projectorVisible:   false
 
+    // The committed live clip as MediaPlaybackService keys it ("file:///" +
+    // path, the string MediaMonitor acquires with), or "" when what's live
+    // isn't a video. Read off ProjectionService rather than the Live pane's
+    // item so it always names the clip the audience output is playing. The
+    // Live transport bar and the video shortcuts in Main.qml both target it.
+    readonly property string liveVideoUrl: {
+        if (ProjectionService.contentKind !== "video") return ""
+        const item = ProjectionService.currentItem
+        const p = item && item.mediaPath ? String(item.mediaPath) : ""
+        return p.length > 0 ? "file:///" + p : ""
+    }
+
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
     // The Electron app lets the operator click a song in the library and see
     // it immediately in Preview — without first adding it to the schedule.
@@ -133,6 +145,45 @@ QtObject {
     //                          ProjectionService.currentItem in that case.
     property var  libraryPreviewItem: null
     property bool libraryLiveActive:  false
+
+    // ─── What is live (read side) ───────────────────────────────────────
+    // Two surfaces show and drive the live channel: LivePanel in the console
+    // and LiveControlsDock beside an open dialog. Both read these three, so
+    // a dock row index means exactly what a LivePanel card index means. They
+    // used to be LivePanel's own properties.
+    //
+    // liveItem has two sources. When the library pushed straight to live
+    // (no schedule row involved), ProjectionService.currentItem holds the
+    // canonical item. Otherwise it is the schedule row at liveScheduleIndex.
+    readonly property var liveItem:
+        libraryLiveActive
+            ? ProjectionService.currentItem
+            : (liveScheduleIndex >= 0
+               && liveScheduleIndex < ScheduleService.currentItems.length
+                   ? ScheduleService.currentItems[liveScheduleIndex]
+                   : null)
+
+    // Pages that have content to show. Media items (image/video) carry one
+    // empty placeholder page, which is dropped here; ThemedMonitor reads
+    // item.pages directly, so the monitor still renders the media. Decks
+    // skip the filter: every authored slide is projectable, including
+    // title-only ones, and the row index has to stay in step with
+    // ProjectionService's page index. Mirrors PreviewPanel's filter.
+    readonly property var livePages: {
+        const it = liveItem
+        const raw = it && it.pages ? it.pages : []
+        if (it && it.kind === "presentation") return raw
+        return raw.filter(function(p) {
+            return p && p.content && String(p.content).length > 0
+        })
+    }
+
+    // Clear does not end "live": it hides text but keeps the theme
+    // background (and logo) on the projector, so the channel still counts
+    // as live from the operator's side.
+    readonly property bool liveIsActive:
+        !!((libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
+           || (liveScheduleIndex >= 0 && liveItem !== null))
 
     function pushLibraryPreview(item, page) {
         libraryPreviewItem = item || null
@@ -278,6 +329,270 @@ QtObject {
         }
     }
 
+    // ─── Scripture items ────────────────────────────────────────────────
+    // Canonical verse(s) → schedule-item builder. Moved here from
+    // ScriptureTab (which now delegates) for the same reason buildSongItem
+    // lives here: the live dock's scripture switch has to project a passage
+    // byte-for-byte like the tab does, and two copies drift.
+    //
+    // `verses` are Verse rows (BibleService.verse / chapter / allVerses) or
+    // search hits; anything without text is dropped. `fallbackCode` is the
+    // translation stamped on rows that do not carry their own.
+    //
+    // One verse → one page. Several → one item whose page shows every verse
+    // numbered, or one page per verse with the current one lit when
+    // Settings > Scripture > Highlight current verse is on (baked here, so a
+    // settings change applies to the next passage projected).
+    function buildScriptureItem(verses, fallbackCode) {
+        const usable = (verses || []).filter(function(v) {
+            return v && v.text && v.text.length > 0
+        })
+        if (usable.length === 0) return null
+
+        const first = usable[0]
+        const code  = first.translationCode || fallbackCode || ""
+
+        if (usable.length === 1) {
+            const ref = first.book + " " + first.chapter + ":" + first.verse
+            return {
+                kind:     "scripture",
+                title:    ref + " (" + code + ")",
+                subtitle: "",
+                // Clipboard-ready "quote + attribution" text. Built here so
+                // it rides along to Preview / Live / Schedule and any
+                // surface holding the item can copy without re-deriving it.
+                copyText: scriptureCopyText(usable, fallbackCode),
+                pages:    [{ label: ref, content: first.text }],
+                scriptureRef: {
+                    translationCode: code,
+                    book:            first.book,
+                    chapter:         first.chapter,
+                    verseStart:      first.verse,
+                    verseEnd:        first.verse
+                }
+            }
+        }
+
+        // Verse numbers are wrapped in DSL markup: bold so they read as the
+        // heaviest run on the slide, and {color=verse}, a semantic palette
+        // name LyricsService.dslToHtml resolves to gold (NodeRenderer swaps
+        // in the theme's verseNumberColor when it sets one). The trailing
+        // period sits inside the markup so it takes the same styling.
+        // activeIndex >= 0 dims every other verse with {color=gray}; dimming
+        // is colour-only so glyph metrics, and therefore the auto-fit size,
+        // stay identical across the per-verse pages.
+        const composePassage = function(activeIndex) {
+            return usable.map(function(v, j) {
+                const num  = "{color=verse}**" + v.verse + ".**{/color} "
+                const body = (activeIndex < 0 || j === activeIndex)
+                    ? v.text
+                    : "{color=gray}" + v.text + "{/color}"
+                return num + body
+            }).join("  ")
+        }
+
+        let pages
+        if (SettingsService.highlightCurrentVerse) {
+            pages = usable.map(function(v, i) {
+                return { label:   v.book + " " + v.chapter + ":" + v.verse,
+                         content: composePassage(i) }
+            })
+        } else {
+            pages = [{ label: scriptureRangeTitle(usable), content: composePassage(-1) }]
+        }
+
+        const last = usable[usable.length - 1]
+        return {
+            kind:     "scripture",
+            title:    scriptureRangeTitle(usable) + " (" + code + ")",
+            subtitle: "",
+            copyText: scriptureCopyText(usable, fallbackCode),
+            pages:    pages,
+            // The FIRST verse's coordinates, so schedule → scripture sync
+            // still has a single jump target; verseEnd keeps the span.
+            scriptureRef: {
+                translationCode: code,
+                book:            first.book,
+                chapter:         first.chapter,
+                verseStart:      first.verse,
+                verseEnd:        last.verse
+            }
+        }
+    }
+
+    // "Copy to clipboard" text for a verse array: the verses as one quoted
+    // passage, then the reference on its own attribution line.
+    //
+    //   "For God so loved the world... to condemn the world..."
+    //
+    //   - John 3:16-17 (KJV)
+    //
+    // Straight ASCII quotes keep the paste clean across web inputs. Returns
+    // "" when nothing usable is passed so callers can guard on empty.
+    function scriptureCopyText(verses, fallbackCode) {
+        const usable = (verses || []).filter(function(v) {
+            return v && v.text && v.text.length > 0
+        })
+        if (usable.length === 0) return ""
+        const first = usable[0]
+        const code = (first.translationCode && first.translationCode.length > 0)
+                       ? first.translationCode : (fallbackCode || "")
+        const body = usable.map(function(v) { return v.text }).join(" ")
+        let ref = scriptureRangeTitle(usable)
+        if (ref.length === 0 && first.book)
+            ref = first.book + " " + first.chapter + ":" + first.verse
+        const attribution = (code && code.length > 0) ? ref + " (" + code + ")" : ref
+        return "\"" + body + "\"\n\n- " + attribution
+    }
+
+    // Human reference for a sorted verse array: grouped by (book, chapter),
+    // contiguous runs collapsed ("John 3:14-16, 18; Rom 5:8"). The leading
+    // integer of each verse is read, so "12", "1-2" and "2a" all work.
+    function scriptureRangeTitle(verses) {
+        const groups = []        // [{book, chapter, verses:[int]}]
+        let current = null
+        for (let i = 0; i < verses.length; ++i) {
+            const v = verses[i]
+            const n = parseInt(String(v.verse), 10)
+            if (isNaN(n)) continue
+            if (!current || current.book !== v.book || current.chapter !== v.chapter) {
+                current = { book: v.book, chapter: v.chapter, verses: [] }
+                groups.push(current)
+            }
+            current.verses.push(n)
+        }
+        if (groups.length === 0) return ""
+        return groups.map(function(g) {
+            return g.book + " " + g.chapter + ":" + _collapseVerseRuns(g.verses)
+        }).join("; ")
+    }
+
+    // [14,15,16,18] → "14-16, 18". Expects ascending input.
+    function _collapseVerseRuns(nums) {
+        if (nums.length === 0) return ""
+        const out = []
+        let start = nums[0], prev = nums[0]
+        for (let i = 1; i < nums.length; ++i) {
+            const n = nums[i]
+            if (n === prev + 1) { prev = n; continue }
+            out.push(start === prev ? String(start) : (start + "-" + prev))
+            start = n; prev = n
+        }
+        out.push(start === prev ? String(start) : (start + "-" + prev))
+        return out.join(", ")
+    }
+
+    // Typed reference → projectable scripture item, or null. Same grammar
+    // as the Scripture tab's reference box (BibleService.parseReferenceRange:
+    // "jn 3 16", "John 3:16-18", "ps 23"), plus the tab's translation token:
+    // a word matching an installed translation code ("rom 8:28 NIV") picks
+    // that translation instead of `fallbackCode`.
+    //
+    // A range running past the end of the chapter stops at the last verse
+    // that exists rather than failing outright.
+    function scripturePassageFromText(text, fallbackCode) {
+        const raw = String(text || "").trim()
+        if (raw.length === 0) return null
+
+        const known = {}
+        const trs = BibleService.translations()
+        for (let i = 0; i < trs.length; ++i)
+            known[String(trs[i].code).toUpperCase()] = String(trs[i].code)
+
+        let code = String(fallbackCode || "")
+        let typedCode = ""
+        const kept = []
+        const tokens = raw.split(/\s+/)
+        for (let i = 0; i < tokens.length; ++i) {
+            const up = tokens[i].toUpperCase()
+            if (typedCode === "" && known[up] !== undefined) {
+                typedCode = known[up]
+                continue
+            }
+            kept.push(tokens[i])
+        }
+        if (typedCode !== "") code = typedCode
+        if (code.length === 0 || kept.length === 0) return null
+
+        const r = BibleService.parseReferenceRange(kept.join(" "))
+        if (!r || !r.valid) return null
+
+        // A chapter tops out at 176 verses; the cap only guards against a
+        // typo like "ps 119:1-9999" walking the DB for nothing.
+        const end = Math.min(r.verseEnd, r.verseStart + 199)
+        const verses = []
+        for (let n = r.verseStart; n <= end; ++n) {
+            const v = BibleService.verse(code, r.book, r.chapter, n)
+            if (!v || !v.text || v.text.length === 0) break
+            verses.push(v)
+        }
+        return buildScriptureItem(verses, code)
+    }
+
+    // Step the live scripture passage to the verse after its last verse
+    // (dir > 0) or before its first (dir < 0), crossing chapter and book
+    // boundaries. Goes live through pushLibraryLive, the same path a
+    // Scripture tab double-click takes, so the theme, clear state and
+    // Preview mirroring all behave the same. Returns false when nothing
+    // scripture is live or the Bible ends in that direction.
+    function stepLiveScripture(dir) {
+        const it = liveItem
+        if (!it || it.kind !== "scripture" || !it.scriptureRef) return false
+        const r = it.scriptureRef
+        // Global-search items spell the opening verse `verse`, schedule and
+        // tab items `verseStart` / `verseEnd`.
+        const start = parseInt(String(r.verseStart !== undefined ? r.verseStart : r.verse), 10)
+        const end   = parseInt(String(r.verseEnd   !== undefined ? r.verseEnd   : start), 10)
+        const code  = String(r.translationCode || "")
+        if (code.length === 0 || isNaN(start)) return false
+
+        const v = _adjacentVerse(code, String(r.book || ""), Number(r.chapter),
+                                 dir > 0 ? (isNaN(end) ? start : end) : start, dir)
+        if (!v) return false
+        const item = buildScriptureItem([v], code)
+        if (!item) return false
+        pushLibraryLive(item, 0)
+        return true
+    }
+
+    // The verse next to `verse` in reading order. Walks the chapter list
+    // rather than probing verse +/- 1, because some translations skip
+    // verse numbers (Matthew 17:21 in several modern versions) and a probe
+    // would read that gap as the end of the chapter.
+    function _adjacentVerse(code, book, chapter, verse, dir) {
+        const list = BibleService.chapter(code, book, chapter)
+        if (dir > 0) {
+            for (let i = 0; i < list.length; ++i)
+                if (list[i].verse > verse) return list[i]
+            const nextCh = BibleService.chapter(code, book, chapter + 1)
+            if (nextCh.length > 0) return nextCh[0]
+            const books = BibleService.books(code)
+            const bi = _bookIndexIn(books, book)
+            if (bi < 0 || bi + 1 >= books.length) return null
+            const nextBook = BibleService.chapter(code, books[bi + 1].name, 1)
+            return nextBook.length > 0 ? nextBook[0] : null
+        }
+        for (let i = list.length - 1; i >= 0; --i)
+            if (list[i].verse < verse) return list[i]
+        if (chapter > 1) {
+            const prevCh = BibleService.chapter(code, book, chapter - 1)
+            if (prevCh.length > 0) return prevCh[prevCh.length - 1]
+        }
+        const books = BibleService.books(code)
+        const bi = _bookIndexIn(books, book)
+        if (bi <= 0) return null
+        const prevBook = BibleService.chapter(code, books[bi - 1].name,
+                                              books[bi - 1].chapterCount)
+        return prevBook.length > 0 ? prevBook[prevBook.length - 1] : null
+    }
+
+    function _bookIndexIn(books, name) {
+        const want = String(name || "").toLowerCase()
+        for (let i = 0; i < books.length; ++i)
+            if (String(books[i].name).toLowerCase() === want) return i
+        return -1
+    }
+
     // Re-read the staged preview item from the DB after its song was edited.
     //
     // libraryPreviewItem is a plain JS snapshot taken when the operator picked
@@ -413,6 +728,15 @@ QtObject {
         const restaged = _songContentMerged(ProjectionService.currentItem)
         if (restaged) _projectItemLive(restaged, i)
         else          ProjectionService.setPage(i)
+    }
+
+    // One step through the live item's pages, clamped at both ends. Shared
+    // by LivePanel's Up / Down and the live dock's prev / next, so both
+    // commit through commitLivePage (edited-song restage included).
+    function stepLivePage(delta) {
+        const n = livePages.length
+        if (n === 0) return
+        commitLivePage(Math.max(0, Math.min(n - 1, liveSubIndex + delta)))
     }
 
     // Route a go-live through the crop-aware overload for media items so a
@@ -642,6 +966,198 @@ QtObject {
         selectedScheduleIndices = []
     }
 
+    // ─── Schedule bulk actions (multi-select) ───────────────────────────
+    // The schedule keeps its index-keyed selection: it has no filter or
+    // sort, and selectedScheduleIndex is what Preview, Delete and the live
+    // pointer already read. Every bulk mutation below therefore remaps the
+    // indices it disturbs (selection, anchor, live row) itself, and goes
+    // through ScheduleService's one-signal batch calls so the panes never
+    // see a half-applied change.
+
+    // Ctrl+A with the schedule focused. Keeps the current anchor (and so
+    // the Preview pane) where it is; with no anchor, row 0 becomes it.
+    function selectAllSchedule() {
+        const n = ScheduleService.currentItems.length
+        if (n === 0) return
+        let s = []
+        for (let k = 0; k < n; k++) s.push(k)
+        if (selectedScheduleIndex < 0 || selectedScheduleIndex >= n) {
+            libraryPreviewItem = null
+            selectedScheduleIndex = 0
+            previewSubIndex = 0
+        }
+        selectedScheduleIndices = s
+    }
+
+    // Drop a multi-selection back to its anchor row, leaving that row (and
+    // so the Preview pane and its current page) exactly as it was. The
+    // selection bar's Clear and the first Escape use this.
+    function collapseScheduleSelection() {
+        const n = ScheduleService.currentItems.length
+        selectedScheduleIndices = (selectedScheduleIndex >= 0 && selectedScheduleIndex < n)
+            ? [selectedScheduleIndex] : []
+    }
+
+    // Row checkbox. Unlike toggleScheduleSelection (Ctrl+click) this never
+    // moves the anchor onto the toggled row, so ticking boxes does not keep
+    // swapping what the Preview pane shows. The anchor only moves when it
+    // is the row being unticked, or when there was none to begin with.
+    function toggleScheduleChecked(i) {
+        const n = ScheduleService.currentItems.length
+        if (i < 0 || i >= n) return
+        let s = selectedScheduleIndices.slice()
+        const at = s.indexOf(i)
+        if (at >= 0) {
+            s.splice(at, 1)
+            if (selectedScheduleIndex === i)
+                selectedScheduleIndex = s.length > 0 ? s[s.length - 1] : -1
+        } else {
+            s.push(i)
+            if (selectedScheduleIndex < 0) {
+                libraryPreviewItem = null
+                selectedScheduleIndex = i
+                previewSubIndex = 0
+            }
+        }
+        selectedScheduleIndices = s
+    }
+
+    // Apply a permutation (order[k] = old index of the row that lands at k)
+    // and carry the selection, anchor and live pointer to the rows' new
+    // positions.
+    function applyScheduleOrder(order) {
+        if (!ScheduleService.reorder(order)) return false
+        let newPos = {}
+        for (let k = 0; k < order.length; k++) newPos[order[k]] = k
+        const remap = function(i) { return (i in newPos) ? newPos[i] : i }
+        selectedScheduleIndices = selectedScheduleIndices.map(remap)
+        if (selectedScheduleIndex >= 0) selectedScheduleIndex = remap(selectedScheduleIndex)
+        if (liveScheduleIndex >= 0)     liveScheduleIndex     = remap(liveScheduleIndex)
+        return true
+    }
+
+    // Move up / Move down for the selected rows. Each row steps one place
+    // unless the slot ahead of it is the list edge or another selected row
+    // that could not move, so a contiguous block travels as a block and
+    // stops at the edge rather than reshuffling itself.
+    function moveScheduleSelection(dir) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices.filter(function(i) { return i >= 0 && i < n })
+        if (sel.length === 0 || (dir !== -1 && dir !== 1)) return
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        let order = []
+        for (let k = 0; k < n; k++) order.push(k)
+        if (dir < 0) {
+            for (let pos = 1; pos < n; pos++) {
+                if (isSel[order[pos]] && !isSel[order[pos - 1]]) {
+                    const t = order[pos - 1]; order[pos - 1] = order[pos]; order[pos] = t
+                }
+            }
+        } else {
+            for (let pos = n - 2; pos >= 0; pos--) {
+                if (isSel[order[pos]] && !isSel[order[pos + 1]]) {
+                    const t = order[pos + 1]; order[pos + 1] = order[pos]; order[pos] = t
+                }
+            }
+        }
+        applyScheduleOrder(order)
+    }
+
+    // Can the selection move that way at all? Drives the bar's enabled
+    // state: false once every selected row is already packed against
+    // that edge.
+    function canMoveScheduleSelection(dir) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices.filter(function(i) { return i >= 0 && i < n })
+        if (sel.length === 0) return false
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        for (let i = 0; i < sel.length; i++) {
+            const nb = sel[i] + dir
+            if (nb >= 0 && nb < n && !isSel[nb]) return true
+        }
+        return false
+    }
+
+    // Drag a selected row with others selected: the whole group goes, in
+    // its current order, packed together where the dragged row was dropped.
+    // `target` is the index the dragged row would have taken on its own.
+    function moveScheduleSelectionTo(draggedRow, target) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices
+            .filter(function(i) { return i >= 0 && i < n })
+            .sort(function(a, b) { return a - b })
+        if (sel.length === 0 || target === draggedRow) return
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        let rest = []
+        for (let k = 0; k < n; k++) if (!isSel[k]) rest.push(k)
+        // How many unselected rows end up above the block: those above the
+        // drop point, counting the target row itself when moving down (the
+        // dragged row lands below it) but not when moving up.
+        let p = 0
+        for (let k = 0; k < rest.length; k++) {
+            if (target > draggedRow ? rest[k] <= target : rest[k] < target) p++
+        }
+        applyScheduleOrder(rest.slice(0, p).concat(sel, rest.slice(p)))
+    }
+
+    // Remove several rows in one change. Clears the selection (every row it
+    // named is gone) and keeps the live pointer on the same row, or drops
+    // it when that row was one of those removed: pointing at whatever slid
+    // into its index would show the wrong item as live.
+    function removeScheduleIndices(indices) {
+        const n = ScheduleService.currentItems.length
+        const rows = (indices || []).filter(function(i) { return i >= 0 && i < n })
+        if (rows.length === 0) return 0
+        const live = liveScheduleIndex
+        const removed = ScheduleService.removeMany(rows)
+        if (live >= 0) {
+            if (rows.indexOf(live) >= 0) {
+                liveScheduleIndex = -1
+            } else {
+                let below = 0
+                for (let i = 0; i < rows.length; i++) if (rows[i] < live) below++
+                liveScheduleIndex = live - below
+            }
+        }
+        clearScheduleSelection()
+        return removed
+    }
+
+    // Append a copy of each row, in schedule order. Like the single-row
+    // Duplicate, the selection stays where it is; the last copy is
+    // scrolled into view.
+    function duplicateScheduleIndices(indices) {
+        const items = ScheduleService.currentItems
+        const rows = (indices || [])
+            .filter(function(i) { return i >= 0 && i < items.length })
+            .sort(function(a, b) { return a - b })
+        for (let i = 0; i < rows.length; i++) {
+            // addItem assigns a fresh id; strip the old one so two rows
+            // never share an identity.
+            const copy = Object.assign({}, items[rows[i]])
+            delete copy.id
+            ScheduleService.addItem(copy)
+        }
+        if (rows.length > 0) scheduleItemAppended(ScheduleService.currentItems.length - 1)
+    }
+
+    // Per-row theme override for several rows. A theme only applies to rows
+    // of its own kind (the single-row menu lists only those), so rows of
+    // another kind are left alone. themeId 0 = back to the default, which
+    // applies to every row.
+    function setScheduleTheme(indices, themeId, themeKind) {
+        const items = ScheduleService.currentItems
+        for (let i = 0; i < indices.length; i++) {
+            const idx = indices[i]
+            if (idx < 0 || idx >= items.length) continue
+            if (themeId > 0 && (items[idx].kind || "song") !== themeKind) continue
+            ScheduleService.setItemTheme(idx, themeId)
+        }
+    }
+
     // Resolve the effective theme for a schedule item — three-tier priority:
     //   1. Per-item override stored on the item itself
     //   2. Per-output, PER-KIND theme pinned on the OutputBinding registered
@@ -792,7 +1308,7 @@ QtObject {
     }
 
     // ─── Modal stack ────────────────────────────────────────────────────
-    property string activeModal: ""        // "" | "settings" | "songEditor" | "scheduleItemEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu"
+    property string activeModal: ""        // "" | "settings" | "songEditor" | "scheduleItemEditor" | "naming" | "confirm" | "import" | "scheduleDropdown" | "contextMenu" | "shortcuts"
     property var    modalProps: ({})       // dict of props passed to the modal (title, body, callbacks, etc.)
     property string settingsSection: "appearance"  // current section in SettingsDialog
 
@@ -812,15 +1328,24 @@ QtObject {
         modalProps = {}
     }
 
-    // A dialog holding unsaved edits registers itself here and exposes
-    // requestClose(). Every way of dismissing a modal other than the dialog's
-    // own buttons (Escape, a backdrop click, the header X) goes through
-    // requestCloseModal(), so that dialog gets to ask before its edits go.
+    // The open dialog. ModalShell registers every dialog here on creation;
+    // what the dialog can do is duck-typed off two optional functions:
     //
-    // The prompt has to live INSIDE the dialog: there is one modal slot, so
-    // opening the shared "confirm" modal would replace the editor and take
-    // the edits with it whichever button was pressed. A QtObject-typed
-    // property nulls itself when the dialog is destroyed.
+    //   requestClose() — a dialog holding unsaved edits defines it. Every
+    //     way of dismissing a modal other than the dialog's own buttons
+    //     (Escape, a backdrop click, the header X) goes through
+    //     requestCloseModal(), so that dialog gets to ask before its edits
+    //     go. The prompt has to live INSIDE the dialog: there is one modal
+    //     slot, so opening the shared "confirm" modal would replace the
+    //     editor and take the edits with it whichever button was pressed.
+    //
+    //   requestSave() — a dialog with a save concept defines it, and it must
+    //     run the SAME function its Save button runs, validation included:
+    //     that function closes the dialog on success and leaves it open
+    //     (showing why) when it refuses. Used by the save-and-close double
+    //     tap below.
+    //
+    // A QtObject-typed property nulls itself when the dialog is destroyed.
     property QtObject modalCloseOwner: null
 
     function requestCloseModal() {
@@ -828,6 +1353,129 @@ QtObject {
             modalCloseOwner.requestClose()
         else
             closeModal()
+    }
+
+    // ─── Live controls dock (beside open dialogs) ───────────────────────
+    // A dialog covers the console, and every console shortcut is gated off
+    // while one is open (consoleShortcutsActive), so without this the
+    // operator has to abandon an edit to advance a slide. LiveControlsDock,
+    // mounted in ModalLayer above the dialogs, drives the same live state
+    // LivePanel does. Gated by SettingsService.liveControlsOverDialogs.
+    //
+    // Menus, the schedule dropdown, the command palette (it has its own Go
+    // Live) and the small naming / confirm prompts are left out: they are
+    // brief, and a panel arriving for a two-second prompt is noise.
+    readonly property var liveDockExcludedModals:
+        ["contextMenu", "scheduleDropdown", "globalSearch", "naming", "confirm"]
+
+    readonly property bool liveDockShown:
+        SettingsService.liveControlsOverDialogs
+        && activeModal !== ""
+        && liveDockExcludedModals.indexOf(activeModal) < 0
+
+    // Session-only placement. Docked (the default) pins the panel to the
+    // window's right edge and asks ModalShell to centre the dialog card in
+    // the space left of it. Dragging the header floats it at x / y, which
+    // stop reserving space. Collapsed folds either form to a thin tab.
+    property bool   liveDockCollapsed: false
+    property bool   liveDockFloating:  false
+    property real   liveDockX: 0
+    property real   liveDockY: 0
+    property string liveDockTab: "live"          // "live" | "scripture"
+    // The scripture switch's typed reference and translation pick, kept
+    // across dialogs so reopening an editor finds the panel as it was left.
+    // An empty translation follows the live passage, else the Scripture tab.
+    property string liveDockScriptureQuery: ""
+    property string liveDockTranslation:    ""
+
+    readonly property int liveDockWidth:          300
+    readonly property int liveDockCollapsedWidth: 32
+    readonly property int liveDockMargin:         12
+
+    // Width the docked panel adds beside the dialog card (panel plus the
+    // gap between them). ModalShell shifts its card left by half of this so
+    // card and panel sit centred as one pair, then publishes the card's
+    // rect in modalCardRect for the panel to attach to. ModalShell drops
+    // the reservation when the window is too narrow for the pair; the panel
+    // then falls back to the window's right edge, over the dialog.
+    readonly property int liveDockReservedWidth:
+        (!liveDockShown || liveDockFloating) ? 0
+            : (liveDockCollapsed ? liveDockCollapsedWidth : liveDockWidth)
+              + liveDockMargin
+
+    // The open dialog card's rect in ModalLayer coordinates while the
+    // docked panel is attached to it, else empty.
+    property rect modalCardRect: Qt.rect(0, 0, 0, 0)
+
+    // Save through the dialog's own save path. A dialog with nothing to save
+    // just closes, through requestCloseModal so a dirty prompt still applies.
+    function saveAndCloseModal() {
+        if (modalCloseOwner && typeof modalCloseOwner.requestSave === "function")
+            modalCloseOwner.requestSave()
+        else
+            requestCloseModal()
+    }
+
+    // ─── Double-tap dialog gestures ─────────────────────────────────────
+    // Two fast presses close the open dialog without the usual ceremony:
+    //
+    //   Escape, Escape         close WITHOUT saving. The first press is an
+    //                          ordinary Escape (it closes a clean dialog or
+    //                          raises the discard prompt, exactly as before),
+    //                          the second one inside the window discards and
+    //                          closes with no prompt.
+    //   Ctrl+Enter, Ctrl+Enter save and close, via saveAndCloseModal(). One
+    //                          Ctrl+Enter alone does nothing.
+    //
+    // Neither key types anything in a text field, which is why they were
+    // picked: a double gesture on a typing key would fire mid-sentence. The
+    // Shortcuts live in Main.qml with autoRepeat off, so a held key is one
+    // press and never a double tap. Listed in ShortcutsDialog.
+    readonly property int doubleTapMs: 400
+    property double _modalEscapeAt: 0
+    property double _modalSaveTapAt: 0
+
+    // Escape while a modal is open.
+    function modalEscape() {
+        const now = Date.now()
+        const second = now - _modalEscapeAt <= doubleTapMs
+        _modalEscapeAt = second ? 0 : now
+        if (second) closeModal()
+        else        requestCloseModal()
+    }
+
+    // True for the second press of a double Escape whose first press already
+    // closed the dialog. The surface underneath (schedule deselect, theme
+    // editor) checks this so the pair does not also act on it.
+    function isTrailingEscape() {
+        if (_modalEscapeAt === 0 || Date.now() - _modalEscapeAt > doubleTapMs) return false
+        _modalEscapeAt = 0
+        return true
+    }
+
+    // Ctrl+Enter while a dialog is open.
+    function modalSaveTap() {
+        const now = Date.now()
+        if (now - _modalSaveTapAt <= doubleTapMs) {
+            _modalSaveTapAt = 0
+            saveAndCloseModal()
+        } else {
+            _modalSaveTapAt = now
+        }
+    }
+
+    // True when a real dialog (a ModalShell form) is open, as opposed to the
+    // command palette or a popover menu. Ctrl+Enter gates on this: the
+    // palette already binds Ctrl+Enter to "go live".
+    readonly property bool dialogOpen: activeModal !== ""
+                                    && activeModal !== "globalSearch"
+                                    && activeModal !== "contextMenu"
+                                    && activeModal !== "scheduleDropdown"
+
+    // ─── Keyboard shortcut reference (F1) ───────────────────────────────
+    function toggleShortcutHelp() {
+        if (activeModal === "shortcuts") closeModal()
+        else if (activeModal === "")     openModal("shortcuts", {})
     }
 
     // Open a context menu anchored at a mouse position inside `originItem`.
@@ -1162,12 +1810,104 @@ QtObject {
     property string mediaSortOrder:  "asc"      // "asc" | "desc"
     property string mediaTypeFilter: "all"      // "all" | "image" | "video" | "pdf"
 
-    // Batch selection — list of fluid-list indices currently checked. Plain
-    // list rather than Set because QML's property var likes JSON-friendly
-    // structures. Cleared whenever the operator switches tabs.
-    property var mediaBatchSelection: []
+    // ─── Library multi-selection (songs / media / presentations / themes) ─
+    // The rows the operator has checked, per tab, keyed by item ID rather
+    // than row index so a selection survives re-sorting or narrowing the
+    // list. Distinct from libraryFluidIndex: the fluid row is the single
+    // "current" item that drives Preview, these are the extra rows bulk
+    // actions apply to. The LibrarySelection helper each tab instantiates
+    // owns the click semantics and prunes ids that leave the library.
+    //
+    // Scripture is deliberately not in this list: its multi-select builds
+    // verse ranges, which are positional, and lives in
+    // librarySelectedIndices above.
+    readonly property var multiSelectTabs: ["songs", "media", "presentations", "themes"]
 
-    function clearMediaBatchSelection() { mediaBatchSelection = [] }
+    property var librarySelection: ({
+        "songs": [], "media": [], "presentations": [], "themes": []
+    })
+    // Shift+click pivot per tab: the id of the last row clicked without
+    // Shift. Kept apart from the selection so a range can be re-drawn from
+    // the same pivot.
+    property var librarySelectionAnchor: ({})
+
+    function setLibrarySelection(tabKey, ids) {
+        let seen = {}
+        let out = []
+        const src = ids || []
+        for (let i = 0; i < src.length; i++) {
+            const k = String(src[i])
+            if (seen[k]) continue
+            seen[k] = true
+            out.push(src[i])
+        }
+        let copy = Object.assign({}, librarySelection)
+        copy[tabKey] = out
+        librarySelection = copy
+    }
+
+    // Select mode per tab: the Select toggle in the tab's top bar. Row
+    // checkboxes only show while it is on (or something is already checked
+    // through Ctrl / Shift+click), and a plain click then ticks the row
+    // instead of moving Preview. Turning it off drops the ticks.
+    property var librarySelectMode: ({})
+
+    function setLibrarySelectMode(tabKey, on) {
+        if (!!librarySelectMode[tabKey] === !!on) return
+        let copy = Object.assign({}, librarySelectMode)
+        copy[tabKey] = !!on
+        librarySelectMode = copy
+        if (!on) clearLibrarySelection(tabKey)
+    }
+
+    function clearLibrarySelection(tabKey) {
+        if ((librarySelection[tabKey] || []).length === 0) return
+        setLibrarySelection(tabKey, [])
+    }
+
+    function setLibrarySelectionAnchor(tabKey, id) {
+        if (librarySelectionAnchor[tabKey] === id) return
+        let copy = Object.assign({}, librarySelectionAnchor)
+        copy[tabKey] = id
+        librarySelectionAnchor = copy
+    }
+
+    // Ctrl+A. Window-level (Main.qml) when no text field holds the keyboard,
+    // and from TabSearchBar when its box is empty. Routes by the panel that
+    // owns keyboard focus: the schedule selects every row itself, a library
+    // tab gets librarySelectAll() because only the tab knows what is
+    // currently visible. Returns false when nothing took it.
+    signal librarySelectAll()
+
+    function requestSelectAll() {
+        if (activeFocusPanel === "schedule") {
+            selectAllSchedule()
+            return true
+        }
+        if (activeFocusPanel !== "library") return false
+        if (multiSelectTabs.indexOf(tabKeys[activeTab]) < 0) return false
+        librarySelectAll()
+        return true
+    }
+
+    // Escape, first stage: drop the active library tab's checked rows.
+    // Returns false when there was nothing to clear, so the caller can fall
+    // through to its older meaning (deselecting the schedule row).
+    // Escape with library focus: drop the ticks first, then leave select
+    // mode on the next press.
+    function clearActiveLibrarySelection() {
+        if (activeFocusPanel !== "library") return false
+        const key = tabKeys[activeTab]
+        if ((librarySelection[key] || []).length > 0) {
+            clearLibrarySelection(key)
+            return true
+        }
+        if (librarySelectMode[key]) {
+            setLibrarySelectMode(key, false)
+            return true
+        }
+        return false
+    }
 
     // Sidebar group + media type filter move together: clicking "Images" in
     // the sidebar should both highlight the row (activeLibraryGroup) AND

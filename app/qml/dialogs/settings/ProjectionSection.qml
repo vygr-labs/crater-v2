@@ -87,14 +87,10 @@ Item {
             // ── OUTPUT ───────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Output"); first: true }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Output display"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Which screen receives projection output"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Output display")
+                description: qsTr("Which screen receives projection output")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 240
                     searchable: false
                     options: OutputService.screens.map(function(s) {
@@ -118,14 +114,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Projection mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Windowed shows output in a movable preview window"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Projection mode")
+                description: qsTr("Windowed shows output in a movable preview window")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 180
                     searchable: false
                     options: [qsTr("Fullscreen"), qsTr("Windowed")]
@@ -145,32 +137,46 @@ Item {
             // it through Qt.Tool so a fixed projector stops showing up in the
             // switcher — at the cost of the single-screen "click the taskbar
             // entry to surface it" route, hence the honest subtitle.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show projection in Alt-Tab"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Also gives the projection a taskbar button; off hides it from both"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show projection in Alt-Tab")
+                description: qsTr("Also gives the projection a taskbar button; off hides it from both")
+                ToggleSwitch {
                     value: SettingsService.projectionInAltTab
                     onToggled: SettingsService.projectionInAltTab = !SettingsService.projectionInAltTab }
             }
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            // Picks between the two single-screen arrangements: the corner
-            // preview on top (off, the former behaviour) and a full-size
-            // render pinned underneath (on). Inert while a second display
-            // is attached, which the label says rather than dimming the row
-            // — an operator configuring this on a two-monitor desk is
-            // usually preparing for a one-monitor venue.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Single display: full-size projection behind the console"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Renders at full screen size but pinned under every window, so it shows through wherever the console is not. Off keeps the small corner preview."); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            // Picks between the two arrangements for an output that shares
+            // the console's display: the corner preview on top (off) and the
+            // EasyWorship 7 style full-size output stacked directly under the
+            // console (on). Applies with one display, or with several when the
+            // output display above is the console's own screen. Not dimmed on
+            // a desk where the output has its own screen: an operator
+            // configuring this there is usually preparing for a one-monitor
+            // venue. The subtitle explains the way back, the part people get
+            // stuck on.
+            SettingRow {
+                title: qsTr("Same screen as the console: show output behind it")
+                description: qsTr("The output fills the screen behind the console and shows wherever the console does not cover it. Click the output to bring it to the front. Click it again or press Esc to go back to the console. Off shows a small preview in the corner instead.")
+                ToggleSwitch {
                     value: SettingsService.projectionBehindConsole
                     onToggled: SettingsService.projectionBehindConsole = !SettingsService.projectionBehindConsole }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // The live dock beside open dialogs (LiveControlsDock.qml). Lives
+            // under Output because it is about keeping control of what the
+            // audience sees, not about how the console looks. Flipping it
+            // while this dialog is open shows or hides the dock right here,
+            // which doubles as a preview of what the setting does.
+            SettingRow {
+                title: qsTr("Keep live controls beside dialogs")
+                description: qsTr("Change slides or switch scripture while an editor or Settings is open")
+                ToggleSwitch {
+                    value: SettingsService.liveControlsOverDialogs
+                    onToggled: SettingsService.liveControlsOverDialogs = !SettingsService.liveControlsOverDialogs }
             }
 
             // ── TRANSITIONS ──────────────────────────────────────────────
@@ -183,14 +189,10 @@ Item {
             SettingsSectionHeader { title: qsTr("Transitions") }
 
             // ── Primary output: style ────────────────────────────────────
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Primary output style"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("How the audience screen moves between items"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Primary output style")
+                description: qsTr("How the audience screen moves between items")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
@@ -217,14 +219,10 @@ Item {
             // Named presets rather than a numeric input: operators pick
             // "feel" not arithmetic, and the SettingsService setter clamps
             // to 0..1500 so any future hand-edit can't escape sanity.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Primary output duration"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("How long each transition takes"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Primary output duration")
+                description: qsTr("How long each transition takes")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: [qsTr("Instant"),
@@ -257,17 +255,11 @@ Item {
             // distinct transition to, so the controls would be lying. Hide
             // entirely in single mode; the QtQuick.Layouts column collapses
             // the hidden Items automatically.
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
+            SettingRow {
                 visible: SettingsService.outputMode === "dual"
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("NDI output style"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Independent transition for the NDI broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+                title: qsTr("NDI output style")
+                description: qsTr("Independent transition for the NDI broadcast")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
@@ -293,17 +285,11 @@ Item {
             }
 
             // ── NDI output: duration (visible only in dual output mode) ─
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
+            SettingRow {
                 visible: SettingsService.outputMode === "dual"
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("NDI output duration"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("How long the NDI transition takes"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+                title: qsTr("NDI output duration")
+                description: qsTr("How long the NDI transition takes")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: [qsTr("Instant"),
@@ -385,10 +371,14 @@ Item {
             Item {
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.space.md
-                Layout.preferredHeight: 52
+                Layout.preferredHeight: Math.max(primaryIdentity.implicitHeight, primaryScreenLabel.implicitHeight)
+                                        + Theme.space.sm * 2
 
                 Row {
+                    id: primaryIdentity
                     anchors.left: parent.left
+                    anchors.right: primaryScreenLabel.left
+                    anchors.rightMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.space.md
 
@@ -400,8 +390,11 @@ Item {
                     }
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - Theme.icon.md - parent.spacing
                         spacing: 2
                         Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
                             text: qsTr("Primary Output")
                             color: Theme.color.textPrimary
                             font.family: Theme.font.family
@@ -409,6 +402,8 @@ Item {
                             font.weight: Theme.font.weightMedium
                         }
                         Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
                             text: qsTr("Audience screen — configured under Output above")
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
@@ -418,6 +413,7 @@ Item {
                 }
 
                 Text {
+                    id: primaryScreenLabel
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: root._screenLabel(OutputService.selectedScreenIndex)
@@ -435,7 +431,13 @@ Item {
                 delegate: Item {
                     id: outRow
                     Layout.fillWidth: true
-                    Layout.preferredHeight: outRow._warning.length > 0 ? 92 : 68
+                    // Height follows the content: the identity column wraps
+                    // beside the controls, plus the warning line when shown.
+                    Layout.preferredHeight: Theme.space.sm
+                                            + Math.max(outIdentity.implicitHeight, outControls.implicitHeight)
+                                            + (outRow._warning.length > 0
+                                               ? Theme.space.sm + outWarning.implicitHeight : 0)
+                                            + Theme.space.sm + 1
 
                     readonly property string _id: modelData.id
                     readonly property bool   _isStageMode: modelData.contentMode === "stage"
@@ -470,10 +472,11 @@ Item {
                     Row {
                         id: outIdentity
                         anchors.left: parent.left
+                        anchors.right: outControls.left
+                        anchors.rightMargin: Theme.space.lg
                         anchors.top: parent.top
                         anchors.topMargin: Theme.space.sm
                         spacing: Theme.space.md
-                        width: parent.width - outControls.width - Theme.space.md
 
                         AppIcon {
                             anchors.verticalCenter: outName.verticalCenter
@@ -496,6 +499,7 @@ Item {
                             TextInput {
                                 id: nameInput
                                 width: parent.width
+                                clip: true
                                 text: modelData.displayName
                                 color: Theme.color.textPrimary
                                 font.family: Theme.font.family
@@ -505,6 +509,8 @@ Item {
                                 onEditingFinished: OutputService.setDisplayName(outRow._id, text)
                             }
                             Text {
+                                width: parent.width
+                                wrapMode: Text.WordWrap
                                 text: outRow._isStageMode
                                         ? qsTr("Presenter view — live text, speaker notes, what is next")
                                         : qsTr("Mirrors the audience render, with its own theme and transition")
@@ -581,6 +587,7 @@ Item {
                     }
 
                     Row {
+                        id: outWarning
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
@@ -667,25 +674,19 @@ Item {
             // ── DEFAULTS ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Defaults") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show logo by default"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Display logo when output is otherwise blank"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show logo by default")
+                description: qsTr("Display logo when output is otherwise blank")
+                ToggleSwitch {
                     value: SettingsService.showLogoByDefault
                     onToggled: SettingsService.showLogoByDefault = !SettingsService.showLogoByDefault }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Clear output when idle"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Blank text after a period of inactivity"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Clear output when idle")
+                description: qsTr("Blank text after a period of inactivity")
                 Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.space.md
 
                     Badge {
@@ -719,42 +720,13 @@ Item {
             // they're outside this service's scope by design.
             SettingsSectionHeader { title: qsTr("Fonts") }
 
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 64
-
-                // Column anchored to the import button's left edge with
-                // elide on both labels — keeps the long subtitle from
-                // sliding under the button at narrow widths.
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: importFontButton.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-
-                    ElidedText {
-                        text: qsTr("Manage fonts available to themes")
-                        color: Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
-                        font.weight: Theme.font.weightMedium
-                        width: parent.width
-                    }
-                    ElidedText {
-                        text: qsTr("Imported fonts are available in every theme's font picker "
-                                   + "and can be bundled into exported themes.")
-                        color: Theme.color.textTertiary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        width: parent.width
-                    }
-                }
+            SettingRow {
+                title: qsTr("Manage fonts available to themes")
+                description: qsTr("Imported fonts are available in every theme's font picker "
+                                  + "and can be bundled into exported themes.")
 
                 GhostButton {
                     id: importFontButton
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Import font…")
                     iconName: "type"
                     onClicked: {

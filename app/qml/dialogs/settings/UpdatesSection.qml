@@ -90,18 +90,24 @@ Item {
             SettingsSectionHeader { title: qsTr("Version"); first: true }
 
             // ── Installed version + current status ───────────────────────
+            // Kept as a custom layout rather than a SettingRow because the
+            // status line changes colour on failure and caps at two lines.
             Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 56
+                Layout.preferredHeight: Math.max(versionText.implicitHeight, checkButton.height)
+                                        + Theme.space.sm * 2
 
                 Column {
+                    id: versionText
                     anchors.left: parent.left
                     anchors.right: checkButton.left
-                    anchors.rightMargin: Theme.space.md
+                    anchors.rightMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
 
                     Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
                         text: qsTr("Crater %1").arg(UpdateService.currentVersion)
                         color: Theme.color.textPrimary
                         font.family: Theme.font.family
@@ -301,18 +307,23 @@ Item {
             // offer hidden until tomorrow reads as a bug.
             Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 44 : 0
+                Layout.preferredHeight: visible ? Math.max(44, skippedText.implicitHeight + Theme.space.sm * 2) : 0
                 visible: UpdateService.skippedVersion !== ""
 
                 Text {
+                    id: skippedText
                     anchors.left: parent.left
+                    anchors.right: stopSkippingButton.left
+                    anchors.rightMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
+                    wrapMode: Text.WordWrap
                     text: qsTr("Version %1 is being skipped.").arg(UpdateService.skippedVersion)
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize
                 }
                 GhostButton {
+                    id: stopSkippingButton
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("Stop skipping")
@@ -323,37 +334,12 @@ Item {
             // ── Preferences ──────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Automatic checks") }
 
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
-
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: autoToggle.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    Text {
-                        text: qsTr("Check for updates automatically")
-                        color: Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
-                        font.weight: Theme.font.weightMedium
-                    }
-                    Text {
-                        width: parent.width
-                        text: qsTr("Looks once a day, shortly after Crater opens. Nothing downloads or installs on its own.")
-                        color: Theme.color.textTertiary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                        wrapMode: Text.WordWrap
-                    }
-                }
+            SettingRow {
+                title: qsTr("Check for updates automatically")
+                description: qsTr("Looks once a day, shortly after Crater opens. Nothing downloads or installs on its own.")
 
                 ToggleSwitch {
                     id: autoToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: UpdateService.autoCheck
                     onToggled: UpdateService.autoCheck = !UpdateService.autoCheck
                 }

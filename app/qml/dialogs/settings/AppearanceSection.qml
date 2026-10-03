@@ -138,18 +138,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
-
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Font size"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
+            SettingRow {
+                title: qsTr("Font size")
 
                 SegmentedControl {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 140; height: 30
                     radius: 0
                     current: SettingsService.fontSize
@@ -161,29 +153,53 @@ Item {
                     onChanged: function(v) { SettingsService.fontSize = v }
                 }
             }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            SettingRow {
+                title: qsTr("Density")
+                description: qsTr("Compact fits more on screen. Text size stays the same.")
+
+                SegmentedControl {
+                    width: 200; height: 30
+                    radius: 0
+                    current: SettingsService.uiDensity
+                    options: [
+                        { value: "compact",     label: qsTr("Compact") },
+                        { value: "comfortable", label: qsTr("Comfortable") }
+                    ]
+                    onChanged: function(v) { SettingsService.uiDensity = v }
+                }
+            }
 
             // ── PREFERENCES ──────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Preferences") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show CCLI badges"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Display copyright info next to songs"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show CCLI badges")
+                description: qsTr("Display copyright info next to songs")
+                ToggleSwitch {
                     value: SettingsService.showCcli
                     onToggled: SettingsService.showCcli = !SettingsService.showCcli }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Reduce motion"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Disable hover and transition animations"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Reduce motion")
+                description: qsTr("Disable hover and transition animations")
+                ToggleSwitch {
                     value: SettingsService.reduceMotion
                     onToggled: SettingsService.reduceMotion = !SettingsService.reduceMotion }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Takes effect at quit (ScheduleService::clearWorkingOnShutdown).
+            // A saved schedule with unsaved edits is kept rather than cleared.
+            SettingRow {
+                title: qsTr("Clear schedule when Crater closes")
+                description: qsTr("Start each launch with an empty schedule. Saved schedules are kept.")
+                ToggleSwitch {
+                    value: SettingsService.clearScheduleOnClose
+                    onToggled: SettingsService.clearScheduleOnClose = !SettingsService.clearScheduleOnClose }
             }
 
             // ── LOCALE ───────────────────────────────────────────────────
@@ -197,10 +213,9 @@ Item {
             // QTranslator and retranslates every qsTr binding on the spot. The
             // native + English label ("Español (Spanish)") keeps rows findable by
             // typing either name in the dropdown's search field.
-            Item {
+            SettingRow {
                 id: langRow
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
+                title: qsTr("Language")
 
                 readonly property var langs: TranslationService.availableLanguages
                 readonly property string currentCode: TranslationService.currentLanguage
@@ -216,14 +231,7 @@ Item {
                     return "en"
                 }
 
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Language"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
-
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 240
                     searchable: true
                     placeholder: qsTr("Select language…")

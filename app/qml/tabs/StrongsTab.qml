@@ -33,7 +33,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 32
+        height: Theme.d(32)
         color: "transparent"
 
         Row {

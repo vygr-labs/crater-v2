@@ -7,45 +7,40 @@ import QtQuick.Controls.Basic
 Rectangle {
     id: root
 
+    // Slide card view, picked from the header gear menu: "full" (as
+    // designed), "compact" (tiny text, tight padding) or "lines" (one
+    // line per slide, label inline).
+    readonly property string _cardMode: SettingsService.liveCardMode
+    readonly property bool   _cardsFull: _cardMode !== "compact" && _cardMode !== "lines"
+    function _cardViewMenu() {
+        const opts = [
+            { mode: "full",    label: qsTr("Full") },
+            { mode: "compact", label: qsTr("Compact") },
+            { mode: "lines",   label: qsTr("One line") }
+        ]
+        return opts.map(function(o) {
+            return { label: o.label,
+                     iconName: (root._cardMode === o.mode
+                                || (o.mode === "full" && root._cardsFull)) ? "check" : "",
+                     action: function() { SettingsService.liveCardMode = o.mode } }
+        })
+    }
+
     // Panel surface — matches electron's `bg.muted` panel container.
     color: Theme.color.elevated
 
-    // Live item — two sources. When the library pushed straight to live
-    // (operator double-clicked a song / verse / media item without first
-    // routing through the schedule), ProjectionService.currentItem holds the
-    // canonical item. Otherwise read from ScheduleService.currentItems via
-    // the live index.
-    readonly property var liveItem:
-        AppState.libraryLiveActive
-            ? ProjectionService.currentItem
-            : (AppState.liveScheduleIndex >= 0
-               && AppState.liveScheduleIndex < ScheduleService.currentItems.length
-                   ? ScheduleService.currentItems[AppState.liveScheduleIndex]
-                   : null)
+    // Live item, its projectable pages, and whether anything is live. The
+    // derivations live in AppState (liveItem / livePages / liveIsActive) so
+    // the live dock beside open dialogs reads the very same list: a row
+    // index there means exactly what a card index means here.
+    readonly property var  liveItem: AppState.liveItem
+    readonly property var  pages:    AppState.livePages
+    readonly property bool isLive:   AppState.liveIsActive
 
-    // Filter to pages that have *content* to display. Media items
-    // (image/video) carry one placeholder page with empty content — we
-    // suppress empty rows here. ThemedMonitor reads item.pages directly,
-    // so the bottom thumbnail still renders the media. Mirrors the same
-    // filter in PreviewPanel.
-    // Presentation decks skip the filter entirely — every authored slide is
-    // projectable, including title-only and not-yet-written ones, and the
-    // card index has to stay in step with ProjectionService's page index.
-    // Same reasoning as PreviewPanel; see the longer note there.
-    readonly property var pages: {
-        const raw = liveItem && liveItem.pages ? liveItem.pages : []
-        if (liveItem && liveItem.kind === "presentation") return raw
-        return raw.filter(function(p) {
-            return p && p.content && String(p.content).length > 0
-        })
-    }
-    // `isClear` no longer makes the live state collapse — clearing hides
-    // text but keeps the theme background (and logo, if showing) on the
-    // projector. From the operator's perspective the channel is still
-    // live; only the audience-facing text content is suppressed.
-    readonly property bool isLive:
-        (AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
-        || (AppState.liveScheduleIndex >= 0 && liveItem !== null)
+    // Video transport under the monitor whenever the committed live item is a
+    // clip. Keyed off AppState.liveVideoUrl (ProjectionService's item) so the
+    // bar always drives the clip the audience output is playing.
+    readonly property bool showTransport: isLive && AppState.liveVideoUrl.length > 0
 
     // ── Auto-advance ────────────────────────────────────────────────────
     // Steps a live, multi-slide item to its next page on a timer, honoring
@@ -121,7 +116,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 40
+        height: Theme.d(40)
 
         // LIVE pill — visible only when something's live.
         Rectangle {
@@ -198,6 +193,9 @@ Rectangle {
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
+                    { label: qsTr("Card view"), iconName: "layout-list",
+                      submenu: root._cardViewMenu() },
+                    { separator: true },
                     { label: qsTr("Clear output"),     iconName: "x",
                       action: function() { AppState.clearLive() } },
                     { label: qsTr("Toggle logo"),      iconName: "image",
@@ -324,7 +322,7 @@ Rectangle {
                     anchors.topMargin:    1
                     anchors.leftMargin:   1
                     anchors.bottomMargin: 1
-                    width: 32
+                    width: root._cardsFull ? 32 : 24
 
                     color: card.isScrub ? Theme.color.cueRailPreview
                          : card.isActive && card._paneFocused ? Theme.color.cueRailLive
@@ -349,7 +347,7 @@ Rectangle {
                                              ? Theme.color.textPrimary
                                              : Theme.color.textTertiary
                         font.family:    Theme.font.monoFamily
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.microSize
                         font.weight:    Theme.font.weightSemiBold
                                             }
                 }
@@ -375,8 +373,8 @@ Rectangle {
                 // Collapses to zero height when there's no label/translation.
                 Rectangle {
                     id: headerBand
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 22 : 0
+                    visible: card.hasHeader && root._cardMode !== "lines"
+                    height:  visible ? (root._cardsFull ? 22 : 16) : 0
                     anchors.top:   parent.top
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -409,8 +407,8 @@ Rectangle {
                 // 1px horizontal divider — hides along with the header.
                 Rectangle {
                     id: divider
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 1 : 0
+                    visible: headerBand.visible
+                    height:  visible ? 1 : 0
                     anchors.top:   headerBand.bottom
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -427,25 +425,35 @@ Rectangle {
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
                     anchors.rightMargin: 1
-                    height: pageText.implicitHeight + Theme.space.sm * 2
+                    readonly property int _pad: root._cardsFull ? Theme.space.sm : Theme.space.xs
+                    height: pageText.implicitHeight + _pad * 2
 
                     Text {
                         id: pageText
                         anchors.top:   parent.top
                         anchors.left:  parent.left
                         anchors.right: parent.right
-                        anchors.topMargin:   Theme.space.sm
+                        anchors.topMargin:   parent._pad
                         anchors.leftMargin:  Theme.space.sm
                         anchors.rightMargin: Theme.space.sm
                         // Mirror PreviewPanel: RichText so the live card
                         // shows the same formatting the projection does.
                         textFormat:     Text.RichText
-                        text:           LyricsService.dslToHtml(modelData.content || "")
+                        // One-line view folds the slide's lines together
+                        // after its label, and clips at one line.
+                        text: root._cardMode === "lines"
+                              ? ((card.headLabel.length > 0
+                                    ? "<b>" + card.headLabel.toUpperCase() + "</b>&nbsp;&nbsp;" : "")
+                                 + LyricsService.dslToHtml(String(modelData.content || "")
+                                                               .split("\n").join(" / ")))
+                              : LyricsService.dslToHtml(modelData.content || "")
+                        maximumLineCount: root._cardMode === "lines" ? 1 : 100000
+                        clip: root._cardMode === "lines"
                         color:          Theme.color.textPrimary
                         font.family:    Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.smallSize
                         wrapMode:       Text.WordWrap
-                        lineHeight:     1.25
+                        lineHeight:     root._cardsFull ? 1.25 : 1.05
                     }
                 }
 
@@ -494,15 +502,8 @@ Rectangle {
             // the Live pane is a control surface. setPage is a no-op when
             // the resolved index already matches, so clamp-at-bounds
             // keypresses don't burn a re-render.
-            function onLiveNavigateUp() {
-                if (root.pages.length === 0) return
-                AppState.commitLivePage(Math.max(AppState.liveSubIndex - 1, 0))
-            }
-            function onLiveNavigateDown() {
-                if (root.pages.length === 0) return
-                AppState.commitLivePage(Math.min(AppState.liveSubIndex + 1,
-                                                 root.pages.length - 1))
-            }
+            function onLiveNavigateUp()   { AppState.stepLivePage(-1) }
+            function onLiveNavigateDown() { AppState.stepLivePage( 1) }
             // ── Ctrl+Arrow scrub ────────────────────────────────────
             // Same clamp as the plain-arrow handlers above, minus the
             // commit: these only move AppState.liveScrubIndex, so the
@@ -587,8 +588,10 @@ Rectangle {
     // larger would over-emphasise it and break the paired-pane symmetry.
     Item {
         id: monitorWrap
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.space.lg
+        // Sits on the video transport when one is showing. The bar collapses
+        // to zero height otherwise, so the monitor keeps its old bottom edge.
+        anchors.bottom: liveTransport.top
+        anchors.bottomMargin: root.showTransport ? Theme.space.sm : 0
         anchors.leftMargin: Theme.space.lg
 
         // Guard on isLive — otherwise the empty pages list on fresh open
@@ -601,6 +604,9 @@ Rectangle {
         readonly property real maxFullH: parent.height - header.height
                                           - Theme.space.md
                                           - Theme.space.lg
+                                          - (root.showTransport
+                                                 ? liveTransport.implicitHeight + Theme.space.sm
+                                                 : 0)
 
         // Compact size tracks the pane instead of sitting at a hard 160x90.
         // The old constant meant the monitor never grew with the window: on
@@ -612,7 +618,7 @@ Rectangle {
         readonly property real compactWidth:
             Math.max(160, Math.min(288, parent.width * 0.30))
 
-        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : compactWidth
+        width:  fullsize ? Math.max(0, Math.min(maxFullW, maxFullH * 16 / 9)) : compactWidth
         height: width * 9 / 16
 
         state: fullsize ? "fullsize" : "compact"
@@ -693,6 +699,29 @@ Rectangle {
                 visible: AppState.showLogo
             }
         }
+    }
+
+    // ── Video transport ─────────────────────────────────────────────────
+    // Position, remaining time and volume for the live clip. Read-only for
+    // the picture: the operator cues and drives clips from Preview, so a
+    // stray click here can never jump what the audience sees. Width follows
+    // the (centered, fullsize) monitor so the seek bar lines up under the
+    // picture, with a floor so the controls never crush on a short pane.
+    MediaTransportBar {
+        id: liveTransport
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.space.lg
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - Theme.space.lg * 2,
+                        Math.max(monitorWrap.width, 320))
+        height: root.showTransport ? implicitHeight : 0
+        visible: root.showTransport
+        source: AppState.liveVideoUrl
+        accent: Theme.color.live
+        showAudio: true
+        shortcutHints: true
+        readOnly: true
+        readOnlyHint: qsTr("Control this clip from Preview")
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

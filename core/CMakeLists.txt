@@ -21,6 +21,11 @@ add_library(crater-core STATIC
     src/bundle/Crc32.cpp
     src/bundle/Zip.cpp
 
+    # Profiles (ARCHITECTURE.md §12) — per-profile settings routing and the
+    # .craterprofile archive engine (export / inspect / import / duplicate).
+    src/profile/ProfileSettings.cpp
+    src/profile/ProfileArchive.cpp
+
     # One-time data import from electron's bundled DBs.
     src/import/CanonicalBibleBooks.cpp
     src/import/ElectronDataImporter.cpp
@@ -49,6 +54,7 @@ add_library(crater-core STATIC
     src/OutputService.cpp
     src/ProjectionService.cpp
     src/SettingsService.cpp
+    src/ProfileService.cpp
     src/WorkingTheme.cpp
     src/LyricsDSL.cpp
     src/LyricsService.cpp
@@ -68,6 +74,7 @@ add_library(crater-core STATIC
     include/crater/OutputService.h
     include/crater/ProjectionService.h
     include/crater/SettingsService.h
+    include/crater/ProfileService.h
     include/crater/ElectronDataImporter.h
     include/crater/EasyWorshipImporter.h
     include/crater/WorkingTheme.h

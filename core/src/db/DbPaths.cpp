@@ -15,31 +15,73 @@ QString ensureDir(QString p)
     return d.absolutePath();
 }
 
+// The active profile's root when it is not the Default profile. Empty means
+// Default (appRootDir()). Written once at startup, before any worker thread
+// exists, and only read afterwards — see DbPaths::setDataDir.
+QString& overrideRoot()
+{
+    static QString root;
+    return root;
+}
+
 }  // namespace
 
-QString DbPaths::dataDir()
+QString DbPaths::appRootDir()
 {
     return ensureDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
 }
 
+QString DbPaths::profilesDir()
+{
+    return ensureDir(QDir(appRootDir()).filePath(QStringLiteral("profiles")));
+}
+
+QString DbPaths::dataDir()
+{
+    const QString& o = overrideRoot();
+    if (!o.isEmpty()) return ensureDir(o);
+    return appRootDir();
+}
+
+void DbPaths::setDataDir(const QString& dir)
+{
+    if (dir.isEmpty()) {
+        overrideRoot().clear();
+        return;
+    }
+    const QString clean = QDir::cleanPath(QDir(dir).absolutePath());
+    // Pointing at the app root IS the Default profile; store nothing so
+    // isDefaultDataDir() stays a plain emptiness check.
+    if (clean == QDir::cleanPath(appRootDir())) {
+        overrideRoot().clear();
+        return;
+    }
+    overrideRoot() = clean;
+}
+
+bool DbPaths::isDefaultDataDir()
+{
+    return overrideRoot().isEmpty();
+}
+
 QString DbPaths::biblesDbPath()
 {
-    return QDir(dataDir()).filePath(QStringLiteral("bibles.sqlite"));
+    return biblesDbPathIn(dataDir());
 }
 
 QString DbPaths::songsDbPath()
 {
-    return QDir(dataDir()).filePath(QStringLiteral("songs.sqlite"));
+    return songsDbPathIn(dataDir());
 }
 
 QString DbPaths::appDbPath()
 {
-    return QDir(dataDir()).filePath(QStringLiteral("app.sqlite"));
+    return appDbPathIn(dataDir());
 }
 
 QString DbPaths::importSentinelPath()
 {
-    return QDir(dataDir()).filePath(QStringLiteral(".imported-v1"));
+    return importSentinelPathIn(dataDir());
 }
 
 QString DbPaths::scheduleHistoryDir()
@@ -54,17 +96,47 @@ QString DbPaths::thumbnailsDir()
 
 QString DbPaths::mediaDir()
 {
-    return ensureDir(QDir(dataDir()).filePath(QStringLiteral("media")));
+    return ensureDir(mediaDirIn(dataDir()));
 }
 
 QString DbPaths::fontsDir()
 {
-    return ensureDir(QDir(dataDir()).filePath(QStringLiteral("fonts")));
+    return ensureDir(fontsDirIn(dataDir()));
 }
 
 QString DbPaths::importStagingDir()
 {
     return ensureDir(QDir(dataDir()).filePath(QStringLiteral(".import-staging")));
+}
+
+QString DbPaths::biblesDbPathIn(const QString& root)
+{
+    return QDir(root).filePath(QStringLiteral("bibles.sqlite"));
+}
+
+QString DbPaths::songsDbPathIn(const QString& root)
+{
+    return QDir(root).filePath(QStringLiteral("songs.sqlite"));
+}
+
+QString DbPaths::appDbPathIn(const QString& root)
+{
+    return QDir(root).filePath(QStringLiteral("app.sqlite"));
+}
+
+QString DbPaths::importSentinelPathIn(const QString& root)
+{
+    return QDir(root).filePath(QStringLiteral(".imported-v1"));
+}
+
+QString DbPaths::mediaDirIn(const QString& root)
+{
+    return QDir(QDir(root).filePath(QStringLiteral("media"))).absolutePath();
+}
+
+QString DbPaths::fontsDirIn(const QString& root)
+{
+    return QDir(QDir(root).filePath(QStringLiteral("fonts"))).absolutePath();
 }
 
 QString DbPaths::relocate(const QString& storedPath, const QString& managedDir)

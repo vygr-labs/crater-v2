@@ -48,6 +48,28 @@ namespace crater {
 //     a URL releases, the player + sink are destroyed immediately — no
 //     grace period (per the chosen GC policy).
 //
+// Transport (play / pause / seek / loop):
+//   Because every surface showing a URL — the audience ProjectionScene, the
+//   NDI scene, the Live and Preview mini-monitors — renders from the SAME
+//   player, transport commands are keyed by source URL and act on that one
+//   player. Pausing the live clip therefore freezes the projection, NDI and
+//   the console monitors together, and a seek lands on all of them on the
+//   same frame. QML reads per-URL state through a MediaTransport object
+//   (MediaTransport.h); the commands below are also callable directly, which
+//   is how Main.qml's keyboard shortcuts reach the live clip.
+//
+//   Loop: subscribers pass the item's saved loop flag on acquire (last writer
+//   wins). Once the operator flips loop from a transport, the entry is
+//   "pinned" and later subscriber preferences no longer overwrite it, so a
+//   Preview re-selecting the same file can't silently undo the toggle. A
+//   fresh go-live (cueForLive) clears the pin and re-seeds the saved flag,
+//   unless the clip was cued in Preview (see markCued).
+//
+//   Volume / mute are global (one audience bus): `volume` is persisted
+//   through SettingsService.mediaVolume (main.cpp syncs it), `muted` is a
+//   session-only master mute. Both apply on top of the per-subscriber
+//   wantsAudio OR, so they never make a muted surface audible.
+//
 // Safety: output sinks are tracked via QPointer so a VideoOutput
 // destroyed without an explicit detach (e.g. window teardown) auto-
 // invalidates rather than leaving a dangling pointer in the broadcast
@@ -56,9 +78,18 @@ class MediaPlaybackService : public QObject
 {
     Q_OBJECT
 
+    // Perceptual 0..1 (slider position). Mapped to a linear gain internally.
+    Q_PROPERTY(double volume READ volume WRITE setVolume NOTIFY volumeChanged)
+    // Session-only master mute for foreground video audio.
+    Q_PROPERTY(bool   muted  READ muted  WRITE setMuted  NOTIFY mutedChanged)
+
 public:
     explicit MediaPlaybackService(QObject* parent = nullptr);
     ~MediaPlaybackService() override;
+
+    // The one instance main() constructs. MediaTransport (a QML-creatable
+    // type, so it can't take constructor arguments) finds the service here.
+    static MediaPlaybackService* instance();
 
     // `loop` sets whether the shared player restarts at end (true, the
     // historical always-loop behavior) or plays once and holds the last frame
@@ -74,6 +105,50 @@ public:
     Q_INVOKABLE void attachOutput(int token, QVideoSink* outSink);
     Q_INVOKABLE void detachOutput(QVideoSink* outSink);
 
+    // ── Transport, keyed by source URL ("file:///<path>", the same string
+    //    subscribers acquire with). Every call is a no-op for a URL with no
+    //    live player, so callers never need to check first.
+    Q_INVOKABLE bool hasSource(const QString& url) const;
+    Q_INVOKABLE void play(const QString& url);
+    Q_INVOKABLE void pause(const QString& url);
+    Q_INVOKABLE void togglePlay(const QString& url);
+    // Back to the first frame, paused (the frame stays on screen rather than
+    // going black, which is what QMediaPlayer::stop() would do).
+    Q_INVOKABLE void stop(const QString& url);
+    Q_INVOKABLE void restart(const QString& url);
+    Q_INVOKABLE void seek(const QString& url, qint64 positionMs);
+    Q_INVOKABLE void skip(const QString& url, qint64 deltaMs);
+    // Operator loop toggle. Pins the entry's loop flag (see header comment).
+    Q_INVOKABLE void setLoopFor(const QString& url, bool loop);
+    // The operator set this clip up from Preview's transport (scrubbed,
+    // paused, skipped, toggled loop). The next go-live keeps that position
+    // and loop choice instead of starting over. Cleared by cueForLive and
+    // forgotten with the entry when its last subscriber releases.
+    Q_INVOKABLE void markCued(const QString& url);
+    // Go-live cue. A clip cued in Preview plays on from where Preview left
+    // it. Anything else rewinds, plays, and resets loop to the item's saved
+    // flag, because Preview rolls clips muted on its own and that drift is
+    // not a choice. A URL with no player yet is fine: its first acquire
+    // starts at 0 anyway.
+    Q_INVOKABLE void cueForLive(const QString& url, bool loop);
+
+    double volume() const { return m_volume; }
+    void   setVolume(double v);
+    bool   muted() const  { return m_muted; }
+    void   setMuted(bool m);
+
+    // C++-only accessors for MediaTransport.
+    QMediaPlayer* playerFor(const QString& url) const;
+    bool          loopFor(const QString& url) const;
+
+signals:
+    // An Entry (player) for `url` came into / went out of existence.
+    void sourceAdded(const QString& url);
+    void sourceRemoved(const QString& url);
+    void loopChanged(const QString& url);
+    void volumeChanged();
+    void mutedChanged();
+
 private:
     struct Subscriber {
         int  token;
@@ -87,17 +162,22 @@ private:
         QList<Subscriber>             subs;
         QList<QPointer<QVideoSink>>   outputs;
         bool                          loop   = true;   // last-writer-wins per URL
+        bool                          loopPinned = false; // operator override
+        bool                          cued   = false;  // set up in Preview
     };
 
     Entry* entryForToken(int token) const;
     Entry* entryForOutput(QVideoSink* outSink) const;
     void   recomputeAudio(Entry& e);
+    void   applyLoop(Entry& e, bool loop);
     void   broadcastFrame(Entry& e, const QVideoFrame& frame);
     void   destroyEntry(const QString& url);
 
     QHash<QString, Entry*> m_byUrl;
     QHash<int, QString>    m_tokenToUrl;
     int                    m_nextToken = 1;
+    double                 m_volume = 1.0;
+    bool                   m_muted  = false;
 };
 
 }  // namespace crater

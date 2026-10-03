@@ -106,6 +106,13 @@ ApplicationWindow {
             root.raise()
             root.requestActivate()
         })
+
+        // Ask-at-startup profile picker (ARCHITECTURE.md §12). The console
+        // has already opened the last-used profile; the picker either keeps
+        // it or restarts into another. Never shown on a launch that came
+        // from a switch, which already says which profile it wants.
+        if (ProfileService.shouldPromptAtStartup)
+            Qt.callLater(function() { AppState.openModal("profilePicker", {}) })
     }
 
     // ── Shutdown ────────────────────────────────────────────────────────
@@ -499,6 +506,9 @@ ApplicationWindow {
     ProjectionWindow {
         id: projectionWindow
         screenIndex: OutputService.selectedScreenIndex
+        // Lets the projection tell when it is aimed at the console's own
+        // display, and stack itself under this window in behind mode.
+        consoleWindow: root
         // Two orthogonal flags drive the projection window's state:
         //
         //   visibleToOperator — "is the audience seeing this right now?"
@@ -579,21 +589,23 @@ ApplicationWindow {
         Component.onCompleted: root._refreshOutputWindowIds()
     }
 
-    // Single-screen go-live: keep the console in front. ProjectionWindow drops
-    // its always-on-top hint when there's only one display (see _singleScreen
-    // there), so the fullscreen audience output renders BEHIND this console
-    // instead of burying it. But the OS still briefly foregrounds a freshly-
-    // shown window, so we shove the console back on top one event-loop tick
-    // later — same Qt.callLater(raise + requestActivate) pattern the launch
-    // code uses, and for the same reason (Windows suppresses focus-stealing).
-    // The operator then surfaces the projection deliberately via its taskbar /
-    // Alt-Tab entry. No-op on multi-monitor (nothing to bury) and in windowed
-    // mode (the small preview never covers the console).
+    // Shared-screen go-live: keep the console in front. ProjectionWindow drops
+    // its always-on-top hint when it shares the console's display (see
+    // sharesConsoleScreen there), and in behind mode ProjectionLayering shows
+    // it without activating and stacks it under this console. This is the
+    // fallback in case the OS foregrounds the freshly shown window anyway: it
+    // shoves the console back on top one event-loop tick later — same
+    // Qt.callLater(raise + requestActivate) pattern the launch code uses, and
+    // for the same reason (Windows suppresses focus-stealing). The operator
+    // then surfaces the projection deliberately by clicking it or via its
+    // taskbar / Alt-Tab entry. No-op when the output has a display of its own
+    // (nothing to bury) and in windowed mode (the small preview never covers
+    // the console).
     Connections {
         target: projectionWindow
         function onVisibleToOperatorChanged() {
             if (!projectionWindow.visibleToOperator) return
-            if (OutputService.screens.length > 1) return
+            if (!projectionWindow.sharesConsoleScreen) return
             if (OutputService.projectionMode !== OutputService.Fullscreen) return
             Qt.callLater(function() {
                 root.raise()
@@ -753,28 +765,73 @@ ApplicationWindow {
 
     // Escape: close modal first; if no modal, deselect schedule item.
     //
-    // Deliberately NOT gated on consoleShortcutsActive — ModalShell has
-    // no Escape handling of its own, so settings / naming / confirm /
-    // import / media-edit all rely on this one to close.
+    // Deliberately NOT gated on consoleShortcutsActive. This is the ONE
+    // Escape binding for every modal: ModalShell has no Escape handling of
+    // its own, and dialogs must not add one (two enabled Escape Shortcuts
+    // are ambiguous and neither fires). AppState.modalEscape routes a
+    // single press through requestCloseModal, so an editor holding unsaved
+    // edits still asks first, and turns a fast second press into the
+    // double-tap discard.
     //
-    // The exclusions are the two surfaces that DO bind Escape: the song
-    // editor (which needs to intercept and warn about unsaved lyrics
-    // rather than let a blunt closeModal discard them) and the theme
-    // editor workspace. Leaving those in made Escape ambiguous, which
-    // is worse than either outcome: the key did nothing at all. Any
-    // future dialog that binds its own Escape belongs in this list.
+    // The theme editor workspace binds its own Escape, so it owns the key
+    // while no modal is up and this one owns it while a modal is open
+    // over the workspace. autoRepeat off: a held Escape is one press, never
+    // a double tap that discards.
     Shortcut {
         sequence: "Escape"
-        enabled: AppState.activeModal !== "songEditor"
-              && AppState.workspaceMode === ""
+        autoRepeat: false
+        enabled: AppState.activeModal !== "" || AppState.workspaceMode === ""
         onActivated: {
             if (AppState.activeModal !== "") {
-                // Lets an editor holding unsaved edits ask first.
-                AppState.requestCloseModal()
+                AppState.modalEscape()
+            } else if (AppState.isTrailingEscape()) {
+                // Second half of a double tap that already closed a
+                // dialog. Leave the schedule selection alone.
+            } else if (AppState.clearActiveLibrarySelection()) {
+                // First Escape with library focus drops the checked rows
+                // of the active tab. The schedule row stays selected until
+                // the next Escape.
+            } else if (AppState.activeFocusPanel === "schedule"
+                       && AppState.selectedScheduleIndices.length > 1) {
+                // Same staging for the schedule: drop the multi-selection
+                // back to the anchor row first.
+                AppState.collapseScheduleSelection()
             } else if (AppState.selectedScheduleIndex >= 0) {
                 AppState.selectScheduleItem(-1)
             }
         }
+    }
+
+    // Ctrl+Enter twice = save the open dialog and close it, through the
+    // dialog's own save path (AppState.saveAndCloseModal). Gated on
+    // dialogOpen so the command palette keeps Ctrl+Enter as "go live".
+    // autoRepeat off for the same reason as Escape above.
+    Shortcut {
+        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        autoRepeat: false
+        enabled: AppState.dialogOpen
+        onActivated: AppState.modalSaveTap()
+    }
+
+    // F1 = the keyboard shortcut reference (ShortcutsDialog). Toggles, and
+    // only opens over nothing: there is one modal slot, so opening it over
+    // an editor would throw the editor's unsaved edits away.
+    Shortcut {
+        sequence: "F1"
+        enabled: AppState.activeModal === "" || AppState.activeModal === "shortcuts"
+        onActivated: AppState.toggleShortcutHelp()
+    }
+
+    // Ctrl+A: select every row of whichever list owns the keyboard (the
+    // active library tab or the schedule). Only reaches here when no text
+    // field has focus: a focused TextInput claims Ctrl+A for its own
+    // select-all through ShortcutOverride, so typing never loses it. The
+    // library search box forwards Ctrl+A itself while it is empty (see
+    // TabSearchBar), since that is where the keyboard usually sits.
+    Shortcut {
+        sequence: "Ctrl+A"
+        enabled: AppState.consoleShortcutsActive
+        onActivated: AppState.requestSelectAll()
     }
 
     // Delete: prompt to remove the selected schedule item(s) — only when the
@@ -811,12 +868,9 @@ ApplicationWindow {
                     title:       qsTr("Remove %1 items?").arg(indices.length),
                     body:        qsTr("This will remove %1 selected items from the schedule.").arg(indices.length),
                     confirmText: qsTr("Remove"),
-                    onConfirm:   function() {
-                        for (let k = 0; k < indices.length; k++) {
-                            ScheduleService.removeAt(indices[k])
-                        }
-                        AppState.clearScheduleSelection()
-                    }
+                    // One batch call: one schedule change, and the live
+                    // pointer is carried past the removed rows.
+                    onConfirm:   function() { AppState.removeScheduleIndices(indices) }
                 })
             }
         }
@@ -880,6 +934,66 @@ ApplicationWindow {
         enabled: AppState.consoleShortcutsActive
               && AppState.activeFocusPanel === "live"
         onActivated: AppState.liveScrubDown()
+    }
+
+    // ── Live video transport ────────────────────────────────────────────
+    // Bound only while the committed live item is a video, so none of these
+    // exist the rest of the time. All of them drive the LIVE clip (the one
+    // the audience output plays), never the Preview clip. Keys are picked to
+    // stay clear of everything else the console binds: Space and plain or
+    // Ctrl+arrows already mean typing / page navigation, so seeking rides
+    // Alt+arrows, which no text field uses. Ctrl+M is the editors' view
+    // toggle, but those are modals and consoleShortcutsActive is false while
+    // one is open, so the two bindings are never enabled together.
+    //   Ctrl+P          play / pause
+    //   Ctrl+Shift+P    stop (rewind to the first frame, paused)
+    //   Alt+Left/Right  back / forward 10 s
+    //   Alt+Home        restart from the top
+    //   Alt+Up/Down     output volume up / down 10 %
+    //   Ctrl+M          mute / unmute
+    readonly property bool _liveVideoKeys:
+        AppState.consoleShortcutsActive && AppState.liveVideoUrl.length > 0
+    Shortcut {
+        sequence: "Ctrl+P"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.togglePlay(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+P"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.stop(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Alt+Left"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.skip(AppState.liveVideoUrl, -10000)
+    }
+    Shortcut {
+        sequence: "Alt+Right"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.skip(AppState.liveVideoUrl, 10000)
+    }
+    Shortcut {
+        sequence: "Alt+Home"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.restart(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Alt+Up"
+        enabled: root._liveVideoKeys
+        onActivated: SettingsService.mediaVolume =
+                         Math.min(1, Math.round((SettingsService.mediaVolume + 0.1) * 100) / 100)
+    }
+    Shortcut {
+        sequence: "Alt+Down"
+        enabled: root._liveVideoKeys
+        onActivated: SettingsService.mediaVolume =
+                         Math.max(0, Math.round((SettingsService.mediaVolume - 0.1) * 100) / 100)
+    }
+    Shortcut {
+        sequence: "Ctrl+M"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.muted = !MediaPlaybackService.muted
     }
 
     // Shift+Arrow is the same dispatch with the extend flag set. It needs its

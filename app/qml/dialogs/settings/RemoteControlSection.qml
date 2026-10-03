@@ -32,21 +32,12 @@ Item {
             // a working feature. Delete this whole block (down to and
             // including the spacer Item that follows it) to remove — see
             // BrowserCastService.h.
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
-                Column {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    Text { text: qsTr("Cast to TV browser"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Serve the live projection to a TV or phone browser over Wi-Fi"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Cast to TV browser")
+                description: qsTr("Serve the live projection to a TV or phone browser over Wi-Fi")
                 // Bound to BrowserCastService.listening, so if start() fails
                 // (e.g. no free port) the switch falls back to off on its own.
                 ToggleSwitch {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: BrowserCastService.listening
                     onToggled: {
                         if (BrowserCastService.listening) BrowserCastService.stop()
@@ -159,14 +150,10 @@ Item {
             // ── CONNECTION ───────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Connection") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Enable remote control"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Allow a phone or tablet to control playback over Wi-Fi"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Enable remote control")
+                description: qsTr("Allow a phone or tablet to control playback over Wi-Fi")
                 ToggleSwitch {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: root.featureEnabled
                     opacity: 0.45
                     enabled: false
@@ -175,14 +162,9 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Port"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
+            SettingRow {
+                title: qsTr("Port")
                 Rectangle {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 100; height: 30
                     radius: 0
                     color: Theme.color.canvas
@@ -207,14 +189,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Require password"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Devices must enter a code before they can pair"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Require password")
+                description: qsTr("Devices must enter a code before they can pair")
                 ToggleSwitch {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: root.requirePassword
                     opacity: 0.45
                     enabled: false

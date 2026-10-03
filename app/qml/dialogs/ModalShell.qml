@@ -6,7 +6,14 @@ import QtQuick
 // Open/close lifecycle is owned by AppState + ModalLayer's Loader. ModalShell
 // only handles the *visual* of being open: fade-in on instantiation, and
 // translating backdrop / X clicks into AppState.requestCloseModal() calls,
-// which let a dialog with unsaved edits (AppState.modalCloseOwner) object.
+// which let a dialog with unsaved edits object.
+//
+// Every dialog registers itself as AppState.modalCloseOwner on creation. A
+// dialog opts into the shared close gestures by defining, on its root:
+//   function requestClose()  ask before unsaved edits are dropped
+//   function requestSave()   run its Save button's own save (with its
+//                            validation) for the Ctrl+Enter double tap
+// Neither is required. See AppState's "Double-tap dialog gestures".
 Item {
     id: root
 
@@ -39,7 +46,10 @@ Item {
     // closed() once the exit animation has run its Theme.motion.normal course
     // — this is the "way to delay AppState.closeModal" the old note wanted.
     property bool _shown: false
-    Component.onCompleted: _shown = true
+    Component.onCompleted: {
+        _shown = true
+        AppState.modalCloseOwner = root
+    }
     onShowChanged: {
         _shown = show
         if (!show) closeTimer.restart()
@@ -55,7 +65,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: root.dimBackdrop ? "#000000" : "transparent"
-        opacity: root._shown ? (root.dimBackdrop ? 0.45 : 0.0) : 0.0
+        opacity: root._shown ? (root.dimBackdrop ? 0.7 : 0.0) : 0.0
         Behavior on opacity {
             NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic }
         }
@@ -66,11 +76,52 @@ Item {
         }
     }
 
+    // Room the docked live controls panel takes beside the card (see
+    // AppState.liveDockReservedWidth / LiveControlsDock.qml). Card and panel
+    // are centred together as one pair, and the panel attaches to the
+    // card's right edge. The reservation is dropped when honouring it would
+    // shrink the card below 80% of its design width (never asking for less
+    // than 640px): a cramped editor is worse than a panel the operator can
+    // fold to a thin tab or drag aside.
+    readonly property int _dockReserve: {
+        const want = AppState.liveDockReservedWidth
+        if (want <= 0) return 0
+        const minCard = Math.min(root.dialogWidth, Math.max(640, root.dialogWidth * 0.8))
+        return (root.width - want - 48 >= minCard) ? want : 0
+    }
+
+    // Tell the panel where to attach. Only while this shell is the one on
+    // screen and the pair fits; an empty rect sends the panel to its
+    // window-edge fallback.
+    Binding {
+        target: AppState
+        property: "modalCardRect"
+        value: (root.show && root._dockReserve > 0)
+               ? Qt.rect(card.x, card.y, card.width, card.height)
+               : Qt.rect(0, 0, 0, 0)
+        restoreMode: Binding.RestoreNone
+    }
+    Component.onDestruction: AppState.modalCardRect = Qt.rect(0, 0, 0, 0)
+
+    // Eased copy of the reservation, so folding or docking the panel glides
+    // the card over while a window resize still tracks instantly.
+    property real _dockReserveEased: _dockReserve
+    Behavior on _dockReserveEased {
+        NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic }
+    }
+
+    Item {
+        id: cardArea
+        anchors.fill: parent
+    }
+
     // Card
     Rectangle {
         id: card
-        anchors.centerIn: parent
-        width: Math.min(root.dialogWidth, root.width - 48)
+        anchors.centerIn: cardArea
+        // Shifted left by half the panel so the card + panel pair is centred.
+        anchors.horizontalCenterOffset: -root._dockReserveEased / 2
+        width: Math.min(root.dialogWidth, cardArea.width - root._dockReserve - 48)
         height: Math.min(root.dialogHeight, root.height - 48)
         // Squared corners — the modal frame intentionally drops Theme.radius.lg
         // so its chrome reads as a flat, data-dense surface rather than a
@@ -124,7 +175,7 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 48
+            height: Theme.d(48)
 
             Text {
                 anchors.left: parent.left

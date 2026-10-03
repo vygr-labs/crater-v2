@@ -844,6 +844,82 @@ void SongService::toggleFavorite(qint64 id)
     }
 }
 
+int SongService::destroyMany(QVariantList ids)
+{
+    if (!m_impl || ids.isEmpty()) return 0;
+    int removed = 0;
+    try {
+        db::Transaction tx(m_impl->conn);
+        for (const QVariant& v : ids) {
+            bool ok = false;
+            const qint64 id = v.toLongLong(&ok);
+            if (!ok || id <= 0) continue;
+
+            // Skip ids that are already gone so the returned count is honest.
+            // Single-row read: reset after, per the WAL invariant.
+            auto& exists = m_impl->existsSong;
+            exists.reset();
+            exists.bind(1, id);
+            const bool found = exists.step();
+            exists.reset();
+            if (!found) continue;
+
+            // Same ordering rule as destroy(): flatten the OLD lyrics before
+            // any mutation so the FTS 'delete' matches what was inserted.
+            const QString oldLyrics = m_impl->fetchFlattenedLyrics(id);
+            auto& delFts = m_impl->deleteFtsForSong;
+            delFts.reset();
+            delFts.bind(1, oldLyrics);
+            delFts.bind(2, id);
+            delFts.step();
+
+            auto& delSong = m_impl->deleteSong;
+            delSong.reset();
+            delSong.bind(1, id);
+            delSong.step();
+            ++removed;
+        }
+        tx.commit();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "SongService::destroyMany():" << e.message();
+        return 0;   // Transaction's destructor rolled the whole batch back
+    }
+    if (removed > 0) invalidateCache();
+    return removed;
+}
+
+int SongService::setThemeForSongs(QVariantList ids, qint64 themeId)
+{
+    if (!m_impl || ids.isEmpty()) return 0;
+    int updated = 0;
+    try {
+        // Prepared per call rather than cached on Impl: this runs once per
+        // bulk action, not per keystroke.
+        auto stmt = m_impl->conn.prepare(QStringLiteral(
+            "UPDATE songs SET theme_id = ?, updated_at = ? WHERE id = ?"));
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        db::Transaction tx(m_impl->conn);
+        for (const QVariant& v : ids) {
+            bool ok = false;
+            const qint64 id = v.toLongLong(&ok);
+            if (!ok || id <= 0) continue;
+            stmt.reset();
+            if (themeId > 0) stmt.bind(1, themeId);
+            else             stmt.bindNull(1);   // NULL = "use default for kind"
+            stmt.bind(2, nowMs);
+            stmt.bind(3, id);
+            stmt.step();
+            ++updated;
+        }
+        tx.commit();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "SongService::setThemeForSongs():" << e.message();
+        return 0;
+    }
+    if (updated > 0) invalidateCache();
+    return updated;
+}
+
 qint64 SongService::duplicate(qint64 id)
 {
     if (!m_impl || id <= 0) return 0;

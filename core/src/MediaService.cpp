@@ -99,7 +99,7 @@ QString sniffMediaType(const QString& path)
 // Probe a PDF on disk and return its page count. Returns 0 when the document
 // can't be opened (corrupt / encrypted). Used at import time so the row's
 // page_count column is populated once, eliminating a per-render probe.
-int probePdfPageCount(const QString& path)
+int probePdfPageCountImpl(const QString& path)
 {
     QPdfDocument doc;
     const auto err = doc.load(path);
@@ -217,7 +217,7 @@ std::optional<PendingImport> tryStageOneFile(const QString& raw,
 
     int pageCount = 1;
     if (type == QStringLiteral("pdf")) {
-        pageCount = probePdfPageCount(dstClean);
+        pageCount = probePdfPageCountImpl(dstClean);
         if (pageCount <= 0) {
             QFile::remove(dstClean);
             return fail(QStringLiteral("PDF probe returned 0 pages (corrupt or encrypted)"),
@@ -663,6 +663,16 @@ int MediaService::importPaths(QStringList paths, bool confirmLarge)
     return paths.size();   // queued count; caller can listen to importFinished
 }
 
+QString MediaService::sniffFileType(const QString& path)
+{
+    return sniffMediaType(path);
+}
+
+int MediaService::probePdfPageCount(const QString& path)
+{
+    return probePdfPageCountImpl(path);
+}
+
 qint64 MediaService::importPathSync(QString path)
 {
     m_lastImportError.clear();
@@ -751,6 +761,62 @@ void MediaService::remove(qint64 id)
     } catch (const db::Error& e) {
         qWarning().noquote() << "MediaService::remove():" << e.message();
     }
+}
+
+int MediaService::removeMany(QVariantList ids)
+{
+    if (!m_impl || ids.isEmpty()) return 0;
+
+    // Resolve every row's managed path up front, closing the cursor after
+    // each single-row read so the DELETE transaction below can take the
+    // write lock (see the WAL invariant in db/Statement.h).
+    QList<qint64>  rowIds;
+    QStringList    paths;
+    try {
+        auto& sel = m_impl->selectById;
+        for (const QVariant& v : ids) {
+            bool ok = false;
+            const qint64 id = v.toLongLong(&ok);
+            if (!ok || id <= 0 || rowIds.contains(id)) continue;
+            sel.reset();
+            sel.bind(1, id);
+            if (sel.step()) {
+                rowIds.append(id);
+                paths.append(db::DbPaths::relocate(sel.columnText(1), m_impl->mediaDir));
+            }
+            sel.reset();
+        }
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::removeMany() read:" << e.message();
+        return 0;
+    }
+    if (rowIds.isEmpty()) return 0;
+
+    try {
+        db::Transaction tx(m_impl->conn);
+        auto& del = m_impl->deleteItem;
+        for (qint64 id : rowIds) {
+            del.reset();
+            del.bind(1, id);
+            del.step();
+        }
+        tx.commit();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::removeMany():" << e.message();
+        return 0;   // rolled back: no rows gone, so leave every file in place
+    }
+
+    // Best-effort file cleanup, same as remove(): the rows are already gone,
+    // so a failure here only leaves an orphan for sweepOrphans() to reclaim.
+    const QDir thumbs(QDir(db::DbPaths::mediaDir()).filePath(QStringLiteral("thumbs")));
+    for (int i = 0; i < rowIds.size(); ++i) {
+        if (!paths[i].isEmpty()) QFile::remove(paths[i]);
+        const QString thumb = thumbs.filePath(QStringLiteral("%1.jpg").arg(rowIds[i]));
+        if (QFile::exists(thumb)) QFile::remove(thumb);
+    }
+
+    invalidateCache();
+    return static_cast<int>(rowIds.size());
 }
 
 qint64 MediaService::duplicate(qint64 id)
@@ -1070,7 +1136,7 @@ int MediaService::pdfPageCount(qint64 mediaId)
     // only if the column was 0 (legacy rows before V005, or an import that
     // failed mid-probe).
     if (item.pageCount > 0) return item.pageCount;
-    return probePdfPageCount(item.path);
+    return probePdfPageCountImpl(item.path);
 }
 
 QFuture<QImage> MediaService::renderPdfPage(qint64  mediaId,

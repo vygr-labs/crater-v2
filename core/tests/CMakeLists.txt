@@ -232,3 +232,45 @@ target_link_libraries(test_media_import_report PRIVATE
 )
 
 add_test(NAME media_import_report COMMAND test_media_import_report)
+
+# -- Bulk actions -- library and schedule multi-select -----------------------
+# The one-signal batch calls (SongService::destroyMany / setThemeForSongs,
+# MediaService::removeMany, ScheduleService::removeMany / reorder) that
+# replace per-item loops in QML.
+qt_add_executable(test_bulk_actions
+    test_bulk_actions.cpp
+)
+
+target_link_libraries(test_bulk_actions PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# -- Profiles -- ARCHITECTURE.md §12 ---------------------------------------
+# Path routing under a non-default profile, the ZIP64 / streaming zip
+# additions, and the .craterprofile round trip: export, inspect, import as a
+# new profile with every cross-reference remapped, a second merge that adds
+# nothing, partial exports, hostile archives and profile duplication. All
+# inside the test-mode AppDataLocation, never the Default profile.
+qt_add_executable(test_profiles
+    test_profiles.cpp
+)
+
+target_link_libraries(test_profiles PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME bulk_actions COMMAND test_bulk_actions)
+
+# Drives the archive engine, zip wrapper and db/ wrappers directly, all
+# private to crater-core.
+target_include_directories(test_profiles PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME profiles COMMAND test_profiles)

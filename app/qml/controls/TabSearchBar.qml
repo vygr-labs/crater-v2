@@ -479,7 +479,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 36
+        height: Theme.d(36)
         radius: 0
         color: Theme.color.canvas
         border.color: inputField.activeFocus ? Theme.color.brand : Theme.color.borderStrong
@@ -500,7 +500,7 @@ Item {
             // just the icon (~16px) — a fixed width would clip the chevron on
             // songs or leave wasted padding elsewhere.
             width: modeRow.implicitWidth + 10
-            height: 28
+            height: Theme.d(28)
             radius: 0
             // Songs and Scripture get a real trigger; others render as a static icon.
             readonly property bool interactive:
@@ -682,6 +682,24 @@ Item {
                     AppState.clearLive()
                     event.accepted = true
                     return
+                }
+
+                // Ctrl+A — the field claims it through ShortcutOverride, so
+                // Main.qml's select-all-rows Shortcut never sees it while the
+                // keyboard sits here, which is most of the time. With nothing
+                // typed there is no text to select, so hand it to the list
+                // instead. With text, the field keeps its own select-all. If
+                // the operator last worked in the schedule, it goes there
+                // whatever the box holds, same as the arrow keys below.
+                if ((event.modifiers & Qt.ControlModifier)
+                    && event.key === Qt.Key_A
+                    && !root.isControlledMode
+                    && (inputField.text.length === 0
+                        || AppState.activeFocusPanel === "schedule")) {
+                    if (AppState.requestSelectAll()) {
+                        event.accepted = true
+                        return
+                    }
                 }
 
                 // Media tab + grid view: Left/Right step the grid by one

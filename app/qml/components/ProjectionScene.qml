@@ -243,6 +243,7 @@ Item {
         if (scene._style === "cut" || scene._ms <= 0) {
             previousLayer.opacity = 0
             currentLayer.opacity  = 1
+            scene._releasePrevious()
         } else {
             // Reset opacities to their start values BEFORE restart() so the
             // animation interpolates from a known state regardless of where
@@ -255,6 +256,21 @@ Item {
                 transitionParallel.restart()
             }
         }
+    }
+
+    // Empty the outgoing layer once it has faded out. Until this existed the
+    // previous layer kept its snapshot at opacity 0 until the NEXT
+    // transition, so a video that went off air kept its MediaPlaybackService
+    // subscription and carried on decoding invisibly (and a later go-live of
+    // the same file joined a player that had kept running). Called on a cut
+    // straight away, and on a fade when the animation completes on its own.
+    // An interrupted fade needs nothing: the next promotion overwrites the
+    // previous layer anyway.
+    function _releasePrevious() {
+        previousLayer.layerItem = ({})
+        previousLayer.layerKind = ""
+        previousLayer.layerPage = 0
+        previousLayer.layerCrop = Qt.rect(0, 0, 1, 1)
     }
 
     Connections {
@@ -284,6 +300,7 @@ Item {
     // animation that can be reused across many transitions.
     ParallelAnimation {
         id: transitionParallel
+        onFinished: scene._releasePrevious()
         NumberAnimation {
             target: previousLayer; property: "opacity"; to: 0
             duration: scene._ms; easing.type: Easing.InOutCubic
@@ -300,6 +317,7 @@ Item {
     // Math.max(1, …) avoids a 0-duration phase when _ms is very small.
     SequentialAnimation {
         id: transitionSequence
+        onFinished: scene._releasePrevious()
         NumberAnimation {
             target: previousLayer; property: "opacity"; to: 0
             duration: Math.max(1, scene._ms / 2); easing.type: Easing.InOutCubic

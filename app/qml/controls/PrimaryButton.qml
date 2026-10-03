@@ -48,7 +48,7 @@ Rectangle {
       : variant === "destructive" ? "#ffffff"
       : (root.color.hslLightness > 0.45 ? Theme.color.brandInk : "#ffffff")
 
-    implicitHeight: 36
+    implicitHeight: Theme.d(36)
     implicitWidth: contentRow.implicitWidth + Theme.space.xl * 2
 
     // Squared by design — matches the rest of the dialog/console chrome.

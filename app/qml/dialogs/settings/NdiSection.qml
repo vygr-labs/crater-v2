@@ -162,14 +162,10 @@ Item {
             // ── BROADCAST ────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Broadcast") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Enable NDI output"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Broadcast projection as an NDI source on the local network"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Enable NDI output")
+                description: qsTr("Broadcast projection as an NDI source on the local network")
                 ToggleSwitch {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: NdiService.sending
                     enabled: NdiService.available
                     opacity: NdiService.available ? 1.0 : 0.45
@@ -181,14 +177,9 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Stream name"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
+            SettingRow {
+                title: qsTr("Stream name")
                 Rectangle {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220; height: 30
                     radius: 0
                     color: Theme.color.canvas
@@ -221,14 +212,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Pixel format"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("UYVY halves bandwidth; applies on next broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Pixel format")
+                description: qsTr("UYVY halves bandwidth; applies on next broadcast")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: root._formatOptions
@@ -238,14 +225,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Resolution"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Downscale the broadcast; applies on next broadcast"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Resolution")
+                description: qsTr("Downscale the broadcast; applies on next broadcast")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 220
                     searchable: false
                     options: root._resolutionOptions
@@ -266,25 +249,13 @@ Item {
             // own scene, so there is nothing separate to suppress — better to
             // disable the row and say why than to ship a toggle that quietly
             // does nothing.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: hideMediaToggle.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    ElidedText { text: qsTr("Hide pictures and video"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                                 width: parent.width }
-                    ElidedText { text: SettingsService.useHeadlessNdi
-                                     ? qsTr("Send a blank frame while an image or video is live. Lyrics and scripture still go out.")
-                                     : qsTr("Needs the headless renderer, below — the legacy path mirrors the audience screen as-is.")
-                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                                 width: parent.width }
-                }
+            SettingRow {
+                title: qsTr("Hide pictures and video")
+                description: SettingsService.useHeadlessNdi
+                    ? qsTr("Send a blank frame while an image or video is live. Lyrics and scripture still go out.")
+                    : qsTr("Needs the headless renderer, below — the legacy path mirrors the audience screen as-is.")
                 ToggleSwitch {
                     id: hideMediaToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     enabled: SettingsService.useHeadlessNdi
                     opacity: SettingsService.useHeadlessNdi ? 1.0 : 0.45
                     value: SettingsService.ndiHideMedia
@@ -293,14 +264,10 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Include audio"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Tap the projection's audio output and broadcast it"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Include audio")
+                description: qsTr("Tap the projection's audio output and broadcast it")
                 Row {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     spacing: Theme.space.md
 
                     Badge {
@@ -335,23 +302,11 @@ Item {
             // the operator closes it.
             SettingsSectionHeader { title: qsTr("Rendering") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: dualToggle.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    ElidedText { text: qsTr("Dual output mode"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                                 width: parent.width }
-                    ElidedText { text: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
-                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                                 width: parent.width }
-                }
+            SettingRow {
+                title: qsTr("Dual output mode")
+                description: qsTr("Render NDI with its own theme assignment. Costs slightly more GPU while broadcasting.")
                 ToggleSwitch {
                     id: dualToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: SettingsService.outputMode === "dual"
                     onToggled: SettingsService.outputMode =
                         (SettingsService.outputMode === "dual" ? "single" : "dual")
@@ -363,23 +318,11 @@ Item {
             // and async-reads back to NDI at 60 Hz adaptive. Flipping this off
             // falls back to the legacy `grabToImage` path on the NdiCanvas Item;
             // intended only if a particular GPU misbehaves with QRhi readback.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: headlessToggle.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    ElidedText { text: qsTr("Headless renderer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                                 width: parent.width }
-                    ElidedText { text: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
-                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                                 width: parent.width }
-                }
+            SettingRow {
+                title: qsTr("Headless renderer")
+                description: qsTr("Capture frames via GPU texture readback. Smoother and lower-CPU than the legacy path.")
                 ToggleSwitch {
                     id: headlessToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     value: SettingsService.useHeadlessNdi
                     onToggled: SettingsService.useHeadlessNdi = !SettingsService.useHeadlessNdi
                 }
@@ -393,23 +336,11 @@ Item {
             // only — the legacy grabToImage fallback ignores it — so it's
             // disabled when the headless renderer is off. Applies on the next
             // broadcast start, matching the headless toggle's lifecycle.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column {
-                    anchors.left: parent.left
-                    anchors.right: onDemandToggle.left
-                    anchors.rightMargin: Theme.space.md
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-                    ElidedText { text: qsTr("On-demand rendering (low CPU)"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium
-                                 width: parent.width }
-                    ElidedText { text: qsTr("Only render when the scene changes; idle between updates. Caps at 30 Hz. Best for static lower-thirds. Applies on next broadcast start.")
-                                 color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize
-                                 width: parent.width }
-                }
+            SettingRow {
+                title: qsTr("On-demand rendering (low CPU)")
+                description: qsTr("Only render when the scene changes; idle between updates. Caps at 30 Hz. Best for static lower-thirds. Applies on next broadcast start.")
                 ToggleSwitch {
                     id: onDemandToggle
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     enabled: SettingsService.useHeadlessNdi
                     opacity: SettingsService.useHeadlessNdi ? 1.0 : 0.45
                     value: SettingsService.ndiOnDemand

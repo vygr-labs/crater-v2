@@ -15,7 +15,7 @@ import Crater
 //   confirm.openConfirm()
 Rectangle {
     id: root
-    color: "#000000B0"
+    color: "#B0000000"   // Qt reads 8-digit hex as #AARRGGBB
     visible: false
     z: 200
     property string title: ""

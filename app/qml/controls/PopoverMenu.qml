@@ -253,7 +253,11 @@ Item {
     Rectangle {
         id: submenuBody
         visible: root._submenuRow >= 0 && root.active
-        x: Math.max(8, Math.min(root._submenuX, root.width - width - 8))
+        // Opens to the right of its row, or to the left of the menu when
+        // the window edge leaves no room (gear menus on the right panel).
+        x: root._submenuX + width + 8 <= root.width
+           ? root._submenuX
+           : Math.max(8, body.x - width + 4)
         y: Math.max(8, Math.min(root._submenuY, root.height - height - 8))
         // Same dynamic-sizing pattern as the main body — 220 is the floor,
         // submenus widen to fit their longest row when needed.

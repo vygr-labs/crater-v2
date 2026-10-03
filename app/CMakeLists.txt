@@ -20,6 +20,11 @@ qt_add_executable(crater
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp
     src/MediaPlaybackService.h
+    # QML-creatable per-URL transport view (play state, position, seek) over
+    # MediaPlaybackService's shared players. Drives the Live / Preview video
+    # controls in MediaTransportBar.qml.
+    src/MediaTransport.cpp
+    src/MediaTransport.h
     src/NdiService.cpp
     src/NdiService.h
     src/NdiAbi.h
@@ -32,6 +37,11 @@ qt_add_executable(crater
     # Compiles to nothing on other platforms.
     src/WindowChrome.cpp
     src/WindowChrome.h
+    # Keeps the projection stacked under the console when both share a
+    # display (Settings > Projection, behind the console). Win32 z-order
+    # rules Qt flags cannot express. Inert on other platforms.
+    src/ProjectionLayering.cpp
+    src/ProjectionLayering.h
     # UI localization runtime — loads crater_<code>.qm catalogs and swaps the
     # language live (QTranslator + QQmlEngine::retranslate). App layer because
     # live retranslation needs the engine; crater-core stays Quick-free (§1).
@@ -112,6 +122,10 @@ qt_add_qml_module(crater
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
         qml/controls/Combobox.qml
+        qml/controls/SelectCheck.qml
+        qml/controls/SelectionBar.qml
+        qml/controls/SelectModeToggle.qml
+        qml/controls/CheckRow.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
@@ -125,6 +139,7 @@ qt_add_qml_module(crater
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
         qml/components/ThemedMonitor.qml
+        qml/components/MediaTransportBar.qml
         qml/components/ThemePreview.qml
         qml/components/LayoutStrip.qml
         qml/components/LogoView.qml
@@ -137,6 +152,7 @@ qt_add_qml_module(crater
         qml/components/ColorSwatchInput.qml
         qml/components/MediaPickerPopover.qml
         qml/components/ConfirmationOverlay.qml
+        qml/components/LibrarySelection.qml
 
         # ── Theme editor workspace + editor child components ─────────
         qml/workspaces/ThemeEditorWorkspace.qml
@@ -167,6 +183,7 @@ qt_add_qml_module(crater
         qml/panels/SchedulePanel.qml
         qml/panels/PreviewPanel.qml
         qml/panels/LivePanel.qml
+        qml/panels/LiveControlsDock.qml
         qml/panels/LibraryTabBar.qml
         qml/panels/LibrarySidebar.qml
         qml/panels/LibraryContent.qml
@@ -197,9 +214,14 @@ qt_add_qml_module(crater
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
         qml/dialogs/AiDesignDialog.qml
+        qml/dialogs/ShortcutsDialog.qml
+        qml/dialogs/ProfileExportDialog.qml
+        qml/dialogs/ProfileImportDialog.qml
+        qml/dialogs/ProfilePickerDialog.qml
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml
+        qml/dialogs/settings/SettingRow.qml
         qml/dialogs/settings/AppearanceSection.qml
         qml/dialogs/settings/ProjectionSection.qml
         qml/dialogs/settings/ScriptureSection.qml
@@ -209,6 +231,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/UpdatesSection.qml
+        qml/dialogs/settings/ProfilesSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
 )
 

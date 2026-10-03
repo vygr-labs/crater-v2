@@ -3,6 +3,7 @@
 #include "crater/value/UserFont.h"
 
 #include <QList>
+#include <QByteArrayView>
 #include <QObject>
 #include <QString>
 #include <QtQmlIntegration>
@@ -67,6 +68,11 @@ public:
     Q_INVOKABLE QString filePathForFamily(QString family);
 
     Q_INVOKABLE QString lastError() const;
+
+    // The TTF/OTF magic-byte check importFontFile runs, for importers that
+    // write into a profile other than the one this service has open.
+    // Returns ".ttf" / ".otf", or empty for anything else.
+    static QString sniffFontExtension(QByteArrayView head);
 
     // Removes a previously-imported font: unregisters it from
     // QFontDatabase, deletes the on-disk file, and DELETEs the row.

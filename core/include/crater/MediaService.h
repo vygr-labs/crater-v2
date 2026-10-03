@@ -80,6 +80,13 @@ public:
     Q_INVOKABLE void remove(qint64 id);
     Q_INVOKABLE void toggleFavorite(qint64 id);
 
+    // Bulk remove behind the media tab's multi-select. Same per-row work as
+    // remove() (row, managed file, video thumb) but the rows go in one
+    // transaction and allMediaChanged fires ONCE, so the grid rebuilds once
+    // instead of once per item. Files are deleted only after the commit.
+    // Returns how many rows were removed (0 when the transaction rolled back).
+    Q_INVOKABLE int removeMany(QVariantList ids);
+
     // One-shot reclaim of orphaned files in AppDataLocation/media/ that
     // no media table row references. Runs synchronously and is safe at
     // any time, but the canonical call site is once at startup before
@@ -182,6 +189,14 @@ public:
     // startup. No-op when the library holds no PDF to warm with (in which
     // case there is nothing for the operator to view yet either).
     Q_INVOKABLE void prewarmPdf();
+
+    // The §5.1 boundary checks, exposed for importers that write into a
+    // profile other than the one this service has open (a profile archive
+    // imported as a new profile). sniffFileType classifies a file by its
+    // magic bytes: "image", "video", "pdf", or empty when unsupported.
+    // probePdfPageCount returns 0 for a PDF that will not open.
+    static QString sniffFileType(const QString& path);
+    static int     probePdfPageCount(const QString& path);
 
     // Maximum size of a single import in bytes. Configurable so tests / power
     // users can adjust; defaults to 4 GiB per §5.1.

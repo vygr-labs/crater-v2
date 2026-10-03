@@ -64,6 +64,10 @@ public:
     // attempting Save. Returns an empty list when tokens are well-formed.
     Q_INVOKABLE QStringList validateTokens(QVariantMap tokens);
 
+    // The same check without an instance, for the profile importer, which
+    // validates themes bound for a profile this service does not have open.
+    static QStringList validateThemeTokens(const QVariantMap& tokens);
+
     // ── Layouts (tokens v3) ─────────────────────────────────────────────
     // Thin QML-facing wrappers over crater::tokens (crater/ThemeTokens.h),
     // which is where the reasoning lives. They are on ThemeService purely

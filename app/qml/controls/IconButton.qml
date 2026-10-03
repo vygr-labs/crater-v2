@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Square hover-highlight button with a Lucide icon.
 // Usage: IconButton { iconName: "settings"; iconSize: Theme.icon.md }
@@ -9,6 +10,13 @@ Item {
     property color  tint: Theme.color.textSecondary
     property color  tintHover: Theme.color.textPrimary
     property real   iconSize: Theme.icon.md
+    // Optional hover hint. Empty (the default) shows nothing, so existing
+    // icon buttons are unchanged. 400 ms delay, same as ElidedText.
+    property string tooltip: ""
+
+    ToolTip.visible: tooltip.length > 0 && ma.containsMouse
+    ToolTip.text:    tooltip
+    ToolTip.delay:   400
 
     // `enabled` is inherited from Item — setting it false on the caller side
     // propagates to all descendants (including the MouseArea below), so we
@@ -16,8 +24,8 @@ Item {
 
     signal clicked()
 
-    implicitWidth: 30
-    implicitHeight: 30
+    implicitWidth: Theme.d(30)
+    implicitHeight: Theme.d(30)
 
     opacity: enabled ? 1.0 : 0.4
 

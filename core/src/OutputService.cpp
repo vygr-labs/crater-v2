@@ -2,6 +2,8 @@
 #include "crater/ThemeService.h"
 #include "crater/value/Theme.h"
 
+#include "profile/ProfileSettings.h"
+
 #include <QDebug>
 #include <QGuiApplication>
 #include <QJsonDocument>
@@ -138,6 +140,13 @@ struct OutputService::Impl
     OutputService::ProjectionMode  mode            = OutputService::Fullscreen;
     bool                           modeIsUserSet   = false;
     QSettings                      settings{QStringLiteral("Voyager Labs"), QStringLiteral("Crater")};
+    // Each output's pinned themes are theme ids, which only mean something
+    // inside one profile's app.sqlite, so they follow the active profile
+    // (ARCHITECTURE.md §12.2). Everything else about an output (screen,
+    // enabled, content mode, transition) describes this machine and stays
+    // in `settings`. For the Default profile this is the same registry
+    // hive, so existing installs keep their pins where they were.
+    std::unique_ptr<QSettings>     profileStore = profile::openProfileSettings();
 
     QList<OutputBinding>           outputs;
     QPointer<ThemeService>         themeService;
@@ -501,7 +510,8 @@ void OutputService::loadOutputsFromSettings()
         b.displayName          = s.value(p + QStringLiteral("displayName"), id).toString();
         b.role                 = s.value(p + QStringLiteral("role"),
                                          QStringLiteral("projection")).toString();
-        b.themes               = themesFromJson(s.value(p + QStringLiteral("themes")).toString());
+        b.themes               = themesFromJson(
+            m_impl->profileStore->value(profile::outputThemesKey(id)).toString());
         b.transitionStyle      = normalizedTransitionStyle(
             s.value(p + QStringLiteral("transitionStyle"),
                     QStringLiteral("crossfade")).toString());
@@ -539,7 +549,7 @@ void OutputService::persistOutput(const OutputBinding& b)
     const QString p = Impl::prefix(b.id);
     s.setValue(p + QStringLiteral("displayName"),          b.displayName);
     s.setValue(p + QStringLiteral("role"),                 b.role);
-    s.setValue(p + QStringLiteral("themes"),               themesToJson(b.themes));
+    m_impl->profileStore->setValue(profile::outputThemesKey(b.id), themesToJson(b.themes));
     s.setValue(p + QStringLiteral("transitionStyle"),      b.transitionStyle);
     s.setValue(p + QStringLiteral("transitionDurationMs"), b.transitionDurationMs);
     s.setValue(p + QStringLiteral("enabled"),              b.enabled);
@@ -895,6 +905,7 @@ void OutputService::unregisterOutput(const QString& id)
         if (m_impl->outputs[i].id != id) continue;
         m_impl->outputs.removeAt(i);
         m_impl->settings.remove(QStringLiteral("Outputs/") + id);
+        m_impl->profileStore->remove(profile::outputThemesKey(id));
         QStringList ids;
         for (const auto& x : m_impl->outputs) ids.append(x.id);
         m_impl->settings.setValue(QString::fromLatin1(Impl::kIdsKey), ids);

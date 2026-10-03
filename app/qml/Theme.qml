@@ -17,6 +17,15 @@ QtObject {
     // routes through the tokens, so the practical impact is small.
     property real uiScale: SettingsService.fontScale
 
+    // ── Density ─────────────────────────────────────────────────────────
+    // Appearance > Density. Compact (0.8) trims padding, gaps, row heights
+    // and bar heights. Comfortable (1.0) is the original spacing. Text and
+    // icon sizes stay with uiScale, so density never shrinks glyphs.
+    // Spacing / size tokens below read through this. For a one-off pixel
+    // size that should follow density, use Theme.d(px).
+    readonly property real density: SettingsService.densityScale
+    function d(px) { return Math.round(px * density) }
+
     // ── Theme selection ─────────────────────────────────────────────────
     // The operator picks a palette in Appearance > Theme. The chosen id is
     // persisted in SettingsService.themeMode (backward-compatible: the old
@@ -1034,13 +1043,13 @@ QtObject {
     }
 
     readonly property QtObject space: QtObject {
-        readonly property int xs:   4
-        readonly property int sm:   8
-        readonly property int md:   12
-        readonly property int lg:   16
-        readonly property int xl:   24
-        readonly property int xxl:  32
-        readonly property int xxxl: 48
+        readonly property int xs:   Math.max(2, Math.round(4 * theme.density))
+        readonly property int sm:   Math.round(8  * theme.density)
+        readonly property int md:   Math.round(12 * theme.density)
+        readonly property int lg:   Math.round(16 * theme.density)
+        readonly property int xl:   Math.round(24 * theme.density)
+        readonly property int xxl:  Math.round(32 * theme.density)
+        readonly property int xxxl: Math.round(48 * theme.density)
     }
 
     readonly property QtObject radius: QtObject {
@@ -1113,13 +1122,16 @@ QtObject {
     }
 
     readonly property QtObject size: QtObject {
-        readonly property int topBarHeight:      56
-        readonly property int statusBarHeight:   28
+        readonly property int topBarHeight:      Math.round(56 * theme.density)
+        readonly property int statusBarHeight:   Math.round(28 * theme.density)
         readonly property int leftRailWidth:     240
         readonly property int outputPanelWidth:  380
-        readonly property int rowHeight:         44
-        readonly property int controlHeight:     32
-        readonly property int scheduleRowHeight: 36
+        readonly property int rowHeight:         Math.round(44 * theme.density)
+        readonly property int controlHeight:     Math.round(32 * theme.density)
+        readonly property int scheduleRowHeight: Math.round(36 * theme.density)
+        // Menu rows (PopoverMenu / MenuRow) and compact pills / chips.
+        readonly property int menuRowHeight:     Math.round(32 * theme.density)
+        readonly property int buttonHeight:      Math.round(34 * theme.density)
         // Width of AppScrollBar's overlay lane. Scrollable views inset their
         // content by this so the bar rides the right gutter, not the content.
         readonly property int scrollBar:         14
