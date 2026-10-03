@@ -91,6 +91,18 @@ Rectangle {
         selectedItem !== null && selectedItem.kind === "image"
     readonly property bool isCroppableMedia: isPdfMedia
 
+    // The staged clip, keyed the way MediaPlaybackService keys its players.
+    readonly property string previewVideoUrl:
+        (selectedItem !== null && selectedItem.kind === "video"
+         && (selectedItem.mediaPath || "").length > 0)
+            ? "file:///" + selectedItem.mediaPath : ""
+    readonly property bool showTransport: previewVideoUrl.length > 0
+    // Preview and Live share one player per file, so when the staged clip IS
+    // the live clip a Preview pause or seek would move the audience picture.
+    // The bar then only mirrors position and points at the Live controls.
+    readonly property bool transportIsLive:
+        showTransport && previewVideoUrl === AppState.liveVideoUrl
+
     // ── Header ──────────────────────────────────────────────────────────
     Item {
         id: header
@@ -569,8 +581,10 @@ Rectangle {
     // cleanly toggles between two anchors at runtime).
     Item {
         id: monitorWrap
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.space.lg
+        // Sits on the video transport for a staged clip. The bar collapses
+        // to zero height otherwise, so the monitor keeps its old bottom edge.
+        anchors.bottom: previewTransport.top
+        anchors.bottomMargin: root.showTransport ? Theme.space.sm : 0
         anchors.leftMargin: Theme.space.lg
 
         // Guard on selectedItem — otherwise the empty pages list when
@@ -588,6 +602,9 @@ Rectangle {
         readonly property real maxFullH: parent.height - header.height
                                           - Theme.space.md      // body top gap
                                           - Theme.space.lg      // monitor bottom gap
+                                          - (root.showTransport  // video transport
+                                                 ? previewTransport.implicitHeight + Theme.space.sm
+                                                 : 0)
 
         // Compact size tracks the pane instead of sitting at a hard 160x90.
         // The old constant meant the monitor never grew with the window: on
@@ -847,6 +864,28 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // ── Video transport ─────────────────────────────────────────────────
+    // Lets the operator check a staged clip (scrub to a spot, pause, loop)
+    // before sending it. Preview never makes sound, so no audio controls,
+    // and no shortcut hints: the console video shortcuts drive the live clip.
+    // Going live always cues the clip from its first frame (main.cpp,
+    // ProjectionService::wentLive), whatever was done to it here.
+    MediaTransportBar {
+        id: previewTransport
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.space.lg
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - Theme.space.lg * 2,
+                        Math.max(monitorWrap.width, 320))
+        height: root.showTransport ? implicitHeight : 0
+        visible: root.showTransport
+        source: root.previewVideoUrl
+        accent: Theme.color.preview
+        showAudio: false
+        readOnly: root.transportIsLive
+        readOnlyHint: qsTr("This clip is live. Use the Live controls.")
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

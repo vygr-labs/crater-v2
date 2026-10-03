@@ -190,6 +190,12 @@ private:
     // fit; this is only the fallback. Default "contain" reproduces the prior
     // always-letterbox behavior so existing installs look unchanged.
     Q_PROPERTY(QString mediaDefaultFit    READ mediaDefaultFit    WRITE setMediaDefaultFit    NOTIFY mediaDefaultFitChanged)
+    // Output volume for foreground video audio, 0..1 on a perceptual
+    // (slider-position) scale. The app's MediaPlaybackService maps it to a
+    // linear gain and applies it to every shared player, so the Live transport's
+    // volume slider and Settings > Media both drive this one value. Default 1.0
+    // (full) keeps existing installs sounding exactly as before.
+    Q_PROPERTY(double  mediaVolume        READ mediaVolume        WRITE setMediaVolume        NOTIFY mediaVolumeChanged)
     // Per-result-type primary action for the global search palette (Ctrl+K).
     // Maps a result type ("scripture" | "songs" | "strongs" | "media" |
     // "themes") to what its Enter/click fires: "preview" (stage into the
@@ -266,6 +272,7 @@ public:
     int     autoAdvanceDelaySeconds() const;
     bool    autoAdvanceLoop() const;
     QString mediaDefaultFit() const;
+    double  mediaVolume() const;
     bool    showMatchedLyricSnippet() const;
     bool    highlightSongMatches() const;
     bool    highlightScriptureMatches() const;
@@ -308,6 +315,7 @@ public:
     void setAutoAdvanceDelaySeconds(int v);
     void setAutoAdvanceLoop(bool v);
     void setMediaDefaultFit(const QString& v);
+    void setMediaVolume(double v);
     void setShowMatchedLyricSnippet(bool v);
     void setHighlightSongMatches(bool v);
     void setHighlightScriptureMatches(bool v);
@@ -352,6 +360,7 @@ signals:
     void autoAdvanceDelaySecondsChanged();
     void autoAdvanceLoopChanged();
     void mediaDefaultFitChanged();
+    void mediaVolumeChanged();
     void showMatchedLyricSnippetChanged();
     void highlightSongMatchesChanged();
     void highlightScriptureMatchesChanged();

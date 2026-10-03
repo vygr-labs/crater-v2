@@ -34,6 +34,7 @@
 #include "LogReportService.h"
 #include "UpdateService.h"
 #include "MediaPlaybackService.h"
+#include "MediaTransport.h"
 #include "NdiRenderer.h"
 #include "NdiService.h"
 #include "PdfPageImageProvider.h"
@@ -460,6 +461,31 @@ int main(int argc, char* argv[])
     // refcounted across Preview / Live / Projection subscribers. No
     // dependencies on other services — it's a pure caching player pool.
     crater::MediaPlaybackService mediaPlaybackService;
+    // Output volume is persisted in SettingsService (the Live transport's
+    // slider and Settings > Media both write it); the player pool just
+    // follows. Mute is session-only and lives on the pool itself.
+    mediaPlaybackService.setVolume(settingsService.mediaVolume());
+    QObject::connect(&settingsService, &crater::SettingsService::mediaVolumeChanged,
+                     &mediaPlaybackService, [&] {
+                         mediaPlaybackService.setVolume(settingsService.mediaVolume());
+                     });
+    // Every go-live of a video opens on its first frame. Without this the
+    // clip resumed wherever the shared player happened to be: the Preview
+    // monitor subscribes to the same per-URL player, so a clip previewed for
+    // a minute went live a minute in, and a play-once clip that had already
+    // finished in Preview went live as a frozen last frame. Also re-seeds the
+    // loop flag from the item, dropping any loop toggle from the last airing.
+    QObject::connect(&projectionService, &crater::ProjectionService::wentLive,
+                     &mediaPlaybackService, [&] {
+                         const QVariantMap item = projectionService.currentItem();
+                         if (item.value(QStringLiteral("kind")).toString() != QLatin1String("video"))
+                             return;
+                         const QString path = item.value(QStringLiteral("mediaPath")).toString();
+                         if (path.isEmpty()) return;
+                         const QVariant loop = item.value(QStringLiteral("loopVideo"));
+                         mediaPlaybackService.cueFromStart(QStringLiteral("file:///") + path,
+                                                           loop.isValid() ? loop.toBool() : true);
+                     });
     // LyricsService is a stateless QML-callable wrapper around the pure
     // crater::lyrics DSL functions (parse / serialize / HTML / palette).
     // Used by NodeRenderer to render formatted lyric/scripture text via
@@ -508,6 +534,10 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "UpdateService",         &updateService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
+    // Per-URL transport view (position / duration / play state) for the Live
+    // and Preview video controls. Creatable, unlike the services: each bar
+    // owns one and points it at the clip it drives.
+    qmlRegisterType<crater::MediaTransport>("Crater", 1, 0, "MediaTransport");
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
     qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);

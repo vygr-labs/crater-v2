@@ -911,6 +911,66 @@ ApplicationWindow {
         onActivated: AppState.liveScrubDown()
     }
 
+    // ── Live video transport ────────────────────────────────────────────
+    // Bound only while the committed live item is a video, so none of these
+    // exist the rest of the time. All of them drive the LIVE clip (the one
+    // the audience output plays), never the Preview clip. Keys are picked to
+    // stay clear of everything else the console binds: Space and plain or
+    // Ctrl+arrows already mean typing / page navigation, so seeking rides
+    // Alt+arrows, which no text field uses. Ctrl+M is the editors' view
+    // toggle, but those are modals and consoleShortcutsActive is false while
+    // one is open, so the two bindings are never enabled together.
+    //   Ctrl+P          play / pause
+    //   Ctrl+Shift+P    stop (rewind to the first frame, paused)
+    //   Alt+Left/Right  back / forward 10 s
+    //   Alt+Home        restart from the top
+    //   Alt+Up/Down     output volume up / down 10 %
+    //   Ctrl+M          mute / unmute
+    readonly property bool _liveVideoKeys:
+        AppState.consoleShortcutsActive && AppState.liveVideoUrl.length > 0
+    Shortcut {
+        sequence: "Ctrl+P"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.togglePlay(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+P"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.stop(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Alt+Left"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.skip(AppState.liveVideoUrl, -10000)
+    }
+    Shortcut {
+        sequence: "Alt+Right"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.skip(AppState.liveVideoUrl, 10000)
+    }
+    Shortcut {
+        sequence: "Alt+Home"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.restart(AppState.liveVideoUrl)
+    }
+    Shortcut {
+        sequence: "Alt+Up"
+        enabled: root._liveVideoKeys
+        onActivated: SettingsService.mediaVolume =
+                         Math.min(1, Math.round((SettingsService.mediaVolume + 0.1) * 100) / 100)
+    }
+    Shortcut {
+        sequence: "Alt+Down"
+        enabled: root._liveVideoKeys
+        onActivated: SettingsService.mediaVolume =
+                         Math.max(0, Math.round((SettingsService.mediaVolume - 0.1) * 100) / 100)
+    }
+    Shortcut {
+        sequence: "Ctrl+M"
+        enabled: root._liveVideoKeys
+        onActivated: MediaPlaybackService.muted = !MediaPlaybackService.muted
+    }
+
     // Shift+Arrow is the same dispatch with the extend flag set. It needs its
     // own Shortcut because a sequence of "Up" does not match a Shift+Up press
     // — Qt treats the modified chord as a different sequence entirely. Preview

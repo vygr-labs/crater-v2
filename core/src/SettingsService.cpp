@@ -106,6 +106,7 @@ struct SettingsService::Impl
     // "contain" (letterbox) is the safe default — it never crops content the
     // operator might not know is being clipped. Cover/stretch are opt-in.
     QString mediaDefaultFit  = QStringLiteral("contain");
+    double  mediaVolume      = 1.0;
     // Library search presentation — all default ON (unchanged out-of-box).
     bool    showMatchedLyricSnippet   = true;
     bool    highlightSongMatches      = true;
@@ -153,6 +154,7 @@ struct SettingsService::Impl
     static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
     static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
     static constexpr const char* kMediaDefaultFit = "Settings/mediaDefaultFit";
+    static constexpr const char* kMediaVolume     = "Settings/mediaVolume";
     static constexpr const char* kShowMatchedLyricSnippet   = "Settings/showMatchedLyricSnippet";
     static constexpr const char* kHighlightSongMatches      = "Settings/highlightSongMatches";
     static constexpr const char* kHighlightScriptureMatches = "Settings/highlightScriptureMatches";
@@ -197,6 +199,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->autoAdvanceDelay = s.value(QString::fromLatin1(Impl::kAutoAdvanceDelay), m_impl->autoAdvanceDelay).toInt();
     m_impl->autoAdvanceLoop  = s.value(QString::fromLatin1(Impl::kAutoAdvanceLoop),  m_impl->autoAdvanceLoop).toBool();
     m_impl->mediaDefaultFit = s.value(QString::fromLatin1(Impl::kMediaDefaultFit), m_impl->mediaDefaultFit).toString();
+    m_impl->mediaVolume     = qBound(0.0, s.value(QString::fromLatin1(Impl::kMediaVolume), m_impl->mediaVolume).toDouble(), 1.0);
     m_impl->showMatchedLyricSnippet   = s.value(QString::fromLatin1(Impl::kShowMatchedLyricSnippet),   m_impl->showMatchedLyricSnippet).toBool();
     m_impl->highlightSongMatches      = s.value(QString::fromLatin1(Impl::kHighlightSongMatches),      m_impl->highlightSongMatches).toBool();
     m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
@@ -250,6 +253,7 @@ bool    SettingsService::autoAdvance() const             { return m_impl->autoAd
 int     SettingsService::autoAdvanceDelaySeconds() const { return m_impl->autoAdvanceDelay; }
 bool    SettingsService::autoAdvanceLoop() const         { return m_impl->autoAdvanceLoop; }
 QString SettingsService::mediaDefaultFit() const   { return m_impl->mediaDefaultFit; }
+double  SettingsService::mediaVolume() const       { return m_impl->mediaVolume; }
 bool    SettingsService::showMatchedLyricSnippet() const   { return m_impl->showMatchedLyricSnippet; }
 bool    SettingsService::highlightSongMatches() const      { return m_impl->highlightSongMatches; }
 bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
@@ -555,6 +559,18 @@ void SettingsService::setMediaDefaultFit(const QString& v)
     m_impl->mediaDefaultFit = normalized;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaDefaultFit), normalized);
     emit mediaDefaultFitChanged();
+}
+
+void SettingsService::setMediaVolume(double v)
+{
+    // Clamp rather than reject: a slider dragged past either end must still
+    // land on a valid gain. The fuzzy compare stops a drag that re-emits the
+    // same position from rewriting QSettings on every pixel.
+    const double clamped = qBound(0.0, v, 1.0);
+    if (qFuzzyCompare(1.0 + m_impl->mediaVolume, 1.0 + clamped)) return;
+    m_impl->mediaVolume = clamped;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaVolume), clamped);
+    emit mediaVolumeChanged();
 }
 
 void SettingsService::setShowMatchedLyricSnippet(bool v)

@@ -20,6 +20,11 @@ qt_add_executable(crater
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp
     src/MediaPlaybackService.h
+    # QML-creatable per-URL transport view (play state, position, seek) over
+    # MediaPlaybackService's shared players. Drives the Live / Preview video
+    # controls in MediaTransportBar.qml.
+    src/MediaTransport.cpp
+    src/MediaTransport.h
     src/NdiService.cpp
     src/NdiService.h
     src/NdiAbi.h
@@ -130,6 +135,7 @@ qt_add_qml_module(crater
         qml/components/MediaBackgroundLoader.qml
         qml/components/MediaMonitor.qml
         qml/components/ThemedMonitor.qml
+        qml/components/MediaTransportBar.qml
         qml/components/ThemePreview.qml
         qml/components/LayoutStrip.qml
         qml/components/LogoView.qml

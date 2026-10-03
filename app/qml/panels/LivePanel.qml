@@ -37,6 +37,11 @@ Rectangle {
     readonly property var  pages:    AppState.livePages
     readonly property bool isLive:   AppState.liveIsActive
 
+    // Video transport under the monitor whenever the committed live item is a
+    // clip. Keyed off AppState.liveVideoUrl (ProjectionService's item) so the
+    // bar always drives the clip the audience output is playing.
+    readonly property bool showTransport: isLive && AppState.liveVideoUrl.length > 0
+
     // ── Auto-advance ────────────────────────────────────────────────────
     // Steps a live, multi-slide item to its next page on a timer, honoring
     // the Settings > Song > Auto-advance preferences. Only songs (and any
@@ -583,8 +588,10 @@ Rectangle {
     // larger would over-emphasise it and break the paired-pane symmetry.
     Item {
         id: monitorWrap
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.space.lg
+        // Sits on the video transport when one is showing. The bar collapses
+        // to zero height otherwise, so the monitor keeps its old bottom edge.
+        anchors.bottom: liveTransport.top
+        anchors.bottomMargin: root.showTransport ? Theme.space.sm : 0
         anchors.leftMargin: Theme.space.lg
 
         // Guard on isLive — otherwise the empty pages list on fresh open
@@ -597,6 +604,9 @@ Rectangle {
         readonly property real maxFullH: parent.height - header.height
                                           - Theme.space.md
                                           - Theme.space.lg
+                                          - (root.showTransport
+                                                 ? liveTransport.implicitHeight + Theme.space.sm
+                                                 : 0)
 
         // Compact size tracks the pane instead of sitting at a hard 160x90.
         // The old constant meant the monitor never grew with the window: on
@@ -608,7 +618,7 @@ Rectangle {
         readonly property real compactWidth:
             Math.max(160, Math.min(288, parent.width * 0.30))
 
-        width:  fullsize ? Math.min(maxFullW, maxFullH * 16 / 9) : compactWidth
+        width:  fullsize ? Math.max(0, Math.min(maxFullW, maxFullH * 16 / 9)) : compactWidth
         height: width * 9 / 16
 
         state: fullsize ? "fullsize" : "compact"
@@ -689,6 +699,28 @@ Rectangle {
                 visible: AppState.showLogo
             }
         }
+    }
+
+    // ── Video transport ─────────────────────────────────────────────────
+    // Play / pause / seek / loop / volume for the live clip. The bar drives
+    // MediaPlaybackService's shared player for the URL, which is the same
+    // player the projection window, the NDI scene and this monitor render
+    // from, so the audience and the console move together. Width follows
+    // the (centered, fullsize) monitor so the seek bar lines up under the
+    // picture, with a floor so the controls never crush on a short pane.
+    MediaTransportBar {
+        id: liveTransport
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.space.lg
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - Theme.space.lg * 2,
+                        Math.max(monitorWrap.width, 320))
+        height: root.showTransport ? implicitHeight : 0
+        visible: root.showTransport
+        source: AppState.liveVideoUrl
+        accent: Theme.color.live
+        showAudio: true
+        shortcutHints: true
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

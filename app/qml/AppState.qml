@@ -116,6 +116,18 @@ QtObject {
     // screen.
     property bool projectorVisible:   false
 
+    // The committed live clip as MediaPlaybackService keys it ("file:///" +
+    // path, the string MediaMonitor acquires with), or "" when what's live
+    // isn't a video. Read off ProjectionService rather than the Live pane's
+    // item so it always names the clip the audience output is playing. The
+    // Live transport bar and the video shortcuts in Main.qml both target it.
+    readonly property string liveVideoUrl: {
+        if (ProjectionService.contentKind !== "video") return ""
+        const item = ProjectionService.currentItem
+        const p = item && item.mediaPath ? String(item.mediaPath) : ""
+        return p.length > 0 ? "file:///" + p : ""
+    }
+
     // ─── Library-pane overrides (NEW) ───────────────────────────────────
     // The Electron app lets the operator click a song in the library and see
     // it immediately in Preview — without first adding it to the schedule.
