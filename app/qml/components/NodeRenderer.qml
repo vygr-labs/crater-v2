@@ -279,63 +279,38 @@ Item {
                 }
                 Component.onCompleted: _refit()
 
-                Text {
-                    id: visibleText
-                    // Span the full box horizontally, but anchor vertically
-                    // via verticalCenter + offset so we can apply the
-                    // optical-shift compensation. height remains parent.height
-                    // so wrapMode and the binary-search probe agree on the
-                    // available box.
-                    anchors.left:   parent.left
-                    anchors.right:  parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.verticalCenterOffset: -textHost._opticalShift
-                    height: parent.height
-                    // Hidden until the first _refit() succeeds — see _fitted.
-                    opacity: textHost._fitted ? 1 : 0
-                    // RichText so inline DSL formatting (bold/italic/underline/
-                    // color via <b>/<i>/<u>/<span style="color:#…">) is honored.
-                    // Plain text content (no markers) still renders correctly
-                    // through this path — Qt's RichText engine treats a tag-
-                    // free string as ordinary text.
-                    textFormat:         Text.RichText
-                    text:               textHost._renderedText
-                    color:              textHost._style.color || "#ffffff"
-                    font.family:        textHost._style.fontFamily || Theme.font.family
-                    font.pixelSize:     textHost._fittedSize
-                    font.weight:        textHost._style.fontWeight || Theme.font.weightMedium
-                    font.italic:        !!textHost._style.fontItalic
-                    font.letterSpacing: textHost._style.letterSpacing || 0
-                    lineHeight:         textHost._style.lineHeightMultiplier || 1.25
-                    lineHeightMode:     Text.ProportionalHeight
+                // Text, its outline and its drop shadow, stacked so the
+                // shadow falls from the outlined letters (as it does in
+                // EasyWorship), not from the bare glyphs under the outline.
+                Item {
+                    id: textStack
+                    anchors.fill: parent
 
-                    horizontalAlignment: textHost._style.textAlign === "left"  ? Text.AlignLeft
-                                       : textHost._style.textAlign === "right" ? Text.AlignRight
-                                                                                : Text.AlignHCenter
-                    verticalAlignment:   textHost._style.verticalAlign === "start" ? Text.AlignTop
-                                       : textHost._style.verticalAlign === "end"   ? Text.AlignBottom
-                                                                                    : Text.AlignVCenter
+                    readonly property bool _shadowOn:
+                        (textHost._style.textShadowColor || "") !== ""
+                    // `textOutlineColor` non-empty is the "outline on"
+                    // sentinel, same convention as the shadow.
+                    readonly property bool _outlineOn:
+                        (textHost._style.textOutlineColor || "") !== ""
+                        && (textHost._style.textOutlineWidth || 0) > 0
+                    readonly property real _outlineW:
+                        _outlineOn ? textHost._style.textOutlineWidth : 0
+                    // Room around the glyphs for the outline to grow into.
+                    readonly property int  _pad: Math.ceil(_outlineW) + 2
 
-                    wrapMode: Text.WordWrap
-                    elide: Text.ElideNone
-                    fontSizeMode: Text.FixedSize
-
-                    // Drop shadow — `textShadowColor` being a non-empty
-                    // string is the schema's "shadow on" sentinel. When
-                    // empty/absent, layer.enabled stays false so the Text
-                    // paints straight to the scene graph at zero cost. When
-                    // set, Qt renders the Text to an intermediate texture
-                    // and MultiEffect composites a blurred drop shadow
-                    // beneath it. autoPaddingEnabled (default true in
-                    // 6.5+) grows the texture so the blurred shadow halo
-                    // doesn't get clipped at the layer edges.
+                    // Drop shadow. When empty/absent, layer.enabled stays
+                    // false so the stack paints straight to the scene graph
+                    // at zero cost. When set, Qt renders the stack to an
+                    // intermediate texture and MultiEffect composites a
+                    // blurred drop shadow beneath it. autoPaddingEnabled
+                    // (default true in 6.5+) grows the texture so the blurred
+                    // shadow halo doesn't get clipped at the layer edges.
                     //
                     // shadowBlur is normalized 0..1 on MultiEffect, but
                     // operators think in pixels — we expose 0..50 px in
                     // the editor and divide here. The 0..50 px range is
                     // generous: at 1080p canvas, 50 px is a very soft halo.
-                    layer.enabled:
-                        (textHost._style.textShadowColor || "") !== ""
+                    layer.enabled: _shadowOn
                     layer.effect: MultiEffect {
                         shadowEnabled:          true
                         shadowColor:            textHost._style.textShadowColor || "#000000"
@@ -345,6 +320,92 @@ Item {
                             1.0,
                             (textHost._style.textShadowBlur || 0) / 50.0)
                         autoPaddingEnabled: true
+                    }
+
+                    // Outline. The glyphs are captured with room around them
+                    // and grown outward by shaders/outline.frag. Widths are
+                    // canvas pixels: the graph lays nodes out at canvas size
+                    // and scales the whole stage, so an outline keeps its
+                    // proportion on every monitor. The wrapper is a layer so
+                    // the shader result is cached and only re-rendered when
+                    // the text changes.
+                    Item {
+                        id: outlineHost
+                        visible: textStack._outlineOn
+                        x: visibleText.x - textStack._pad
+                        y: visibleText.y - textStack._pad
+                        width:  visibleText.width  + textStack._pad * 2
+                        height: visibleText.height + textStack._pad * 2
+                        opacity: visibleText.opacity
+                        layer.enabled: visible
+
+                        ShaderEffectSource {
+                            id: glyphSource
+                            visible: false
+                            sourceItem: textStack._outlineOn ? visibleText : null
+                            hideSource: false
+                            live: true
+                            sourceRect: Qt.rect(-textStack._pad, -textStack._pad,
+                                                outlineHost.width, outlineHost.height)
+                            // Pinned so one texture pixel is one canvas pixel,
+                            // which is the unit `radius` is given in.
+                            textureSize: Qt.size(Math.max(1, Math.ceil(outlineHost.width)),
+                                                 Math.max(1, Math.ceil(outlineHost.height)))
+                        }
+
+                        ShaderEffect {
+                            anchors.fill: parent
+                            property var   source:       glyphSource
+                            property color outlineColor: textHost._style.textOutlineColor || "#000000"
+                            property size  texel: Qt.size(1 / Math.max(1, glyphSource.textureSize.width),
+                                                          1 / Math.max(1, glyphSource.textureSize.height))
+                            property real  radius:   textStack._outlineW
+                            property real  softness: Math.max(0, Math.min(1,
+                                                         textHost._style.textOutlineSoftness || 0))
+                            fragmentShader: "qrc:/crater/shaders/outline.frag.qsb"
+                        }
+                    }
+
+                    Text {
+                        id: visibleText
+                        // Span the full box horizontally, but anchor vertically
+                        // via verticalCenter + offset so we can apply the
+                        // optical-shift compensation. height remains parent.height
+                        // so wrapMode and the binary-search probe agree on the
+                        // available box.
+                        anchors.left:   parent.left
+                        anchors.right:  parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -textHost._opticalShift
+                        height: parent.height
+                        // Hidden until the first _refit() succeeds — see _fitted.
+                        opacity: textHost._fitted ? 1 : 0
+                        // RichText so inline DSL formatting (bold/italic/underline/
+                        // color via <b>/<i>/<u>/<span style="color:#…">) is honored.
+                        // Plain text content (no markers) still renders correctly
+                        // through this path — Qt's RichText engine treats a tag-
+                        // free string as ordinary text.
+                        textFormat:         Text.RichText
+                        text:               textHost._renderedText
+                        color:              textHost._style.color || "#ffffff"
+                        font.family:        textHost._style.fontFamily || Theme.font.family
+                        font.pixelSize:     textHost._fittedSize
+                        font.weight:        textHost._style.fontWeight || Theme.font.weightMedium
+                        font.italic:        !!textHost._style.fontItalic
+                        font.letterSpacing: textHost._style.letterSpacing || 0
+                        lineHeight:         textHost._style.lineHeightMultiplier || 1.25
+                        lineHeightMode:     Text.ProportionalHeight
+
+                        horizontalAlignment: textHost._style.textAlign === "left"  ? Text.AlignLeft
+                                           : textHost._style.textAlign === "right" ? Text.AlignRight
+                                                                                    : Text.AlignHCenter
+                        verticalAlignment:   textHost._style.verticalAlign === "start" ? Text.AlignTop
+                                           : textHost._style.verticalAlign === "end"   ? Text.AlignBottom
+                                                                                        : Text.AlignVCenter
+
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideNone
+                        fontSizeMode: Text.FixedSize
                     }
                 }
             }

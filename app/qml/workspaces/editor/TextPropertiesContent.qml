@@ -247,6 +247,119 @@ Column {
         }
     }
 
+    // ── Outline ───────────────────────────────────────────────────────
+    // A stroke wrapped around every letter, drawn under the text (the
+    // EasyWorship outline). Softness turns the stroke into a soft halo.
+    // Same sentinel as the shadow: an empty textOutlineColor means off.
+    AccordionSection {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        title: qsTr("Outline")
+        Column {
+            id: outlineColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Theme.space.md
+            anchors.topMargin: Theme.space.sm
+            spacing: 6
+
+            readonly property bool _on: {
+                if (!node || !node.style) return false
+                const c = node.style.textOutlineColor
+                return typeof c === "string" && c.length > 0
+            }
+
+            Item {
+                anchors.left: parent.left
+                width: 160
+                height: 32
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 18; height: 18
+                        radius: 0
+                        color: outlineColumn._on ? Theme.color.brand : Theme.color.canvas
+                        border.color: outlineColumn._on ? Theme.color.brand : Theme.color.borderStrong
+                        border.width: 1
+                        Behavior on color        { ColorAnimation { duration: Theme.motion.instant } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                        AppIcon {
+                            anchors.centerIn: parent
+                            visible: outlineColumn._on
+                            name: "check"; size: Theme.icon.sm
+                            color: "#ffffff"   // check on the deep-teal box
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Outline around text")
+                        color: Theme.color.textSecondary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    // On: black, 4 px, a little softness, which reads as a
+                    // clean outline at projection sizes. Width and softness
+                    // stay when toggled off so turning it back on restores
+                    // the operator's tuning.
+                    onClicked: {
+                        if (outlineColumn._on) {
+                            root._setStyle("textOutlineColor", "")
+                        } else {
+                            const wt = workspace.workingTheme
+                            wt.setNodeStyle(node.id, "textOutlineColor", "#000000")
+                            if (!(node && node.style && node.style.textOutlineWidth))
+                                wt.setNodeStyle(node.id, "textOutlineWidth", 4)
+                            workspace.saveToHistory()
+                        }
+                    }
+                }
+            }
+
+            SimpleSlider {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                label: qsTr("Width")
+                min: 1; max: 30; step: 1
+                value: (node && node.style && node.style.textOutlineWidth) || 4
+                opacity: outlineColumn._on ? 1 : 0.45
+                enabled: outlineColumn._on
+                onLive:   function(v) { root._liveStyle("textOutlineWidth", Math.round(v)) }
+                onCommit: function(v) { root._commitStyle("textOutlineWidth", Math.round(v)) }
+            }
+
+            SimpleSlider {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                label: qsTr("Softness")
+                min: 0; max: 1; step: 0.05
+                value: (node && node.style && node.style.textOutlineSoftness) || 0
+                opacity: outlineColumn._on ? 1 : 0.45
+                enabled: outlineColumn._on
+                onLive:   function(v) { root._liveStyle("textOutlineSoftness", Math.round(v * 100) / 100) }
+                onCommit: function(v) { root._commitStyle("textOutlineSoftness", Math.round(v * 100) / 100) }
+            }
+
+            ColorSwatchInput {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 32
+                label: qsTr("Color")
+                opacity: outlineColumn._on ? 1 : 0.45
+                enabled: outlineColumn._on
+                value: (node && node.style && node.style.textOutlineColor) || "#000000"
+                onColorPicked: function(c) { root._liveStyle("textOutlineColor", c) }
+                onCommitted:   function(c) { workspace.saveToHistory() }
+            }
+        }
+    }
+
     // ── Shadow ────────────────────────────────────────────────────────
     AccordionSection {
         anchors.left: parent.left
