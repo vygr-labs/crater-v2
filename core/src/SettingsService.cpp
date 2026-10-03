@@ -73,6 +73,8 @@ struct SettingsService::Impl
     // preserves the standard behavior (own taskbar button + switcher slot).
     bool    projectionInAltTab = true;
     bool    projectionBehindConsole = false;
+    // Live dock over dialogs — see header for why this defaults on.
+    bool    liveControlsOverDialogs = true;
     // Headless NDI renderer toggle — see header. Default true so the QRhi
     // path is the standard production behavior; flipping false drops back to
     // the legacy grabToImage path as a fallback.
@@ -129,6 +131,7 @@ struct SettingsService::Impl
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
     static constexpr const char* kProjectionBehindConsole = "Settings/projectionBehindConsole";
+    static constexpr const char* kLiveControlsOverDialogs = "Settings/liveControlsOverDialogs";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
     static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
@@ -171,6 +174,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
     m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
     m_impl->projectionBehindConsole = s.value(QString::fromLatin1(Impl::kProjectionBehindConsole), m_impl->projectionBehindConsole).toBool();
+    m_impl->liveControlsOverDialogs = s.value(QString::fromLatin1(Impl::kLiveControlsOverDialogs), m_impl->liveControlsOverDialogs).toBool();
     m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
     m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
     m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
@@ -222,6 +226,7 @@ QString SettingsService::outputResolution() const  { return m_impl->outputResolu
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
 bool    SettingsService::projectionBehindConsole() const { return m_impl->projectionBehindConsole; }
+bool    SettingsService::liveControlsOverDialogs() const { return m_impl->liveControlsOverDialogs; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
 QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
@@ -372,6 +377,14 @@ void SettingsService::setProjectionBehindConsole(bool v)
     m_impl->projectionBehindConsole = v;
     m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionBehindConsole), v);
     emit projectionBehindConsoleChanged();
+}
+
+void SettingsService::setLiveControlsOverDialogs(bool v)
+{
+    if (m_impl->liveControlsOverDialogs == v) return;
+    m_impl->liveControlsOverDialogs = v;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kLiveControlsOverDialogs), v);
+    emit liveControlsOverDialogsChanged();
 }
 
 void SettingsService::setUseHeadlessNdi(bool v)

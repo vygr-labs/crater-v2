@@ -164,6 +164,21 @@ Item {
                     onToggled: SettingsService.projectionBehindConsole = !SettingsService.projectionBehindConsole }
             }
 
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // The live dock beside open dialogs (LiveControlsDock.qml). Lives
+            // under Output because it is about keeping control of what the
+            // audience sees, not about how the console looks. Flipping it
+            // while this dialog is open shows or hides the dock right here,
+            // which doubles as a preview of what the setting does.
+            SettingRow {
+                title: qsTr("Keep live controls beside dialogs")
+                description: qsTr("Change slides or switch scripture while an editor or Settings is open")
+                ToggleSwitch {
+                    value: SettingsService.liveControlsOverDialogs
+                    onToggled: SettingsService.liveControlsOverDialogs = !SettingsService.liveControlsOverDialogs }
+            }
+
             // ── TRANSITIONS ──────────────────────────────────────────────
             // Per-output transition between live items + between pages of the
             // same item. Style and duration are independently settable for

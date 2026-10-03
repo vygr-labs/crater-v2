@@ -29,42 +29,13 @@ Rectangle {
     // Panel surface — matches electron's `bg.muted` panel container.
     color: Theme.color.elevated
 
-    // Live item — two sources. When the library pushed straight to live
-    // (operator double-clicked a song / verse / media item without first
-    // routing through the schedule), ProjectionService.currentItem holds the
-    // canonical item. Otherwise read from ScheduleService.currentItems via
-    // the live index.
-    readonly property var liveItem:
-        AppState.libraryLiveActive
-            ? ProjectionService.currentItem
-            : (AppState.liveScheduleIndex >= 0
-               && AppState.liveScheduleIndex < ScheduleService.currentItems.length
-                   ? ScheduleService.currentItems[AppState.liveScheduleIndex]
-                   : null)
-
-    // Filter to pages that have *content* to display. Media items
-    // (image/video) carry one placeholder page with empty content — we
-    // suppress empty rows here. ThemedMonitor reads item.pages directly,
-    // so the bottom thumbnail still renders the media. Mirrors the same
-    // filter in PreviewPanel.
-    // Presentation decks skip the filter entirely — every authored slide is
-    // projectable, including title-only and not-yet-written ones, and the
-    // card index has to stay in step with ProjectionService's page index.
-    // Same reasoning as PreviewPanel; see the longer note there.
-    readonly property var pages: {
-        const raw = liveItem && liveItem.pages ? liveItem.pages : []
-        if (liveItem && liveItem.kind === "presentation") return raw
-        return raw.filter(function(p) {
-            return p && p.content && String(p.content).length > 0
-        })
-    }
-    // `isClear` no longer makes the live state collapse — clearing hides
-    // text but keeps the theme background (and logo, if showing) on the
-    // projector. From the operator's perspective the channel is still
-    // live; only the audience-facing text content is suppressed.
-    readonly property bool isLive:
-        (AppState.libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
-        || (AppState.liveScheduleIndex >= 0 && liveItem !== null)
+    // Live item, its projectable pages, and whether anything is live. The
+    // derivations live in AppState (liveItem / livePages / liveIsActive) so
+    // the live dock beside open dialogs reads the very same list: a row
+    // index there means exactly what a card index means here.
+    readonly property var  liveItem: AppState.liveItem
+    readonly property var  pages:    AppState.livePages
+    readonly property bool isLive:   AppState.liveIsActive
 
     // ── Auto-advance ────────────────────────────────────────────────────
     // Steps a live, multi-slide item to its next page on a timer, honoring
@@ -526,15 +497,8 @@ Rectangle {
             // the Live pane is a control surface. setPage is a no-op when
             // the resolved index already matches, so clamp-at-bounds
             // keypresses don't burn a re-render.
-            function onLiveNavigateUp() {
-                if (root.pages.length === 0) return
-                AppState.commitLivePage(Math.max(AppState.liveSubIndex - 1, 0))
-            }
-            function onLiveNavigateDown() {
-                if (root.pages.length === 0) return
-                AppState.commitLivePage(Math.min(AppState.liveSubIndex + 1,
-                                                 root.pages.length - 1))
-            }
+            function onLiveNavigateUp()   { AppState.stepLivePage(-1) }
+            function onLiveNavigateDown() { AppState.stepLivePage( 1) }
             // ── Ctrl+Arrow scrub ────────────────────────────────────
             // Same clamp as the plain-arrow handlers above, minus the
             // commit: these only move AppState.liveScrubIndex, so the

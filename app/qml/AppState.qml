@@ -134,6 +134,45 @@ QtObject {
     property var  libraryPreviewItem: null
     property bool libraryLiveActive:  false
 
+    // ─── What is live (read side) ───────────────────────────────────────
+    // Two surfaces show and drive the live channel: LivePanel in the console
+    // and LiveControlsDock beside an open dialog. Both read these three, so
+    // a dock row index means exactly what a LivePanel card index means. They
+    // used to be LivePanel's own properties.
+    //
+    // liveItem has two sources. When the library pushed straight to live
+    // (no schedule row involved), ProjectionService.currentItem holds the
+    // canonical item. Otherwise it is the schedule row at liveScheduleIndex.
+    readonly property var liveItem:
+        libraryLiveActive
+            ? ProjectionService.currentItem
+            : (liveScheduleIndex >= 0
+               && liveScheduleIndex < ScheduleService.currentItems.length
+                   ? ScheduleService.currentItems[liveScheduleIndex]
+                   : null)
+
+    // Pages that have content to show. Media items (image/video) carry one
+    // empty placeholder page, which is dropped here; ThemedMonitor reads
+    // item.pages directly, so the monitor still renders the media. Decks
+    // skip the filter: every authored slide is projectable, including
+    // title-only ones, and the row index has to stay in step with
+    // ProjectionService's page index. Mirrors PreviewPanel's filter.
+    readonly property var livePages: {
+        const it = liveItem
+        const raw = it && it.pages ? it.pages : []
+        if (it && it.kind === "presentation") return raw
+        return raw.filter(function(p) {
+            return p && p.content && String(p.content).length > 0
+        })
+    }
+
+    // Clear does not end "live": it hides text but keeps the theme
+    // background (and logo) on the projector, so the channel still counts
+    // as live from the operator's side.
+    readonly property bool liveIsActive:
+        !!((libraryLiveActive && liveItem && (liveItem.pages || liveItem.title))
+           || (liveScheduleIndex >= 0 && liveItem !== null))
+
     function pushLibraryPreview(item, page) {
         libraryPreviewItem = item || null
         // `page` is optional (defaults to 0). The global-search palette passes
@@ -278,6 +317,270 @@ QtObject {
         }
     }
 
+    // ─── Scripture items ────────────────────────────────────────────────
+    // Canonical verse(s) → schedule-item builder. Moved here from
+    // ScriptureTab (which now delegates) for the same reason buildSongItem
+    // lives here: the live dock's scripture switch has to project a passage
+    // byte-for-byte like the tab does, and two copies drift.
+    //
+    // `verses` are Verse rows (BibleService.verse / chapter / allVerses) or
+    // search hits; anything without text is dropped. `fallbackCode` is the
+    // translation stamped on rows that do not carry their own.
+    //
+    // One verse → one page. Several → one item whose page shows every verse
+    // numbered, or one page per verse with the current one lit when
+    // Settings > Scripture > Highlight current verse is on (baked here, so a
+    // settings change applies to the next passage projected).
+    function buildScriptureItem(verses, fallbackCode) {
+        const usable = (verses || []).filter(function(v) {
+            return v && v.text && v.text.length > 0
+        })
+        if (usable.length === 0) return null
+
+        const first = usable[0]
+        const code  = first.translationCode || fallbackCode || ""
+
+        if (usable.length === 1) {
+            const ref = first.book + " " + first.chapter + ":" + first.verse
+            return {
+                kind:     "scripture",
+                title:    ref + " (" + code + ")",
+                subtitle: "",
+                // Clipboard-ready "quote + attribution" text. Built here so
+                // it rides along to Preview / Live / Schedule and any
+                // surface holding the item can copy without re-deriving it.
+                copyText: scriptureCopyText(usable, fallbackCode),
+                pages:    [{ label: ref, content: first.text }],
+                scriptureRef: {
+                    translationCode: code,
+                    book:            first.book,
+                    chapter:         first.chapter,
+                    verseStart:      first.verse,
+                    verseEnd:        first.verse
+                }
+            }
+        }
+
+        // Verse numbers are wrapped in DSL markup: bold so they read as the
+        // heaviest run on the slide, and {color=verse}, a semantic palette
+        // name LyricsService.dslToHtml resolves to gold (NodeRenderer swaps
+        // in the theme's verseNumberColor when it sets one). The trailing
+        // period sits inside the markup so it takes the same styling.
+        // activeIndex >= 0 dims every other verse with {color=gray}; dimming
+        // is colour-only so glyph metrics, and therefore the auto-fit size,
+        // stay identical across the per-verse pages.
+        const composePassage = function(activeIndex) {
+            return usable.map(function(v, j) {
+                const num  = "{color=verse}**" + v.verse + ".**{/color} "
+                const body = (activeIndex < 0 || j === activeIndex)
+                    ? v.text
+                    : "{color=gray}" + v.text + "{/color}"
+                return num + body
+            }).join("  ")
+        }
+
+        let pages
+        if (SettingsService.highlightCurrentVerse) {
+            pages = usable.map(function(v, i) {
+                return { label:   v.book + " " + v.chapter + ":" + v.verse,
+                         content: composePassage(i) }
+            })
+        } else {
+            pages = [{ label: scriptureRangeTitle(usable), content: composePassage(-1) }]
+        }
+
+        const last = usable[usable.length - 1]
+        return {
+            kind:     "scripture",
+            title:    scriptureRangeTitle(usable) + " (" + code + ")",
+            subtitle: "",
+            copyText: scriptureCopyText(usable, fallbackCode),
+            pages:    pages,
+            // The FIRST verse's coordinates, so schedule → scripture sync
+            // still has a single jump target; verseEnd keeps the span.
+            scriptureRef: {
+                translationCode: code,
+                book:            first.book,
+                chapter:         first.chapter,
+                verseStart:      first.verse,
+                verseEnd:        last.verse
+            }
+        }
+    }
+
+    // "Copy to clipboard" text for a verse array: the verses as one quoted
+    // passage, then the reference on its own attribution line.
+    //
+    //   "For God so loved the world... to condemn the world..."
+    //
+    //   - John 3:16-17 (KJV)
+    //
+    // Straight ASCII quotes keep the paste clean across web inputs. Returns
+    // "" when nothing usable is passed so callers can guard on empty.
+    function scriptureCopyText(verses, fallbackCode) {
+        const usable = (verses || []).filter(function(v) {
+            return v && v.text && v.text.length > 0
+        })
+        if (usable.length === 0) return ""
+        const first = usable[0]
+        const code = (first.translationCode && first.translationCode.length > 0)
+                       ? first.translationCode : (fallbackCode || "")
+        const body = usable.map(function(v) { return v.text }).join(" ")
+        let ref = scriptureRangeTitle(usable)
+        if (ref.length === 0 && first.book)
+            ref = first.book + " " + first.chapter + ":" + first.verse
+        const attribution = (code && code.length > 0) ? ref + " (" + code + ")" : ref
+        return "\"" + body + "\"\n\n- " + attribution
+    }
+
+    // Human reference for a sorted verse array: grouped by (book, chapter),
+    // contiguous runs collapsed ("John 3:14-16, 18; Rom 5:8"). The leading
+    // integer of each verse is read, so "12", "1-2" and "2a" all work.
+    function scriptureRangeTitle(verses) {
+        const groups = []        // [{book, chapter, verses:[int]}]
+        let current = null
+        for (let i = 0; i < verses.length; ++i) {
+            const v = verses[i]
+            const n = parseInt(String(v.verse), 10)
+            if (isNaN(n)) continue
+            if (!current || current.book !== v.book || current.chapter !== v.chapter) {
+                current = { book: v.book, chapter: v.chapter, verses: [] }
+                groups.push(current)
+            }
+            current.verses.push(n)
+        }
+        if (groups.length === 0) return ""
+        return groups.map(function(g) {
+            return g.book + " " + g.chapter + ":" + _collapseVerseRuns(g.verses)
+        }).join("; ")
+    }
+
+    // [14,15,16,18] → "14-16, 18". Expects ascending input.
+    function _collapseVerseRuns(nums) {
+        if (nums.length === 0) return ""
+        const out = []
+        let start = nums[0], prev = nums[0]
+        for (let i = 1; i < nums.length; ++i) {
+            const n = nums[i]
+            if (n === prev + 1) { prev = n; continue }
+            out.push(start === prev ? String(start) : (start + "-" + prev))
+            start = n; prev = n
+        }
+        out.push(start === prev ? String(start) : (start + "-" + prev))
+        return out.join(", ")
+    }
+
+    // Typed reference → projectable scripture item, or null. Same grammar
+    // as the Scripture tab's reference box (BibleService.parseReferenceRange:
+    // "jn 3 16", "John 3:16-18", "ps 23"), plus the tab's translation token:
+    // a word matching an installed translation code ("rom 8:28 NIV") picks
+    // that translation instead of `fallbackCode`.
+    //
+    // A range running past the end of the chapter stops at the last verse
+    // that exists rather than failing outright.
+    function scripturePassageFromText(text, fallbackCode) {
+        const raw = String(text || "").trim()
+        if (raw.length === 0) return null
+
+        const known = {}
+        const trs = BibleService.translations()
+        for (let i = 0; i < trs.length; ++i)
+            known[String(trs[i].code).toUpperCase()] = String(trs[i].code)
+
+        let code = String(fallbackCode || "")
+        let typedCode = ""
+        const kept = []
+        const tokens = raw.split(/\s+/)
+        for (let i = 0; i < tokens.length; ++i) {
+            const up = tokens[i].toUpperCase()
+            if (typedCode === "" && known[up] !== undefined) {
+                typedCode = known[up]
+                continue
+            }
+            kept.push(tokens[i])
+        }
+        if (typedCode !== "") code = typedCode
+        if (code.length === 0 || kept.length === 0) return null
+
+        const r = BibleService.parseReferenceRange(kept.join(" "))
+        if (!r || !r.valid) return null
+
+        // A chapter tops out at 176 verses; the cap only guards against a
+        // typo like "ps 119:1-9999" walking the DB for nothing.
+        const end = Math.min(r.verseEnd, r.verseStart + 199)
+        const verses = []
+        for (let n = r.verseStart; n <= end; ++n) {
+            const v = BibleService.verse(code, r.book, r.chapter, n)
+            if (!v || !v.text || v.text.length === 0) break
+            verses.push(v)
+        }
+        return buildScriptureItem(verses, code)
+    }
+
+    // Step the live scripture passage to the verse after its last verse
+    // (dir > 0) or before its first (dir < 0), crossing chapter and book
+    // boundaries. Goes live through pushLibraryLive, the same path a
+    // Scripture tab double-click takes, so the theme, clear state and
+    // Preview mirroring all behave the same. Returns false when nothing
+    // scripture is live or the Bible ends in that direction.
+    function stepLiveScripture(dir) {
+        const it = liveItem
+        if (!it || it.kind !== "scripture" || !it.scriptureRef) return false
+        const r = it.scriptureRef
+        // Global-search items spell the opening verse `verse`, schedule and
+        // tab items `verseStart` / `verseEnd`.
+        const start = parseInt(String(r.verseStart !== undefined ? r.verseStart : r.verse), 10)
+        const end   = parseInt(String(r.verseEnd   !== undefined ? r.verseEnd   : start), 10)
+        const code  = String(r.translationCode || "")
+        if (code.length === 0 || isNaN(start)) return false
+
+        const v = _adjacentVerse(code, String(r.book || ""), Number(r.chapter),
+                                 dir > 0 ? (isNaN(end) ? start : end) : start, dir)
+        if (!v) return false
+        const item = buildScriptureItem([v], code)
+        if (!item) return false
+        pushLibraryLive(item, 0)
+        return true
+    }
+
+    // The verse next to `verse` in reading order. Walks the chapter list
+    // rather than probing verse +/- 1, because some translations skip
+    // verse numbers (Matthew 17:21 in several modern versions) and a probe
+    // would read that gap as the end of the chapter.
+    function _adjacentVerse(code, book, chapter, verse, dir) {
+        const list = BibleService.chapter(code, book, chapter)
+        if (dir > 0) {
+            for (let i = 0; i < list.length; ++i)
+                if (list[i].verse > verse) return list[i]
+            const nextCh = BibleService.chapter(code, book, chapter + 1)
+            if (nextCh.length > 0) return nextCh[0]
+            const books = BibleService.books(code)
+            const bi = _bookIndexIn(books, book)
+            if (bi < 0 || bi + 1 >= books.length) return null
+            const nextBook = BibleService.chapter(code, books[bi + 1].name, 1)
+            return nextBook.length > 0 ? nextBook[0] : null
+        }
+        for (let i = list.length - 1; i >= 0; --i)
+            if (list[i].verse < verse) return list[i]
+        if (chapter > 1) {
+            const prevCh = BibleService.chapter(code, book, chapter - 1)
+            if (prevCh.length > 0) return prevCh[prevCh.length - 1]
+        }
+        const books = BibleService.books(code)
+        const bi = _bookIndexIn(books, book)
+        if (bi <= 0) return null
+        const prevBook = BibleService.chapter(code, books[bi - 1].name,
+                                              books[bi - 1].chapterCount)
+        return prevBook.length > 0 ? prevBook[prevBook.length - 1] : null
+    }
+
+    function _bookIndexIn(books, name) {
+        const want = String(name || "").toLowerCase()
+        for (let i = 0; i < books.length; ++i)
+            if (String(books[i].name).toLowerCase() === want) return i
+        return -1
+    }
+
     // Re-read the staged preview item from the DB after its song was edited.
     //
     // libraryPreviewItem is a plain JS snapshot taken when the operator picked
@@ -413,6 +716,15 @@ QtObject {
         const restaged = _songContentMerged(ProjectionService.currentItem)
         if (restaged) _projectItemLive(restaged, i)
         else          ProjectionService.setPage(i)
+    }
+
+    // One step through the live item's pages, clamped at both ends. Shared
+    // by LivePanel's Up / Down and the live dock's prev / next, so both
+    // commit through commitLivePage (edited-song restage included).
+    function stepLivePage(delta) {
+        const n = livePages.length
+        if (n === 0) return
+        commitLivePage(Math.max(0, Math.min(n - 1, liveSubIndex + delta)))
     }
 
     // Route a go-live through the crop-aware overload for media items so a
@@ -829,6 +1141,52 @@ QtObject {
         else
             closeModal()
     }
+
+    // ─── Live controls dock (beside open dialogs) ───────────────────────
+    // A dialog covers the console, and every console shortcut is gated off
+    // while one is open (consoleShortcutsActive), so without this the
+    // operator has to abandon an edit to advance a slide. LiveControlsDock,
+    // mounted in ModalLayer above the dialogs, drives the same live state
+    // LivePanel does. Gated by SettingsService.liveControlsOverDialogs.
+    //
+    // Menus, the schedule dropdown, the command palette (it has its own Go
+    // Live) and the small naming / confirm prompts are left out: they are
+    // brief, and a panel arriving for a two-second prompt is noise.
+    readonly property var liveDockExcludedModals:
+        ["contextMenu", "scheduleDropdown", "globalSearch", "naming", "confirm"]
+
+    readonly property bool liveDockShown:
+        SettingsService.liveControlsOverDialogs
+        && activeModal !== ""
+        && liveDockExcludedModals.indexOf(activeModal) < 0
+
+    // Session-only placement. Docked (the default) pins the panel to the
+    // window's right edge and asks ModalShell to centre the dialog card in
+    // the space left of it. Dragging the header floats it at x / y, which
+    // stop reserving space. Collapsed folds either form to a thin tab.
+    property bool   liveDockCollapsed: false
+    property bool   liveDockFloating:  false
+    property real   liveDockX: 0
+    property real   liveDockY: 0
+    property string liveDockTab: "live"          // "live" | "scripture"
+    // The scripture switch's typed reference and translation pick, kept
+    // across dialogs so reopening an editor finds the panel as it was left.
+    // An empty translation follows the live passage, else the Scripture tab.
+    property string liveDockScriptureQuery: ""
+    property string liveDockTranslation:    ""
+
+    readonly property int liveDockWidth:          300
+    readonly property int liveDockCollapsedWidth: 32
+    readonly property int liveDockMargin:         12
+
+    // Width ModalShell keeps clear on the right so the card never sits under
+    // the docked panel. ModalShell drops the reservation when honouring it
+    // would squeeze its card too far (small window); the panel then overlaps
+    // and the operator can fold or drag it.
+    readonly property int liveDockReservedWidth:
+        (!liveDockShown || liveDockFloating) ? 0
+            : (liveDockCollapsed ? liveDockCollapsedWidth : liveDockWidth)
+              + liveDockMargin * 2
 
     // Open a context menu anchored at a mouse position inside `originItem`.
     // Replaces the boilerplate every call site used to repeat:

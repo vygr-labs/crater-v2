@@ -66,11 +66,40 @@ Item {
         }
     }
 
+    // Room the docked live controls panel needs on the right (see
+    // AppState.liveDockReservedWidth / LiveControlsDock.qml). The card
+    // centres in what is left, so the panel sits beside the dialog rather
+    // than on it. The reservation is dropped when honouring it would shrink
+    // the card below 80% of its design width (never asking for less than
+    // 640px): a cramped editor is worse than a panel the operator can fold
+    // to a thin tab or drag aside.
+    readonly property int _dockReserve: {
+        const want = AppState.liveDockReservedWidth
+        if (want <= 0) return 0
+        const minCard = Math.min(root.dialogWidth, Math.max(640, root.dialogWidth * 0.8))
+        return (root.width - want - 48 >= minCard) ? want : 0
+    }
+
+    // Eased copy of the reservation, so folding or docking the panel glides
+    // the card over while a window resize still tracks instantly.
+    property real _dockReserveEased: _dockReserve
+    Behavior on _dockReserveEased {
+        NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic }
+    }
+
+    Item {
+        id: cardArea
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        width: root.width - root._dockReserveEased
+    }
+
     // Card
     Rectangle {
         id: card
-        anchors.centerIn: parent
-        width: Math.min(root.dialogWidth, root.width - 48)
+        anchors.centerIn: cardArea
+        width: Math.min(root.dialogWidth, cardArea.width - 48)
         height: Math.min(root.dialogHeight, root.height - 48)
         // Squared corners — the modal frame intentionally drops Theme.radius.lg
         // so its chrome reads as a flat, data-dense surface rather than a

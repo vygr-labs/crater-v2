@@ -137,4 +137,16 @@ Item {
             }
         }
     }
+
+    // ── Live controls beside the open dialog ────────────────────────────
+    // Declared last so it stacks above every dialog's backdrop and card.
+    // AppState.liveDockShown carries the setting and the list of modals it
+    // stays out of (menus, the palette, small prompts). Same zero-cost rule
+    // as the dialogs: nothing exists while no dialog is open. The panel
+    // swallows its own clicks, so the backdrop under it never sees them.
+    Loader {
+        anchors.fill: parent
+        active: AppState.liveDockShown
+        sourceComponent: LiveControlsDock { }
+    }
 }

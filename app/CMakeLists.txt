@@ -172,6 +172,7 @@ qt_add_qml_module(crater
         qml/panels/SchedulePanel.qml
         qml/panels/PreviewPanel.qml
         qml/panels/LivePanel.qml
+        qml/panels/LiveControlsDock.qml
         qml/panels/LibraryTabBar.qml
         qml/panels/LibrarySidebar.qml
         qml/panels/LibraryContent.qml

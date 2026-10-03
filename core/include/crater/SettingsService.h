@@ -90,6 +90,15 @@ private:
     // on its own screen must stay on TOP, or a notification toast lands
     // in front of the congregation. See ProjectionWindow.qml.
     Q_PROPERTY(bool    projectionBehindConsole READ projectionBehindConsole WRITE setProjectionBehindConsole NOTIFY projectionBehindConsoleChanged)
+    // Live controls over dialogs. When true, opening an editor or Settings
+    // (anything shown through ModalLayer except menus and small prompts)
+    // brings up a compact live dock beside the dialog: the live item, its
+    // slides, Logo / Clear, and a scripture quick switch. Without it a
+    // dialog covers the whole console and the operator has to close their
+    // edit to advance a slide. Default on: the dock only exists while a
+    // dialog is up, takes space the centred card leaves free, and folds to
+    // a thin tab. See LiveControlsDock.qml.
+    Q_PROPERTY(bool    liveControlsOverDialogs READ liveControlsOverDialogs WRITE setLiveControlsOverDialogs NOTIFY liveControlsOverDialogsChanged)
     // NDI render-pipeline backend. true (default): headless QQuickRenderControl
     // path — NDI scene renders into a GPU texture we own, with async readback
     // delivering frames to the sender; runs at 60 Hz adaptive (drops to 30 Hz
@@ -232,6 +241,7 @@ public:
     QString outputMode() const;
     bool    projectionInAltTab() const;
     bool    projectionBehindConsole() const;
+    bool    liveControlsOverDialogs() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
     QString ndiPixelFormat() const;
@@ -272,6 +282,7 @@ public:
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
     void setProjectionBehindConsole(bool v);
+    void setLiveControlsOverDialogs(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
     void setNdiPixelFormat(const QString& v);
@@ -314,6 +325,7 @@ signals:
     void outputModeChanged();
     void projectionInAltTabChanged();
     void projectionBehindConsoleChanged();
+    void liveControlsOverDialogsChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();
     void ndiPixelFormatChanged();
