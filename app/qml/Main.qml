@@ -499,6 +499,9 @@ ApplicationWindow {
     ProjectionWindow {
         id: projectionWindow
         screenIndex: OutputService.selectedScreenIndex
+        // Lets the projection tell when it is aimed at the console's own
+        // display, and stack itself under this window in behind mode.
+        consoleWindow: root
         // Two orthogonal flags drive the projection window's state:
         //
         //   visibleToOperator — "is the audience seeing this right now?"
@@ -579,21 +582,23 @@ ApplicationWindow {
         Component.onCompleted: root._refreshOutputWindowIds()
     }
 
-    // Single-screen go-live: keep the console in front. ProjectionWindow drops
-    // its always-on-top hint when there's only one display (see _singleScreen
-    // there), so the fullscreen audience output renders BEHIND this console
-    // instead of burying it. But the OS still briefly foregrounds a freshly-
-    // shown window, so we shove the console back on top one event-loop tick
-    // later — same Qt.callLater(raise + requestActivate) pattern the launch
-    // code uses, and for the same reason (Windows suppresses focus-stealing).
-    // The operator then surfaces the projection deliberately via its taskbar /
-    // Alt-Tab entry. No-op on multi-monitor (nothing to bury) and in windowed
-    // mode (the small preview never covers the console).
+    // Shared-screen go-live: keep the console in front. ProjectionWindow drops
+    // its always-on-top hint when it shares the console's display (see
+    // sharesConsoleScreen there), and in behind mode ProjectionLayering shows
+    // it without activating and stacks it under this console. This is the
+    // fallback in case the OS foregrounds the freshly shown window anyway: it
+    // shoves the console back on top one event-loop tick later — same
+    // Qt.callLater(raise + requestActivate) pattern the launch code uses, and
+    // for the same reason (Windows suppresses focus-stealing). The operator
+    // then surfaces the projection deliberately by clicking it or via its
+    // taskbar / Alt-Tab entry. No-op when the output has a display of its own
+    // (nothing to bury) and in windowed mode (the small preview never covers
+    // the console).
     Connections {
         target: projectionWindow
         function onVisibleToOperatorChanged() {
             if (!projectionWindow.visibleToOperator) return
-            if (OutputService.screens.length > 1) return
+            if (!projectionWindow.sharesConsoleScreen) return
             if (OutputService.projectionMode !== OutputService.Fullscreen) return
             Qt.callLater(function() {
                 root.raise()

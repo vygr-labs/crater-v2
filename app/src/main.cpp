@@ -37,6 +37,7 @@
 #include "NdiRenderer.h"
 #include "NdiService.h"
 #include "PdfPageImageProvider.h"
+#include "ProjectionLayering.h"
 #include "RichTextHelper.h"
 #include "TranslationService.h"
 #include "WindowChrome.h"
@@ -468,6 +469,10 @@ int main(int argc, char* argv[])
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
     crater::BrowserCastService browserCastService(&projectionService);
+    // Win32 z-order keeper for the projection when it shares the console's
+    // display. Installs a native event filter, so it must outlive every
+    // window: constructed here, destroyed after app.exec() returns.
+    crater::ProjectionLayering projectionLayering;
     qInfo().noquote() << "[startup] crater-core services constructed: +"
                       << startupClock.elapsed() << "ms";
 
@@ -497,6 +502,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
     qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);
     qmlRegisterSingletonInstance("Crater", 1, 0, "BrowserCastService",    &browserCastService);  // BrowserCast (removable feature)
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionLayering",    &projectionLayering);
     // BrowserCast (removable feature) — the LAN server is started on demand
     // by the operator toggle in Settings > Remote Control, not at launch.
 

@@ -147,15 +147,18 @@ Item {
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            // Picks between the two single-screen arrangements: the corner
-            // preview on top (off, the former behaviour) and a full-size
-            // render pinned underneath (on). Inert while a second display
-            // is attached, which the label says rather than dimming the row
-            // — an operator configuring this on a two-monitor desk is
-            // usually preparing for a one-monitor venue.
+            // Picks between the two arrangements for an output that shares
+            // the console's display: the corner preview on top (off) and the
+            // EasyWorship 7 style full-size output stacked directly under the
+            // console (on). Applies with one display, or with several when the
+            // output display above is the console's own screen. Not dimmed on
+            // a desk where the output has its own screen: an operator
+            // configuring this there is usually preparing for a one-monitor
+            // venue. The subtitle explains the way back, the part people get
+            // stuck on.
             SettingRow {
-                title: qsTr("Single display: full-size projection behind the console")
-                description: qsTr("Renders at full screen size but pinned under every window, so it shows through wherever the console is not. Off keeps the small corner preview.")
+                title: qsTr("Same screen as the console: show output behind it")
+                description: qsTr("The output fills the screen behind the console and shows wherever the console does not cover it. Click the output to bring it to the front. Click it again or press Esc to go back to the console. Off shows a small preview in the corner instead.")
                 ToggleSwitch {
                     value: SettingsService.projectionBehindConsole
                     onToggled: SettingsService.projectionBehindConsole = !SettingsService.projectionBehindConsole }

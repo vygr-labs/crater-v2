@@ -539,7 +539,10 @@ Rectangle {
                     label: qsTr("Fullscreen"),
                     iconName: (OutputService.projectionMode === OutputService.Fullscreen)
                                 ? "check" : "maximize",
-                    detail: single ? qsTr("needs a 2nd display") : "",
+                    // Behind-the-console mode does render full size on one
+                    // display, so the caveat would be wrong there.
+                    detail: (single && !SettingsService.projectionBehindConsole)
+                            ? qsTr("needs a 2nd display") : "",
                     action: function() {
                         OutputService.projectionMode = OutputService.Fullscreen
                     }

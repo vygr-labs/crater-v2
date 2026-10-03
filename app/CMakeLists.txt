@@ -32,6 +32,11 @@ qt_add_executable(crater
     # Compiles to nothing on other platforms.
     src/WindowChrome.cpp
     src/WindowChrome.h
+    # Keeps the projection stacked under the console when both share a
+    # display (Settings > Projection, behind the console). Win32 z-order
+    # rules Qt flags cannot express. Inert on other platforms.
+    src/ProjectionLayering.cpp
+    src/ProjectionLayering.h
     # UI localization runtime — loads crater_<code>.qm catalogs and swaps the
     # language live (QTranslator + QQmlEngine::retranslate). App layer because
     # live retranslation needs the engine; crater-core stays Quick-free (§1).
