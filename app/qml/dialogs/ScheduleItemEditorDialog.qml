@@ -38,6 +38,13 @@ import Crater
 // which lives in the tab and would have to be duplicated here. It also
 // keeps Reset working when the library song has since been deleted.
 //
+// ── Raw text ─────────────────────────────────────────────────────────────
+// "Raw text" mode is the song editor's freeform box (RawLyricsEditor): one
+// slide per `[Label]` block, so a whole song can be typed or pasted at
+// once. It shares the song editor's remembered view mode. Pages change
+// only when the raw text is actually edited, so flipping modes to look is
+// lossless even for a page whose content holds a blank line.
+//
 // Not here yet: cross-field undo/redo (the body fields keep their own
 // native undo; Reset and Cancel cover the rest).
 ModalShell {
@@ -69,6 +76,7 @@ ModalShell {
     property string _title: ""
     property var    _pages: [{ label: "", content: "" }]
     property int    _currentPage: 0
+    property string _viewMode: "structured"   // "structured" | "raw"
     property bool   _isLoading: true
     property string _saveError: ""
 
@@ -120,6 +128,8 @@ ModalShell {
         root._pages = pages
         root._title = it.title || ""
         root._baseline = root._digest(root._title, root._pages)
+        root._viewMode = AppState.songEditorViewMode
+        root._refreshRawText()
         root._isLoading = false
         titleInput.text = root._title
         AppState.modalCloseOwner = root
@@ -178,6 +188,35 @@ ModalShell {
         root._currentPage = idx + 1
     }
 
+    // ── Raw text <-> pages ──────────────────────────────────────────────
+    function _refreshRawText() {
+        rawEditor.setDsl(rawEditor.serialize(root._pages.map(function(p) {
+            return { label: p.label || "", lines: String(p.content || "").split("\n") }
+        })))
+    }
+
+    function _commitRawText(text) {
+        const parsed = rawEditor.parse(text).map(function(s) {
+            return { label: s.label, content: s.lines.join("\n") }
+        })
+        if (root._digest("", parsed) === root._digest("", root._pages)) return
+        root._pages = parsed
+        if (root._currentPage >= parsed.length)
+            root._currentPage = parsed.length - 1
+    }
+
+    function _toggleViewMode() {
+        // Raw edits are already in _pages (committed on every keystroke),
+        // so only the way in needs a sync.
+        if (root._viewMode === "structured") {
+            root._refreshRawText()
+            root._viewMode = "raw"
+        } else {
+            root._viewMode = "structured"
+        }
+        AppState.setSongEditorViewMode(root._viewMode)
+    }
+
     // ── Reset ───────────────────────────────────────────────────────────
     // Restores the stash written on the first save. Before any save the row
     // still holds its original pages, so the stash is simply absent and the
@@ -194,6 +233,7 @@ ModalShell {
         if (pages.length === 0) return
         root._pages = pages
         root._currentPage = 0
+        root._refreshRawText()
     }
 
     // ── Save ────────────────────────────────────────────────────────────
@@ -376,6 +416,11 @@ ModalShell {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space.sm
 
+            EditorViewToggle {
+                anchors.verticalCenter: parent.verticalCenter
+                mode: root._viewMode
+                onModeRequested: root._toggleViewMode()
+            }
             GhostButton {
                 text: qsTr("Reset to source")
                 enabled: root._canReset
@@ -420,6 +465,28 @@ ModalShell {
                 anchors.topMargin: Theme.space.sm
             }
 
+            RawLyricsEditor {
+                id: rawEditor
+                anchors.top: toolbar.bottom
+                anchors.topMargin: Theme.space.sm
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: Theme.space.lg
+                anchors.rightMargin: Theme.space.md
+                anchors.bottomMargin: Theme.space.lg
+                visible: root._viewMode === "raw"
+                placeholderText: qsTr("Type or paste the slides. Use [Label] on its own "
+                        + "line to start a slide, and a blank line between slides.")
+
+                onDslEdited: function(dsl) { root._commitRawText(dsl) }
+                onActivated: root._focusedLyricEditor = rawEditor.editor
+                onCursorMoved: function(position, plainText) {
+                    const idx = rawEditor.sectionAt(position, plainText, root._pages.length)
+                    if (idx !== root._currentPage) root._currentPage = idx
+                }
+            }
+
             Flickable {
                 id: pagesScroll
                 anchors.top: toolbar.bottom
@@ -430,6 +497,7 @@ ModalShell {
                 anchors.leftMargin: Theme.space.lg
                 anchors.rightMargin: Theme.space.md
                 anchors.bottomMargin: Theme.space.lg
+                visible: root._viewMode === "structured"
                 contentWidth:  pagesCol.width
                 contentHeight: pagesCol.height
                 clip: true
@@ -667,6 +735,8 @@ ModalShell {
         sequence: StandardKey.Save
         onActivated: root._save()
     }
+    // Same view toggle key as the song editor.
+    Shortcut { sequence: "Ctrl+M"; onActivated: root._toggleViewMode() }
 
     ConfirmationOverlay {
         id: discardConfirm

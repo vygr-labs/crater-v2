@@ -130,6 +130,8 @@ qt_add_qml_module(crater
         qml/components/LogoView.qml
         qml/components/LyricSectionEditor.qml
         qml/components/LyricsToolbar.qml
+        qml/components/RawLyricsEditor.qml
+        qml/components/EditorViewToggle.qml
         qml/components/ColorPicker.qml
         qml/components/ColorPickerPopover.qml
         qml/components/ColorSwatchInput.qml
