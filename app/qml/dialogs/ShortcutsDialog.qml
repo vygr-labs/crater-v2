@@ -36,8 +36,16 @@ ModalShell {
         { title: qsTr("Live output"), rows: [
             { keys: ["Ctrl+L"],                    label: qsTr("Show or hide the logo") },
             { keys: ["Ctrl+C", "Ctrl+."],          label: qsTr("Clear the projected text") },
-            { keys: ["Esc"],                       label: qsTr("In the projector window, close it") },
+            { keys: ["Esc"],                       label: qsTr("In the projector window, close it, or send it behind the console in same-screen mode") },
             { keys: ["Esc"],                       label: qsTr("In an extra output window, turn it off") }
+        ] },
+        { title: qsTr("Live video"), rows: [
+            { keys: ["Ctrl+P"],                    label: qsTr("Play or pause") },
+            { keys: ["Ctrl+Shift+P"],              label: qsTr("Stop and rewind") },
+            { keys: ["Alt+←", "Alt+→"],            label: qsTr("Back or forward 10 seconds") },
+            { keys: ["Alt+Home"],                  label: qsTr("Restart") },
+            { keys: ["Alt+↑", "Alt+↓"],            label: qsTr("Volume up or down") },
+            { keys: ["Ctrl+M"],                    label: qsTr("Mute or unmute") }
         ] },
         { title: qsTr("Preview and Live"), rows: [
             { keys: ["↑", "↓"],                    label: qsTr("Previous or next slide in the focused panel") },
