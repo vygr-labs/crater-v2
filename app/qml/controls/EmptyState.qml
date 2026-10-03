@@ -19,6 +19,14 @@ Item {
     property real   iconSize: Theme.icon.xl
     property real   maxBodyWidth: 320
 
+    // Buttons or links that belong under the text (e.g. "Add Your First
+    // Song"). They flow in the same column, so a body that wraps onto more
+    // lines pushes them down instead of running underneath them.
+    default property alias actions: actionSlot.data
+    // Hide the actions without removing them (e.g. "Clear search" only
+    // when there is a query).
+    property bool showActions: true
+
     ColumnLayout {
         anchors.centerIn: parent
         spacing: Theme.space.sm
@@ -67,6 +75,15 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             lineHeight: 1.4
+        }
+
+        Item {
+            id: actionSlot
+            visible: root.showActions && children.length > 0
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: Theme.space.md
+            implicitWidth:  childrenRect.width
+            implicitHeight: childrenRect.height
         }
     }
 }
