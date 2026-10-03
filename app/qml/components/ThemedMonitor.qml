@@ -49,9 +49,20 @@ Item {
     // default-for-kind selection or adds/deletes any theme.
     property int _themeRevision: 0
 
+    // Resolved from the two fields resolveItemTheme actually reads, never
+    // from `item` itself. The editors hand this monitor a fresh item map on
+    // every keystroke, and binding _theme to `item` turned each one into a
+    // new tokens map, a new node array and a rebuilt node graph, which
+    // restarts a theme's video background mid-sentence. Scalars only notify
+    // when their value moves, so typing now re-resolves text and nothing else.
+    readonly property int _itemThemeId:
+        _hasItem && typeof item.themeId === "number" ? item.themeId : 0
+
     readonly property var _theme: {
         _themeRevision   // dependency
-        return _hasItem ? AppState.resolveItemTheme(item) : null
+        return _hasItem
+            ? AppState.resolveItemTheme({ kind: root._kind, themeId: root._itemThemeId })
+            : null
     }
 
     Connections {

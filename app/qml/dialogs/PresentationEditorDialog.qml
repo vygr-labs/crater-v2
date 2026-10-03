@@ -37,7 +37,10 @@ import Crater
 ModalShell {
     id: root
 
-    dialogWidth: 1040
+    // Wider than the other editors because it carries three panes (slide
+    // list, fields, live preview) where they carry two. ModalShell clamps
+    // to the window, and the preview pane gives way first (see previewPane).
+    dialogWidth: 1280
     dialogHeight: 760
     title: qsTr("Edit presentation")
 
@@ -158,11 +161,18 @@ ModalShell {
         "title": true, "subtitle": true, "layout": true, "mediaId": true
     })
 
+    // Bumped by every in-place write that does NOT reassign _slides. The live
+    // preview is the one reader of body / bodyRight that is not their own
+    // TextEdit, and it reads this instead of forcing the slide list to
+    // rebuild on each keystroke.
+    property int _contentRevision: 0
+
     function _setField(field, value) {
         if (_loading) return
         if (_sel < 0 || _sel >= _slides.length) return
         _slides[_sel][field] = value
         if (_notifyingFields[field]) _slides = _slides.slice()
+        else _contentRevision++
     }
 
     function _select(i) {
@@ -233,13 +243,14 @@ ModalShell {
     }
 
     // ── Resolved theme + the current slide's design ─────────────────────
-    // The strip and the derived field set both need the theme this deck will
-    // actually render with. That is the per-deck override when set, and the
-    // per-kind default otherwise — the same fall-through
-    // AppState.resolveItemTheme performs, minus the per-output slot, which
-    // the editor has no single answer for (a deck can go to two outputs with
-    // different pins). Editing against the default is the honest choice: it
-    // is what the operator sees in Preview.
+    // The strip, the derived field set and the live preview all need the
+    // theme this deck will actually render with, and they must agree, or the
+    // strip offers designs from one theme while the preview beside it draws
+    // another. All three go through AppState.resolveItemTheme for the
+    // primary output: the per-deck override, then that output's pin for
+    // presentations, then the per-kind default. The primary output is the
+    // one answer worth editing against (a deck can go to two outputs with
+    // different pins), and it is what the Preview panel's monitor shows.
     //
     // The revision int forces re-evaluation when a theme is edited or the
     // default-for-kind changes while this dialog is open, mirroring the
@@ -254,11 +265,43 @@ ModalShell {
 
     readonly property var _resolvedTheme: {
         _themeRevision   // dependency
-        if (_themeId > 0) {
-            const t = ThemeService.theme(_themeId)
-            if (t && (t.id || 0) > 0) return t
+        return AppState.resolveItemTheme({ kind: "presentation", themeId: _themeId })
+    }
+
+    // ── Live preview ────────────────────────────────────────────────────
+    // Built by the same AppState.buildPresentationItem the Presentations tab
+    // uses to stage a deck, so the preview cannot drift from what Go Live
+    // sends: same page shape, same per-slide design, picture and theme
+    // override. Reads _slides (structure, title, design, picture) and
+    // _contentRevision (body / right column typing) so it follows every edit
+    // without the slide list having to rebuild.
+    readonly property var _previewItem: {
+        _contentRevision   // dependency
+        if (!_valid) return null
+        return AppState.buildPresentationItem(
+            { id: deckId, title: _title, themeId: _themeId }, _slides)
+    }
+    readonly property int _previewPage:
+        _previewItem ? Math.max(0, Math.min(_sel, _previewItem.pages.length - 1)) : 0
+
+    // Width over height of the screen the audience output will fill, so the
+    // well letterboxes the theme canvas exactly as the projector will. A
+    // dedicated display in fullscreen gives its own shape (a 4:3 projector
+    // shows its bars here too). Windowed projection, including the forced
+    // single-screen case, is always a 16:9 window, as ProjectionWindow sizes
+    // it. Clamped so an odd or portrait display cannot squeeze the pane.
+    readonly property real _outputAspect: {
+        const list = OutputService.screens
+        const windowed = OutputService.projectionMode === OutputService.Windowed
+            || (list.length <= 1 && !SettingsService.projectionBehindConsole)
+        if (!windowed && list.length > 0) {
+            const i = OutputService.selectedScreenIndex
+            const s = (i >= 0 && i < list.length) ? list[i] : list[0]
+            const g = s.geometry
+            if (g.width > 0 && g.height > 0)
+                return Math.max(1.0, Math.min(2.4, g.width / g.height))
         }
-        return ThemeService.defaultFor("presentation")
+        return 16 / 9
     }
 
     readonly property var _themeTokens:
@@ -557,6 +600,81 @@ ModalShell {
             }
         }
 
+        // ── Live preview ─────────────────────────────────────────────────
+        // Right-hand pane, as in the song and schedule item editors: the
+        // slide being edited, drawn by the same ThemedMonitor the Preview and
+        // Live panels use, so it shows the theme's backgrounds, the slide's
+        // design and its picture exactly as they will project. It follows
+        // the selected slide and redraws as the operator types.
+        //
+        // A third of the body, bounded both ways: below ~280 px a slide is
+        // unreadable, and above ~440 px it starts starving the fields, which
+        // are the reason the dialog is open.
+        Item {
+            id: previewPane
+            anchors.top: header.bottom
+            anchors.topMargin: Theme.space.md
+            anchors.bottom: footer.top
+            anchors.bottomMargin: Theme.space.md
+            anchors.right: parent.right
+            width: Math.round(Math.max(280, Math.min(440, parent.width * 0.34)))
+
+            Column {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: Theme.space.sm
+
+                FieldLabel {
+                    label:  qsTr("Live preview")
+                    detail: root._slides.length > 1
+                                ? qsTr("slide %1 of %2").arg(root._sel + 1).arg(root._slides.length)
+                                : ""
+                }
+
+                // Black well in the audience output's shape. ThemedMonitor
+                // letterboxes the theme canvas inside it the way the
+                // projector letterboxes it on the real screen, so a 16:9
+                // theme on a 4:3 projector shows the same bars here.
+                Rectangle {
+                    width: parent.width
+                    height: Math.round(width / root._outputAspect)
+                    color: "#000000"
+                    border.color: Theme.color.borderStrong
+                    border.width: 1
+                    clip: true
+
+                    ThemedMonitor {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        item: root._previewItem
+                        pageIndex: root._previewPage
+                        muted: true
+                    }
+                }
+
+                // Which theme drew it. The combobox above reads "Default
+                // presentation theme" whenever the deck has no override,
+                // which does not say what that default currently is, or
+                // that the projector's own pin has taken over.
+                Text {
+                    width: parent.width
+                    visible: text.length > 0
+                    text: {
+                        const t = root._resolvedTheme
+                        return (t && (t.id || 0) > 0 && t.name)
+                            ? qsTr("Shown with %1").arg(t.name) : ""
+                    }
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+            }
+        }
+
         // ── Slide fields ─────────────────────────────────────────────────
         // Which boxes appear is driven entirely by root._slots, derived from
         // the chosen design. Column skips invisible children outright, so a
@@ -569,7 +687,8 @@ ModalShell {
             anchors.bottomMargin: Theme.space.md
             anchors.left: slidePane.right
             anchors.leftMargin: Theme.space.md
-            anchors.right: parent.right
+            anchors.right: previewPane.left
+            anchors.rightMargin: Theme.space.md
             spacing: Theme.space.sm
 
             // Multiline boxes share whatever is left after the design strip
