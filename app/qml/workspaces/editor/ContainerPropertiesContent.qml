@@ -590,6 +590,10 @@ Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 32
+                // Only presentation slides carry a picture to fill this box.
+                // Kept visible on any container already set to it, so a
+                // theme imported with the setting can still turn it off.
+                visible: workspace.themeKind === "presentation" || _on
                 readonly property bool _on: !!(node && node.data
                                                && node.data.linkage === "presentationImage")
                 Row {
