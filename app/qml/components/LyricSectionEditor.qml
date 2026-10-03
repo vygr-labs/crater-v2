@@ -74,6 +74,31 @@ Rectangle {
         _lastEmittedDsl = dsl || ""
     }
 
+    // Keep the caret on screen. The cards sit in the dialog's Flickable,
+    // which knows nothing about carets, so typing or arrowing past the fold
+    // used to leave the caret out of sight. Walks up to the nearest
+    // Flickable instead of taking one as a property so both editors that
+    // host these cards get it without wiring.
+    function _revealCursor() {
+        if (!linesEdit.activeFocus) return
+        let f = root.parent
+        while (f && !(f.contentY !== undefined && f.contentItem !== undefined))
+            f = f.parent
+        if (!f) return
+        const r   = linesEdit.cursorRectangle
+        const top = linesEdit.mapToItem(f.contentItem, r.x, r.y).y
+        const pad = Theme.space.lg
+        // No clamp to contentHeight at the bottom: the host's Column
+        // re-measures in a later polish pass, so contentHeight still holds
+        // the pre-growth value here and clamping to it stops short of the
+        // caret. The card itself is already that tall, so this never shows
+        // empty space.
+        if (top - pad < f.contentY)
+            f.contentY = Math.max(0, top - pad)
+        else if (top + r.height + pad > f.contentY + f.height)
+            f.contentY = top + r.height + pad - f.height
+    }
+
     Component.onCompleted: _applyDslToEditor(root.linesText)
     onLinesTextChanged: {
         // Skip re-init when the incoming value is what we just emitted.
@@ -285,6 +310,11 @@ Rectangle {
                         event.accepted = true
                     }
                 }
+
+                // Deferred: Enter on the last line moves the caret before
+                // the card has grown, so checking now would clamp to the
+                // old content height.
+                onCursorRectangleChanged: Qt.callLater(root._revealCursor)
 
                 onActiveFocusChanged: {
                     if (activeFocus) {

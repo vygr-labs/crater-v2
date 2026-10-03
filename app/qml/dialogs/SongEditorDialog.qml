@@ -50,19 +50,9 @@ ModalShell {
     property string _viewMode: "structured"  // "structured" | "raw"
     property string _rawText: ""
 
-    // ── Raw-mode WYSIWYG bridging state ─────────────────────────────────
-    // Raw mode is a flat WYSIWYG editor (Phase 7+): the rawArea renders
-    // formatting inline, so cursor positions are in plain-text space
-    // (not DSL-source space). `_rawText` stays as the DSL form (source of
-    // truth for round-trip / save / re-population); these flags break
-    // the same feedback loop that LyricSectionEditor handles for its own
-    // RichText editor — see the doc comment there for the full pattern.
-    property bool   _settingRawText: false
-    property string _lastEmittedRawDsl: ""
-
     // ── Shared-toolbar focus tracking ───────────────────────────────────
     // Holds the last TextEdit that gained focus in the lyric-editing
-    // surface — either rawArea or one of the LyricSectionEditor's
+    // surface — either the raw editor or one of the LyricSectionEditor's
     // linesEdit instances. The shared LyricsToolbar (one in structured
     // mode, one in raw mode) reads this as its `target`, so format
     // toggles always land on whichever editor the operator is actively
@@ -322,129 +312,36 @@ ModalShell {
     }
 
     // ── Raw mode <-> structured ─────────────────────────────────────────
-    //
-    // The DSL contract (Phase 2+): each entry of `section.lines` is a DSL
-    // string (e.g. "**Amazing** grace, how *sweet* the sound"). Plain text
-    // is a valid DSL string with no markers, so existing songs round-trip
-    // unchanged. The functions below treat lines as opaque DSL strings —
-    // joining/splitting them does NOT require parsing the DSL, because
-    // marks can't cross line boundaries (per the v1 grammar rule).
+    // Raw mode is RawLyricsEditor, which owns the `[Label]` text format.
+    // `_rawText` keeps the DSL form of what it shows (the source of truth
+    // for save and view switches). Each entry of `section.lines` is a DSL
+    // string, and marks never cross a line, so lines pass through opaque.
     function _refreshRawText() {
-        let parts = []
-        for (let i = 0; i < _sections.length; i++) {
-            const s = _sections[i] || {}
-            const body = (s.lines || []).join("\n")
-            parts.push(s.label ? ("[" + s.label + "]\n" + body) : body)
-        }
-        _rawText = parts.join("\n\n")
-        // Push the rebuilt DSL into the raw editor's HTML buffer. The
-        // _settingRawText guard inside _applyRawDsl prevents the resulting
-        // onTextChanged from echoing back as a new edit. This lets every
-        // caller (undo / redo / section-add / section-delete / view-toggle)
-        // sync the raw editor with one function call rather than each
-        // remembering to also re-apply.
-        _applyRawDsl(_rawText)
+        _rawText = rawEditor.serialize(_sections)
+        // Push the rebuilt text into the raw editor too, so undo / redo /
+        // add / delete / view-toggle all resync it with one call.
+        rawEditor.setDsl(_rawText)
     }
     function _parseRawToSections(text) {
-        const lines = text.split("\n")
-        const out = []
-        let current = null
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]
-            const trimmed = line.trim()
-            const labelMatch = trimmed.match(/^\[(.*)\]$/)
-            if (labelMatch) {
-                current = { label: labelMatch[1], kind: "other", lines: [] }
-                out.push(current)
-            } else if (trimmed.length > 0) {
-                if (!current) {
-                    current = { label: "", kind: "other", lines: [] }
-                    out.push(current)
-                }
-                current.lines.push(line)
-            } else if (current) {
-                // Blank line breaks the section so the next non-blank starts a
-                // new one. Matches electron's parseRawToLyrics behavior.
-                current = null
-            }
-        }
-        if (out.length === 0) out.push({ label: "", kind: "other", lines: [""] })
-        // Make sure every section has at least an empty lines array so the
-        // structured side renders a textarea (even for label-only sections).
-        for (let j = 0; j < out.length; j++) {
-            if (!out[j].lines || out[j].lines.length === 0) out[j].lines = [""]
-        }
-        return out
+        // The text format has no section kinds, so parsed sections are
+        // "other", the same as before the editor was shared.
+        return rawEditor.parse(text).map(function(s) {
+            return { label: s.label, kind: "other", lines: s.lines }
+        })
     }
     function _commitRawText(text) {
         const parsed = _parseRawToSections(text)
-        // Compare against current — skip the snapshot if nothing actually
-        // changed (e.g. whitespace-only diffs).
-        const cur = JSON.stringify(_sections)
-        const nxt = JSON.stringify(parsed)
-        if (cur === nxt) return
+        // Skip the snapshot when nothing changed (e.g. whitespace-only diffs).
+        if (JSON.stringify(_sections) === JSON.stringify(parsed)) return
         _snapshot()
         _sections = parsed
         if (_currentSection >= parsed.length) _currentSection = parsed.length - 1
     }
 
-    // Find which section index the raw-mode cursor sits inside. Mirrors
-    // the _parseRawToSections walking logic, counting sections as we go,
-    // but stops at the line containing the cursor. Used by rawArea's
-    // onCursorPositionChanged to keep the right-pane preview in sync
-    // with whatever verse the operator is currently editing in raw mode.
-    //
-    // `textOverride` is the editor's PLAIN TEXT when raw mode runs in
-    // RichText (Phase 7+) — cursor positions are plain-text indices in
-    // that mode, NOT DSL-source indices, so we walk the plain text the
-    // operator sees on screen. Section labels `[Verse 1]` are still
-    // visible as plain text (sectioning DSL is operator-readable), so
-    // the same regex match works on either input form.
-    function _sectionAtRawCursor(cursorPos, textOverride) {
-        const text = (textOverride !== undefined && textOverride !== null)
-            ? textOverride : _rawText
-        if (!text || cursorPos < 0) return 0
-        // Take the slice up through the END of the cursor's line so the
-        // line the cursor sits on is fully counted (not just the chars
-        // before the cursor within that line).
-        let endOfLine = text.indexOf("\n", cursorPos)
-        if (endOfLine < 0) endOfLine = text.length
-        const slice = text.substring(0, endOfLine)
-        const lines = slice.split("\n")
-        let sectionIdx = -1
-        let inSection  = false
-        for (let i = 0; i < lines.length; i++) {
-            const trimmed = lines[i].trim()
-            const isLabel = /^\[(.*)\]$/.test(trimmed)
-            if (isLabel) {
-                sectionIdx++
-                inSection = true
-            } else if (trimmed.length > 0) {
-                if (!inSection) { sectionIdx++; inSection = true }
-            } else {
-                inSection = false
-            }
-        }
-        if (sectionIdx < 0) sectionIdx = 0
-        if (sectionIdx >= _sections.length) sectionIdx = _sections.length - 1
-        return sectionIdx
-    }
-
-    // Push the current DSL form into the raw editor's HTML buffer. Used
-    // on view-switch to raw, on initial dialog load if raw is the
-    // default, and whenever sections change in structured mode while
-    // raw mode is staged. The flag suppresses the onTextChanged echo
-    // (same pattern as LyricSectionEditor's _applyDslToEditor).
-    function _applyRawDsl(dsl) {
-        _settingRawText = true
-        rawArea.text = LyricsService.dslToHtml(dsl || "")
-        _settingRawText = false
-        _lastEmittedRawDsl = dsl || ""
-    }
 
     function _toggleViewMode() {
         if (_viewMode === "structured") {
-            // _refreshRawText also calls _applyRawDsl, so the raw editor
+            // _refreshRawText also loads the raw editor, so it
             // is staged with current content before we flip visibility.
             _refreshRawText()
             _viewMode = "raw"
@@ -717,67 +614,13 @@ ModalShell {
                 }
             }
 
-            // View-mode toggle — segmented control, right side. Flat radii
-            // match the rest of the modal's data-app aesthetic.
-            Rectangle {
+            // View-mode toggle, right side.
+            EditorViewToggle {
                 id: viewToggleWrap
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 180
-                height: 32
-                radius: 0
-                color: Theme.color.canvas
-                border.color: Theme.color.borderStrong
-                border.width: 1
-
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    spacing: 0
-
-                    Rectangle {
-                        width: (parent.width) / 2
-                        height: parent.height
-                        radius: 0
-                        color: root._viewMode === "structured" ? Theme.color.raised : "transparent"
-                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                        Text {
-                            anchors.centerIn: parent
-                            text: qsTr("Structured")
-                            color: root._viewMode === "structured" ? Theme.color.textPrimary
-                                                                   : Theme.color.textSecondary
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
-                            font.weight: Theme.font.weightMedium
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: if (root._viewMode !== "structured") root._toggleViewMode()
-                        }
-                    }
-                    Rectangle {
-                        width: (parent.width) / 2
-                        height: parent.height
-                        radius: 0
-                        color: root._viewMode === "raw" ? Theme.color.raised : "transparent"
-                        Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
-                        Text {
-                            anchors.centerIn: parent
-                            text: qsTr("Raw text")
-                            color: root._viewMode === "raw" ? Theme.color.textPrimary
-                                                            : Theme.color.textSecondary
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.smallSize
-                            font.weight: Theme.font.weightMedium
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: if (root._viewMode !== "raw") root._toggleViewMode()
-                        }
-                    }
-                }
+                mode: root._viewMode
+                onModeRequested: root._toggleViewMode()
             }
         }
 
@@ -1071,7 +914,7 @@ ModalShell {
 
                 // Formatting toolbar — always visible at the top of the
                 // raw pane. Targets `_focusedLyricEditor` (set when
-                // rawArea gains focus below) rather than rawArea
+                // the raw editor gains focus below) rather than the editor
                 // directly, so the shared focus model is consistent
                 // with structured mode.
                 LyricsToolbar {
@@ -1085,7 +928,8 @@ ModalShell {
                     anchors.topMargin: Theme.space.sm
                 }
 
-                Rectangle {
+                RawLyricsEditor {
+                    id: rawEditor
                     anchors.top: rawToolbar.bottom
                     anchors.topMargin: Theme.space.sm
                     anchors.bottom: parent.bottom
@@ -1094,118 +938,23 @@ ModalShell {
                     anchors.leftMargin: Theme.space.lg
                     anchors.rightMargin: Theme.space.lg
                     anchors.bottomMargin: Theme.space.lg
-                    radius: 0
-                    color: Theme.color.canvas
-                    border.color: rawArea.activeFocus ? Theme.color.brand : Theme.color.borderStrong
-                    border.width: 1
-                    Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+                    placeholderText: qsTr("Type lyrics here. Use [Label] on its own "
+                            + "line to start a section (e.g. [Verse 1], "
+                            + "[Chorus]). Apply bold, italic, underline "
+                            + "and color from the toolbar above.")
 
-                    Flickable {
-                        id: rawScroll
-                        anchors.fill: parent
-                        anchors.margins: Theme.space.md
-                        contentWidth: width
-                        contentHeight: Math.max(height, rawArea.contentHeight + Theme.space.lg)
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-
-                        TextEdit {
-                            id: rawArea
-                            width: rawScroll.width
-                            // Always fill the viewport at minimum so clicks
-                            // below the last line still land on the editor.
-                            // Qt's default click-past-text behavior snaps the
-                            // cursor to end-of-text; without this the TextEdit
-                            // shrinks to its text size and the rest of the box
-                            // becomes inert background.
-                            height: Math.max(contentHeight, rawScroll.height)
-                            // RichText so inline DSL formatting renders
-                            // WYSIWYG. The text on the wire stays DSL via
-                            // the _applyRawDsl / htmlToDsl bridge below.
-                            textFormat: TextEdit.RichText
-                            color: Theme.color.textPrimary
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.bodySize
-                            selectByMouse: true
-                            wrapMode: TextEdit.Wrap
-                            onTextChanged: {
-                                // Skip the echo from our own _applyRawDsl().
-                                if (root._settingRawText) return
-                                const dsl = LyricsService.htmlToDsl(text)
-                                if (dsl !== root._lastEmittedRawDsl) {
-                                    root._lastEmittedRawDsl = dsl
-                                    root._rawText = dsl
-                                    root._commitRawText(dsl)
-                                }
-                            }
-                            // Ctrl+V / Ctrl+Shift+V go through RichTextHelper
-                            // rather than TextEdit's built-in paste, which
-                            // hands the clipboard's text/html straight to
-                            // QTextDocument and so imports a source page's
-                            // background slab, body colour, family and size
-                            // along with the words. pasteFiltered keeps bold /
-                            // italic / underline and re-applies this editor's
-                            // own format to everything else. Shift = paste as
-                            // plain text. See RichTextHelper.h.
-                            Keys.onPressed: function(event) {
-                                if (event.key === Qt.Key_V
-                                    && (event.modifiers & Qt.ControlModifier)) {
-                                    RichTextHelper.pasteFiltered(
-                                        rawArea,
-                                        !(event.modifiers & Qt.ShiftModifier))
-                                    event.accepted = true
-                                }
-                            }
-                            // Tell the dialog this editor is now the
-                            // toolbar's target. Set on entry only — we
-                            // intentionally DO NOT clear on loss of
-                            // focus so the toolbar's `target` survives
-                            // focus moves to the toolbar buttons. The
-                            // shortcuts' activeFocus guard handles the
-                            // "is the editor still the right surface"
-                            // question independently.
-                            onActiveFocusChanged: {
-                                if (activeFocus) root._focusedLyricEditor = rawArea
-                            }
-                            // Track which section the cursor is inside so the
-                            // right-pane preview shows that verse. Cursor is
-                            // in PLAIN-TEXT space (RichText), so we walk the
-                            // editor's plain text (via getText) rather than
-                            // _rawText (which is DSL-form and indexes
-                            // differently).
-                            onCursorPositionChanged: {
-                                if (!activeFocus) return
-                                const plain = rawArea.getText(0, rawArea.length)
-                                const idx = root._sectionAtRawCursor(cursorPosition, plain)
-                                if (idx !== root._currentSection) {
-                                    root._currentSection = idx
-                                }
-                            }
-
-                            Text {
-                                // `length` is the plain-text char count; in
-                                // RichText mode `text` is HTML markup which
-                                // is never empty even for an empty doc, so
-                                // we'd never hide otherwise.
-                                visible: rawArea.length === 0 && !rawArea.activeFocus
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                // Phase 7 placeholder — formatting goes
-                                // through the toolbar (or keyboard
-                                // shortcuts), not literal markers.
-                                // Operators only type `[Label]` by hand
-                                // for sectioning.
-                                text: qsTr("Type lyrics here. Use [Label] on its own "
-                                        + "line to start a section (e.g. [Verse 1], "
-                                        + "[Chorus]). Apply bold, italic, underline "
-                                        + "and color from the toolbar above.")
-                                color: Theme.color.textTertiary
-                                font.family: Theme.font.family
-                                font.pixelSize: Theme.font.bodySize
-                                wrapMode: Text.WordWrap
-                                width: rawArea.width
-                            }
-                        }
+                    onDslEdited: function(dsl) {
+                        root._rawText = dsl
+                        root._commitRawText(dsl)
+                    }
+                    // Set on entry only, so the toolbar keeps its target
+                    // when focus moves onto a toolbar button.
+                    onActivated: root._focusedLyricEditor = rawEditor.editor
+                    // Preview follows the verse the caret is in.
+                    onCursorMoved: function(position, plainText) {
+                        const idx = rawEditor.sectionAt(position, plainText,
+                                                        root._sections.length)
+                        if (idx !== root._currentSection) root._currentSection = idx
                     }
                 }
             }

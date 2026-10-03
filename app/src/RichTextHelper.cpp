@@ -206,6 +206,25 @@ void insertRunText(QTextCursor& c, QString text, const QTextCharFormat& fmt)
     c.insertText(out, fmt);
 }
 
+// Reduce a lyric to its line structure so two renderings of the same text
+// can be compared: every newline shape becomes "\n", whitespace runs inside
+// a line collapse to one space, each line is trimmed and leading or
+// trailing blank lines go. Blank lines in the middle stay, since a stanza
+// gap is exactly what the comparison has to notice.
+QString lineShape(const QString& text)
+{
+    QString t = text;
+    t.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    t.replace(QChar(0x000D), QChar(0x000A));
+    t.replace(QChar(QChar::LineSeparator), QChar(0x000A));
+    t.replace(QChar(QChar::ParagraphSeparator), QChar(0x000A));
+    QStringList lines = t.split(QChar(0x000A));
+    for (QString& l : lines) l = l.simplified();
+    while (!lines.isEmpty() && lines.first().isEmpty()) lines.removeFirst();
+    while (!lines.isEmpty() && lines.last().isEmpty())  lines.removeLast();
+    return lines.join(QChar(0x000A));
+}
+
 }  // namespace
 
 void RichTextHelper::pasteFiltered(QQuickItem* item, bool keepMarks)
@@ -247,6 +266,24 @@ void RichTextHelper::pasteFiltered(QQuickItem* item, bool keepMarks)
     // rather than by an ever-growing blocklist.
     QTextDocument src;
     src.setHtml(md->html());
+
+    // Qt's HTML reader only knows a subset of CSS, so it can get the line
+    // breaks wrong where the browser got them right: a page that styles
+    // its lyrics with a white-space class has raw newlines Qt folds into
+    // spaces, and one paragraph per stanza loses the blank line between
+    // stanzas below. The browser's own plain-text flavour carries the line
+    // breaks the operator actually saw. When the two disagree, take the
+    // plain text, giving up bold / italic / underline rather than lines.
+    QStringList srcBlocks;
+    for (QTextBlock b = src.firstBlock(); b.isValid(); b = b.next())
+        srcBlocks << b.text();
+    const QString plain = md->text();
+    if (!plain.trimmed().isEmpty()
+        && lineShape(srcBlocks.join(QChar(0x000A))) != lineShape(plain)) {
+        insertRunText(c, plain, base);
+        c.endEditBlock();
+        return;
+    }
 
     bool firstBlock = true;
     for (QTextBlock b = src.firstBlock(); b.isValid(); b = b.next()) {
