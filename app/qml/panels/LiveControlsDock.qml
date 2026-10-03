@@ -34,6 +34,9 @@ Item {
     id: root
 
     readonly property int  _margin:   AppState.liveDockMargin
+    // Keep clear of the custom title bar (TitleBar.qml, 32px) so the
+    // window's minimise / maximise / close buttons stay reachable.
+    readonly property int  _top:      32 + _margin
     readonly property bool _collapsed: AppState.liveDockCollapsed
     readonly property bool _floating:  AppState.liveDockFloating
     readonly property bool _onLive:    AppState.liveDockTab === "live"
@@ -42,8 +45,8 @@ Item {
     readonly property real _expandedW:
         Math.min(AppState.liveDockWidth, width - _margin * 2)
     readonly property real _expandedH: _floating
-        ? Math.min(560, height - _margin * 2)
-        : height - _margin * 2
+        ? Math.min(560, height - _top - _margin)
+        : height - _top - _margin
     readonly property real _tabH: 148
 
     readonly property real _frameW: _collapsed ? AppState.liveDockCollapsedWidth : _expandedW
@@ -100,8 +103,8 @@ Item {
            ? root._clamp(AppState.liveDockX, root._margin, root.width - width - root._margin)
            : root.width - width - root._margin
         y: root._floating
-           ? root._clamp(AppState.liveDockY, root._margin, root.height - height - root._margin)
-           : (root._collapsed ? (root.height - height) / 2 : root._margin)
+           ? root._clamp(AppState.liveDockY, root._top, root.height - height - root._margin)
+           : (root._collapsed ? (root.height - height) / 2 : root._top)
 
         // Fade in with the dialog rather than blink into place.
         opacity: 0

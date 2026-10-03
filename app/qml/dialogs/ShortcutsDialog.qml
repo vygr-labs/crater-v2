@@ -29,7 +29,7 @@ ModalShell {
             { keys: ["F1"],                        label: qsTr("Show this list") },
             { keys: ["Ctrl+K"],                    label: qsTr("Search everything") },
             { keys: ["Ctrl+,"],                    label: qsTr("Open Settings") },
-            { keys: ["Ctrl+1–5"],                  label: qsTr("Go to a library tab") },
+            { keys: ["Ctrl+1 to 5"],                  label: qsTr("Go to a library tab") },
             { keys: ["Ctrl+Tab", "Ctrl+Shift+Tab"], label: qsTr("Next or previous library tab") },
             { keys: ["Esc"],                       label: qsTr("Deselect the schedule item") }
         ] },
@@ -42,15 +42,15 @@ ModalShell {
         { title: qsTr("Live video"), rows: [
             { keys: ["Ctrl+P"],                    label: qsTr("Play or pause") },
             { keys: ["Ctrl+Shift+P"],              label: qsTr("Stop and rewind") },
-            { keys: ["Alt+←", "Alt+→"],            label: qsTr("Back or forward 10 seconds") },
+            { keys: ["Alt+Left", "Alt+Right"],            label: qsTr("Back or forward 10 seconds") },
             { keys: ["Alt+Home"],                  label: qsTr("Restart") },
-            { keys: ["Alt+↑", "Alt+↓"],            label: qsTr("Volume up or down") },
+            { keys: ["Alt+Up", "Alt+Down"],            label: qsTr("Volume up or down") },
             { keys: ["Ctrl+M"],                    label: qsTr("Mute or unmute") }
         ] },
         { title: qsTr("Preview and Live"), rows: [
-            { keys: ["↑", "↓"],                    label: qsTr("Previous or next slide in the focused panel") },
+            { keys: ["Up", "Down"],                    label: qsTr("Previous or next slide in the focused panel") },
             { keys: ["Enter"],                     label: qsTr("Send the Preview slide live") },
-            { keys: ["Ctrl+↑", "Ctrl+↓"],          label: qsTr("Live: pick a slide, release Ctrl to send it") }
+            { keys: ["Ctrl+Up", "Ctrl+Down"],          label: qsTr("Live: pick a slide, release Ctrl to send it") }
         ] },
         { title: qsTr("Schedule"), rows: [
             { keys: ["Ctrl+S"],                    label: qsTr("Save the schedule, naming it the first time") },
@@ -61,10 +61,10 @@ ModalShell {
             { keys: ["Del"],                       label: qsTr("Remove the selected items") }
         ] },
         { title: qsTr("Library"), rows: [
-            { keys: ["↑", "↓"],                    label: qsTr("Move through the list and show it in Preview") },
-            { keys: ["Shift+↑", "Shift+↓"],        label: qsTr("Extend the selection") },
+            { keys: ["Up", "Down"],                    label: qsTr("Move through the list and show it in Preview") },
+            { keys: ["Shift+Up", "Shift+Down"],        label: qsTr("Extend the selection") },
             { keys: ["Enter"],                     label: qsTr("Send the highlighted item live") },
-            { keys: ["←", "→"],                    label: qsTr("Move through the media grid") },
+            { keys: ["Left", "Right"],                    label: qsTr("Move through the media grid") },
             { keys: ["Ctrl+Click", "Shift+Click"], label: qsTr("Scripture and media: select several items") }
         ] },
         { title: qsTr("Scripture"), rows: [
@@ -74,7 +74,7 @@ ModalShell {
             { keys: ["Space"],                     label: qsTr("Crater input: complete the book name") }
         ] },
         { title: qsTr("Search everything (Ctrl+K)"), rows: [
-            { keys: ["↑", "↓"],                    label: qsTr("Move through the results") },
+            { keys: ["Up", "Down"],                    label: qsTr("Move through the results") },
             { keys: ["Tab", "Shift+Tab"],          label: qsTr("Pick a verse of the highlighted song") },
             { keys: ["Enter"],                     label: qsTr("Run the default action") },
             { keys: ["Ctrl+Enter"],                label: qsTr("Go live") },
@@ -101,9 +101,9 @@ ModalShell {
             { keys: ["Ctrl+Shift+V"],              label: qsTr("Paste as plain text") }
         ] },
         { title: qsTr("Edit media crop (click the picture first)"), rows: [
-            { keys: ["←", "→", "↑", "↓"],          label: qsTr("Move the crop") },
-            { keys: ["Shift+↑"],                   label: qsTr("Move by one pixel (Shift with any arrow)") },
-            { keys: ["Ctrl+↑"],                    label: qsTr("Resize (Ctrl with any arrow)") },
+            { keys: ["Left", "Right", "Up", "Down"],          label: qsTr("Move the crop") },
+            { keys: ["Shift+Up"],                   label: qsTr("Move by one pixel (Shift with any arrow)") },
+            { keys: ["Ctrl+Up"],                    label: qsTr("Resize (Ctrl with any arrow)") },
             { keys: ["Backspace"],                 label: qsTr("Reset the crop") }
         ] },
         { title: qsTr("Theme editor"), rows: [
@@ -112,8 +112,8 @@ ModalShell {
             { keys: ["Ctrl+Y", "Ctrl+Shift+Z"],    label: qsTr("Redo") },
             { keys: ["Ctrl+D"],                    label: qsTr("Duplicate the selected layer") },
             { keys: ["Del"],                       label: qsTr("Delete the selected layer") },
-            { keys: ["←", "→", "↑", "↓"],          label: qsTr("Nudge the selected layer") },
-            { keys: ["Shift+↑"],                   label: qsTr("Nudge further (Shift with any arrow)") },
+            { keys: ["Left", "Right", "Up", "Down"],          label: qsTr("Nudge the selected layer") },
+            { keys: ["Shift+Up"],                   label: qsTr("Nudge further (Shift with any arrow)") },
             { keys: ["Ctrl++", "Ctrl+-"],          label: qsTr("Zoom in or out") },
             { keys: ["Ctrl+0"],                    label: qsTr("Reset zoom") },
             { keys: ["Esc"],                       label: qsTr("Deselect, then close the editor") }
