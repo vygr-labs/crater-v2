@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace crater {
@@ -11,18 +12,49 @@ FileDialogService::FileDialogService(QObject* parent)
     : QObject(parent)
 {}
 
-QString FileDialogService::chooseOpenFile(QString title, QStringList nameFilters)
+namespace {
+
+QString settingsKey(const QString& rememberKey)
 {
-    const QString initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    return QStringLiteral("fileDialogs/") + rememberKey;
+}
+
+}  // namespace
+
+QString FileDialogService::startDir(const QString& rememberKey, const QString& fallbackDir,
+                                    const QString& standard)
+{
+    if (!rememberKey.isEmpty()) {
+        const QString last = QSettings().value(settingsKey(rememberKey)).toString();
+        if (!last.isEmpty() && QFileInfo(last).isDir()) return last;
+    }
+    if (!fallbackDir.isEmpty() && QFileInfo(fallbackDir).isDir()) return fallbackDir;
+    return standard;
+}
+
+void FileDialogService::rememberDir(const QString& rememberKey, const QString& pickedPath)
+{
+    if (rememberKey.isEmpty() || pickedPath.isEmpty()) return;
+    QSettings().setValue(settingsKey(rememberKey), QFileInfo(pickedPath).absolutePath());
+}
+
+QString FileDialogService::chooseOpenFile(QString title, QStringList nameFilters,
+                                          QString rememberKey, QString fallbackDir)
+{
+    const QString initialDir = startDir(rememberKey, fallbackDir,
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
     const QString filter     = nameFilters.join(QStringLiteral(";;"));
-    return QFileDialog::getOpenFileName(
+    const QString picked = QFileDialog::getOpenFileName(
         /*parent=*/nullptr,
         title,
         initialDir,
         filter);
+    rememberDir(rememberKey, picked);
+    return picked;
 }
 
-QStringList FileDialogService::chooseOpenFiles(QString title, QStringList nameFilters)
+QStringList FileDialogService::chooseOpenFiles(QString title, QStringList nameFilters,
+                                               QString rememberKey, QString fallbackDir)
 {
     // PicturesLocation is empty on minimal Linux desktops; fall back to
     // DocumentsLocation so the dialog opens *somewhere* rather than at the
@@ -31,12 +63,15 @@ QStringList FileDialogService::chooseOpenFiles(QString title, QStringList nameFi
     if (initialDir.isEmpty()) {
         initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     }
+    initialDir = startDir(rememberKey, fallbackDir, initialDir);
     const QString filter = nameFilters.join(QStringLiteral(";;"));
-    return QFileDialog::getOpenFileNames(
+    const QStringList picked = QFileDialog::getOpenFileNames(
         /*parent=*/nullptr,
         title,
         initialDir,
         filter);
+    if (!picked.isEmpty()) rememberDir(rememberKey, picked.first());
+    return picked;
 }
 
 QString FileDialogService::chooseSaveFile(QString title,

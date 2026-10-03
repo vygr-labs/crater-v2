@@ -61,9 +61,14 @@ ModalShell {
     }
 
     function pickFiles() {
+        // Opens where the last EasyWorship import came from, or the first
+        // time, in EasyWorship 6/7's default Data folder (the path shown in
+        // the hint above). The picker skips either one if it's missing.
         var files = FileDialogService.chooseOpenFiles(
             qsTr("Select EasyWorship Songs.db and SongWords.db"),
-            [qsTr("EasyWorship database (*.db)"), qsTr("All files (*)")])
+            [qsTr("EasyWorship database (*.db)"), qsTr("All files (*)")],
+            "easyWorshipImport",
+            "C:/Users/Public/Documents/Softouch/EasyWorship/Default/Databases/Data")
         if (!files || files.length === 0)
             return                                  // operator cancelled the picker
         root.dbFiles = files
