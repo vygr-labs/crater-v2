@@ -170,6 +170,13 @@ private:
     // this costs ~13 MB per installed translation. With it off the few most
     // recently used translations stay cached. See BibleService::setPreloadAll.
     Q_PROPERTY(bool    preloadTranslations READ preloadTranslations WRITE setPreloadTranslations NOTIFY preloadTranslationsChanged)
+    // This profile's view of the shared Bible library (DbPaths::biblesDbPath).
+    // translationOrder: codes in the order this profile lists them; any not
+    // listed follow in the library's order. hiddenTranslations: codes this
+    // profile keeps out of its lists. Hidden ones stay usable (typing their
+    // code, the sidebar's More card); they just don't show by default.
+    Q_PROPERTY(QStringList translationOrder   READ translationOrder   WRITE setTranslationOrder   NOTIFY translationOrderChanged)
+    Q_PROPERTY(QStringList hiddenTranslations READ hiddenTranslations WRITE setHiddenTranslations NOTIFY hiddenTranslationsChanged)
     Q_PROPERTY(bool    showSongAuthor     READ showSongAuthor     WRITE setShowSongAuthor     NOTIFY showSongAuthorChanged)
     Q_PROPERTY(bool    showSongCcli       READ showSongCcli       WRITE setShowSongCcli       NOTIFY showSongCcliChanged)
     // Auto-advance — when true, a live song steps to its next slide on a
@@ -266,6 +273,8 @@ public:
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
     bool    preloadTranslations() const;
+    QStringList translationOrder() const;
+    QStringList hiddenTranslations() const;
     bool    showSongAuthor() const;
     bool    showSongCcli() const;
     bool    autoAdvance() const;
@@ -309,6 +318,8 @@ public:
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
     void setPreloadTranslations(bool v);
+    void setTranslationOrder(const QStringList& codes);
+    void setHiddenTranslations(const QStringList& codes);
     void setShowSongAuthor(bool v);
     void setShowSongCcli(bool v);
     void setAutoAdvance(bool v);
@@ -354,6 +365,8 @@ signals:
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
     void preloadTranslationsChanged();
+    void translationOrderChanged();
+    void hiddenTranslationsChanged();
     void showSongAuthorChanged();
     void showSongCcliChanged();
     void autoAdvanceChanged();

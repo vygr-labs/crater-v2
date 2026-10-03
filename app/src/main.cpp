@@ -479,6 +479,17 @@ int main(int argc, char* argv[])
     // Translation preloading is an operator choice; BibleService stays
     // unaware of settings and just takes the flag.
     bibleService.setPreloadAll(settingsService.preloadTranslations());
+    // The Bible library is shared by every profile; this profile's settings
+    // say which translations it shows and in what order.
+    const auto applyBibleView = [&] {
+        bibleService.setView(settingsService.translationOrder(),
+                             settingsService.hiddenTranslations());
+    };
+    applyBibleView();
+    QObject::connect(&settingsService, &crater::SettingsService::translationOrderChanged,
+                     &bibleService, applyBibleView);
+    QObject::connect(&settingsService, &crater::SettingsService::hiddenTranslationsChanged,
+                     &bibleService, applyBibleView);
     QObject::connect(&settingsService, &crater::SettingsService::preloadTranslationsChanged,
                      &bibleService, [&] {
                          bibleService.setPreloadAll(settingsService.preloadTranslations());

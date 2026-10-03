@@ -2,7 +2,11 @@
 
 #include "db/Connection.h"
 #include "db/DbPaths.h"
+#include "db/Error.h"
 #include "db/Migrator.h"
+#include "profile/ProfileArchive.h"
+
+#include <QDebug>
 
 #include <QString>
 #include <QStringLiteral>
@@ -33,6 +37,16 @@ void runAllMigrations()
                             db::OpenMode::ReadWriteCreate,
                             QStringLiteral("Migrator-app"));
         db::Migrator::run(conn, QStringLiteral("app"));
+    }
+
+    // One shared Bible library. Profiles made before it kept their own
+    // bibles.sqlite; fold any translation only a profile has into the shared
+    // one. A no-op once every profile has been merged. A failure here must
+    // not stop startup: the shared library still works without the extras.
+    try {
+        profile::consolidateProfileBibles();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "Shared Bibles: consolidation failed:" << e.message();
     }
 }
 

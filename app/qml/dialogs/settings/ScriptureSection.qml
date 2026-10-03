@@ -86,6 +86,46 @@ Item {
             }
 
             // ── PERFORMANCE ──────────────────────────────────────────────
+            // ── TRANSLATIONS ─────────────────────────────────────────────
+            // The Bible library is shared by every profile. This list only
+            // picks what this profile shows; unticked ones stay installed,
+            // reachable from the sidebar's More card or by typing the code.
+            SettingsSectionHeader { title: qsTr("Translations in this profile") }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.bottomMargin: Theme.space.sm
+                text: qsTr("Every profile shares the same Bibles. Untick the ones this profile doesn't need in its lists. Drag the cards in the Scripture sidebar to change their order.")
+                wrapMode: Text.WordWrap
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+            }
+
+            Repeater {
+                model: { BibleService.translationsRevision; return BibleService.allTranslations() }
+                delegate: CheckRow {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    label: String(modelData.code)
+                    detail: String(modelData.description || "")
+                    checked: !modelData.hidden
+                    onToggled: {
+                        const code = String(modelData.code)
+                        const up = code.toUpperCase()
+                        let hidden = SettingsService.hiddenTranslations
+                            .filter(function(c) { return String(c).toUpperCase() !== up })
+                        if (!modelData.hidden) {
+                            // Keep at least one shown.
+                            const shown = BibleService.translations().length
+                            if (shown <= 1) return
+                            hidden.push(code)
+                        }
+                        SettingsService.hiddenTranslations = hidden
+                    }
+                }
+            }
+
             SettingsSectionHeader { title: qsTr("Performance") }
 
             // The only row here whose description can run long (and grows

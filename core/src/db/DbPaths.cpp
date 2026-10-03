@@ -66,7 +66,8 @@ bool DbPaths::isDefaultDataDir()
 
 QString DbPaths::biblesDbPath()
 {
-    return biblesDbPathIn(dataDir());
+    // Shared by every profile (see the header).
+    return biblesDbPathIn(appRootDir());
 }
 
 QString DbPaths::songsDbPath()
@@ -81,7 +82,9 @@ QString DbPaths::appDbPath()
 
 QString DbPaths::importSentinelPath()
 {
-    return importSentinelPathIn(dataDir());
+    // The one-time Bible import fills the shared library, so its marker is
+    // shared too.
+    return importSentinelPathIn(appRootDir());
 }
 
 QString DbPaths::scheduleHistoryDir()

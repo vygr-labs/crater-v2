@@ -412,11 +412,7 @@ bool initProfileRoot(const QString& root, QString* error)
         return false;
     }
     try {
-        {
-            db::Connection c(db::DbPaths::biblesDbPathIn(root), db::OpenMode::ReadWriteCreate,
-                             QStringLiteral("Migrator-bibles"));
-            db::Migrator::run(c, QStringLiteral("bibles"));
-        }
+        // No Bibles here: the library is shared (DbPaths::biblesDbPath).
         {
             db::Connection c(db::DbPaths::songsDbPathIn(root), db::OpenMode::ReadWriteCreate,
                              QStringLiteral("Migrator-songs"));
@@ -452,7 +448,7 @@ bool duplicateProfileData(const QString& sourceRoot, const QString& destRoot,
         const QList<QPair<QString, QString>> dbs{
             { db::DbPaths::appDbPathIn(sourceRoot),    db::DbPaths::appDbPathIn(destRoot) },
             { db::DbPaths::songsDbPathIn(sourceRoot),  db::DbPaths::songsDbPathIn(destRoot) },
-            { db::DbPaths::biblesDbPathIn(sourceRoot), db::DbPaths::biblesDbPathIn(destRoot) },
+            // Bibles are shared by every profile, so there is nothing to copy.
         };
         for (const auto& [from, to] : dbs) {
             if (QFile::exists(from)) vacuumInto(from, to);
@@ -490,10 +486,6 @@ bool duplicateProfileData(const QString& sourceRoot, const QString& destRoot,
         report(0.1 + 0.8 * (total > 0 ? double(done) / double(total) : 1.0),
                QStringLiteral("Copying media"));
     }
-    const QString sentinel = db::DbPaths::importSentinelPathIn(sourceRoot);
-    if (QFile::exists(sentinel))
-        QFile::copy(sentinel, db::DbPaths::importSentinelPathIn(destRoot));
-
     // 3. Make sure the copy is at the current schema (a no-op normally).
     report(0.92, QStringLiteral("Finishing"));
     QString initError;
@@ -765,7 +757,7 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
         if (parts & PartScriptures) {
             report(0.2, QStringLiteral("Reading Bibles"));
             const QString snap = staging.file(QStringLiteral("bibles.sqlite"));
-            vacuumInto(db::DbPaths::biblesDbPathIn(sourceRoot), snap);
+            vacuumInto(db::DbPaths::biblesDbPath(), snap);   // shared library
             db::Connection c(snap, db::OpenMode::ReadWrite, QStringLiteral("ProfileExport-bibles"));
             c.exec(QStringLiteral("INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
             counts.insert(QStringLiteral("scriptures"),
@@ -896,7 +888,7 @@ QVariantMap estimateParts(const QString& root)
             db::Connection c(songsDb, db::OpenMode::ReadOnly, QStringLiteral("ProfileEstimate-songs"));
             put("songs", countRows(c, QStringLiteral("SELECT count(*) FROM songs")), fileSize(songsDb));
         }
-        const QString biblesDb = db::DbPaths::biblesDbPathIn(root);
+        const QString biblesDb = db::DbPaths::biblesDbPath();   // shared library
         if (QFileInfo::exists(biblesDb)) {
             db::Connection c(biblesDb, db::OpenMode::ReadOnly, QStringLiteral("ProfileEstimate-bibles"));
             put("scriptures", countRows(c, QStringLiteral("SELECT count(*) FROM translations")),
@@ -1016,6 +1008,142 @@ ArchiveInfo inspectArchive(const QString& archivePath)
 // Import
 // ═══════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════
+// Bibles (shared library)
+// ═══════════════════════════════════════════════════════════════════════
+
+BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
+                             const std::function<void(double)>& progress)
+{
+    BibleMergeResult out;
+    db::Connection src(srcPath, db::OpenMode::ReadOnly, QStringLiteral("BibleMerge-src"));
+    db::Connection dst(dstPath, db::OpenMode::ReadWrite, QStringLiteral("BibleMerge-dst"));
+    QSet<QString> haveCodes;
+    {
+        auto st = dst.prepare(QStringLiteral("SELECT code FROM translations"));
+        while (st.step()) haveCodes.insert(st.columnText(0).toUpper());
+    }
+    struct T { qint64 id; QString code, name, language, description; bool yearNull; qint64 year; qint64 sort; };
+    QList<T> trans;
+    {
+        auto st = src.prepare(QStringLiteral(
+            "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order "
+            "FROM translations ORDER BY sort_order, id"));
+        while (st.step())
+            trans.append({ st.columnInt64(0), st.columnText(1), st.columnText(2), st.columnText(3),
+                           st.columnText(5), st.columnIsNull(4), st.columnInt64(4), st.columnInt64(6) });
+    }
+    int done = 0;
+    for (const T& t : trans) {
+        if (progress) progress(double(done++) / double(qMax<qsizetype>(1, trans.size())));
+        if (t.code.trimmed().isEmpty() || haveCodes.contains(t.code.toUpper())) {
+            ++out.skipped;
+            continue;
+        }
+        db::Transaction tx(dst);
+        auto insT = dst.prepare(QStringLiteral(
+            "INSERT INTO translations (code, name, language, year, description, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?)"));
+        insT.bind(1, t.code);
+        insT.bind(2, t.name);
+        insT.bind(3, t.language.isEmpty() ? QStringLiteral("en") : t.language);
+        if (t.yearNull) insT.bindNull(4); else insT.bind(4, t.year);
+        insT.bind(5, t.description);
+        insT.bind(6, t.sort);
+        insT.step();
+        const qint64 newT = dst.lastInsertRowId();
+
+        QHash<qint64, qint64> bookMap;
+        auto selB = src.prepare(QStringLiteral(
+            "SELECT id, name, abbrev, testament, book_number FROM books WHERE translation_id = ?"));
+        auto insB = dst.prepare(QStringLiteral(
+            "INSERT INTO books (translation_id, name, abbrev, testament, book_number) "
+            "VALUES (?, ?, ?, ?, ?)"));
+        selB.bind(1, t.id);
+        while (selB.step()) {
+            insB.reset();
+            insB.bind(1, newT);
+            insB.bind(2, selB.columnText(1));
+            insB.bind(3, selB.columnText(2));
+            insB.bind(4, selB.columnText(3));
+            insB.bind(5, selB.columnInt64(4));
+            insB.step();
+            bookMap.insert(selB.columnInt64(0), dst.lastInsertRowId());
+        }
+        auto selV = src.prepare(QStringLiteral(
+            "SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?"));
+        auto insV = dst.prepare(QStringLiteral(
+            "INSERT OR IGNORE INTO verses (translation_id, book_id, chapter, verse, text) "
+            "VALUES (?, ?, ?, ?, ?)"));
+        selV.bind(1, t.id);
+        while (selV.step()) {
+            const qint64 book = bookMap.value(selV.columnInt64(0), 0);
+            if (book == 0) continue;
+            insV.reset();
+            insV.bind(1, newT);
+            insV.bind(2, book);
+            insV.bind(3, selV.columnInt64(1));
+            insV.bind(4, selV.columnInt64(2));
+            insV.bind(5, selV.columnText(3));
+            insV.step();
+        }
+        // Same index shape and apostrophe stripping as the first-run
+        // importer and BibleService::rebuildFtsIndex.
+        auto fts = dst.prepare(QStringLiteral(
+            "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
+            "SELECT v.id, replace(replace(v.text, '''', ''), char(8217), ''), b.name, t.code "
+            "FROM verses v JOIN books b ON b.id = v.book_id "
+            "JOIN translations t ON t.id = v.translation_id WHERE v.translation_id = ?"));
+        fts.bind(1, newT);
+        fts.step();
+        tx.commit();
+        haveCodes.insert(t.code.toUpper());
+        ++out.added;
+    }
+    return out;
+}
+
+int consolidateProfileBibles()
+{
+    const QString shared = db::DbPaths::biblesDbPath();
+    int merged = 0;
+    const QDir profiles(db::DbPaths::profilesDir());
+    for (const QString& id : profiles.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString root   = profiles.filePath(id);
+        const QString legacy = db::DbPaths::biblesDbPathIn(root);
+        const QString marker = legacy + QStringLiteral(".merged");
+        if (!QFileInfo::exists(legacy) || QFileInfo::exists(marker)) continue;
+        try {
+            {
+                // Bring an older profile's copy up to the current schema
+                // before reading it (migrations are idempotent).
+                db::Connection c(legacy, db::OpenMode::ReadWrite, QStringLiteral("BibleMerge-migrate"));
+                db::Migrator::run(c, QStringLiteral("bibles"));
+                c.exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
+            }
+            const BibleMergeResult m = mergeBibles(legacy, shared, {});
+            qInfo().noquote() << "Shared Bibles: merged profile" << id
+                              << "added" << m.added << "already there" << m.skipped;
+        } catch (const db::Error& e) {
+            // Leave the file where it is and try again next launch.
+            qWarning().noquote() << "Shared Bibles: could not merge profile" << id << e.message();
+            continue;
+        }
+        // The profile's own file is left in place, only marked as merged:
+        // an older Crater opening this profile (another machine, or the
+        // installed copy while this one is new) still finds its Bibles. It
+        // is unused from here on and safe to delete once every copy of
+        // Crater is current. A marker that can't be written just means the
+        // merge runs again next launch, which adds nothing.
+        QFile m(marker);
+        if (m.open(QIODevice::WriteOnly)) {
+            m.write("merged into the shared Bible library\n");
+            ++merged;
+        }
+    }
+    return merged;
+}
+
 ImportResult importArchive(const QString& archivePath, unsigned parts,
                            const QString& targetRoot, bool targetIsNew,
                            const QString& stagingParent, const ProgressFn& progress)
@@ -1128,94 +1256,14 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
 
     try {
         // ── Bibles first: the biggest write, and independent of the rest ─
+        // They go into the shared library, so every profile gets them.
         if (parts & PartScriptures) {
             report(0.08, QStringLiteral("Adding Bibles"));
-            db::Connection src(stagedBibles, db::OpenMode::ReadOnly, QStringLiteral("ProfileImport-src"));
-            db::Connection dst(db::DbPaths::biblesDbPathIn(targetRoot), db::OpenMode::ReadWrite,
-                               QStringLiteral("ProfileImport-bibles"));
-            QSet<QString> haveCodes;
-            {
-                auto st = dst.prepare(QStringLiteral("SELECT code FROM translations"));
-                while (st.step()) haveCodes.insert(st.columnText(0).toUpper());
-            }
-            struct T { qint64 id; QString code, name, language, description; bool yearNull; qint64 year; qint64 sort; };
-            QList<T> trans;
-            {
-                auto st = src.prepare(QStringLiteral(
-                    "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order "
-                    "FROM translations ORDER BY sort_order, id"));
-                while (st.step())
-                    trans.append({ st.columnInt64(0), st.columnText(1), st.columnText(2), st.columnText(3),
-                                   st.columnText(5), st.columnIsNull(4), st.columnInt64(4), st.columnInt64(6) });
-            }
-            int done = 0;
-            for (const T& t : trans) {
-                report(0.08 + 0.22 * double(done++) / double(qMax<qsizetype>(1, trans.size())),
-                       QStringLiteral("Adding Bibles"));
-                if (t.code.trimmed().isEmpty() || haveCodes.contains(t.code.toUpper())) {
-                    addCount(r.skipped, "scriptures", 1);
-                    continue;
-                }
-                db::Transaction tx(dst);
-                auto insT = dst.prepare(QStringLiteral(
-                    "INSERT INTO translations (code, name, language, year, description, sort_order) "
-                    "VALUES (?, ?, ?, ?, ?, ?)"));
-                insT.bind(1, t.code);
-                insT.bind(2, t.name);
-                insT.bind(3, t.language.isEmpty() ? QStringLiteral("en") : t.language);
-                if (t.yearNull) insT.bindNull(4); else insT.bind(4, t.year);
-                insT.bind(5, t.description);
-                insT.bind(6, t.sort);
-                insT.step();
-                const qint64 newT = dst.lastInsertRowId();
-
-                QHash<qint64, qint64> bookMap;
-                auto selB = src.prepare(QStringLiteral(
-                    "SELECT id, name, abbrev, testament, book_number FROM books WHERE translation_id = ?"));
-                auto insB = dst.prepare(QStringLiteral(
-                    "INSERT INTO books (translation_id, name, abbrev, testament, book_number) "
-                    "VALUES (?, ?, ?, ?, ?)"));
-                selB.bind(1, t.id);
-                while (selB.step()) {
-                    insB.reset();
-                    insB.bind(1, newT);
-                    insB.bind(2, selB.columnText(1));
-                    insB.bind(3, selB.columnText(2));
-                    insB.bind(4, selB.columnText(3));
-                    insB.bind(5, selB.columnInt64(4));
-                    insB.step();
-                    bookMap.insert(selB.columnInt64(0), dst.lastInsertRowId());
-                }
-                auto selV = src.prepare(QStringLiteral(
-                    "SELECT book_id, chapter, verse, text FROM verses WHERE translation_id = ?"));
-                auto insV = dst.prepare(QStringLiteral(
-                    "INSERT OR IGNORE INTO verses (translation_id, book_id, chapter, verse, text) "
-                    "VALUES (?, ?, ?, ?, ?)"));
-                selV.bind(1, t.id);
-                while (selV.step()) {
-                    const qint64 book = bookMap.value(selV.columnInt64(0), 0);
-                    if (book == 0) continue;
-                    insV.reset();
-                    insV.bind(1, newT);
-                    insV.bind(2, book);
-                    insV.bind(3, selV.columnInt64(1));
-                    insV.bind(4, selV.columnInt64(2));
-                    insV.bind(5, selV.columnText(3));
-                    insV.step();
-                }
-                // Same index shape and apostrophe stripping as the first-run
-                // importer and BibleService::rebuildFtsIndex.
-                auto fts = dst.prepare(QStringLiteral(
-                    "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
-                    "SELECT v.id, replace(replace(v.text, '''', ''), char(8217), ''), b.name, t.code "
-                    "FROM verses v JOIN books b ON b.id = v.book_id "
-                    "JOIN translations t ON t.id = v.translation_id WHERE v.translation_id = ?"));
-                fts.bind(1, newT);
-                fts.step();
-                tx.commit();
-                haveCodes.insert(t.code.toUpper());
-                addCount(r.added, "scriptures", 1);
-            }
+            const BibleMergeResult m = mergeBibles(
+                stagedBibles, db::DbPaths::biblesDbPath(),
+                [&](double f) { report(0.08 + 0.22 * f, QStringLiteral("Adding Bibles")); });
+            addCount(r.added, "scriptures", m.added);
+            addCount(r.skipped, "scriptures", m.skipped);
         }
 
         // ── Files: fonts and media, staged, verified, then moved in ─────
@@ -1839,13 +1887,6 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
         } else {
             r.warnings.append(QStringLiteral("The settings in this file are damaged and were skipped"));
         }
-    }
-
-    // A new profile that received Bibles must not get the bundled set added
-    // on top at its first launch.
-    if (targetIsNew && (parts & PartScriptures)) {
-        QFile f(db::DbPaths::importSentinelPathIn(targetRoot));
-        if (f.open(QIODevice::WriteOnly)) f.write("v1\n");
     }
 
     r.ok = true;

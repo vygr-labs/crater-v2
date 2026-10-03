@@ -38,13 +38,19 @@ public:
     // True while dataDir() is the Default profile's root (appRootDir()).
     static bool isDefaultDataDir();
 
-    // SQLite DB file paths inside `dataDir()`.
+    // The Bible library. Unlike everything else it is NOT per profile: one
+    // file at appRootDir() that every profile reads, so a translation added
+    // once is there for all of them. Each profile only chooses which
+    // translations it shows, and in what order (SettingsService).
     static QString biblesDbPath();
+
+    // SQLite DB file paths inside `dataDir()`.
     static QString songsDbPath();
     static QString appDbPath();
 
     // First-run import sentinel — file presence means the one-time copy from
-    // electron's bundled DBs has completed.
+    // electron's bundled DBs into the shared Bible library has completed.
+    // Shared, like the library it guards.
     static QString importSentinelPath();
 
     // Directories the services create on demand.

@@ -110,17 +110,58 @@ Rectangle {
         AppState.openContextMenuAt(originItem, 0, originItem.height + 4, items, { menuWidth: 180 })
     }
 
-    // ── Translation order ───────────────────────────────────────────────
-    // The scripture grid's order is the operator's (BibleService sort_order),
-    // and every translation picker in the app follows it. Drag a card onto
-    // another, or use its right-click menu.
+    // ── Translation order and visibility ────────────────────────────────
+    // The Bible library is shared by every profile; each profile picks which
+    // translations it shows and in what order (SettingsService
+    // translationOrder / hiddenTranslations, applied by BibleService). The
+    // grid lists this profile's translations. Hidden ones sit behind a
+    // "More" card, and a hidden one the operator picks from there shows as
+    // an extra card while it's active. Drag a card onto another, or use its
+    // right-click menu.
     property int _dragFrom: -1
     property int _dragTo:   -1
 
+    // The cards that take part in ordering: this profile's own list, not
+    // the More card or a hidden translation that's only on show for now.
     function _translationOrder() {
         const out = []
-        for (let i = 0; i < groups.length; i++) out.push(String(groups[i].label))
+        for (let i = 0; i < groups.length; i++)
+            if (!groups[i].more && !groups[i].temporary) out.push(String(groups[i].label))
         return out
+    }
+
+    function _hideTranslation(code) {
+        const hidden = SettingsService.hiddenTranslations.slice()
+        if (hidden.indexOf(code) < 0) hidden.push(code)
+        SettingsService.hiddenTranslations = hidden
+    }
+
+    function _showTranslation(code) {
+        const up = String(code).toUpperCase()
+        SettingsService.hiddenTranslations = SettingsService.hiddenTranslations
+            .filter(function(c) { return String(c).toUpperCase() !== up })
+    }
+
+    // The More card: every hidden translation. Picking one reads it now
+    // without changing the profile; "Show" puts it back in the list.
+    function _moreMenu(card) {
+        const all = BibleService.allTranslations()
+        const items = []
+        for (let i = 0; i < all.length; i++) {
+            const t = all[i]
+            if (!t.hidden) continue
+            items.push({ label: String(t.code), detail: String(t.description || ""),
+                         action: function() {
+                             AppState.setLibraryGroup("scripture", String(t.code).toLowerCase())
+                         } })
+        }
+        items.push({ separator: true })
+        items.push({ label: qsTr("Choose translations…"), iconName: "settings",
+                     action: function() {
+                         AppState.settingsSection = "scripture"
+                         AppState.openModal("settings", {})
+                     } })
+        AppState.openContextMenuAt(card, 0, card.height + 4, items, { menuWidth: 220 })
     }
 
     // Move the card at `from` so it ends up at index `to`.
@@ -131,13 +172,13 @@ Rectangle {
         if (from === to) return
         const code = codes.splice(from, 1)[0]
         codes.splice(to, 0, code)
-        BibleService.setTranslationOrder(codes)
+        SettingsService.translationOrder = codes
     }
 
     function _sortTranslationsAtoZ() {
         const codes = _translationOrder()
         codes.sort(function(a, b) { return a.localeCompare(b) })
-        BibleService.setTranslationOrder(codes)
+        SettingsService.translationOrder = codes
     }
 
     // Index of the version card under a scene point, or -1.
@@ -154,7 +195,18 @@ Rectangle {
     }
 
     function _translationMenu(card, index, x, y) {
-        const last = groups.length - 1
+        const g = groups[index]
+        if (!g || g.more) return
+        const code = String(g.label)
+        // A hidden translation on show for now: offer to put it back.
+        if (g.temporary) {
+            AppState.openContextMenuAt(card, x, y, [
+                { label: qsTr("Show in This Profile"), iconName: "eye",
+                  action: function() { root._showTranslation(code) } }
+            ], { menuWidth: 200 })
+            return
+        }
+        const last = _translationOrder().length - 1
         AppState.openContextMenuAt(card, x, y, [
             { label: qsTr("Move Earlier"), iconName: "arrow-left", enabled: index > 0,
               action: function() { root._moveTranslation(index, index - 1) } },
@@ -166,8 +218,11 @@ Rectangle {
               action: function() { root._moveTranslation(index, last) } },
             { separator: true },
             { label: qsTr("Sort A to Z"), iconName: "arrow-down-az",
-              action: function() { root._sortTranslationsAtoZ() } }
-        ], { menuWidth: 180 })
+              action: function() { root._sortTranslationsAtoZ() } },
+            // Keep at least one: a profile has to be able to read something.
+            { label: qsTr("Hide from This Profile"), iconName: "eye-off", enabled: last > 0,
+              action: function() { root._hideTranslation(code) } }
+        ], { menuWidth: 200 })
     }
 
     readonly property var groups: {
@@ -203,7 +258,7 @@ Rectangle {
                 // AppState.activeLibraryGroup convention. iconName/count stay
                 // at no-op values — the card reads only id + label, but
                 // keeping the shape uniform lets every tab share `groups`.
-                BibleService.translationsRevision   // re-read after a reorder
+                BibleService.translationsRevision   // re-read after a change
                 let r = []
                 const tl = BibleService.translations()
                 for (let i = 0; i < tl.length; i++) {
@@ -213,6 +268,20 @@ Rectangle {
                              label: t.code,
                              count: 0 })
                 }
+                // Hidden in this profile: reachable from the More card. One
+                // the operator picked from there stays on show while active.
+                const active = String(AppState.activeLibraryGroup["scripture"] || "")
+                const all = BibleService.allTranslations()
+                let hiddenCount = 0
+                for (let i = 0; i < all.length; i++) {
+                    if (!all[i].hidden) continue
+                    hiddenCount++
+                    const id = String(all[i].code).toLowerCase()
+                    if (id === active)
+                        r.push({ id: id, iconName: "", label: all[i].code, count: 0, temporary: true })
+                }
+                if (hiddenCount > 0)
+                    r.push({ id: "__more", iconName: "", label: qsTr("More…"), count: 0, more: true })
                 return r
             }
             case "strongs": return [
@@ -356,15 +425,22 @@ Rectangle {
                         active: AppState.activeLibraryGroup["scripture"] === modelData.id
                         // The bar sits on the side the card will land: after
                         // the target when moving later, before it otherwise.
-                        dropSide: (root._dragFrom >= 0 && root._dragTo === index
+                        // The More card and a hidden-for-now card sit after
+                        // the profile's list and never take part in a drag.
+                        readonly property bool _ordered: !modelData.more && !modelData.temporary
+                        muted: !!modelData.more || !!modelData.temporary
+                        draggable: _ordered
+                        dropSide: (_ordered && root._dragFrom >= 0 && root._dragTo === index
                                    && root._dragTo !== root._dragFrom)
                                   ? (root._dragFrom < index ? 1 : -1) : 0
                         onDragMoved: function(sx, sy) {
                             root._dragFrom = index
-                            root._dragTo = root._cardIndexAt(sx, sy)
+                            const to = root._cardIndexAt(sx, sy)
+                            const g = to >= 0 ? root.groups[to] : null
+                            root._dragTo = (g && !g.more && !g.temporary) ? to : -1
                         }
                         onDragEnded: function(sx, sy) {
-                            const to = root._cardIndexAt(sx, sy)
+                            const to = root._dragTo
                             const from = index
                             root._dragFrom = -1
                             root._dragTo = -1
@@ -373,8 +449,12 @@ Rectangle {
                         onContextMenuRequested: function(x, y) {
                             root._translationMenu(this, index, x, y)
                         }
-                        onClicked: AppState.setLibraryGroup("scripture", modelData.id)
+                        onClicked: {
+                            if (modelData.more) { root._moreMenu(this); return }
+                            AppState.setLibraryGroup("scripture", modelData.id)
+                        }
                         onDoubleClicked: {
+                            if (modelData.more) return
                             // Switch translation, then ask ScriptureTab to
                             // push the focused verse Live in it — only that
                             // tab knows which verse the operator has focused.
