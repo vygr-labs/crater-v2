@@ -81,6 +81,24 @@ Item {
         sourceComponent: ExportThemeDialog { }
     }
 
+    // ── Profiles (ARCHITECTURE.md §12) ──────────────────────────────────
+    // Export / import a .craterprofile, and the ask-at-startup picker.
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profileExport"
+        sourceComponent: ProfileExportDialog { }
+    }
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profileImport"
+        sourceComponent: ProfileImportDialog { }
+    }
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "profilePicker"
+        sourceComponent: ProfilePickerDialog { }
+    }
+
     // ── Design with AI (theme editor) ───────────────────────────────────
     Loader {
         anchors.fill: parent

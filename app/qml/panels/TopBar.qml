@@ -166,8 +166,8 @@ Rectangle {
         Rectangle {
             id: shortcutsChip
             anchors.verticalCenter: parent.verticalCenter
-            height: 34
-            width:  34
+            height: Theme.d(34)
+            width:  Theme.d(34)
             color: "transparent"
             border.color: Theme.color.borderStrong
             border.width: 1
@@ -179,6 +179,98 @@ Rectangle {
                 iconSize: Theme.icon.md
                 tooltip: qsTr("Keyboard shortcuts (F1)")
                 onClicked: AppState.toggleShortcutHelp()
+            }
+        }
+
+        // Profile chip — which profile's songs, themes and media this
+        // console is showing (ARCHITECTURE.md §12), and the quick way to
+        // another one. Same 34 px bordered chrome as the settings chip so
+        // the cluster reads as one row of controls. The name is capped so a
+        // long one cannot push the NDI controls along.
+        Rectangle {
+            id: profileChip
+            anchors.verticalCenter: parent.verticalCenter
+            height: Theme.d(34)
+            width: profileRow.implicitWidth + Theme.space.md * 2
+            color: profileMa.containsMouse ? Theme.color.overlay : "transparent"
+            border.color: Theme.color.borderStrong
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
+
+            Row {
+                id: profileRow
+                anchors.centerIn: parent
+                spacing: Theme.space.sm
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "user"
+                    color: Theme.color.textSecondary
+                    size: Theme.icon.sm
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, 160)
+                    elide: Text.ElideRight
+                    text: ProfileService.currentProfileName
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                    font.weight: Theme.font.weightMedium
+                }
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "chevron-down"
+                    color: Theme.color.textTertiary
+                    size: Theme.icon.sm
+                }
+            }
+
+            MouseArea {
+                id: profileMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: profileChip.openMenu()
+            }
+
+            // Every profile, the current one ticked, then the way into
+            // Settings > Profiles. Picking another asks first: a switch
+            // restarts Crater, and the projector may be live.
+            function openMenu() {
+                const items = []
+                const list = ProfileService.profiles
+                for (let i = 0; i < list.length; i++) {
+                    const p = list[i]
+                    const id = p.id
+                    const name = p.name
+                    items.push({
+                        label: name,
+                        iconName: p.isCurrent ? "check" : "user",
+                        detail: p.isCurrent ? qsTr("in use") : "",
+                        action: function() {
+                            if (id === ProfileService.currentProfileId) return
+                            AppState.openModal("confirm", {
+                                title:       qsTr("Switch to %1?").arg(name),
+                                body:        qsTr("Crater will close and reopen with the songs, themes, media, Bibles and preferences of %1. Anything on the projection screen goes dark until Crater is back.").arg(name),
+                                confirmText: qsTr("Switch and restart"),
+                                destructive: false,
+                                onConfirm:   function() { ProfileService.switchTo(id) }
+                            })
+                        }
+                    })
+                }
+                items.push({ separator: true })
+                items.push({
+                    label: qsTr("Manage profiles…"),
+                    iconName: "settings",
+                    action: function() {
+                        AppState.settingsSection = "profiles"
+                        AppState.openModal("settings", {})
+                    }
+                })
+                AppState.openContextMenuAt(profileChip, 0, profileChip.height + 4, items,
+                                           { menuWidth: 240 })
             }
         }
 

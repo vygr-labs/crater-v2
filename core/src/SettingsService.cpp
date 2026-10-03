@@ -1,5 +1,7 @@
 #include "crater/SettingsService.h"
 
+#include "profile/ProfileSettings.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
@@ -49,6 +51,26 @@ struct SettingsService::Impl
     // application names, so all of Crater's persisted state lives in one
     // registry hive on Windows / one config plist on macOS.
     QSettings settings{QStringLiteral("Voyager Labs"), QStringLiteral("Crater")};
+
+    // Content preferences follow the active profile (ARCHITECTURE.md §12.2).
+    // For the Default profile this opens the same registry hive as
+    // `settings` above, so an existing install reads exactly what it always
+    // did; any other profile keeps them in its own settings.ini. get/put
+    // route each key to the right store so no setter has to know.
+    std::unique_ptr<QSettings> profileStore = profile::openProfileSettings();
+
+    QSettings& storeFor(const char* key)
+    {
+        return profile::isPerProfileSettingKey(QString::fromLatin1(key)) ? *profileStore : settings;
+    }
+    QVariant get(const char* key, const QVariant& fallback = {})
+    {
+        return storeFor(key).value(QString::fromLatin1(key), fallback);
+    }
+    void put(const char* key, const QVariant& v)
+    {
+        storeFor(key).setValue(QString::fromLatin1(key), v);
+    }
 
     // Cached state — read once at construction, mutated through setters
     // that also write through to QSettings. QSettings access is durable
@@ -167,51 +189,50 @@ SettingsService::SettingsService(QObject* parent)
     : QObject(parent)
     , m_impl(std::make_unique<Impl>())
 {
-    auto& s = m_impl->settings;
-    m_impl->themeMode      = s.value(QString::fromLatin1(Impl::kThemeMode),     m_impl->themeMode).toString();
-    m_impl->fontSize       = s.value(QString::fromLatin1(Impl::kFontSize),      m_impl->fontSize).toString();
-    m_impl->uiDensity      = s.value(QString::fromLatin1(Impl::kUiDensity),     m_impl->uiDensity).toString();
-    m_impl->previewCardMode = s.value(QString::fromLatin1(Impl::kPreviewCards), m_impl->previewCardMode).toString();
-    m_impl->liveCardMode   = s.value(QString::fromLatin1(Impl::kLiveCards),     m_impl->liveCardMode).toString();
-    m_impl->showCcli       = s.value(QString::fromLatin1(Impl::kShowCcli),      m_impl->showCcli).toBool();
-    m_impl->reduceMotion   = s.value(QString::fromLatin1(Impl::kReduceMotion),  m_impl->reduceMotion).toBool();
-    m_impl->showLogoByDef    = s.value(QString::fromLatin1(Impl::kShowLogo),         m_impl->showLogoByDef).toBool();
-    m_impl->clearScheduleOnClose = s.value(QString::fromLatin1(Impl::kClearScheduleOnClose), m_impl->clearScheduleOnClose).toBool();
-    m_impl->outputResolution = s.value(QString::fromLatin1(Impl::kOutputResolution), m_impl->outputResolution).toString();
-    m_impl->outputMode        = s.value(QString::fromLatin1(Impl::kOutputMode),      m_impl->outputMode).toString();
-    m_impl->projectionInAltTab = s.value(QString::fromLatin1(Impl::kProjectionInAltTab), m_impl->projectionInAltTab).toBool();
-    m_impl->projectionBehindConsole = s.value(QString::fromLatin1(Impl::kProjectionBehindConsole), m_impl->projectionBehindConsole).toBool();
-    m_impl->liveControlsOverDialogs = s.value(QString::fromLatin1(Impl::kLiveControlsOverDialogs), m_impl->liveControlsOverDialogs).toBool();
-    m_impl->useHeadlessNdi    = s.value(QString::fromLatin1(Impl::kUseHeadlessNdi),  m_impl->useHeadlessNdi).toBool();
-    m_impl->ndiOnDemand       = s.value(QString::fromLatin1(Impl::kNdiOnDemand),     m_impl->ndiOnDemand).toBool();
-    m_impl->ndiPixelFormat    = s.value(QString::fromLatin1(Impl::kNdiPixelFormat),  m_impl->ndiPixelFormat).toString();
-    m_impl->ndiResolution     = s.value(QString::fromLatin1(Impl::kNdiResolution),   m_impl->ndiResolution).toString();
-    m_impl->ndiHideMedia      = s.value(QString::fromLatin1(Impl::kNdiHideMedia),    m_impl->ndiHideMedia).toBool();
-    m_impl->defaultScriptureVersion = s.value(QString::fromLatin1(Impl::kDefaultScriptureVersion), m_impl->defaultScriptureVersion).toString();
-    m_impl->showVerseNums    = s.value(QString::fromLatin1(Impl::kShowVerseNums),    m_impl->showVerseNums).toBool();
-    m_impl->highlightVerse   = s.value(QString::fromLatin1(Impl::kHighlightVerse),   m_impl->highlightVerse).toBool();
-    m_impl->showScriptureFooter = s.value(QString::fromLatin1(Impl::kShowScriptureFooter), m_impl->showScriptureFooter).toBool();
-    m_impl->showStrongs    = s.value(QString::fromLatin1(Impl::kShowStrongs),   m_impl->showStrongs).toBool();
-    m_impl->preloadTranslations = s.value(QString::fromLatin1(Impl::kPreloadTranslations), m_impl->preloadTranslations).toBool();
-    m_impl->showSongAuthor = s.value(QString::fromLatin1(Impl::kShowSongAuth),  m_impl->showSongAuthor).toBool();
-    m_impl->showSongCcli   = s.value(QString::fromLatin1(Impl::kShowSongCcli),  m_impl->showSongCcli).toBool();
-    m_impl->autoAdvance      = s.value(QString::fromLatin1(Impl::kAutoAdvance),      m_impl->autoAdvance).toBool();
-    m_impl->autoAdvanceDelay = s.value(QString::fromLatin1(Impl::kAutoAdvanceDelay), m_impl->autoAdvanceDelay).toInt();
-    m_impl->autoAdvanceLoop  = s.value(QString::fromLatin1(Impl::kAutoAdvanceLoop),  m_impl->autoAdvanceLoop).toBool();
-    m_impl->mediaDefaultFit = s.value(QString::fromLatin1(Impl::kMediaDefaultFit), m_impl->mediaDefaultFit).toString();
-    m_impl->mediaVolume     = qBound(0.0, s.value(QString::fromLatin1(Impl::kMediaVolume), m_impl->mediaVolume).toDouble(), 1.0);
-    m_impl->showMatchedLyricSnippet   = s.value(QString::fromLatin1(Impl::kShowMatchedLyricSnippet),   m_impl->showMatchedLyricSnippet).toBool();
-    m_impl->highlightSongMatches      = s.value(QString::fromLatin1(Impl::kHighlightSongMatches),      m_impl->highlightSongMatches).toBool();
-    m_impl->highlightScriptureMatches = s.value(QString::fromLatin1(Impl::kHighlightScriptureMatches), m_impl->highlightScriptureMatches).toBool();
-    m_impl->highlightStrongsMatches   = s.value(QString::fromLatin1(Impl::kHighlightStrongsMatches),   m_impl->highlightStrongsMatches).toBool();
-    m_impl->language         = s.value(QString::fromLatin1(Impl::kLanguage),         m_impl->language).toString();
+    m_impl->themeMode      = m_impl->get(Impl::kThemeMode, m_impl->themeMode).toString();
+    m_impl->fontSize       = m_impl->get(Impl::kFontSize, m_impl->fontSize).toString();
+    m_impl->uiDensity      = m_impl->get(Impl::kUiDensity, m_impl->uiDensity).toString();
+    m_impl->previewCardMode = m_impl->get(Impl::kPreviewCards, m_impl->previewCardMode).toString();
+    m_impl->liveCardMode   = m_impl->get(Impl::kLiveCards, m_impl->liveCardMode).toString();
+    m_impl->showCcli       = m_impl->get(Impl::kShowCcli, m_impl->showCcli).toBool();
+    m_impl->reduceMotion   = m_impl->get(Impl::kReduceMotion, m_impl->reduceMotion).toBool();
+    m_impl->showLogoByDef    = m_impl->get(Impl::kShowLogo, m_impl->showLogoByDef).toBool();
+    m_impl->clearScheduleOnClose = m_impl->get(Impl::kClearScheduleOnClose, m_impl->clearScheduleOnClose).toBool();
+    m_impl->outputResolution = m_impl->get(Impl::kOutputResolution, m_impl->outputResolution).toString();
+    m_impl->outputMode        = m_impl->get(Impl::kOutputMode, m_impl->outputMode).toString();
+    m_impl->projectionInAltTab = m_impl->get(Impl::kProjectionInAltTab, m_impl->projectionInAltTab).toBool();
+    m_impl->projectionBehindConsole = m_impl->get(Impl::kProjectionBehindConsole, m_impl->projectionBehindConsole).toBool();
+    m_impl->liveControlsOverDialogs = m_impl->get(Impl::kLiveControlsOverDialogs, m_impl->liveControlsOverDialogs).toBool();
+    m_impl->useHeadlessNdi    = m_impl->get(Impl::kUseHeadlessNdi, m_impl->useHeadlessNdi).toBool();
+    m_impl->ndiOnDemand       = m_impl->get(Impl::kNdiOnDemand, m_impl->ndiOnDemand).toBool();
+    m_impl->ndiPixelFormat    = m_impl->get(Impl::kNdiPixelFormat, m_impl->ndiPixelFormat).toString();
+    m_impl->ndiResolution     = m_impl->get(Impl::kNdiResolution, m_impl->ndiResolution).toString();
+    m_impl->ndiHideMedia      = m_impl->get(Impl::kNdiHideMedia, m_impl->ndiHideMedia).toBool();
+    m_impl->defaultScriptureVersion = m_impl->get(Impl::kDefaultScriptureVersion, m_impl->defaultScriptureVersion).toString();
+    m_impl->showVerseNums    = m_impl->get(Impl::kShowVerseNums, m_impl->showVerseNums).toBool();
+    m_impl->highlightVerse   = m_impl->get(Impl::kHighlightVerse, m_impl->highlightVerse).toBool();
+    m_impl->showScriptureFooter = m_impl->get(Impl::kShowScriptureFooter, m_impl->showScriptureFooter).toBool();
+    m_impl->showStrongs    = m_impl->get(Impl::kShowStrongs, m_impl->showStrongs).toBool();
+    m_impl->preloadTranslations = m_impl->get(Impl::kPreloadTranslations, m_impl->preloadTranslations).toBool();
+    m_impl->showSongAuthor = m_impl->get(Impl::kShowSongAuth, m_impl->showSongAuthor).toBool();
+    m_impl->showSongCcli   = m_impl->get(Impl::kShowSongCcli, m_impl->showSongCcli).toBool();
+    m_impl->autoAdvance      = m_impl->get(Impl::kAutoAdvance, m_impl->autoAdvance).toBool();
+    m_impl->autoAdvanceDelay = m_impl->get(Impl::kAutoAdvanceDelay, m_impl->autoAdvanceDelay).toInt();
+    m_impl->autoAdvanceLoop  = m_impl->get(Impl::kAutoAdvanceLoop, m_impl->autoAdvanceLoop).toBool();
+    m_impl->mediaDefaultFit = m_impl->get(Impl::kMediaDefaultFit, m_impl->mediaDefaultFit).toString();
+    m_impl->mediaVolume     = qBound(0.0, m_impl->get(Impl::kMediaVolume, m_impl->mediaVolume).toDouble(), 1.0);
+    m_impl->showMatchedLyricSnippet   = m_impl->get(Impl::kShowMatchedLyricSnippet, m_impl->showMatchedLyricSnippet).toBool();
+    m_impl->highlightSongMatches      = m_impl->get(Impl::kHighlightSongMatches, m_impl->highlightSongMatches).toBool();
+    m_impl->highlightScriptureMatches = m_impl->get(Impl::kHighlightScriptureMatches, m_impl->highlightScriptureMatches).toBool();
+    m_impl->highlightStrongsMatches   = m_impl->get(Impl::kHighlightStrongsMatches, m_impl->highlightStrongsMatches).toBool();
+    m_impl->language         = m_impl->get(Impl::kLanguage, m_impl->language).toString();
 
     // Global-search actions: start from the per-type defaults, then overlay any
     // persisted overrides. Each override is validated so a hand-edited or
     // stale registry value can't seed an unknown type/action into the map.
     m_impl->globalSearchActions = gsDefaults();
     {
-        const QString raw = s.value(QString::fromLatin1(Impl::kGlobalSearchActions)).toString();
+        const QString raw = m_impl->get(Impl::kGlobalSearchActions).toString();
         if (!raw.isEmpty()) {
             const QJsonObject obj = QJsonDocument::fromJson(raw.toUtf8()).object();
             for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
@@ -288,7 +309,7 @@ void SettingsService::setUiDensity(const QString& density)
 {
     if (m_impl->uiDensity == density) return;
     m_impl->uiDensity = density;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kUiDensity), density);
+    m_impl->put(Impl::kUiDensity, density);
     emit uiDensityChanged();
 }
 
@@ -299,7 +320,7 @@ void SettingsService::setPreviewCardMode(const QString& mode)
 {
     if (m_impl->previewCardMode == mode) return;
     m_impl->previewCardMode = mode;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kPreviewCards), mode);
+    m_impl->put(Impl::kPreviewCards, mode);
     emit previewCardModeChanged();
 }
 
@@ -307,7 +328,7 @@ void SettingsService::setLiveCardMode(const QString& mode)
 {
     if (m_impl->liveCardMode == mode) return;
     m_impl->liveCardMode = mode;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kLiveCards), mode);
+    m_impl->put(Impl::kLiveCards, mode);
     emit liveCardModeChanged();
 }
 
@@ -315,7 +336,7 @@ void SettingsService::setThemeMode(const QString& mode)
 {
     if (m_impl->themeMode == mode) return;
     m_impl->themeMode = mode;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kThemeMode), mode);
+    m_impl->put(Impl::kThemeMode, mode);
     emit themeModeChanged();
 }
 
@@ -323,7 +344,7 @@ void SettingsService::setFontSize(const QString& size)
 {
     if (m_impl->fontSize == size) return;
     m_impl->fontSize = size;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kFontSize), size);
+    m_impl->put(Impl::kFontSize, size);
     emit fontSizeChanged();
 }
 
@@ -331,7 +352,7 @@ void SettingsService::setShowCcli(bool v)
 {
     if (m_impl->showCcli == v) return;
     m_impl->showCcli = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowCcli), v);
+    m_impl->put(Impl::kShowCcli, v);
     emit showCcliChanged();
 }
 
@@ -339,7 +360,7 @@ void SettingsService::setReduceMotion(bool v)
 {
     if (m_impl->reduceMotion == v) return;
     m_impl->reduceMotion = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kReduceMotion), v);
+    m_impl->put(Impl::kReduceMotion, v);
     emit reduceMotionChanged();
 }
 
@@ -347,7 +368,7 @@ void SettingsService::setShowLogoByDefault(bool v)
 {
     if (m_impl->showLogoByDef == v) return;
     m_impl->showLogoByDef = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowLogo), v);
+    m_impl->put(Impl::kShowLogo, v);
     emit showLogoByDefaultChanged();
 }
 
@@ -355,7 +376,7 @@ void SettingsService::setClearScheduleOnClose(bool v)
 {
     if (m_impl->clearScheduleOnClose == v) return;
     m_impl->clearScheduleOnClose = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kClearScheduleOnClose), v);
+    m_impl->put(Impl::kClearScheduleOnClose, v);
     emit clearScheduleOnCloseChanged();
 }
 
@@ -363,7 +384,7 @@ void SettingsService::setOutputResolution(const QString& v)
 {
     if (m_impl->outputResolution == v) return;
     m_impl->outputResolution = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputResolution), v);
+    m_impl->put(Impl::kOutputResolution, v);
     emit outputResolutionChanged();
 }
 
@@ -377,7 +398,7 @@ void SettingsService::setOutputMode(const QString& mode)
                                          : QStringLiteral("single");
     if (m_impl->outputMode == normalized) return;
     m_impl->outputMode = normalized;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kOutputMode), normalized);
+    m_impl->put(Impl::kOutputMode, normalized);
     emit outputModeChanged();
 }
 
@@ -385,7 +406,7 @@ void SettingsService::setProjectionInAltTab(bool v)
 {
     if (m_impl->projectionInAltTab == v) return;
     m_impl->projectionInAltTab = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionInAltTab), v);
+    m_impl->put(Impl::kProjectionInAltTab, v);
     emit projectionInAltTabChanged();
 }
 
@@ -393,7 +414,7 @@ void SettingsService::setProjectionBehindConsole(bool v)
 {
     if (m_impl->projectionBehindConsole == v) return;
     m_impl->projectionBehindConsole = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kProjectionBehindConsole), v);
+    m_impl->put(Impl::kProjectionBehindConsole, v);
     emit projectionBehindConsoleChanged();
 }
 
@@ -401,7 +422,7 @@ void SettingsService::setLiveControlsOverDialogs(bool v)
 {
     if (m_impl->liveControlsOverDialogs == v) return;
     m_impl->liveControlsOverDialogs = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kLiveControlsOverDialogs), v);
+    m_impl->put(Impl::kLiveControlsOverDialogs, v);
     emit liveControlsOverDialogsChanged();
 }
 
@@ -409,7 +430,7 @@ void SettingsService::setUseHeadlessNdi(bool v)
 {
     if (m_impl->useHeadlessNdi == v) return;
     m_impl->useHeadlessNdi = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kUseHeadlessNdi), v);
+    m_impl->put(Impl::kUseHeadlessNdi, v);
     emit useHeadlessNdiChanged();
 }
 
@@ -417,7 +438,7 @@ void SettingsService::setNdiOnDemand(bool v)
 {
     if (m_impl->ndiOnDemand == v) return;
     m_impl->ndiOnDemand = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiOnDemand), v);
+    m_impl->put(Impl::kNdiOnDemand, v);
     emit ndiOnDemandChanged();
 }
 
@@ -432,7 +453,7 @@ void SettingsService::setNdiPixelFormat(const QString& v)
                                                                      : QStringLiteral("bgra");
     if (m_impl->ndiPixelFormat == normalized) return;
     m_impl->ndiPixelFormat = normalized;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiPixelFormat), normalized);
+    m_impl->put(Impl::kNdiPixelFormat, normalized);
     emit ndiPixelFormatChanged();
 }
 
@@ -443,7 +464,7 @@ void SettingsService::setNdiResolution(const QString& v)
         (n == QStringLiteral("720p")) ? n : QStringLiteral("native");
     if (m_impl->ndiResolution == normalized) return;
     m_impl->ndiResolution = normalized;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiResolution), normalized);
+    m_impl->put(Impl::kNdiResolution, normalized);
     emit ndiResolutionChanged();
 }
 
@@ -451,7 +472,7 @@ void SettingsService::setNdiHideMedia(bool v)
 {
     if (m_impl->ndiHideMedia == v) return;
     m_impl->ndiHideMedia = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kNdiHideMedia), v);
+    m_impl->put(Impl::kNdiHideMedia, v);
     emit ndiHideMediaChanged();
 }
 
@@ -459,7 +480,7 @@ void SettingsService::setDefaultScriptureVersion(const QString& code)
 {
     if (m_impl->defaultScriptureVersion == code) return;
     m_impl->defaultScriptureVersion = code;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kDefaultScriptureVersion), code);
+    m_impl->put(Impl::kDefaultScriptureVersion, code);
     emit defaultScriptureVersionChanged();
 }
 
@@ -467,7 +488,7 @@ void SettingsService::setShowVerseNumbers(bool v)
 {
     if (m_impl->showVerseNums == v) return;
     m_impl->showVerseNums = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowVerseNums), v);
+    m_impl->put(Impl::kShowVerseNums, v);
     emit showVerseNumbersChanged();
 }
 
@@ -475,7 +496,7 @@ void SettingsService::setHighlightCurrentVerse(bool v)
 {
     if (m_impl->highlightVerse == v) return;
     m_impl->highlightVerse = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightVerse), v);
+    m_impl->put(Impl::kHighlightVerse, v);
     emit highlightCurrentVerseChanged();
 }
 
@@ -483,7 +504,7 @@ void SettingsService::setShowScriptureFooter(bool v)
 {
     if (m_impl->showScriptureFooter == v) return;
     m_impl->showScriptureFooter = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowScriptureFooter), v);
+    m_impl->put(Impl::kShowScriptureFooter, v);
     emit showScriptureFooterChanged();
 }
 
@@ -491,7 +512,7 @@ void SettingsService::setShowStrongsTab(bool v)
 {
     if (m_impl->showStrongs == v) return;
     m_impl->showStrongs = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowStrongs), v);
+    m_impl->put(Impl::kShowStrongs, v);
     emit showStrongsTabChanged();
 }
 
@@ -499,7 +520,7 @@ void SettingsService::setPreloadTranslations(bool v)
 {
     if (m_impl->preloadTranslations == v) return;
     m_impl->preloadTranslations = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kPreloadTranslations), v);
+    m_impl->put(Impl::kPreloadTranslations, v);
     emit preloadTranslationsChanged();
 }
 
@@ -507,7 +528,7 @@ void SettingsService::setShowSongAuthor(bool v)
 {
     if (m_impl->showSongAuthor == v) return;
     m_impl->showSongAuthor = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowSongAuth), v);
+    m_impl->put(Impl::kShowSongAuth, v);
     emit showSongAuthorChanged();
 }
 
@@ -515,7 +536,7 @@ void SettingsService::setShowSongCcli(bool v)
 {
     if (m_impl->showSongCcli == v) return;
     m_impl->showSongCcli = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowSongCcli), v);
+    m_impl->put(Impl::kShowSongCcli, v);
     emit showSongCcliChanged();
 }
 
@@ -523,7 +544,7 @@ void SettingsService::setAutoAdvance(bool v)
 {
     if (m_impl->autoAdvance == v) return;
     m_impl->autoAdvance = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvance), v);
+    m_impl->put(Impl::kAutoAdvance, v);
     emit autoAdvanceChanged();
 }
 
@@ -534,7 +555,7 @@ void SettingsService::setAutoAdvanceDelaySeconds(int v)
     const int clamped = qBound(1, v, 600);
     if (m_impl->autoAdvanceDelay == clamped) return;
     m_impl->autoAdvanceDelay = clamped;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvanceDelay), clamped);
+    m_impl->put(Impl::kAutoAdvanceDelay, clamped);
     emit autoAdvanceDelaySecondsChanged();
 }
 
@@ -542,7 +563,7 @@ void SettingsService::setAutoAdvanceLoop(bool v)
 {
     if (m_impl->autoAdvanceLoop == v) return;
     m_impl->autoAdvanceLoop = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kAutoAdvanceLoop), v);
+    m_impl->put(Impl::kAutoAdvanceLoop, v);
     emit autoAdvanceLoopChanged();
 }
 
@@ -557,7 +578,7 @@ void SettingsService::setMediaDefaultFit(const QString& v)
             ? v : QStringLiteral("contain");
     if (m_impl->mediaDefaultFit == normalized) return;
     m_impl->mediaDefaultFit = normalized;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaDefaultFit), normalized);
+    m_impl->put(Impl::kMediaDefaultFit, normalized);
     emit mediaDefaultFitChanged();
 }
 
@@ -569,7 +590,7 @@ void SettingsService::setMediaVolume(double v)
     const double clamped = qBound(0.0, v, 1.0);
     if (qFuzzyCompare(1.0 + m_impl->mediaVolume, 1.0 + clamped)) return;
     m_impl->mediaVolume = clamped;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kMediaVolume), clamped);
+    m_impl->put(Impl::kMediaVolume, clamped);
     emit mediaVolumeChanged();
 }
 
@@ -577,7 +598,7 @@ void SettingsService::setShowMatchedLyricSnippet(bool v)
 {
     if (m_impl->showMatchedLyricSnippet == v) return;
     m_impl->showMatchedLyricSnippet = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kShowMatchedLyricSnippet), v);
+    m_impl->put(Impl::kShowMatchedLyricSnippet, v);
     emit showMatchedLyricSnippetChanged();
 }
 
@@ -585,7 +606,7 @@ void SettingsService::setHighlightSongMatches(bool v)
 {
     if (m_impl->highlightSongMatches == v) return;
     m_impl->highlightSongMatches = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightSongMatches), v);
+    m_impl->put(Impl::kHighlightSongMatches, v);
     emit highlightSongMatchesChanged();
 }
 
@@ -593,7 +614,7 @@ void SettingsService::setHighlightScriptureMatches(bool v)
 {
     if (m_impl->highlightScriptureMatches == v) return;
     m_impl->highlightScriptureMatches = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightScriptureMatches), v);
+    m_impl->put(Impl::kHighlightScriptureMatches, v);
     emit highlightScriptureMatchesChanged();
 }
 
@@ -601,7 +622,7 @@ void SettingsService::setHighlightStrongsMatches(bool v)
 {
     if (m_impl->highlightStrongsMatches == v) return;
     m_impl->highlightStrongsMatches = v;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kHighlightStrongsMatches), v);
+    m_impl->put(Impl::kHighlightStrongsMatches, v);
     emit highlightStrongsMatchesChanged();
 }
 
@@ -614,7 +635,7 @@ void SettingsService::setLanguage(const QString& code)
     const QString normalized = code.isEmpty() ? QStringLiteral("en") : code;
     if (m_impl->language == normalized) return;
     m_impl->language = normalized;
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kLanguage), normalized);
+    m_impl->put(Impl::kLanguage, normalized);
     emit languageChanged();
 }
 
@@ -627,8 +648,7 @@ void SettingsService::setGlobalSearchAction(const QString& type, const QString& 
     m_impl->globalSearchActions.insert(type, action);
     // Persist the whole map as one compact JSON object under a single key.
     const QJsonObject obj = QJsonObject::fromVariantMap(m_impl->globalSearchActions);
-    m_impl->settings.setValue(QString::fromLatin1(Impl::kGlobalSearchActions),
-                              QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
+    m_impl->put(Impl::kGlobalSearchActions, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
     emit globalSearchActionsChanged();
 }
 

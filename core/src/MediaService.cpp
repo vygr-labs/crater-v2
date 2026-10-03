@@ -99,7 +99,7 @@ QString sniffMediaType(const QString& path)
 // Probe a PDF on disk and return its page count. Returns 0 when the document
 // can't be opened (corrupt / encrypted). Used at import time so the row's
 // page_count column is populated once, eliminating a per-render probe.
-int probePdfPageCount(const QString& path)
+int probePdfPageCountImpl(const QString& path)
 {
     QPdfDocument doc;
     const auto err = doc.load(path);
@@ -217,7 +217,7 @@ std::optional<PendingImport> tryStageOneFile(const QString& raw,
 
     int pageCount = 1;
     if (type == QStringLiteral("pdf")) {
-        pageCount = probePdfPageCount(dstClean);
+        pageCount = probePdfPageCountImpl(dstClean);
         if (pageCount <= 0) {
             QFile::remove(dstClean);
             return fail(QStringLiteral("PDF probe returned 0 pages (corrupt or encrypted)"),
@@ -661,6 +661,16 @@ int MediaService::importPaths(QStringList paths, bool confirmLarge)
     });
 
     return paths.size();   // queued count; caller can listen to importFinished
+}
+
+QString MediaService::sniffFileType(const QString& path)
+{
+    return sniffMediaType(path);
+}
+
+int MediaService::probePdfPageCount(const QString& path)
+{
+    return probePdfPageCountImpl(path);
 }
 
 qint64 MediaService::importPathSync(QString path)
@@ -1126,7 +1136,7 @@ int MediaService::pdfPageCount(qint64 mediaId)
     // only if the column was 0 (legacy rows before V005, or an import that
     // failed mid-probe).
     if (item.pageCount > 0) return item.pageCount;
-    return probePdfPageCount(item.path);
+    return probePdfPageCountImpl(item.path);
 }
 
 QFuture<QImage> MediaService::renderPdfPage(qint64  mediaId,

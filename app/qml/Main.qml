@@ -106,6 +106,13 @@ ApplicationWindow {
             root.raise()
             root.requestActivate()
         })
+
+        // Ask-at-startup profile picker (ARCHITECTURE.md §12). The console
+        // has already opened the last-used profile; the picker either keeps
+        // it or restarts into another. Never shown on a launch that came
+        // from a switch, which already says which profile it wants.
+        if (ProfileService.shouldPromptAtStartup)
+            Qt.callLater(function() { AppState.openModal("profilePicker", {}) })
     }
 
     // ── Shutdown ────────────────────────────────────────────────────────

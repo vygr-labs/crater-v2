@@ -124,6 +124,7 @@ qt_add_qml_module(crater
         qml/controls/Combobox.qml
         qml/controls/SelectCheck.qml
         qml/controls/SelectionBar.qml
+        qml/controls/CheckRow.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
@@ -213,6 +214,9 @@ qt_add_qml_module(crater
         qml/dialogs/ExportThemeDialog.qml
         qml/dialogs/AiDesignDialog.qml
         qml/dialogs/ShortcutsDialog.qml
+        qml/dialogs/ProfileExportDialog.qml
+        qml/dialogs/ProfileImportDialog.qml
+        qml/dialogs/ProfilePickerDialog.qml
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml
@@ -226,6 +230,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/RemoteControlSection.qml
         qml/dialogs/settings/NdiSection.qml
         qml/dialogs/settings/UpdatesSection.qml
+        qml/dialogs/settings/ProfilesSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
 )
 

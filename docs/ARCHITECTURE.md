@@ -496,3 +496,111 @@ format's complexity *out* of the runtime hot path.
   public release feed, sending no identifier and no library contents, and
   it can be switched off in Settings. `LogReportService` is the other
   outbound path, and it moves nothing without an explicit button press.
+
+---
+
+## 12. Profiles
+
+A profile is a separate, named set of everything an operator builds up:
+songs, themes (with their fonts), media, presentations, schedules,
+installed Bibles and content preferences. It is the EasyWorship idea of a
+profile: one church, service or operator per profile on a shared PC.
+`ProfileService` owns the list and switching; `core/src/profile/` holds
+the data engine (archive export / import, duplicate).
+
+### 12.1 Storage
+
+```
+%APPDATA%/Crater/                 appRootDir(): machine-wide
+├── profiles.json                 profile list, last used, ask-at-startup
+├── crater.log, translations/     global
+├── app.sqlite, songs.sqlite,     the DEFAULT profile, exactly where every
+│   bibles.sqlite, media/,        install before profiles kept it
+│   fonts/, schedules/ ...
+└── profiles/
+    ├── p-1a2b3c4d5e6f/           any other profile: the same layout,
+    │   ├── app.sqlite ...        plus settings.ini and profile.json
+    │   └── settings.ini
+    └── .staging/                 export / import scratch, swept at start
+```
+
+Nothing moves for an existing install: the Default profile's root IS the
+app data root. Every per-profile path goes through `DbPaths::dataDir()`,
+which `ProfileService::activate()` points at the chosen profile once, in
+`main()`, before the first database opens. Code that works on a profile
+the process does not have open (export, import as new, duplicate) uses the
+`DbPaths::*In(root)` variants with an explicit root.
+
+Switching restarts Crater: every service opens its databases once, at
+startup, and re-pointing a dozen live connections and caches mid-session
+is the kind of change that quietly leaves one behind. The choice is saved
+to `profiles.json`, `ProfileService` emits `restartRequested`, and
+`main.cpp` relaunches itself with `--profile=<id>` from a post routine
+that runs after every service has been destroyed. A launch with
+`--profile` skips the ask-at-startup picker.
+
+### 12.2 Global vs per-profile
+
+| Global (this computer)                         | Per profile                                   |
+|---                                             |---                                            |
+| Screens, outputs, projection mode and window   | Songs, collections                            |
+| NDI and BrowserCast                            | Themes and user fonts, default themes per kind |
+| UI theme, UI scale, reduce motion, UI language | Media library and its display options         |
+| Updates, logs, drop-in translations            | Presentations, saved and working schedules    |
+| The profile list itself                        | Installed Bibles                              |
+|                                                | Content preferences (`ProfileSettings.cpp`): CCLI / author lines, verse numbers, scripture footer and highlight, default Bible, auto-advance, default media fit, search presentation, global-search actions |
+|                                                | Each output's pinned themes (theme ids are per database) |
+
+The rule: if it describes the room's hardware or the operator's chair, it
+is global; if it describes a congregation's content or how that content
+is shown, it is per profile. The Default profile keeps its per-profile
+preferences in the registry under the same keys as before; other profiles
+keep them in `settings.ini`. `SettingsService` and `OutputService` route
+each key to the right store, so no setter knows profiles exist.
+
+### 12.3 The `.craterprofile` archive
+
+A zip (stored, ZIP64 when needed, written atomically via `ZipWriter`):
+
+```
+manifest.json           kind "craterprofile", formatVersion, app version,
+                        parts, counts, schema versions, media/font index
+settings.json           per-profile preferences            (Settings)
+db/app.sqlite           themes, fonts, media rows, decks,  (Themes, Media,
+                        schedules, filtered to the parts    Presentations,
+                        chosen                              Schedules)
+db/songs.sqlite         songs, sections, collections       (Songs)
+db/bibles.sqlite        installed Bibles                   (Scriptures)
+media/<sha256>.<ext>    content-addressed files
+fonts/<sha256>.<ext>
+```
+
+Databases are snapshotted with `VACUUM INTO`, so exporting never pauses
+or touches the live profile. Archived rows reference files through the
+manifest index by row id, never by path.
+
+Import is validated per §5.1 and §5.3 before anything is written: entry
+names against an allow-list (no traversal possible), per-entry size caps,
+SHA-256 of every media and font file against its content-addressed name,
+magic bytes (`MediaService::sniffFileType`, `FontService::sniffFontExtension`),
+PDF page probe, theme tokens through the theme schema validator, free disk
+space. Archived databases are extracted to staging, checked with
+`PRAGMA quick_check`, stripped of any trigger or view, refused if newer
+than this build, and migrated in staging before a row is read.
+
+Import only ever adds. Cross-references are remapped (song and deck
+themes, theme and slide pictures, schedule items' song / deck / theme /
+media ids and media paths), and existing items are matched instead of
+duplicated: songs by title plus lyrics, themes by kind, name and design
+(built-ins by name), media by file content (size first, hash on demand),
+fonts by hash, Bibles by translation code, collections by name, decks and
+schedules by title plus content. Running the same import twice adds
+nothing the second time. Files are moved into place before their rows are
+written and removed again if that transaction fails.
+
+"Import as a new profile" creates the folder with a `.incomplete` marker,
+runs the same import into it, and registers it only on success. A folder
+still carrying the marker at startup is the only kind of profile folder
+ever deleted automatically. Deleting a profile renames its folder to
+`.trash-*` first (all or nothing), then removes it in the background.
+The Default profile and the profile in use can never be deleted.

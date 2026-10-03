@@ -13,6 +13,7 @@
 #include <QQuickWindow>
 #include <QQmlEngine>
 #include <QQmlError>
+#include <QProcess>
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -48,6 +49,7 @@
 #include "crater/StrongsService.h"
 #include "crater/CollectionService.h"
 #include "crater/PresentationService.h"
+#include "crater/ProfileService.h"
 #include "crater/Bootstrap.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
@@ -237,6 +239,23 @@ QByteArray bootstrapLogPath()
 #endif
 }
 
+// Profile switch relaunch (ARCHITECTURE.md §12). ProfileService asks for a
+// restart; we quit the event loop and start the new process from a Qt post
+// routine, which runs in ~QApplication, after every service on main()'s
+// stack has been destroyed. By then each database is closed and the LAN
+// ports (BrowserCast) and NDI source are released, so the new process
+// starts against a clean slate instead of racing the old one for them.
+QString g_relaunchProfile;
+
+void relaunchIntoProfile()
+{
+    if (g_relaunchProfile.isEmpty()) return;
+    const QStringList args{ QStringLiteral("--profile=") + g_relaunchProfile };
+    if (!QProcess::startDetached(QCoreApplication::applicationFilePath(), args))
+        qWarning().noquote() << "Profile switch: could not relaunch"
+                             << QCoreApplication::applicationFilePath();
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -333,9 +352,27 @@ int main(int argc, char* argv[])
     registerIconFont();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
+    // ─── Stage 0: pick the profile ──────────────────────────────────────
+    // Every database, media folder and per-profile preference below
+    // resolves under the profile chosen here (ARCHITECTURE.md §12), so this
+    // must run before the first DB is opened. Declared before every service
+    // so it outlives them all. A launch with --profile=<id> (a switch)
+    // opens that profile; otherwise the last one used.
+    crater::ProfileService profileService;
+    profileService.activate(QCoreApplication::arguments());
+    QObject::connect(&profileService, &crater::ProfileService::restartRequested,
+                     &app, [](const QString& profileId) {
+                         if (!g_relaunchProfile.isEmpty()) return;   // already on the way out
+                         qInfo().noquote() << "Profile switch: restarting into" << profileId;
+                         g_relaunchProfile = profileId;
+                         qAddPostRoutine(relaunchIntoProfile);
+                         QCoreApplication::quit();
+                     });
+
     // ─── Stage 1: run schema migrations ─────────────────────────────────
-    // Each DB is created on demand inside AppDataLocation; migrations are
-    // idempotent so this is safe to call every launch.
+    // Each DB is created on demand inside the active profile's folder
+    // (AppDataLocation for the Default profile); migrations are idempotent
+    // so this is safe to call every launch.
     try {
         crater::runAllMigrations();
     } catch (const std::exception& e) {
@@ -527,6 +564,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "OutputService",      &outputService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "ProfileService",     &profileService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);

@@ -190,6 +190,14 @@ public:
     // case there is nothing for the operator to view yet either).
     Q_INVOKABLE void prewarmPdf();
 
+    // The §5.1 boundary checks, exposed for importers that write into a
+    // profile other than the one this service has open (a profile archive
+    // imported as a new profile). sniffFileType classifies a file by its
+    // magic bytes: "image", "video", "pdf", or empty when unsupported.
+    // probePdfPageCount returns 0 for a PDF that will not open.
+    static QString sniffFileType(const QString& path);
+    static int     probePdfPageCount(const QString& path);
+
     // Maximum size of a single import in bytes. Configurable so tests / power
     // users can adjust; defaults to 4 GiB per §5.1.
     Q_PROPERTY(qint64 sizeCapBytes READ sizeCapBytes WRITE setSizeCapBytes NOTIFY sizeCapBytesChanged)

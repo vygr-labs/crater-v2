@@ -383,6 +383,11 @@ QString FontService::filePathForFamily(QString family)
     return {};
 }
 
+QString FontService::sniffFontExtension(QByteArrayView head)
+{
+    return sniffFontExt(head);
+}
+
 QString FontService::lastError() const
 {
     return m_lastError;
