@@ -95,11 +95,14 @@ Rectangle {
         Image {
             id: brandMark
 
-            source: "qrc:/brand/crater.svg"
+            // The mark's light glyph disappears on a light title bar, so
+            // light themes get the dark-glyph cut.
+            source: Theme.isDarkTheme(Theme.themeName)
+                    ? "qrc:/brand/crater.svg"
+                    : "qrc:/brand/crater-on-light.svg"
             // sourceSize hints Qt's SVG renderer to rasterize at this size
-            // rather than at the SVG's intrinsic 64-unit viewBox. Without
-            // it, the SVG renders at 64x64 then scales down to 16 — visibly
-            // softer on low-DPI displays.
+            // rather than at the SVG's intrinsic 32-unit viewBox, which
+            // would render soft once scaled down on low-DPI displays.
             sourceSize.width: 16
             sourceSize.height: 16
             width: 16

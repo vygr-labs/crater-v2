@@ -64,7 +64,7 @@ qt_add_executable(crater
 # directory. Adding it to the target's sources causes CMake to invoke
 # the platform's resource compiler (rc.exe under MSVC, windres under
 # MinGW) and link the resulting .res into crater.exe — making the
-# C-Aperture mark show up in File Explorer, on the start-menu shortcut,
+# Crater mark show up in File Explorer, on the start-menu shortcut,
 # and on the taskbar before QML loads. Non-Windows platforms ignore
 # this entirely.
 if(WIN32)
@@ -274,6 +274,7 @@ qt_add_resources(crater "appbrand_svg"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/resources/brand"
     FILES
         resources/brand/crater.svg
+        resources/brand/crater-on-light.svg
 )
 qt_add_resources(crater "appbrand_ico"
     PREFIX "/brand"
@@ -365,8 +366,8 @@ set_target_properties(crater PROPERTIES
 # macOS bundle identity. Left unset, Qt fills the Info.plist with
 # placeholders: com.yourcompany.crater, a two-part "0.7" version and no icon
 # (issue #21). The identifier matches the organisation domain QSettings
-# already uses (tech.voyagerlabs.Crater). crater.icns is rendered from
-# resources/brand/crater.svg, the same source as packaging/crater.ico.
+# already uses (tech.voyagerlabs.Crater). crater.icns is rendered from the
+# same app icon artwork (crater-icon) as packaging/crater.ico.
 if(APPLE)
     set(CRATER_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.icns")
     target_sources(crater PRIVATE "${CRATER_ICNS}")

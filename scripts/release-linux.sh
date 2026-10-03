@@ -230,8 +230,7 @@ done_msg "Strong's databases staged to $LEGACY_DIR"
 # ── Icon ───────────────────────────────────────────────────────────────────
 # Lifted out of packaging/crater.ico rather than rendered from the SVG, so
 # Linux shows the exact 256 px image Windows and the in-app window icon use
-# and the three can never drift. The SVG colours itself with currentColor,
-# which not every rasterizer resolves. The file name must match the
+# and the three can never drift. The file name must match the
 # desktop entry's Icon= key.
 ICON_PATH="$BUILD_DIR/crater.png"
 step 'Extracting 256 px icon from crater.ico'

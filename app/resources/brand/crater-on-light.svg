@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Crater mark, for light themes.
+
+  The small-size cut of the mark (tutorials/studio/assets/svg/
+  crater-mark-small-on-light.svg), used in the title bar at 16 px. The
+  window, taskbar and installer icons (packaging/crater.ico / .icns) come
+  from the full app icon, crater-icon, rendered to PNG.
+-->
+<svg role="img" aria-label="Crater" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><path fill="#12171A" d="M4 4H28A3 3 0 0 1 31 7V25A3 3 0 0 1 28 28H27A11 11 0 0 0 5 28H4A3 3 0 0 1 1 25V7A3 3 0 0 1 4 4Z"/><path fill="#0E9FB3" d="M8.5 28A7.5 7.5 0 0 1 23.5 28Z"/></g></svg>
