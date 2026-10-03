@@ -72,6 +72,19 @@ public:
     Q_INVOKABLE void moveItem(int from, int to);
     Q_INVOKABLE void clearAll();
 
+    // Multi-select companions to removeAt / moveItem. Both apply the whole
+    // change and then emit currentItemsChanged ONCE, so the schedule list,
+    // Preview and Live re-read a consistent schedule instead of passing
+    // through one intermediate state per row.
+    //
+    // removeMany: indices into the current schedule, any order; duplicates
+    // and out-of-range entries are ignored. Returns how many rows went.
+    Q_INVOKABLE int  removeMany(QVariantList indices);
+    // reorder: `order` is a full permutation of the current indices, where
+    // order[k] is the old index of the row that should end up at k. Anything
+    // that is not exactly a permutation is refused (returns false, no change).
+    Q_INVOKABLE bool reorder(QVariantList order);
+
     // Sets (or clears, when themeId == 0) the per-item theme override. The
     // operator's choice is stored as a `themeId` field on the item itself.
     // AppState.resolveItemTheme reads it whenever the projection window

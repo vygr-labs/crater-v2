@@ -265,6 +265,127 @@ Item {
         return items
     }
 
+    // ── Multi-select ────────────────────────────────────────────────────
+    // Checked songs, keyed by id (see components/LibrarySelection.qml for
+    // the click rules). The fluid row stays the single "current" song that
+    // Preview shows; the checked set is what the bulk actions below act on.
+    LibrarySelection {
+        id: selection
+        tabKey:   root.tabKey
+        items:    root.filteredSongs
+        universe: SongService.allSongs
+        currentId: (root.fluidIndex >= 0 && root.fluidIndex < root.filteredSongs.length)
+                   ? root.filteredSongs[root.fluidIndex].id : null
+    }
+
+    function _songNoun(n) { return n === 1 ? qsTr("song") : qsTr("songs") }
+
+    // Appends in on-screen order. Each append goes through addItemToSchedule
+    // so the last song ends up selected and scrolled into view, the same
+    // feedback a single Add to Schedule gives.
+    function bulkAddToSchedule() {
+        const rows = selection.selectedItems()
+        for (let i = 0; i < rows.length; i++) {
+            const item = buildItemFromSong(SongService.fetchSong(rows[i].id))
+            if (item) AppState.addItemToSchedule(item)
+        }
+    }
+
+    function bulkDelete() {
+        // Snapshot now: the set could change while the dialog is open.
+        const ids = selection.selectedIds()
+        const n = ids.length
+        if (n === 0) return
+        AppState.openModal("confirm", {
+            title:       qsTr("Delete %1 %2?").arg(n).arg(_songNoun(n)),
+            body:        qsTr("This permanently removes %1 %2 from the library.")
+                             .arg(n).arg(_songNoun(n)),
+            confirmText: qsTr("Delete"),
+            onConfirm:   function() {
+                SongService.destroyMany(ids)
+                selection.clear()
+            }
+        })
+    }
+
+    // Song themes plus "Use default theme", applied to every checked song.
+    function _bulkThemeSubmenu() {
+        const all = ThemeService.allThemes
+        let items = []
+        for (let i = 0; i < all.length; i++) {
+            const t = all[i]
+            if (t.kind !== "song") continue
+            const tid = t.id
+            items.push({ label: t.name, iconName: "palette",
+                         action: function() {
+                             SongService.setThemeForSongs(selection.selectedIds(), tid)
+                         } })
+        }
+        if (items.length > 0) items.push({ separator: true })
+        items.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
+                     action: function() {
+                         SongService.setThemeForSongs(selection.selectedIds(), 0)
+                     } })
+        return items
+    }
+
+    // Bulk twin of _collectionSubmenu: same rows, every checked song goes in.
+    function _bulkCollectionSubmenu() {
+        const colls = CollectionService.collections
+        let items = []
+        const addAll = function(cid) {
+            const ids = selection.selectedIds()
+            for (let k = 0; k < ids.length; k++) CollectionService.addSong(cid, ids[k])
+        }
+        for (let i = 0; i < colls.length; i++) {
+            const cid = colls[i].id
+            items.push({ label: colls[i].name, iconName: "folder",
+                         action: function() { addAll(cid) } })
+        }
+        if (colls.length > 0) items.push({ separator: true })
+        items.push({ label: qsTr("New collection…"), iconName: "plus",
+                     action: function() {
+                         AppState.openModal("naming", {
+                             title:       qsTr("New collection"),
+                             placeholder: qsTr("Collection name"),
+                             confirmText: qsTr("Create"),
+                             onConfirm:   function(name) {
+                                 const id = CollectionService.create(name)
+                                 if (id > 0) addAll(id)
+                             }
+                         })
+                     } })
+        return items
+    }
+
+    // Right-click on a checked song while 2+ are checked.
+    function bulkMenuItems() {
+        const n = selection.count
+        let items = [
+            { label: qsTr("Add %1 to Schedule").arg(n), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { separator: true },
+            { label: qsTr("Set Theme"), iconName: "palette",
+              submenu: root._bulkThemeSubmenu() },
+            { label: qsTr("Add to Collection…"), iconName: "folder",
+              submenu: root._bulkCollectionSubmenu() }
+        ]
+        if (root.group.indexOf("collection:") === 0) {
+            items.push({ label: qsTr("Remove from Collection"), iconName: "x",
+                         action: function() {
+                             const cid = parseInt(root.group.substring("collection:".length))
+                             const ids = selection.selectedIds()
+                             for (let k = 0; k < ids.length; k++)
+                                 CollectionService.removeSong(cid, ids[k])
+                         } })
+        }
+        items.push({ separator: true })
+        items.push({ label: qsTr("Delete %1 %2").arg(n).arg(_songNoun(n)),
+                     iconName: "trash", destructive: true,
+                     action: function() { root.bulkDelete() } })
+        return items
+    }
+
     // ── Top action bar ──────────────────────────────────────────────────
     // Layout mirrors electron's MainActionBarMenu: [+] [⚙] clustered on the
     // right, song count centered. Both triggers are borderless — hover
@@ -598,11 +719,11 @@ Item {
         id: list
         ScrollBar.vertical: AppScrollBar {}
         anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: selectionBar.visible ? selectionBar.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.topMargin: Theme.space.sm
-        anchors.bottomMargin: Theme.space.md
+        anchors.bottomMargin: selectionBar.visible ? 0 : Theme.space.md
         visible: root.filteredSongs.length > 0
         model: root.filteredSongs
         clip: true
@@ -644,6 +765,10 @@ Item {
                                  : Theme.d(36)
 
             readonly property bool _selected: list.currentIndex === index
+            // Checked for bulk actions (multi-select). Shares the selected
+            // wash; the brand accent bar stays the current row's alone.
+            readonly property bool _checked: selection.isSelected(modelData.id)
+            readonly property bool _showCheck: selection.active || rowMa.containsMouse || rowCheck.hovered
             // True while the library pane owns keyboard focus. When focus
             // moves to Schedule / Preview / Live, the selected row wash
             // mutes to neutral gray (matches ScriptureTab convention).
@@ -668,7 +793,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: 0
-                color: songRow._selected
+                color: (songRow._selected || songRow._checked)
                        ? (songRow._paneFocused ? Theme.color.brandSubtle
                                                : Theme.color.selectionUnfocused)
                      : rowMa.containsMouse ? Theme.color.rowHoverBrand
@@ -747,6 +872,20 @@ Item {
                 }
             }
 
+            // Multi-select checkbox. Shown on hover and while any song is
+            // checked; the title steps right to make room, same as the
+            // media list row. z above rowMa so the click reaches it.
+            SelectCheck {
+                id: rowCheck
+                z: 1
+                visible: songRow._showCheck
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.space.md
+                anchors.verticalCenter: parent.verticalCenter
+                checked: songRow._checked
+                onToggled: selection.toggle(modelData.id)
+            }
+
             Item {
                 id: songText
                 // Anchored to the row's left edge with Theme.space.lg
@@ -754,8 +893,9 @@ Item {
                 // leftMargin so the title breathes against the wash edge
                 // and doesn't sit directly against the 2 px accent bar
                 // when a row is selected. Same pattern ScriptureTab uses.
-                anchors.left: parent.left
-                anchors.leftMargin: Theme.space.lg
+                // Steps past the checkbox while it shows.
+                anchors.left: songRow._showCheck ? rowCheck.right : parent.left
+                anchors.leftMargin: songRow._showCheck ? Theme.space.sm : Theme.space.lg
                 anchors.right: rowRight.left
                 anchors.rightMargin: Theme.space.sm
                 anchors.verticalCenter: parent.verticalCenter
@@ -780,8 +920,8 @@ Item {
                             ? SearchFormat.markup(modelData.title, root._debouncedQuery,
                                                   Theme.color.brand)
                             : modelData.title
-                    color: songRow._selected ? Theme.color.textPrimary
-                                             : Theme.color.textTitle
+                    color: (songRow._selected || songRow._checked)
+                           ? Theme.color.textPrimary : Theme.color.textTitle
                     font.family: Theme.font.family
                     font.pixelSize: 16
                     font.weight: songRow._selected ? Theme.font.weightMedium
@@ -845,7 +985,13 @@ Item {
                 // right-click intent on a song row ("I want to change this
                 // song") and parks the destructive option at the bottom
                 // where slip-clicks are least likely.
-                menuItems: [
+                //
+                // A function so it is resolved per right-click: with 2+ songs
+                // checked and the click on one of them, the bulk menu opens
+                // instead (see onRightClicked, which runs first).
+                property bool _bulk: false
+                menuItems: function() {
+                    return rowMa._bulk ? root.bulkMenuItems() : [
                     { label: qsTr("Edit Song"), iconName: "edit",
                       action: function() {
                           AppState.openModal("songEditor", { songId: modelData.id })
@@ -884,7 +1030,8 @@ Item {
                               onConfirm:   function() { SongService.destroy(modelData.id) }
                           })
                       } }
-                ]
+                    ]
+                }
 
                 function _focus() {
                     AppState.setLibraryFluid(root.tabKey, index)
@@ -894,8 +1041,20 @@ Item {
                     AppState.setActiveFocus("library")
                     root.pushPreviewFor(index)
                 }
-                onLeftClicked:  _focus()
-                onRightClicked: _focus()
+                // Ctrl / Shift clicks only change the checked set; a
+                // plain click clears it and does the usual single-select.
+                onLeftClicked: function(mouse) {
+                    if (selection.handleClick(mouse, modelData.id)) {
+                        AppState.setActiveFocus("library")
+                        return
+                    }
+                    _focus()
+                }
+                onRightClicked: function(mouse) {
+                    _bulk = selection.handleRightClick(modelData.id)
+                    if (_bulk) AppState.setActiveFocus("library")
+                    else       _focus()
+                }
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
                     AppState.setActiveFocus("library")
@@ -903,6 +1062,30 @@ Item {
                 }
             }
         }
+    }
+
+    // Bulk-action bar while songs are checked.
+    SelectionBar {
+        id: selectionBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: selection.active
+        count: selection.count
+        hiddenCount: selection.hiddenCount
+        canSelectAll: !selection.allVisibleSelected
+        onSelectAllClicked: selection.selectAll()
+        onClearClicked: selection.clear()
+        actions: [
+            { label: qsTr("Add to schedule"), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { label: qsTr("Theme"), iconName: "palette",
+              submenu: root._bulkThemeSubmenu() },
+            { label: qsTr("Collection"), iconName: "folder",
+              submenu: root._bulkCollectionSubmenu() },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
     }
 
     // ── Keyboard navigation from the search input ───────────────────────
@@ -932,6 +1115,10 @@ Item {
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
+        }
+        function onLibrarySelectAll() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            selection.selectAll()
         }
         // Schedule → library sync. When the operator clicks a song row in the
         // schedule pane, scroll the library to that song so what's selected in

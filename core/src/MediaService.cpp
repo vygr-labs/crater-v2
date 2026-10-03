@@ -753,6 +753,62 @@ void MediaService::remove(qint64 id)
     }
 }
 
+int MediaService::removeMany(QVariantList ids)
+{
+    if (!m_impl || ids.isEmpty()) return 0;
+
+    // Resolve every row's managed path up front, closing the cursor after
+    // each single-row read so the DELETE transaction below can take the
+    // write lock (see the WAL invariant in db/Statement.h).
+    QList<qint64>  rowIds;
+    QStringList    paths;
+    try {
+        auto& sel = m_impl->selectById;
+        for (const QVariant& v : ids) {
+            bool ok = false;
+            const qint64 id = v.toLongLong(&ok);
+            if (!ok || id <= 0 || rowIds.contains(id)) continue;
+            sel.reset();
+            sel.bind(1, id);
+            if (sel.step()) {
+                rowIds.append(id);
+                paths.append(db::DbPaths::relocate(sel.columnText(1), m_impl->mediaDir));
+            }
+            sel.reset();
+        }
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::removeMany() read:" << e.message();
+        return 0;
+    }
+    if (rowIds.isEmpty()) return 0;
+
+    try {
+        db::Transaction tx(m_impl->conn);
+        auto& del = m_impl->deleteItem;
+        for (qint64 id : rowIds) {
+            del.reset();
+            del.bind(1, id);
+            del.step();
+        }
+        tx.commit();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "MediaService::removeMany():" << e.message();
+        return 0;   // rolled back: no rows gone, so leave every file in place
+    }
+
+    // Best-effort file cleanup, same as remove(): the rows are already gone,
+    // so a failure here only leaves an orphan for sweepOrphans() to reclaim.
+    const QDir thumbs(QDir(db::DbPaths::mediaDir()).filePath(QStringLiteral("thumbs")));
+    for (int i = 0; i < rowIds.size(); ++i) {
+        if (!paths[i].isEmpty()) QFile::remove(paths[i]);
+        const QString thumb = thumbs.filePath(QStringLiteral("%1.jpg").arg(rowIds[i]));
+        if (QFile::exists(thumb)) QFile::remove(thumb);
+    }
+
+    invalidateCache();
+    return static_cast<int>(rowIds.size());
+}
+
 qint64 MediaService::duplicate(qint64 id)
 {
     if (!m_impl || id <= 0) return 0;

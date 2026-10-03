@@ -232,3 +232,20 @@ target_link_libraries(test_media_import_report PRIVATE
 )
 
 add_test(NAME media_import_report COMMAND test_media_import_report)
+
+# -- Bulk actions -- library and schedule multi-select -----------------------
+# The one-signal batch calls (SongService::destroyMany / setThemeForSongs,
+# MediaService::removeMany, ScheduleService::removeMany / reorder) that
+# replace per-item loops in QML.
+qt_add_executable(test_bulk_actions
+    test_bulk_actions.cpp
+)
+
+target_link_libraries(test_bulk_actions PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME bulk_actions COMMAND test_bulk_actions)

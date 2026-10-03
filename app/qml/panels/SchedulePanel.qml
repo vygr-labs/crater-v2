@@ -21,6 +21,109 @@ Rectangle {
     // same surface and is differentiated only by its 1px bottom border.
     color: Theme.color.elevated
 
+    // ── Multi-select ────────────────────────────────────────────────────
+    // Selection mode = 2+ rows selected. One selected row is the ordinary
+    // "current" row that drives Preview, so the checkboxes and the bulk bar
+    // only take over once the operator has actually picked several.
+    readonly property bool selectionMode: AppState.selectedScheduleIndices.length > 1
+
+    // Selected rows in schedule order. Snapshotted by each action so a
+    // click during a confirm dialog can't change what it acts on.
+    function selectedRows() {
+        const n = ScheduleService.currentItems.length
+        return AppState.selectedScheduleIndices
+            .filter(function(i) { return i >= 0 && i < n })
+            .sort(function(a, b) { return a - b })
+    }
+
+    function confirmRemoveSelected() {
+        const rows = selectedRows()
+        if (rows.length === 0) return
+        AppState.openModal("confirm", {
+            title: rows.length === 1
+                ? qsTr("Remove item?")
+                : qsTr("Remove %1 items?").arg(rows.length),
+            body:  rows.length === 1
+                ? qsTr("Remove the selected item from the schedule?")
+                : qsTr("Remove the %1 selected items from the schedule?").arg(rows.length),
+            confirmText: qsTr("Remove"),
+            // One batch call: one schedule change, and the live pointer is
+            // carried past the removed rows.
+            onConfirm: function() { AppState.removeScheduleIndices(rows) }
+        })
+    }
+
+    // Theme picker for several rows. Lists the themes of every kind present
+    // in the selection; each applies only to rows of its own kind (the same
+    // rule as the single-row menu). With mixed kinds the kind is named next
+    // to each theme so the operator can tell "Classic (song)" from
+    // "Classic (scripture)".
+    function bulkThemeSubmenu() {
+        const rows = selectedRows()
+        const items = ScheduleService.currentItems
+        let kinds = {}
+        let kindCount = 0
+        for (let i = 0; i < rows.length; i++) {
+            const k = items[rows[i]].kind || "song"
+            if (!kinds[k]) { kinds[k] = true; kindCount++ }
+        }
+        const all = ThemeService.allThemes
+        let out = []
+        for (let j = 0; j < all.length; j++) {
+            const t = all[j]
+            if (!kinds[t.kind]) continue
+            const tid = t.id
+            const tkind = t.kind
+            out.push({
+                label: kindCount > 1 ? qsTr("%1 (%2)").arg(t.name).arg(t.kind) : t.name,
+                iconName: "palette",
+                action: function() { AppState.setScheduleTheme(rows, tid, tkind) }
+            })
+        }
+        if (out.length > 0) out.push({ separator: true })
+        out.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
+                   action: function() { AppState.setScheduleTheme(rows, 0, "") } })
+        return out
+    }
+
+    // Right-click on a selected row while 2+ are selected.
+    function bulkMenuItems() {
+        const rows = selectedRows()
+        return [
+            { label: qsTr("Move Up"), iconName: "arrow-up",
+              enabled: AppState.canMoveScheduleSelection(-1),
+              action: function() { AppState.moveScheduleSelection(-1) } },
+            { label: qsTr("Move Down"), iconName: "arrow-down",
+              enabled: AppState.canMoveScheduleSelection(1),
+              action: function() { AppState.moveScheduleSelection(1) } },
+            { separator: true },
+            { label: qsTr("Duplicate %1 items").arg(rows.length), iconName: "copy",
+              action: function() { AppState.duplicateScheduleIndices(rows) } },
+            { label: qsTr("Theme…"), iconName: "palette",
+              submenu: root.bulkThemeSubmenu() },
+            { separator: true },
+            { label: qsTr("Remove %1 items").arg(rows.length), iconName: "trash",
+              destructive: true,
+              action: function() { root.confirmRemoveSelected() } }
+        ]
+    }
+
+    // Selection indices are positional; when rows go away by some path that
+    // doesn't fix them up itself (single-row Remove, clear, loading a saved
+    // schedule), drop the ones now past the end so no action can act on a
+    // row that no longer exists.
+    Connections {
+        target: ScheduleService
+        function onCurrentItemsChanged() {
+            const n = ScheduleService.currentItems.length
+            const sel = AppState.selectedScheduleIndices
+            const kept = sel.filter(function(i) { return i >= 0 && i < n })
+            if (kept.length !== sel.length) AppState.selectedScheduleIndices = kept
+            if (AppState.selectedScheduleIndex >= n)
+                AppState.selectedScheduleIndex = kept.length > 0 ? kept[kept.length - 1] : -1
+        }
+    }
+
     // ── Header ──────────────────────────────────────────────────────────
     // Single-line, ~32px tall — matches electron's `h={8}` header with a
     // playlist icon, label, parenthesised count, optional "• N selected"
@@ -126,22 +229,7 @@ Rectangle {
                         })
                         return
                     }
-                    // Remove selected in reverse so earlier indices stay valid
-                    // through the splice loop — same approach as electron.
-                    const sorted = sel.slice().sort(function(a, b) { return b - a })
-                    AppState.openModal("confirm", {
-                        title: sorted.length === 1
-                            ? qsTr("Remove item?")
-                            : qsTr("Remove %1 items?").arg(sorted.length),
-                        body:  qsTr("Remove the selected items from the schedule?"),
-                        confirmText: qsTr("Remove"),
-                        onConfirm: function() {
-                            for (let i = 0; i < sorted.length; i++) {
-                                ScheduleService.removeAt(sorted[i])
-                            }
-                            AppState.clearScheduleSelection()
-                        }
-                    })
+                    root.confirmRemoveSelected()
                 }
             }
 
@@ -220,7 +308,10 @@ Rectangle {
         ListView {
             id: list
             ScrollBar.vertical: AppScrollBar {}
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: scheduleBar.visible ? scheduleBar.top : parent.bottom
             // Rows are now flat (no card inset) so they sit flush against
             // the header — drop the top margin, keep a small bottom one for
             // scroll padding on the last row.
@@ -287,6 +378,15 @@ Rectangle {
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
                 hasContentOverride: modelData.contentOverride === true
+                selectionMode: root.selectionMode
+
+                // Checkbox: toggles this row in or out of the selection
+                // without moving the anchor (Preview stays put). Counts as a
+                // schedule gesture, so it takes keyboard focus like Ctrl+click.
+                onCheckToggled: {
+                    AppState.toggleScheduleChecked(index)
+                    AppState.setActiveFocus("schedule")
+                }
 
                 // Click DELIBERATELY does NOT call setActiveFocus("schedule").
                 // The operator typically clicks a schedule row to load it into
@@ -362,6 +462,13 @@ Rectangle {
                     AppState.setActiveFocus("schedule")
                     const item = ScheduleService.currentItems[index]
                     if (!item) return
+
+                    // On a row that is part of a 2+ selection, the menu
+                    // offers the bulk versions of its actions instead.
+                    if (root.selectionMode) {
+                        AppState.openContextMenuAt(this, mouseX, mouseY, root.bulkMenuItems())
+                        return
+                    }
 
                     // Theme submenu — filtered to themes matching this item's
                     // kind, with a check on the active choice and a "Use
@@ -459,6 +566,25 @@ Rectangle {
                     const target = list.dropTargetIndex()
                     list.draggedRow = -1
                     list.draggedOffsetY = 0
+                    // Dragging one row of a 2+ selection moves the whole
+                    // group, packed together where this row was dropped.
+                    // AppState carries the selection and live pointer along.
+                    // Dragging an unselected row past a multi-selection goes
+                    // through the same remapping so the selected rows stay
+                    // selected rather than their indices pointing at
+                    // whatever slid into place.
+                    if (target >= 0 && target !== i && root.selectionMode) {
+                        if (AppState.selectedScheduleIndices.indexOf(i) >= 0) {
+                            AppState.moveScheduleSelectionTo(i, target)
+                        } else {
+                            let order = []
+                            for (let k = 0; k < list.count; k++) order.push(k)
+                            order.splice(i, 1)
+                            order.splice(target, 0, i)
+                            AppState.applyScheduleOrder(order)
+                        }
+                        return
+                    }
                     if (target >= 0 && target !== i) {
                         ScheduleService.moveItem(i, target)
                         // Carry selection across the move so the primary
@@ -506,6 +632,39 @@ Rectangle {
 
                 Behavior on y { NumberAnimation { duration: Theme.motion.instant } }
             }
+        }
+
+        // Bulk-action bar while 2+ rows are selected. Clear drops back to
+        // the anchor row alone (the "current" row Preview shows) rather
+        // than deselecting everything, matching the first Escape.
+        SelectionBar {
+            id: scheduleBar
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            visible: root.selectionMode
+            count: AppState.selectedScheduleIndices.length
+            canSelectAll: AppState.selectedScheduleIndices.length
+                          < ScheduleService.currentItems.length
+            onSelectAllClicked: {
+                AppState.selectAllSchedule()
+                AppState.setActiveFocus("schedule")
+            }
+            onClearClicked: AppState.collapseScheduleSelection()
+            actions: [
+                { label: qsTr("Move up"), iconName: "arrow-up",
+                  enabled: AppState.canMoveScheduleSelection(-1),
+                  action: function() { AppState.moveScheduleSelection(-1) } },
+                { label: qsTr("Move down"), iconName: "arrow-down",
+                  enabled: AppState.canMoveScheduleSelection(1),
+                  action: function() { AppState.moveScheduleSelection(1) } },
+                { label: qsTr("Duplicate"), iconName: "copy",
+                  action: function() { AppState.duplicateScheduleIndices(root.selectedRows()) } },
+                { label: qsTr("Theme"), iconName: "palette",
+                  submenu: root.bulkThemeSubmenu() },
+                { label: qsTr("Remove"), iconName: "trash", destructive: true,
+                  action: function() { root.confirmRemoveSelected() } }
+            ]
         }
     }
 

@@ -51,6 +51,11 @@ public:
     Q_INVOKABLE QString chooseSaveFile(QString title,
                                        QString suggestedName,
                                        QStringList nameFilters);
+
+    // Folder picker. Returns the chosen directory, or an empty string if
+    // the user cancelled. Starts in Documents. Used by bulk theme export,
+    // which writes one bundle per theme into the chosen folder.
+    Q_INVOKABLE QString chooseDirectory(QString title);
 };
 
 }  // namespace crater

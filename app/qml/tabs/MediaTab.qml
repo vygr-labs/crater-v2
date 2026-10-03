@@ -210,50 +210,115 @@ Item {
         MediaService.importPaths(paths)
     }
 
-    function toggleBatch(idx) {
-        const cur = AppState.mediaBatchSelection.slice()
-        const i   = cur.indexOf(idx)
-        if (i >= 0) cur.splice(i, 1)
-        else        cur.push(idx)
-        AppState.mediaBatchSelection = cur
+    // ── Multi-select ────────────────────────────────────────────────────
+    // Checked items, keyed by media id (click rules in components/
+    // LibrarySelection.qml). This replaced an index-keyed batch list that
+    // silently pointed at different files once the sort or filter changed,
+    // which made the batch Delete able to remove items the operator never
+    // ticked. Grid and list views share the one selection.
+    LibrarySelection {
+        id: selection
+        tabKey:   root.tabKey
+        items:    root.filteredMedia
+        universe: MediaService.allMedia
+        currentId: (root.fluidIndex >= 0 && root.fluidIndex < root.filteredMedia.length)
+                   ? root.filteredMedia[root.fluidIndex].id : null
     }
 
-    function selectRange(fromIdx, toIdx) {
-        const lo = Math.min(fromIdx, toIdx)
-        const hi = Math.max(fromIdx, toIdx)
-        const cur = AppState.mediaBatchSelection.slice()
-        for (let i = lo; i <= hi; i++) {
-            if (cur.indexOf(i) === -1) cur.push(i)
+    function _itemNoun(n) { return n === 1 ? qsTr("item") : qsTr("items") }
+
+    function bulkAddToSchedule() {
+        const rows = selection.selectedItems()
+        for (let i = 0; i < rows.length; i++) {
+            const item = buildItemFromMedia(rows[i])
+            if (item) AppState.addItemToSchedule(item)
         }
-        AppState.mediaBatchSelection = cur
     }
 
-    function batchDelete() {
-        // Confirmation modal mirrors the per-row Delete in _mediaMenuItems
-        // — friction proportional to consequence. Batch is the more
-        // destructive of the two delete paths (N files, not 1), so it
-        // gets the same "Are you sure?" gate the single-row case has
-        // had since the start. Selection is snapshotted before opening
-        // the modal so subsequent clicks (e.g. clearing the batch on a
-        // background click while the dialog is open) don't shrink the
-        // set we eventually delete.
-        const selected = AppState.mediaBatchSelection.slice()
-        const n = selected.length
+    function bulkDuplicate() {
+        const ids = selection.selectedIds()
+        for (let i = 0; i < ids.length; i++) MediaService.duplicate(ids[i])
+    }
+
+    function bulkSetFit(mode) {
+        const rows = selection.selectedItems()
+        for (let i = 0; i < rows.length; i++) {
+            // Fit only means something for pictures and video, same as the
+            // single-item menu, which hides it for PDFs.
+            if (rows[i].type === "image" || rows[i].type === "video")
+                MediaService.setFitMode(rows[i].id, mode)
+        }
+    }
+
+    function bulkDelete() {
+        // Same confirmation gate as the per-item Delete. The ids are
+        // snapshotted before the dialog opens so a click while it is up
+        // cannot change what gets deleted.
+        const ids = selection.selectedIds()
+        const n = ids.length
         if (n === 0) return
         AppState.openModal("confirm", {
-            title:       qsTr("Delete %1 item%2?").arg(n).arg(n === 1 ? "" : "s"),
-            body:        qsTr("Remove %1 selected item%2 from your library? "
+            title:       qsTr("Delete %1 %2?").arg(n).arg(_itemNoun(n)),
+            body:        qsTr("Remove %1 selected %2 from your library? "
                             + "Files will also be deleted from managed media storage.")
-                            .arg(n).arg(n === 1 ? "" : "s"),
+                            .arg(n).arg(_itemNoun(n)),
             confirmText: qsTr("Delete"),
             onConfirm:   function() {
-                for (let i = 0; i < selected.length; i++) {
-                    const m = root.filteredMedia[selected[i]]
-                    if (m) MediaService.remove(m.id)
-                }
-                AppState.clearMediaBatchSelection()
+                MediaService.removeMany(ids)
+                selection.clear()
             }
         })
+    }
+
+    // Right-click on a checked item while 2+ are checked.
+    function bulkMenuItems() {
+        const n = selection.count
+        const fit = function(label, mode) {
+            return { label: label, action: function() { root.bulkSetFit(mode) } }
+        }
+        return [
+            { label: qsTr("Add %1 to Schedule").arg(n), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { separator: true },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Fit"), iconName: "maximize",
+              submenu: [
+                  fit(qsTr("Default"), "default"),
+                  fit(qsTr("Contain"), "contain"),
+                  fit(qsTr("Cover"),   "cover"),
+                  fit(qsTr("Stretch"), "stretch")
+              ] },
+            { separator: true },
+            { label: qsTr("Delete %1 %2").arg(n).arg(_itemNoun(n)), iconName: "trash",
+              destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
+    }
+
+    // Shared row / tile click routing for the grid and list views.
+    function handleItemLeftClick(mouse, idx, media) {
+        // Row click claims arrow-key focus for the library — see
+        // ScriptureTab._focus for rationale. Covers the Ctrl / Shift
+        // branches too: any of them is a user-initiated row interaction.
+        AppState.setActiveFocus("library")
+        // Ctrl / Shift only change the checked set and leave the current
+        // tile (and Preview) alone.
+        if (selection.handleClick(mouse, media.id)) return
+        AppState.setLibraryFluid(root.tabKey, idx)
+        root.pushPreviewFor(idx)
+    }
+
+    function handleItemRightClick(mouse, originItem, idx, media, isLogo) {
+        AppState.setActiveFocus("library")
+        if (selection.handleRightClick(media.id)) {
+            AppState.openContextMenuAt(originItem, mouse.x, mouse.y, root.bulkMenuItems())
+            return
+        }
+        AppState.setLibraryFluid(root.tabKey, idx)
+        root.pushPreviewFor(idx)
+        AppState.openContextMenuAt(originItem, mouse.x, mouse.y,
+            root._mediaMenuItems(media, isLogo, idx))
     }
 
     // Shared right-click menu builder — grid and list view both invoke it so
@@ -460,7 +525,8 @@ Item {
         height: Theme.d(32)
         color: "transparent"
 
-        // Center: count + batch indicator
+        // Center: count. The checked-items count and the batch actions
+        // live in the SelectionBar at the foot of the pane.
         Row {
             anchors.centerIn: parent
             spacing: Theme.space.sm
@@ -479,33 +545,6 @@ Item {
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: AppState.mediaBatchSelection.length > 1
-                text: "• " + AppState.mediaBatchSelection.length + " " + qsTr("selected")
-                color: Theme.color.brand
-                font.family: Theme.font.family
-                font.pixelSize: Theme.font.smallSize
-            }
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: AppState.mediaBatchSelection.length > 1
-                width: 18; height: 18
-                radius: 0
-                color: clearBatchMa.containsMouse ? Theme.color.overlay : "transparent"
-                AppIcon {
-                    anchors.centerIn: parent
-                    name: "x"; size: Theme.icon.xs
-                    color: Theme.color.textTertiary
-                }
-                MouseArea {
-                    id: clearBatchMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: AppState.clearMediaBatchSelection()
-                }
             }
         }
 
@@ -537,54 +576,12 @@ Item {
             }
         }
 
-        // ── Right side: view-mode, columns, sort, batch-delete ──────────
+        // ── Right side: view-mode, columns, sort ────────────────────────
         Row {
             anchors.right: parent.right
             anchors.rightMargin: Theme.space.md
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
-
-            // Batch delete (only when selection > 1)
-            Rectangle {
-                visible: AppState.mediaBatchSelection.length > 1
-                anchors.verticalCenter: parent.verticalCenter
-                width: batchDelRow.implicitWidth + Theme.space.sm * 2
-                height: 22
-                radius: 0
-                color: batchDelMa.containsMouse ? Theme.color.liveSubtle : "transparent"
-
-                Row {
-                    id: batchDelRow
-                    anchors.centerIn: parent
-                    spacing: 4
-                    AppIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        name: "trash"; size: Theme.icon.xs
-                        color: Theme.color.live
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Delete (") + AppState.mediaBatchSelection.length + ")"
-                        color: Theme.color.live
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.smallSize
-                    }
-                }
-                MouseArea {
-                    id: batchDelMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.batchDelete()
-                }
-            }
-
-            Rectangle {
-                visible: AppState.mediaBatchSelection.length > 1
-                anchors.verticalCenter: parent.verticalCenter
-                width: 1; height: 14
-                color: Theme.color.borderSubtle
-            }
 
             // Grid view button
             Rectangle {
@@ -771,7 +768,7 @@ Item {
     DropArea {
         id: dropZone
         anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: selectionBar.visible ? selectionBar.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
 
@@ -895,7 +892,8 @@ Item {
                 // drifts away from fluidIndex (typically resetting to 0).
                 // Reading fluidIndex directly is binding-rebind-safe.
                 readonly property bool _selected: index === root.fluidIndex
-                readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
+                // Checked for bulk actions, by media id (see `selection`).
+                readonly property bool _batch:    selection.isSelected(modelData.id)
                 // True while the library pane owns keyboard focus. When focus
                 // moves to Schedule / Preview / Live, the selected-tile border
                 // mutes to a neutral borderStrong. The _batch border stays
@@ -938,7 +936,7 @@ Item {
                     // by default. Without this, clicks on the checkbox
                     // were swallowed by cellMa's plain-click branch
                     // (fluid-focus + pushPreview) and never reached
-                    // toggleBatch — multi-select was effectively dead via
+                    // the checkbox toggle — multi-select was effectively dead via
                     // the checkbox. Ctrl/Shift+click on the tile still
                     // worked because that path lives inside cellMa itself.
                     // Non-MouseArea content inside thumb (the image, type
@@ -1087,29 +1085,20 @@ Item {
                         }
                     }
 
-                    // Batch-select checkbox (top-left, shows on hover or when batch active)
-                    Rectangle {
-                        visible: cellMa.containsMouse || cell._batch
-                              || AppState.mediaBatchSelection.length > 0
+                    // Batch-select checkbox (top-left, shows on hover or while
+                    // anything is checked). Toggles only this tile; the
+                    // current tile and Preview stay put.
+                    SelectCheck {
+                        id: cellCheck
+                        visible: cellMa.containsMouse || cellCheck.hovered
+                              || selection.active
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.margins: 4
                         width: 18; height: 18
-                        radius: 0
-                        color: cell._batch ? Theme.color.brand : "#000000bb"
-                        border.color: cell._batch ? Theme.color.brand : "#ffffff44"
-                        border.width: 1
-                        AppIcon {
-                            anchors.centerIn: parent
-                            visible: cell._batch
-                            name: "check"; size: Theme.icon.xs
-                            color: "#ffffff"
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.toggleBatch(index)
-                        }
+                        onImage: true
+                        checked: cell._batch
+                        onToggled: selection.toggle(modelData.id)
                     }
 
                     // State pill (bottom-left). Renders as LIVE (live-red)
@@ -1232,29 +1221,15 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
 
+                    // Routing shared with the list view: plain click sets the
+                    // current tile and previews it, Ctrl / Shift build the
+                    // checked set, right-click on a checked tile (2+ checked)
+                    // opens the bulk menu.
                     onClicked: function(mouse) {
-                        AppState.setLibraryFluid(root.tabKey, index)
-                        // Row click claims arrow-key focus for the library —
-                        // see ScriptureTab._focus for rationale. Covers the
-                        // right-click / shift / ctrl branches too; any one
-                        // of them is a user-initiated row interaction.
-                        AppState.setActiveFocus("library")
-                        if (mouse.button === Qt.RightButton) {
-                            root.pushPreviewFor(index)
-                            AppState.openContextMenuAt(this, mouse.x, mouse.y,
-                                root._mediaMenuItems(modelData, cell._logo, index))
-                        } else if (mouse.modifiers & Qt.ShiftModifier
-                                  && AppState.mediaBatchSelection.length > 0) {
-                            const last = AppState.mediaBatchSelection[AppState.mediaBatchSelection.length - 1]
-                            root.selectRange(last, index)
-                        } else if (mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
-                            root.toggleBatch(index)
-                        } else {
-                            // plain click: clear batch, set fluid focus, push to preview
-                            if (AppState.mediaBatchSelection.length > 0)
-                                AppState.clearMediaBatchSelection()
-                            root.pushPreviewFor(index)
-                        }
+                        if (mouse.button === Qt.RightButton)
+                            root.handleItemRightClick(mouse, cellMa, index, modelData, cell._logo)
+                        else
+                            root.handleItemLeftClick(mouse, index, modelData)
                     }
                     onDoubleClicked: {
                         AppState.setLibraryFluid(root.tabKey, index)
@@ -1289,7 +1264,7 @@ Item {
                 // can drift to 0 when ListView's internal handling writes to
                 // currentIndex during a model re-emit.
                 readonly property bool _selected: index === root.fluidIndex
-                readonly property bool _batch:    AppState.mediaBatchSelection.indexOf(index) !== -1
+                readonly property bool _batch:    selection.isSelected(modelData.id)
                 // Same focus-gating as the grid cell — selected row mutes
                 // when library pane loses focus.
                 readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
@@ -1336,32 +1311,18 @@ Item {
                 // z:1 lifts this above rowMa (the row-wide click handler
                 // declared later in this delegate). Without it, clicks on
                 // the checkbox were swallowed by rowMa's plain-click branch
-                // and toggleBatch never fired. Same bug pattern as the
+                // and the toggle never fired. Same bug pattern as the
                 // grid delegate's thumb.z fix.
-                Rectangle {
+                SelectCheck {
                     id: rowCheckbox
                     z: 1
-                    visible: rowMa.containsMouse || listRow._batch
-                          || AppState.mediaBatchSelection.length > 0
+                    visible: rowMa.containsMouse || rowCheckbox.hovered
+                          || selection.active
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 16; height: 16
-                    radius: 0
-                    color: listRow._batch ? Theme.color.brand : "transparent"
-                    border.color: listRow._batch ? Theme.color.brand : Theme.color.borderStrong
-                    border.width: 1
-                    AppIcon {
-                        anchors.centerIn: parent
-                        visible: listRow._batch
-                        name: "check"; size: Theme.icon.xs
-                        color: "#ffffff"
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleBatch(index)
-                    }
+                    checked: listRow._batch
+                    onToggled: selection.toggle(modelData.id)
                 }
 
                 // Thumbnail
@@ -1543,26 +1504,12 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
 
+                    // Same routing as the grid tile — see there.
                     onClicked: function(mouse) {
-                        AppState.setLibraryFluid(root.tabKey, index)
-                        // Library focus claim — see grid view above for
-                        // rationale.
-                        AppState.setActiveFocus("library")
-                        if (mouse.button === Qt.RightButton) {
-                            root.pushPreviewFor(index)
-                            AppState.openContextMenuAt(this, mouse.x, mouse.y,
-                                root._mediaMenuItems(modelData, listRow._logo, index))
-                        } else if (mouse.modifiers & Qt.ShiftModifier
-                                  && AppState.mediaBatchSelection.length > 0) {
-                            const last = AppState.mediaBatchSelection[AppState.mediaBatchSelection.length - 1]
-                            root.selectRange(last, index)
-                        } else if (mouse.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
-                            root.toggleBatch(index)
-                        } else {
-                            if (AppState.mediaBatchSelection.length > 0)
-                                AppState.clearMediaBatchSelection()
-                            root.pushPreviewFor(index)
-                        }
+                        if (mouse.button === Qt.RightButton)
+                            root.handleItemRightClick(mouse, rowMa, index, modelData, listRow._logo)
+                        else
+                            root.handleItemLeftClick(mouse, index, modelData)
                     }
                     onDoubleClicked: {
                         AppState.setLibraryFluid(root.tabKey, index)
@@ -1574,13 +1521,36 @@ Item {
         }
     }
 
+    // Bulk-action bar while items are checked. Shared by grid and list.
+    SelectionBar {
+        id: selectionBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: selection.active
+        count: selection.count
+        hiddenCount: selection.hiddenCount
+        canSelectAll: !selection.allVisibleSelected
+        onSelectAllClicked: selection.selectAll()
+        onClearClicked: selection.clear()
+        actions: [
+            { label: qsTr("Add to schedule"), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
+    }
+
     Rectangle {
         id: skippedNotice
         readonly property int maxNames: 4
         visible: root._lastSkipped.length > 0
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        // Sits above the selection bar rather than over it.
+        anchors.bottom: selectionBar.visible ? selectionBar.top : parent.bottom
         anchors.margins: Theme.space.sm
         height: noticeCol.implicitHeight + Theme.space.md * 2
         z: 50
@@ -1714,6 +1684,10 @@ Item {
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
+        }
+        function onLibrarySelectAll() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            selection.selectAll()
         }
     }
 }

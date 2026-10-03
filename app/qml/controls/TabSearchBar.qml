@@ -684,6 +684,24 @@ Item {
                     return
                 }
 
+                // Ctrl+A — the field claims it through ShortcutOverride, so
+                // Main.qml's select-all-rows Shortcut never sees it while the
+                // keyboard sits here, which is most of the time. With nothing
+                // typed there is no text to select, so hand it to the list
+                // instead. With text, the field keeps its own select-all. If
+                // the operator last worked in the schedule, it goes there
+                // whatever the box holds, same as the arrow keys below.
+                if ((event.modifiers & Qt.ControlModifier)
+                    && event.key === Qt.Key_A
+                    && !root.isControlledMode
+                    && (inputField.text.length === 0
+                        || AppState.activeFocusPanel === "schedule")) {
+                    if (AppState.requestSelectAll()) {
+                        event.accepted = true
+                        return
+                    }
+                }
+
                 // Media tab + grid view: Left/Right step the grid by one
                 // tile, but only at a text boundary (start for Left, end
                 // for Right) so editing search text keeps standard cursor

@@ -780,6 +780,15 @@ ApplicationWindow {
             } else if (AppState.isTrailingEscape()) {
                 // Second half of a double tap that already closed a
                 // dialog. Leave the schedule selection alone.
+            } else if (AppState.clearActiveLibrarySelection()) {
+                // First Escape with library focus drops the checked rows
+                // of the active tab. The schedule row stays selected until
+                // the next Escape.
+            } else if (AppState.activeFocusPanel === "schedule"
+                       && AppState.selectedScheduleIndices.length > 1) {
+                // Same staging for the schedule: drop the multi-selection
+                // back to the anchor row first.
+                AppState.collapseScheduleSelection()
             } else if (AppState.selectedScheduleIndex >= 0) {
                 AppState.selectScheduleItem(-1)
             }
@@ -804,6 +813,18 @@ ApplicationWindow {
         sequence: "F1"
         enabled: AppState.activeModal === "" || AppState.activeModal === "shortcuts"
         onActivated: AppState.toggleShortcutHelp()
+    }
+
+    // Ctrl+A: select every row of whichever list owns the keyboard (the
+    // active library tab or the schedule). Only reaches here when no text
+    // field has focus: a focused TextInput claims Ctrl+A for its own
+    // select-all through ShortcutOverride, so typing never loses it. The
+    // library search box forwards Ctrl+A itself while it is empty (see
+    // TabSearchBar), since that is where the keyboard usually sits.
+    Shortcut {
+        sequence: "Ctrl+A"
+        enabled: AppState.consoleShortcutsActive
+        onActivated: AppState.requestSelectAll()
     }
 
     // Delete: prompt to remove the selected schedule item(s) — only when the
@@ -840,12 +861,9 @@ ApplicationWindow {
                     title:       qsTr("Remove %1 items?").arg(indices.length),
                     body:        qsTr("This will remove %1 selected items from the schedule.").arg(indices.length),
                     confirmText: qsTr("Remove"),
-                    onConfirm:   function() {
-                        for (let k = 0; k < indices.length; k++) {
-                            ScheduleService.removeAt(indices[k])
-                        }
-                        AppState.clearScheduleSelection()
-                    }
+                    // One batch call: one schedule change, and the live
+                    // pointer is carried past the removed rows.
+                    onConfirm:   function() { AppState.removeScheduleIndices(indices) }
                 })
             }
         }

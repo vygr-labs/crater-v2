@@ -148,6 +148,91 @@ Item {
         ]
     }
 
+    // ── Multi-select ────────────────────────────────────────────────────
+    // Checked decks, keyed by id (click rules in components/
+    // LibrarySelection.qml). The fluid row stays the one deck in Preview.
+    // Bulk actions loop the per-deck service calls: a church holds tens of
+    // decks, so there is no batch path worth adding to PresentationService.
+    LibrarySelection {
+        id: selection
+        tabKey:   root.tabKey
+        items:    root.filteredDecks
+        universe: PresentationService.presentations
+        currentId: (root.fluidIndex >= 0 && root.fluidIndex < root.filteredDecks.length)
+                   ? root.filteredDecks[root.fluidIndex].id : null
+    }
+
+    function _deckNoun(n) { return n === 1 ? qsTr("presentation") : qsTr("presentations") }
+
+    function bulkAddToSchedule() {
+        const decks = selection.selectedItems()
+        for (let i = 0; i < decks.length; i++) {
+            const item = AppState.buildPresentationItem(
+                decks[i], PresentationService.slides(decks[i].id))
+            if (item) AppState.addItemToSchedule(item)
+        }
+    }
+
+    function bulkDuplicate() {
+        const ids = selection.selectedIds()
+        for (let i = 0; i < ids.length; i++) PresentationService.duplicate(ids[i])
+    }
+
+    function bulkDelete() {
+        const ids = selection.selectedIds()
+        const n = ids.length
+        if (n === 0) return
+        AppState.openModal("confirm", {
+            title:       qsTr("Delete %1 %2?").arg(n).arg(_deckNoun(n)),
+            body:        qsTr("This permanently removes %1 %2 and their slides.")
+                             .arg(n).arg(_deckNoun(n)),
+            confirmText: qsTr("Delete"),
+            onConfirm:   function() {
+                for (let i = 0; i < ids.length; i++) PresentationService.destroy(ids[i])
+                selection.clear()
+            }
+        })
+    }
+
+    // Presentation themes plus "Use default theme" — the same choice the
+    // deck editor offers, written to every checked deck.
+    function _bulkThemeSubmenu() {
+        const all = ThemeService.allThemes
+        const apply = function(tid) {
+            const ids = selection.selectedIds()
+            for (let k = 0; k < ids.length; k++) PresentationService.setThemeId(ids[k], tid)
+        }
+        let items = []
+        for (let i = 0; i < all.length; i++) {
+            const t = all[i]
+            if (t.kind !== "presentation") continue
+            const tid = t.id
+            items.push({ label: t.name, iconName: "palette",
+                         action: function() { apply(tid) } })
+        }
+        if (items.length > 0) items.push({ separator: true })
+        items.push({ label: qsTr("Use default theme"), iconName: "refresh-cw",
+                     action: function() { apply(0) } })
+        return items
+    }
+
+    function bulkMenuItems() {
+        const n = selection.count
+        return [
+            { label: qsTr("Add %1 to Schedule").arg(n), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { separator: true },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Set Theme"), iconName: "palette",
+              submenu: root._bulkThemeSubmenu() },
+            { separator: true },
+            { label: qsTr("Delete %1 %2").arg(n).arg(_deckNoun(n)), iconName: "trash",
+              destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
+    }
+
     // ── Action bar ──────────────────────────────────────────────────────
     Item {
         id: actionBar
@@ -341,11 +426,11 @@ Item {
         id: list
         ScrollBar.vertical: AppScrollBar {}
         anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
+        anchors.bottom: selectionBar.visible ? selectionBar.top : parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.topMargin: Theme.space.sm
-        anchors.bottomMargin: Theme.space.md
+        anchors.bottomMargin: selectionBar.visible ? 0 : Theme.space.md
         visible: root.filteredDecks.length > 0
         model: root.filteredDecks
         clip: true
@@ -364,6 +449,11 @@ Item {
             height: Theme.d(40)
 
             readonly property bool _selected: list.currentIndex === index
+            // Checked for bulk actions; shares the selected wash, while the
+            // accent bar stays the current row's alone.
+            readonly property bool _checked: selection.isSelected(modelData.id)
+            readonly property bool _showCheck:
+                selection.active || rowMa.containsMouse || rowCheck.hovered
             readonly property bool _paneFocused: AppState.activeFocusPanel === "library"
             // Live comparison keys on presentationId, which only exists on a
             // presentation item — guarding on contentKind keeps the check
@@ -376,7 +466,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: 0
-                color: deckRow._selected
+                color: (deckRow._selected || deckRow._checked)
                        ? (deckRow._paneFocused ? Theme.color.brandSubtle
                                                : Theme.color.selectionUnfocused)
                      : rowMa.containsMouse ? Theme.color.rowHoverBrand
@@ -419,15 +509,29 @@ Item {
                 }
             }
 
-            Text {
+            // Multi-select checkbox (hover, or while any deck is checked).
+            // z above rowMa so the click reaches it.
+            SelectCheck {
+                id: rowCheck
+                z: 1
+                visible: deckRow._showCheck
                 anchors.left: parent.left
-                anchors.leftMargin: Theme.space.lg
+                anchors.leftMargin: Theme.space.md
+                anchors.verticalCenter: parent.verticalCenter
+                checked: deckRow._checked
+                onToggled: selection.toggle(modelData.id)
+            }
+
+            Text {
+                anchors.left: deckRow._showCheck ? rowCheck.right : parent.left
+                anchors.leftMargin: deckRow._showCheck ? Theme.space.sm : Theme.space.lg
                 anchors.right: rowRight.left
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.title
                 elide: Text.ElideRight
-                color: deckRow._selected ? Theme.color.textPrimary : Theme.color.textSecondary
+                color: (deckRow._selected || deckRow._checked)
+                       ? Theme.color.textPrimary : Theme.color.textSecondary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.bodySize
                 font.weight: deckRow._selected ? Theme.font.weightSemiBold
@@ -437,7 +541,13 @@ Item {
             RightClickArea {
                 id: rowMa
                 anchors.fill: parent
-                menuItems: root.deckMenuItems(modelData, index)
+                // Resolved per right-click so a click on a checked deck with
+                // 2+ checked gets the bulk menu (onRightClicked runs first).
+                property bool _bulk: false
+                menuItems: function() {
+                    return rowMa._bulk ? root.bulkMenuItems()
+                                       : root.deckMenuItems(modelData, index)
+                }
 
                 // Right-click focuses the row too, so the menu always acts
                 // on what is visually highlighted rather than on whatever
@@ -447,8 +557,20 @@ Item {
                     AppState.setActiveFocus("library")
                     root.pushPreviewFor(index)
                 }
-                onLeftClicked:  _focus()
-                onRightClicked: _focus()
+                // Ctrl / Shift clicks only change the checked set; a plain
+                // click clears it and does the usual single-select.
+                onLeftClicked: function(mouse) {
+                    if (selection.handleClick(mouse, modelData.id)) {
+                        AppState.setActiveFocus("library")
+                        return
+                    }
+                    _focus()
+                }
+                onRightClicked: function(mouse) {
+                    _bulk = selection.handleRightClick(modelData.id)
+                    if (_bulk) AppState.setActiveFocus("library")
+                    else       _focus()
+                }
                 onDoubleClicked: {
                     AppState.setLibraryFluid(root.tabKey, index)
                     AppState.setActiveFocus("library")
@@ -456,6 +578,30 @@ Item {
                 }
             }
         }
+    }
+
+    // Bulk-action bar while decks are checked.
+    SelectionBar {
+        id: selectionBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: selection.active
+        count: selection.count
+        hiddenCount: selection.hiddenCount
+        canSelectAll: !selection.allVisibleSelected
+        onSelectAllClicked: selection.selectAll()
+        onClearClicked: selection.clear()
+        actions: [
+            { label: qsTr("Add to schedule"), iconName: "plus",
+              action: function() { root.bulkAddToSchedule() } },
+            { label: qsTr("Theme"), iconName: "palette",
+              submenu: root._bulkThemeSubmenu() },
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
     }
 
     // ── Keyboard navigation from the search input ───────────────────────
@@ -483,6 +629,10 @@ Item {
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
+        }
+        function onLibrarySelectAll() {
+            if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            selection.selectAll()
         }
     }
 

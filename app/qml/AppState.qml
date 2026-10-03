@@ -966,6 +966,198 @@ QtObject {
         selectedScheduleIndices = []
     }
 
+    // ─── Schedule bulk actions (multi-select) ───────────────────────────
+    // The schedule keeps its index-keyed selection: it has no filter or
+    // sort, and selectedScheduleIndex is what Preview, Delete and the live
+    // pointer already read. Every bulk mutation below therefore remaps the
+    // indices it disturbs (selection, anchor, live row) itself, and goes
+    // through ScheduleService's one-signal batch calls so the panes never
+    // see a half-applied change.
+
+    // Ctrl+A with the schedule focused. Keeps the current anchor (and so
+    // the Preview pane) where it is; with no anchor, row 0 becomes it.
+    function selectAllSchedule() {
+        const n = ScheduleService.currentItems.length
+        if (n === 0) return
+        let s = []
+        for (let k = 0; k < n; k++) s.push(k)
+        if (selectedScheduleIndex < 0 || selectedScheduleIndex >= n) {
+            libraryPreviewItem = null
+            selectedScheduleIndex = 0
+            previewSubIndex = 0
+        }
+        selectedScheduleIndices = s
+    }
+
+    // Drop a multi-selection back to its anchor row, leaving that row (and
+    // so the Preview pane and its current page) exactly as it was. The
+    // selection bar's Clear and the first Escape use this.
+    function collapseScheduleSelection() {
+        const n = ScheduleService.currentItems.length
+        selectedScheduleIndices = (selectedScheduleIndex >= 0 && selectedScheduleIndex < n)
+            ? [selectedScheduleIndex] : []
+    }
+
+    // Row checkbox. Unlike toggleScheduleSelection (Ctrl+click) this never
+    // moves the anchor onto the toggled row, so ticking boxes does not keep
+    // swapping what the Preview pane shows. The anchor only moves when it
+    // is the row being unticked, or when there was none to begin with.
+    function toggleScheduleChecked(i) {
+        const n = ScheduleService.currentItems.length
+        if (i < 0 || i >= n) return
+        let s = selectedScheduleIndices.slice()
+        const at = s.indexOf(i)
+        if (at >= 0) {
+            s.splice(at, 1)
+            if (selectedScheduleIndex === i)
+                selectedScheduleIndex = s.length > 0 ? s[s.length - 1] : -1
+        } else {
+            s.push(i)
+            if (selectedScheduleIndex < 0) {
+                libraryPreviewItem = null
+                selectedScheduleIndex = i
+                previewSubIndex = 0
+            }
+        }
+        selectedScheduleIndices = s
+    }
+
+    // Apply a permutation (order[k] = old index of the row that lands at k)
+    // and carry the selection, anchor and live pointer to the rows' new
+    // positions.
+    function applyScheduleOrder(order) {
+        if (!ScheduleService.reorder(order)) return false
+        let newPos = {}
+        for (let k = 0; k < order.length; k++) newPos[order[k]] = k
+        const remap = function(i) { return (i in newPos) ? newPos[i] : i }
+        selectedScheduleIndices = selectedScheduleIndices.map(remap)
+        if (selectedScheduleIndex >= 0) selectedScheduleIndex = remap(selectedScheduleIndex)
+        if (liveScheduleIndex >= 0)     liveScheduleIndex     = remap(liveScheduleIndex)
+        return true
+    }
+
+    // Move up / Move down for the selected rows. Each row steps one place
+    // unless the slot ahead of it is the list edge or another selected row
+    // that could not move, so a contiguous block travels as a block and
+    // stops at the edge rather than reshuffling itself.
+    function moveScheduleSelection(dir) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices.filter(function(i) { return i >= 0 && i < n })
+        if (sel.length === 0 || (dir !== -1 && dir !== 1)) return
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        let order = []
+        for (let k = 0; k < n; k++) order.push(k)
+        if (dir < 0) {
+            for (let pos = 1; pos < n; pos++) {
+                if (isSel[order[pos]] && !isSel[order[pos - 1]]) {
+                    const t = order[pos - 1]; order[pos - 1] = order[pos]; order[pos] = t
+                }
+            }
+        } else {
+            for (let pos = n - 2; pos >= 0; pos--) {
+                if (isSel[order[pos]] && !isSel[order[pos + 1]]) {
+                    const t = order[pos + 1]; order[pos + 1] = order[pos]; order[pos] = t
+                }
+            }
+        }
+        applyScheduleOrder(order)
+    }
+
+    // Can the selection move that way at all? Drives the bar's enabled
+    // state: false once every selected row is already packed against
+    // that edge.
+    function canMoveScheduleSelection(dir) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices.filter(function(i) { return i >= 0 && i < n })
+        if (sel.length === 0) return false
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        for (let i = 0; i < sel.length; i++) {
+            const nb = sel[i] + dir
+            if (nb >= 0 && nb < n && !isSel[nb]) return true
+        }
+        return false
+    }
+
+    // Drag a selected row with others selected: the whole group goes, in
+    // its current order, packed together where the dragged row was dropped.
+    // `target` is the index the dragged row would have taken on its own.
+    function moveScheduleSelectionTo(draggedRow, target) {
+        const n = ScheduleService.currentItems.length
+        const sel = selectedScheduleIndices
+            .filter(function(i) { return i >= 0 && i < n })
+            .sort(function(a, b) { return a - b })
+        if (sel.length === 0 || target === draggedRow) return
+        let isSel = {}
+        for (let i = 0; i < sel.length; i++) isSel[sel[i]] = true
+        let rest = []
+        for (let k = 0; k < n; k++) if (!isSel[k]) rest.push(k)
+        // How many unselected rows end up above the block: those above the
+        // drop point, counting the target row itself when moving down (the
+        // dragged row lands below it) but not when moving up.
+        let p = 0
+        for (let k = 0; k < rest.length; k++) {
+            if (target > draggedRow ? rest[k] <= target : rest[k] < target) p++
+        }
+        applyScheduleOrder(rest.slice(0, p).concat(sel, rest.slice(p)))
+    }
+
+    // Remove several rows in one change. Clears the selection (every row it
+    // named is gone) and keeps the live pointer on the same row, or drops
+    // it when that row was one of those removed: pointing at whatever slid
+    // into its index would show the wrong item as live.
+    function removeScheduleIndices(indices) {
+        const n = ScheduleService.currentItems.length
+        const rows = (indices || []).filter(function(i) { return i >= 0 && i < n })
+        if (rows.length === 0) return 0
+        const live = liveScheduleIndex
+        const removed = ScheduleService.removeMany(rows)
+        if (live >= 0) {
+            if (rows.indexOf(live) >= 0) {
+                liveScheduleIndex = -1
+            } else {
+                let below = 0
+                for (let i = 0; i < rows.length; i++) if (rows[i] < live) below++
+                liveScheduleIndex = live - below
+            }
+        }
+        clearScheduleSelection()
+        return removed
+    }
+
+    // Append a copy of each row, in schedule order. Like the single-row
+    // Duplicate, the selection stays where it is; the last copy is
+    // scrolled into view.
+    function duplicateScheduleIndices(indices) {
+        const items = ScheduleService.currentItems
+        const rows = (indices || [])
+            .filter(function(i) { return i >= 0 && i < items.length })
+            .sort(function(a, b) { return a - b })
+        for (let i = 0; i < rows.length; i++) {
+            // addItem assigns a fresh id; strip the old one so two rows
+            // never share an identity.
+            const copy = Object.assign({}, items[rows[i]])
+            delete copy.id
+            ScheduleService.addItem(copy)
+        }
+        if (rows.length > 0) scheduleItemAppended(ScheduleService.currentItems.length - 1)
+    }
+
+    // Per-row theme override for several rows. A theme only applies to rows
+    // of its own kind (the single-row menu lists only those), so rows of
+    // another kind are left alone. themeId 0 = back to the default, which
+    // applies to every row.
+    function setScheduleTheme(indices, themeId, themeKind) {
+        const items = ScheduleService.currentItems
+        for (let i = 0; i < indices.length; i++) {
+            const idx = indices[i]
+            if (idx < 0 || idx >= items.length) continue
+            if (themeId > 0 && (items[idx].kind || "song") !== themeKind) continue
+            ScheduleService.setItemTheme(idx, themeId)
+        }
+    }
+
     // Resolve the effective theme for a schedule item — three-tier priority:
     //   1. Per-item override stored on the item itself
     //   2. Per-output, PER-KIND theme pinned on the OutputBinding registered
@@ -1612,12 +1804,82 @@ QtObject {
     property string mediaSortOrder:  "asc"      // "asc" | "desc"
     property string mediaTypeFilter: "all"      // "all" | "image" | "video" | "pdf"
 
-    // Batch selection — list of fluid-list indices currently checked. Plain
-    // list rather than Set because QML's property var likes JSON-friendly
-    // structures. Cleared whenever the operator switches tabs.
-    property var mediaBatchSelection: []
+    // ─── Library multi-selection (songs / media / presentations / themes) ─
+    // The rows the operator has checked, per tab, keyed by item ID rather
+    // than row index so a selection survives re-sorting or narrowing the
+    // list. Distinct from libraryFluidIndex: the fluid row is the single
+    // "current" item that drives Preview, these are the extra rows bulk
+    // actions apply to. The LibrarySelection helper each tab instantiates
+    // owns the click semantics and prunes ids that leave the library.
+    //
+    // Scripture is deliberately not in this list: its multi-select builds
+    // verse ranges, which are positional, and lives in
+    // librarySelectedIndices above.
+    readonly property var multiSelectTabs: ["songs", "media", "presentations", "themes"]
 
-    function clearMediaBatchSelection() { mediaBatchSelection = [] }
+    property var librarySelection: ({
+        "songs": [], "media": [], "presentations": [], "themes": []
+    })
+    // Shift+click pivot per tab: the id of the last row clicked without
+    // Shift. Kept apart from the selection so a range can be re-drawn from
+    // the same pivot.
+    property var librarySelectionAnchor: ({})
+
+    function setLibrarySelection(tabKey, ids) {
+        let seen = {}
+        let out = []
+        const src = ids || []
+        for (let i = 0; i < src.length; i++) {
+            const k = String(src[i])
+            if (seen[k]) continue
+            seen[k] = true
+            out.push(src[i])
+        }
+        let copy = Object.assign({}, librarySelection)
+        copy[tabKey] = out
+        librarySelection = copy
+    }
+
+    function clearLibrarySelection(tabKey) {
+        if ((librarySelection[tabKey] || []).length === 0) return
+        setLibrarySelection(tabKey, [])
+    }
+
+    function setLibrarySelectionAnchor(tabKey, id) {
+        if (librarySelectionAnchor[tabKey] === id) return
+        let copy = Object.assign({}, librarySelectionAnchor)
+        copy[tabKey] = id
+        librarySelectionAnchor = copy
+    }
+
+    // Ctrl+A. Window-level (Main.qml) when no text field holds the keyboard,
+    // and from TabSearchBar when its box is empty. Routes by the panel that
+    // owns keyboard focus: the schedule selects every row itself, a library
+    // tab gets librarySelectAll() because only the tab knows what is
+    // currently visible. Returns false when nothing took it.
+    signal librarySelectAll()
+
+    function requestSelectAll() {
+        if (activeFocusPanel === "schedule") {
+            selectAllSchedule()
+            return true
+        }
+        if (activeFocusPanel !== "library") return false
+        if (multiSelectTabs.indexOf(tabKeys[activeTab]) < 0) return false
+        librarySelectAll()
+        return true
+    }
+
+    // Escape, first stage: drop the active library tab's checked rows.
+    // Returns false when there was nothing to clear, so the caller can fall
+    // through to its older meaning (deselecting the schedule row).
+    function clearActiveLibrarySelection() {
+        if (activeFocusPanel !== "library") return false
+        const key = tabKeys[activeTab]
+        if ((librarySelection[key] || []).length === 0) return false
+        clearLibrarySelection(key)
+        return true
+    }
 
     // Sidebar group + media type filter move together: clicking "Images" in
     // the sidebar should both highlight the row (activeLibraryGroup) AND

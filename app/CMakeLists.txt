@@ -122,6 +122,8 @@ qt_add_qml_module(crater
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
         qml/controls/Combobox.qml
+        qml/controls/SelectCheck.qml
+        qml/controls/SelectionBar.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────
@@ -148,6 +150,7 @@ qt_add_qml_module(crater
         qml/components/ColorSwatchInput.qml
         qml/components/MediaPickerPopover.qml
         qml/components/ConfirmationOverlay.qml
+        qml/components/LibrarySelection.qml
 
         # ── Theme editor workspace + editor child components ─────────
         qml/workspaces/ThemeEditorWorkspace.qml

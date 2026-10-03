@@ -66,6 +66,122 @@ Item {
         })
     }
 
+    // ── Multi-select ────────────────────────────────────────────────────
+    // Checked themes, keyed by id (click rules in components/
+    // LibrarySelection.qml). Themes have no "current" tile (a plain click
+    // never did anything here), so a plain click only clears the checked
+    // set and becomes the Shift+click pivot.
+    LibrarySelection {
+        id: selection
+        tabKey:   "themes"
+        items:    root.filteredThemes
+        universe: ThemeService.allThemes
+    }
+
+    function _themeNoun(n) { return n === 1 ? qsTr("theme") : qsTr("themes") }
+
+    function bulkDuplicate() {
+        const rows = selection.selectedItems()
+        for (let i = 0; i < rows.length; i++)
+            ThemeService.duplicateTheme(rows[i].id, qsTr("%1 Copy").arg(rows[i].name))
+    }
+
+    // Presets (built-in themes) can't be deleted, same as the per-tile
+    // Delete, which is disabled for them. They are left out and the dialog
+    // says how many, rather than refusing the whole batch.
+    function bulkDelete() {
+        const rows = selection.selectedItems()
+        if (rows.length === 0) return
+        const deletable = rows.filter(function(t) { return !t.isBuiltin })
+        const skipped = rows.length - deletable.length
+        if (deletable.length === 0) {
+            root._statusMessage = skipped === 1
+                ? qsTr("The selected theme is a preset. Presets cannot be deleted.")
+                : qsTr("All %1 selected themes are presets. Presets cannot be deleted.").arg(skipped)
+            return
+        }
+        const ids = deletable.map(function(t) { return t.id })
+        const n = ids.length
+        let body = qsTr("This permanently removes %1 %2.").arg(n).arg(_themeNoun(n))
+        if (skipped > 0) {
+            body += " " + (skipped === 1
+                ? qsTr("1 preset in the selection will be kept. Presets cannot be deleted.")
+                : qsTr("%1 presets in the selection will be kept. Presets cannot be deleted.").arg(skipped))
+        }
+        AppState.openModal("confirm", {
+            title:       qsTr("Delete %1 %2?").arg(n).arg(_themeNoun(n)),
+            body:        body,
+            confirmText: qsTr("Delete"),
+            onConfirm:   function() {
+                for (let i = 0; i < ids.length; i++) ThemeService.destroy(ids[i])
+                selection.clear()
+            }
+        })
+    }
+
+    // Bulk export: one .craterheme bundle per theme, named after the theme,
+    // into a folder the operator picks. The single-theme dialog's per-font
+    // opt-outs don't scale to a batch, so every bundleable font goes in
+    // (exportTheme's documented default for programmatic callers).
+    function bulkExport() {
+        const rows = selection.selectedItems()
+        if (rows.length === 0) return
+        const dir = FileDialogService.chooseDirectory(
+            qsTr("Export %1 %2 to folder").arg(rows.length).arg(_themeNoun(rows.length)))
+        if (!dir || dir.length === 0) return
+
+        let used = {}
+        let exported = 0
+        let failed = []
+        for (let i = 0; i < rows.length; i++) {
+            const t = rows[i]
+            // Strip characters Windows refuses in file names; two themes
+            // with the same name get " (2)", " (3)" so neither overwrites
+            // the other.
+            let base = String(t.name || "").replace(/[\\/:*?"<>|]/g, "_").trim()
+            if (base.length === 0) base = qsTr("Theme")
+            let name = base
+            let k = 2
+            while (used[name.toLowerCase()]) name = base + " (" + (k++) + ")"
+            used[name.toLowerCase()] = true
+            if (ThemeService.exportTheme(t.id, dir + "/" + name + ".craterheme", []))
+                exported++
+            else
+                failed.push(t.name)
+        }
+        if (exported > 0)
+            root._statusMessage = qsTr("Exported %1 %2 to %3")
+                                      .arg(exported).arg(_themeNoun(exported)).arg(dir)
+        if (failed.length > 0) {
+            root._importError = qsTr("Could not export %1. %2")
+                                    .arg(failed.join(", "))
+                                    .arg(ThemeService.lastExportError() || "")
+            errorClearTimer.restart()
+        }
+    }
+
+    // Right-click on a checked tile while 2+ are checked.
+    function bulkMenuItems() {
+        const n = selection.count
+        return [
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Export %1 %2…").arg(n).arg(_themeNoun(n)), iconName: "download",
+              action: function() { root.bulkExport() } },
+            { separator: true },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
+    }
+
+    Connections {
+        target: AppState
+        function onLibrarySelectAll() {
+            if (AppState.tabKeys[AppState.activeTab] !== "themes") return
+            selection.selectAll()
+        }
+    }
+
     // ── Import / export feedback surface ────────────────────────────────
     // Two parallel banners:
     //   _importError — red, transient (5s). Catastrophic failures: import
@@ -418,12 +534,12 @@ Item {
                                        : filterRow.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: selectionBar.visible ? selectionBar.top : parent.bottom
         anchors.leftMargin: Theme.space.lg
         // Run to the panel edge; the responsive cellWidth below reserves the
         // scrollbar's lane on the right so the bar never lands on a tile.
         anchors.rightMargin: 0
-        anchors.bottomMargin: Theme.space.lg
+        anchors.bottomMargin: selectionBar.visible ? Theme.space.sm : Theme.space.lg
         anchors.topMargin: Theme.space.sm
         visible: root.filteredThemes.length > 0
         model: root.filteredThemes
@@ -532,12 +648,20 @@ Item {
                 return entries
             }
 
+            // Checked for bulk actions (multi-select, keyed by theme id).
+            readonly property bool _checked: selection.isSelected(modelData.id)
+            readonly property bool _showCheck:
+                selection.active || themeMa.containsMouse || tileCheck.hovered
+
             Rectangle {
                 id: tile
                 anchors.fill: parent
                 radius: 0
                 color: Theme.color.canvas
-                border.color: themeMa.containsMouse ? Theme.color.brand : Theme.color.borderStrong
+                // Checked tiles keep the brand border whether hovered or not,
+                // same as a checked media tile.
+                border.color: (tileRoot._checked || themeMa.containsMouse)
+                              ? Theme.color.brand : Theme.color.borderStrong
                 border.width: 2
                 clip: true
 
@@ -605,9 +729,11 @@ Item {
                 // theme can be both the song-kind default AND the Primary
                 // HDMI output theme).
                 Row {
-                    anchors.left: parent.left
+                    // Steps right of the multi-select checkbox while it shows.
+                    anchors.left: tileRoot._showCheck ? tileCheck.right : parent.left
+                    anchors.leftMargin: tileRoot._showCheck ? 4 : 8
                     anchors.top: parent.top
-                    anchors.margins: 8
+                    anchors.topMargin: 8
                     spacing: 4
 
                     // Kind badge — square chip tinted with Theme.scheduleColor
@@ -751,7 +877,21 @@ Item {
                     id: themeMa
                     anchors.fill: parent
                     onDoubleClicked: AppState.openThemeEditor(modelData.id, modelData.kind)
-                    menuItems: [
+                    // Plain click only clears the checked set (it did
+                    // nothing before multi-select); Ctrl / Shift build it.
+                    onLeftClicked: function(mouse) {
+                        AppState.setActiveFocus("library")
+                        selection.handleClick(mouse, modelData.id)
+                    }
+                    // Runs before the menu resolves: a right-click on a
+                    // checked tile with 2+ checked gets the bulk menu.
+                    property bool _bulk: false
+                    onRightClicked: function(mouse) {
+                        AppState.setActiveFocus("library")
+                        _bulk = selection.handleRightClick(modelData.id)
+                    }
+                    menuItems: function() {
+                        return themeMa._bulk ? root.bulkMenuItems() : [
                         { label: qsTr("Edit"),       iconName: "edit",
                           action: () => AppState.openThemeEditor(modelData.id, modelData.kind) },
                         { label: qsTr("Duplicate"),  iconName: "copy",
@@ -815,9 +955,48 @@ Item {
                           destructive: true,
                           enabled: !modelData.isBuiltin,
                           action: () => ThemeService.destroy(modelData.id) }
-                    ]
+                        ]
+                    }
+                }
+
+                // Multi-select checkbox, top-left. Declared after themeMa so
+                // it sits above it and gets its own clicks.
+                SelectCheck {
+                    id: tileCheck
+                    visible: tileRoot._showCheck
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.margins: 8
+                    onImage: true
+                    checked: tileRoot._checked
+                    onToggled: {
+                        AppState.setActiveFocus("library")
+                        selection.toggle(modelData.id)
+                    }
                 }
             }
         }
+    }
+
+    // Bulk-action bar while themes are checked.
+    SelectionBar {
+        id: selectionBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: selection.active
+        count: selection.count
+        hiddenCount: selection.hiddenCount
+        canSelectAll: !selection.allVisibleSelected
+        onSelectAllClicked: selection.selectAll()
+        onClearClicked: selection.clear()
+        actions: [
+            { label: qsTr("Duplicate"), iconName: "copy",
+              action: function() { root.bulkDuplicate() } },
+            { label: qsTr("Export"), iconName: "download",
+              action: function() { root.bulkExport() } },
+            { label: qsTr("Delete"), iconName: "trash", destructive: true,
+              action: function() { root.bulkDelete() } }
+        ]
     }
 }

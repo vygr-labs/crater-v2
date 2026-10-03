@@ -18,6 +18,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <functional>
 #include <optional>
 
 namespace crater {
@@ -246,6 +247,48 @@ void ScheduleService::moveItem(int from, int to)
     m_impl->items.insert(to, val);
     markDirty();
     emit currentItemsChanged();
+}
+
+int ScheduleService::removeMany(QVariantList indices)
+{
+    if (!m_impl || indices.isEmpty()) return 0;
+    const int n = static_cast<int>(m_impl->items.size());
+    QList<int> rows;
+    for (const QVariant& v : indices) {
+        bool ok = false;
+        const int i = v.toInt(&ok);
+        if (ok && i >= 0 && i < n && !rows.contains(i)) rows.append(i);
+    }
+    if (rows.isEmpty()) return 0;
+    // Highest first so each removal leaves the pending lower indices valid.
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    for (int i : rows) m_impl->items.removeAt(i);
+    markDirty();
+    emit currentItemsChanged();
+    return static_cast<int>(rows.size());
+}
+
+bool ScheduleService::reorder(QVariantList order)
+{
+    if (!m_impl) return false;
+    const int n = static_cast<int>(m_impl->items.size());
+    if (order.size() != n) return false;
+    QList<bool> seen(n, false);
+    QJsonArray next;
+    bool identity = true;
+    for (int k = 0; k < n; ++k) {
+        bool ok = false;
+        const int from = order[k].toInt(&ok);
+        if (!ok || from < 0 || from >= n || seen[from]) return false;
+        seen[from] = true;
+        if (from != k) identity = false;
+        next.append(m_impl->items.at(from));
+    }
+    if (identity) return true;   // nothing moved, nothing to mark dirty
+    m_impl->items = next;
+    markDirty();
+    emit currentItemsChanged();
+    return true;
 }
 
 void ScheduleService::clearAll()
