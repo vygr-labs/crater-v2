@@ -5,9 +5,10 @@ import Crater
 //
 // Patterned after ColorPickerPopover — re-parents its chrome to the top-most
 // Window root on open() so the popover can paint above clipping panels and
-// scroll-clipped property accordions. The picker shows a "None" option at the
-// top (clears mediaId on the container) followed by every imported image /
-// video in MediaService.allMedia.
+// scroll-clipped property accordions. The picker shows an "Import" row (pick
+// a file from disk, add it to the library and use it here in one go), a
+// "None" option (clears mediaId on the container), then every imported
+// image / video in MediaService.allMedia.
 //
 //   MediaPickerPopover {
 //       id: picker
@@ -30,6 +31,26 @@ Item {
     // pattern Combobox / ColorPickerPopover use — flipped inside openAt()
     // and _close() so the binding re-fires per show/hide cycle.
     property bool _open: false
+    // Why the last import from this picker failed. Shown under the header.
+    property string _error: ""
+
+    // Same filter as the Media tab's Import button, minus PDFs (a container
+    // paints pictures and video only). MediaService still sniffs the bytes.
+    function _importFromDisk() {
+        const filter = qsTr("Pictures and video (*.png *.jpg *.jpeg *.gif *.bmp *.webp "
+                          + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi *.wmv *.asf)")
+        const path = FileDialogService.chooseOpenFile(qsTr("Import picture or video"), [filter],
+                                                           "mediaImport")
+        if (!path) return
+        const id = MediaService.importPathSync(path)
+        if (id > 0) {
+            _error = ""
+            root.mediaChosen(id)
+            root._close()
+        } else {
+            _error = MediaService.lastImportError() || qsTr("That file could not be imported")
+        }
+    }
 
     Rectangle {
         id: chrome
@@ -95,9 +116,26 @@ Item {
             font.letterSpacing: 1.2
         }
 
+        Text {
+            id: errorText
+            visible: root._error.length > 0
+            anchors.top: header.bottom
+            anchors.topMargin: visible ? Theme.space.xs : 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Theme.space.md
+            anchors.rightMargin: Theme.space.md
+            height: visible ? implicitHeight : 0
+            text: root._error
+            wrapMode: Text.WordWrap
+            color: Theme.color.live
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
+        }
+
         ListView {
             id: list
-            anchors.top: header.bottom
+            anchors.top: errorText.bottom
             anchors.topMargin: Theme.space.sm
             anchors.left: parent.left
             anchors.right: parent.right
@@ -114,8 +152,9 @@ Item {
             // updates the popover the next time it opens.
             model: {
                 const all = MediaService.allMedia || []
-                const none = [{ id: 0, title: qsTr("None"), type: "none", path: "" }]
-                return none.concat(all)
+                const head = [{ id: -1, title: qsTr("Import picture or video…"), type: "import", path: "" },
+                              { id: 0, title: qsTr("None"), type: "none", path: "" }]
+                return head.concat(all)
             }
 
             delegate: Rectangle {
@@ -124,6 +163,7 @@ Item {
                 radius: 0
                 readonly property bool _selected: modelData.id === root.targetId
                 readonly property bool _isNone:   modelData.id === 0
+                readonly property bool _isImport: modelData.id === -1
                 color: rowMa.containsMouse ? Theme.color.overlay
                      : _selected           ? Theme.color.brandSubtle
                                            : "transparent"
@@ -158,12 +198,15 @@ Item {
                         AppIcon {
                             anchors.centerIn: parent
                             visible: parent.parent.parent._isNone
+                                  || parent.parent.parent._isImport
                                   || modelData.type === "video"
-                            name: parent.parent.parent._isNone ? "x"
-                                : modelData.type === "video"   ? "film"
-                                                                 : "image"
+                            name: parent.parent.parent._isImport ? "plus"
+                                : parent.parent.parent._isNone   ? "x"
+                                : modelData.type === "video"     ? "film"
+                                                                   : "image"
                             size: Theme.icon.md
-                            color: Theme.color.textTertiary
+                            color: parent.parent.parent._isImport ? Theme.color.brandHover
+                                                                  : Theme.color.textTertiary
                         }
                     }
 
@@ -187,7 +230,8 @@ Item {
                         }
                         Text {
                             visible: !parent.parent.parent._isNone
-                            text: modelData.type === "video" ? qsTr("Video") : qsTr("Image")
+                            text: parent.parent.parent._isImport ? qsTr("Adds it to your media library")
+                                : modelData.type === "video" ? qsTr("Video") : qsTr("Image")
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
@@ -201,6 +245,7 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        if (parent._isImport) { root._importFromDisk(); return }
                         root.mediaChosen(modelData.id)
                         root._close()
                     }
@@ -242,6 +287,7 @@ Item {
         chrome.x = Math.max(8, x)
         chrome.y = Math.max(8, y)
 
+        root._error = ""
         dismissArea.visible = true
         chrome.visible = true
         root._open = true

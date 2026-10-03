@@ -331,6 +331,9 @@ style also takes:
   textShadowOffsetX      -50..50
   textShadowOffsetY      -50..50
   textShadowBlur         0..50
+  textOutlineColor       hex, or "" for no outline (a stroke around every letter)
+  textOutlineWidth       0..30
+  textOutlineSoftness    0..1  (0 crisp stroke, 1 soft halo)
 
 data takes:
 

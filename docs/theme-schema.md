@@ -188,6 +188,9 @@ shows a picture.
 | `textShadowColor`      | no       | hex color, or `""` for no shadow (the on/off sentinel) |
 | `textShadowOffsetX/Y`  | no       | number `-50..50`                              |
 | `textShadowBlur`       | no       | number `0..50`                                |
+| `textOutlineColor`     | no       | hex color, or `""` for no outline (the on/off sentinel). A stroke around every letter, under the text |
+| `textOutlineWidth`     | no       | number `0..30`, canvas px                     |
+| `textOutlineSoftness`  | no       | number `0..1`. 0 is a crisp stroke, 1 fades it into a soft halo |
 
 `data`:
 

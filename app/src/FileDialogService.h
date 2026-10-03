@@ -34,7 +34,16 @@ public:
     // Returns the selected file path, or an empty string if the user
     // cancelled. `nameFilters` is a list of Qt-style filter entries
     // ("Crater Theme (*.craterheme)").
-    Q_INVOKABLE QString chooseOpenFile(QString title, QStringList nameFilters);
+    //
+    // Remembering the folder (both open pickers): pass a `rememberKey` and
+    // the picker opens where the last pick under that key came from, and
+    // saves the new folder after a pick. `fallbackDir` is where it opens the
+    // first time (or when the remembered folder is gone). Either one that
+    // doesn't exist on disk is skipped, so callers can pass a likely
+    // location ("where EasyWorship keeps its data") without checking.
+    Q_INVOKABLE QString chooseOpenFile(QString title, QStringList nameFilters,
+                                       QString rememberKey = {},
+                                       QString fallbackDir = {});
 
     // Multi-select variant. Returns the selected paths, or an empty list
     // if the user cancelled. Used by the Media tab "+" button to import
@@ -43,7 +52,9 @@ public:
     // Initial directory is PicturesLocation (more useful for media than
     // DocumentsLocation) — that's the only behavior difference from
     // chooseOpenFile.
-    Q_INVOKABLE QStringList chooseOpenFiles(QString title, QStringList nameFilters);
+    Q_INVOKABLE QStringList chooseOpenFiles(QString title, QStringList nameFilters,
+                                            QString rememberKey = {},
+                                            QString fallbackDir = {});
 
     // suggestedName is the default filename shown in the dialog; the
     // initial directory is the user's Documents folder unless the
@@ -60,6 +71,13 @@ public:
     // True when something already exists at `path`. Lets a batch export
     // pick a free file name instead of silently replacing a file.
     Q_INVOKABLE bool pathExists(QString path) const;
+
+private:
+    // The folder to open in: remembered, then fallback, then `standard`.
+    static QString startDir(const QString& rememberKey, const QString& fallbackDir,
+                            const QString& standard);
+    // Save the folder `pickedPath` lives in under `rememberKey`.
+    static void rememberDir(const QString& rememberKey, const QString& pickedPath);
 };
 
 }  // namespace crater

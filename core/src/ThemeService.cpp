@@ -267,6 +267,22 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
             errs << QStringLiteral("nodes[%1].style.textShadowColor must be a valid hex color or empty").arg(idx);
     }
 
+    // Outline — optional, same sentinel convention as the shadow: an empty
+    // textOutlineColor means "no outline".
+    if (style.contains("textOutlineWidth") &&
+        (!isFiniteNumber(style.value("textOutlineWidth")) ||
+         !inRange(style.value("textOutlineWidth").toDouble(), 0.0, 30.0)))
+        errs << QStringLiteral("nodes[%1].style.textOutlineWidth must be 0..30").arg(idx);
+    if (style.contains("textOutlineSoftness") &&
+        (!isFiniteNumber(style.value("textOutlineSoftness")) ||
+         !inRange(style.value("textOutlineSoftness").toDouble(), 0.0, 1.0)))
+        errs << QStringLiteral("nodes[%1].style.textOutlineSoftness must be 0..1").arg(idx);
+    if (style.contains("textOutlineColor")) {
+        const QString c = style.value("textOutlineColor").toString();
+        if (!c.isEmpty() && !isHexColor(c))
+            errs << QStringLiteral("nodes[%1].style.textOutlineColor must be a valid hex color or empty").arg(idx);
+    }
+
     static const QSet<QString> hAligns{ "left", "center", "right" };
     if (style.contains("textAlign") && !hAligns.contains(style.value("textAlign").toString()))
         errs << QStringLiteral("nodes[%1].style.textAlign must be left|center|right").arg(idx);

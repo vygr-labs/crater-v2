@@ -58,6 +58,11 @@ Item {
     property rect   cropRect: Qt.rect(0, 0, 1, 1)
     // Video only: restart at end (true) or play once + hold last frame (false).
     property bool   loop: true
+    // True once an uncropped image has finished decoding. LogoView waits on
+    // it so a logo never fades in over an empty (black) frame.
+    readonly property bool imageReady:
+        mediaKind === "image" && !_cropped && loader.item !== null
+        && loader.item.status === Image.Ready
 
     readonly property bool _isMedia:
         mediaPath.length > 0 && (mediaKind === "image" || mediaKind === "video")

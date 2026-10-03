@@ -108,9 +108,15 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter:   parent.verticalCenter
 
-            // Canvas surface (the theme's own background fill).
+            // Canvas surface (the theme's own background fill). Bottom of the
+            // stack: below the deselect area (z -1) and the node graph
+            // (z -0.5). At the default z it painted over the graph, so an
+            // opaque background (every new theme seeds #0a0a0d) hid every
+            // node, media and text alike. Its frame is drawn separately on
+            // top (canvasFrame) so full-bleed nodes can't cover it.
             Rectangle {
                 anchors.fill: parent
+                z: -2
                 // First container's bg or black. Subtle but lets the operator
                 // see the "frame" of their composition vs the editor chrome.
                 color: {
@@ -121,6 +127,15 @@ Item {
                     }
                     return "#000000"
                 }
+            }
+
+            // The composition's 1px frame, over the nodes. Paint only, so it
+            // never takes a click from the chrome under it.
+            Rectangle {
+                id: canvasFrame
+                anchors.fill: parent
+                z: 1000
+                color: "transparent"
                 border.color: Theme.color.borderStrong
                 border.width: 1
             }

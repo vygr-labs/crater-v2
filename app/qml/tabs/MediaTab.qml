@@ -522,7 +522,7 @@ Item {
         const filter = qsTr("Media (*.png *.jpg *.jpeg *.gif *.bmp *.webp "
                           + "*.mp4 *.mov *.m4v *.webm *.mkv *.avi *.wmv *.asf *.pdf)")
         const paths = FileDialogService.chooseOpenFiles(
-            qsTr("Import media"), [filter])
+            qsTr("Import media"), [filter], "mediaImport")
         if (paths && paths.length > 0) root.importPaths(paths)
     }
 
@@ -849,16 +849,8 @@ Item {
             iconName: "image-off"
             title: qsTr("No media yet")
             body: qsTr("Drag image or video files here, or click + to import them")
-        }
-
-        Item {
-            anchors.fill: parent
-            visible: MediaService.allMedia.length === 0
 
             PrimaryButton {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.verticalCenter
-                anchors.topMargin: 72
                 variant: "brand"
                 iconName: "upload"
                 text: qsTr("Import media")

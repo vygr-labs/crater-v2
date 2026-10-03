@@ -609,24 +609,12 @@ Item {
         iconName: "music"
         title: qsTr("No Songs Yet")
         body: qsTr("Import songs from a file or create them manually to get started")
-    }
-    // Borderless "Add Your First Song" CTA. Sits just below vertical center
-    // so it lines up with the EmptyState above it. We don't reuse
-    // PrimaryButton here because a filled brand chip competes with the
-    // empty-state's centered icon+title — the design wants the CTA to read
-    // as a quiet text link, not a primary action button.
-    Item {
-        anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: SongService.allSongs.length === 0
 
+        // Borderless "Add Your First Song" CTA, a quiet text link rather
+        // than a filled button so it does not compete with the icon and
+        // title above it. Sits in EmptyState's action slot, under the body.
         Item {
             id: addFirstCta
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.verticalCenter
-            anchors.topMargin: Theme.space.xl
             implicitWidth: ctaRow.implicitWidth + Theme.space.lg * 2
             implicitHeight: 36
 
@@ -678,26 +666,12 @@ Item {
         body: AppState.searchText.songs && AppState.searchText.songs.length > 0
               ? qsTr("No songs match \"") + AppState.searchText.songs + "\""
               : qsTr("Try a different search or switch group")
-    }
+        // Only when there is a query to clear.
+        showActions: !!(AppState.searchText.songs && AppState.searchText.songs.length > 0)
 
-    // "× Clear search" pill below the no-results state. Only shown when the
-    // operator has a non-empty query — otherwise there's nothing to clear.
-    // Layout follows the "Add your first song" overlay pattern further up:
-    // sibling Item filling the same area, button anchored just below center.
-    Item {
-        anchors.top: actionBar.bottom
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        visible: SongService.allSongs.length > 0
-              && root.filteredSongs.length === 0
-              && AppState.searchText.songs && AppState.searchText.songs.length > 0
-
+        // "× Clear search" pill, in the action slot under the message.
         Rectangle {
             id: clearPill
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.verticalCenter
-            anchors.topMargin: 56
             implicitWidth: clearRow.width + 20
             implicitHeight: 28
             radius: 0
