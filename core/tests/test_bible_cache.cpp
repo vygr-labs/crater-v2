@@ -183,32 +183,44 @@ private slots:
         return out;
     }
 
-    void translationOrderIsSavedAndKeepsUnlistedCodes()
+    // The library is shared; a profile only chooses its view of it.
+    void viewOrdersAndHidesWithoutTouchingTheLibrary()
     {
-        {
-            BibleService bible;
-            QSignalSpy changed(&bible, &BibleService::translationsChanged);
-            const int rev = bible.translationsRevision();
-            // T9 is not installed and T3 is listed twice: both are ignored.
-            QVERIFY(bible.setTranslationOrder({ QStringLiteral("T3"), QStringLiteral("T9"),
-                                                QStringLiteral("T1"), QStringLiteral("T3") }));
-            QCOMPARE(codesOf(bible), (QStringList{ QStringLiteral("T3"), QStringLiteral("T1"),
-                                                   QStringLiteral("T2"), QStringLiteral("T4"),
-                                                   QStringLiteral("T5") }));
-            QCOMPARE(changed.count(), 1);
-            QCOMPARE(bible.translationsRevision(), rev + 1);
+        BibleService bible;
+        QSignalSpy changed(&bible, &BibleService::translationsChanged);
+        const int rev = bible.translationsRevision();
 
-            // Same order again is a no-op: no write, no signal.
-            QVERIFY(bible.setTranslationOrder(codesOf(bible)));
-            QCOMPARE(changed.count(), 1);
-        }
-        // A fresh service reads the saved order back from the database.
-        BibleService reopened;
-        QCOMPARE(codesOf(reopened).first(), QStringLiteral("T3"));
+        // T9 is not installed and T3 is listed twice: both are ignored.
+        // Unlisted codes follow in the library's order. Hidden is matched
+        // case-insensitively.
+        bible.setView({ QStringLiteral("T3"), QStringLiteral("T9"),
+                        QStringLiteral("T1"), QStringLiteral("T3") },
+                      { QStringLiteral("t2") });
+        QCOMPARE(codesOf(bible), (QStringList{ QStringLiteral("T3"), QStringLiteral("T1"),
+                                               QStringLiteral("T4"), QStringLiteral("T5") }));
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(bible.translationsRevision(), rev + 1);
 
-        // Put it back for any test that runs after this one.
-        QVERIFY(reopened.setTranslationOrder(m_codes));
-        QCOMPARE(codesOf(reopened), m_codes);
+        // allTranslations keeps the hidden one, in view order, flagged.
+        const QVariantList all = bible.allTranslations();
+        QCOMPARE(all.size(), 5);
+        QCOMPARE(all.at(0).toMap().value(QStringLiteral("code")).toString(), QStringLiteral("T3"));
+        QCOMPARE(all.at(2).toMap().value(QStringLiteral("code")).toString(), QStringLiteral("T2"));
+        QVERIFY(all.at(2).toMap().value(QStringLiteral("hidden")).toBool());
+
+        // Same view again: no signal.
+        bible.setView({ QStringLiteral("T3"), QStringLiteral("T9"),
+                        QStringLiteral("T1"), QStringLiteral("T3") },
+                      { QStringLiteral("T2") });
+        QCOMPARE(changed.count(), 1);
+
+        // Hiding everything still leaves something to read.
+        bible.setView({}, m_codes);
+        QCOMPARE(codesOf(bible), m_codes);
+
+        // A fresh service (another profile) sees the library untouched.
+        BibleService other;
+        QCOMPARE(codesOf(other), m_codes);
     }
 };
 

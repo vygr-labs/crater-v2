@@ -27,6 +27,10 @@ Item {
     property bool   active: false
     // -1: insertion bar on the left edge, 1: on the right, 0: none.
     property int    dropSide: 0
+    // The More card and a hidden translation on show for now: quieter, and
+    // they don't drag (only the profile's own list is ordered).
+    property bool   muted: false
+    property bool   draggable: true
     readonly property bool dragging: ma.dragging
 
     signal clicked()
@@ -81,6 +85,7 @@ Item {
             // `brandSubtle` wash and fail contrast.
             color: root.active      ? Theme.color.brandHover
                  : ma.containsMouse ? Theme.color.textPrimary
+                 : root.muted       ? Theme.color.textTertiary
                                     : Theme.color.textSecondary
             font.family: Theme.font.family
             // smallSize, like every Theme.font.* token, scales with the
@@ -129,7 +134,7 @@ Item {
         }
         onPositionChanged: function(mouse) {
             if (!(pressedButtons & Qt.LeftButton)) return
-            if (!dragging
+            if (!dragging && root.draggable
                 && Math.abs(mouse.x - _press.x) + Math.abs(mouse.y - _press.y) > 8)
                 dragging = true
             if (dragging) {

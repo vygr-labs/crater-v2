@@ -495,7 +495,7 @@ QtObject {
         if (raw.length === 0) return null
 
         const known = {}
-        const trs = BibleService.translations()
+        const trs = BibleService.allTranslations()   // hidden ones are still installed
         for (let i = 0; i < trs.length; ++i)
             known[String(trs[i].code).toUpperCase()] = String(trs[i].code)
 

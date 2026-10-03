@@ -39,14 +39,20 @@ public:
     explicit BibleService(QObject* parent = nullptr);
     ~BibleService() override;
 
-    // List all installed translations, in the operator's order.
+    // The translations this profile shows, in its order (see setView). This
+    // is what every picker lists.
     Q_INVOKABLE QList<crater::Translation> translations();
 
-    // Save the operator's translation order (sort_order). `codes` lists the
-    // new order. Installed codes it leaves out keep their relative order
-    // after the listed ones, and unknown codes are ignored, so a stale list
-    // can never drop a translation. Returns false if the write failed.
-    Q_INVOKABLE bool setTranslationOrder(QStringList codes);
+    // Every installed translation in this profile's order, hidden ones
+    // included, as { code, name, description, hidden } maps. For settings
+    // and the sidebar's More card, and for recognising a typed code.
+    Q_INVOKABLE QVariantList allTranslations();
+
+    // The library is shared by every profile; each profile only chooses its
+    // view of it. `order` lists codes first (installed ones only, first
+    // mention wins), the rest follow in the library's order. `hidden` codes
+    // are left out of translations(). Wired to SettingsService in main.cpp.
+    void setView(const QStringList& order, const QStringList& hidden);
 
     int translationsRevision() const { return m_translationsRevision; }
 
@@ -128,7 +134,14 @@ signals:
     void translationsChanged();
 
 private:
-    int m_translationsRevision = 0;
+    // Installed translations in the library's own order (sort_order, code).
+    QList<crater::Translation> libraryTranslations();
+    // `all` arranged in the view order.
+    QList<crater::Translation> ordered(const QList<crater::Translation>& all) const;
+
+    int         m_translationsRevision = 0;
+    QStringList m_order;
+    QStringList m_hidden;   // uppercased
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

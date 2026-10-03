@@ -119,6 +119,8 @@ struct SettingsService::Impl
     bool    showScriptureFooter = false;
     bool    showStrongs      = true;
     bool    preloadTranslations = false;
+    QStringList translationOrder;     // empty: the library's own order
+    QStringList hiddenTranslations;   // empty: show everything
     bool    showSongAuthor   = true;
     bool    showSongCcli     = true;
     // Auto-advance defaults: off, 20 s between slides, no looping.
@@ -170,6 +172,8 @@ struct SettingsService::Impl
     static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kPreloadTranslations = "Settings/preloadTranslations";
+    static constexpr const char* kTranslationOrder    = "Settings/translationOrder";
+    static constexpr const char* kHiddenTranslations  = "Settings/hiddenTranslations";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
     static constexpr const char* kShowSongCcli   = "Settings/showSongCcli";
     static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
@@ -214,6 +218,8 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->showScriptureFooter = m_impl->get(Impl::kShowScriptureFooter, m_impl->showScriptureFooter).toBool();
     m_impl->showStrongs    = m_impl->get(Impl::kShowStrongs, m_impl->showStrongs).toBool();
     m_impl->preloadTranslations = m_impl->get(Impl::kPreloadTranslations, m_impl->preloadTranslations).toBool();
+    m_impl->translationOrder    = m_impl->get(Impl::kTranslationOrder, QStringList()).toStringList();
+    m_impl->hiddenTranslations  = m_impl->get(Impl::kHiddenTranslations, QStringList()).toStringList();
     m_impl->showSongAuthor = m_impl->get(Impl::kShowSongAuth, m_impl->showSongAuthor).toBool();
     m_impl->showSongCcli   = m_impl->get(Impl::kShowSongCcli, m_impl->showSongCcli).toBool();
     m_impl->autoAdvance      = m_impl->get(Impl::kAutoAdvance, m_impl->autoAdvance).toBool();
@@ -268,6 +274,8 @@ bool    SettingsService::highlightCurrentVerse() const { return m_impl->highligh
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 bool    SettingsService::preloadTranslations() const { return m_impl->preloadTranslations; }
+QStringList SettingsService::translationOrder() const   { return m_impl->translationOrder; }
+QStringList SettingsService::hiddenTranslations() const { return m_impl->hiddenTranslations; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
 bool    SettingsService::showSongCcli() const      { return m_impl->showSongCcli; }
 bool    SettingsService::autoAdvance() const             { return m_impl->autoAdvance; }
@@ -514,6 +522,22 @@ void SettingsService::setShowStrongsTab(bool v)
     m_impl->showStrongs = v;
     m_impl->put(Impl::kShowStrongs, v);
     emit showStrongsTabChanged();
+}
+
+void SettingsService::setTranslationOrder(const QStringList& codes)
+{
+    if (m_impl->translationOrder == codes) return;
+    m_impl->translationOrder = codes;
+    m_impl->put(Impl::kTranslationOrder, codes);
+    emit translationOrderChanged();
+}
+
+void SettingsService::setHiddenTranslations(const QStringList& codes)
+{
+    if (m_impl->hiddenTranslations == codes) return;
+    m_impl->hiddenTranslations = codes;
+    m_impl->put(Impl::kHiddenTranslations, codes);
+    emit hiddenTranslationsChanged();
 }
 
 void SettingsService::setPreloadTranslations(bool v)

@@ -108,7 +108,10 @@ Item {
     // become typeable immediately (no app restart).
     readonly property var _translationCodeSet: {
         const set = {}
-        const trs = BibleService.translations()
+        // Every installed code, hidden ones included: typing "BBE" reads BBE
+        // even in a profile that keeps it out of its lists.
+        BibleService.translationsRevision
+        const trs = BibleService.allTranslations()
         for (let i = 0; i < trs.length; ++i) {
             set[String(trs[i].code).toUpperCase()] = true
         }

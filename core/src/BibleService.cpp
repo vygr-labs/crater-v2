@@ -11,6 +11,7 @@
 #include <QDebug>
 #include <QFutureWatcher>
 #include <QHash>
+#include <QSet>
 #include <QRegularExpression>
 #include <QVariantMap>
 #include <QtConcurrent>
@@ -251,7 +252,7 @@ void BibleService::setPreloadAll(bool on)
 
 BibleService::~BibleService() = default;
 
-QList<Translation> BibleService::translations()
+QList<Translation> BibleService::libraryTranslations()
 {
     QList<Translation> out;
     if (!m_impl) return out;
@@ -266,48 +267,66 @@ QList<Translation> BibleService::translations()
             t.description = stmt.columnText(3);
             out.append(std::move(t));
         }
+        stmt.reset();   // no read cursor left open
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleService::translations():" << e.message();
     }
     return out;
 }
 
-bool BibleService::setTranslationOrder(QStringList codes)
+QList<Translation> BibleService::ordered(const QList<Translation>& all) const
 {
-    if (!m_impl) return false;
-
-    // Listed codes first (installed ones only, first mention wins), then
-    // whatever the list missed, in their current order.
-    QStringList current;
-    for (const Translation& t : translations()) current << t.code;
-    QStringList order;
-    for (const QString& c : std::as_const(codes))
-        if (current.contains(c) && !order.contains(c)) order << c;
-    for (const QString& c : std::as_const(current))
-        if (!order.contains(c)) order << c;
-    if (order == current) return true;
-    // translations() ran the cached select to completion. Reset it anyway so
-    // no read cursor is open when the write transaction starts.
-    m_impl->selectTranslations.reset();
-
-    try {
-        db::Transaction tx(m_impl->conn);
-        db::Statement upd = m_impl->conn.prepare(QStringLiteral(
-            "UPDATE translations SET sort_order = ? WHERE code = ?"));
-        for (int i = 0; i < order.size(); ++i) {
-            upd.reset();
-            upd.bind(1, qint64(i));
-            upd.bind(2, order.at(i));
-            upd.step();
+    QList<Translation> out;
+    QSet<QString> placed;
+    for (const QString& code : m_order) {
+        const QString key = code.toUpper();
+        if (placed.contains(key)) continue;
+        for (const Translation& t : all) {
+            if (t.code.toUpper() == key) {
+                out.append(t);
+                placed.insert(key);
+                break;
+            }
         }
-        tx.commit();
-    } catch (const db::Error& e) {
-        qWarning().noquote() << "BibleService::setTranslationOrder():" << e.message();
-        return false;
     }
+    for (const Translation& t : all)
+        if (!placed.contains(t.code.toUpper())) out.append(t);
+    return out;
+}
+
+QList<Translation> BibleService::translations()
+{
+    QList<Translation> out;
+    for (const Translation& t : ordered(libraryTranslations()))
+        if (!m_hidden.contains(t.code.toUpper())) out.append(t);
+    // A profile that hid everything still needs something to read.
+    if (out.isEmpty()) return ordered(libraryTranslations());
+    return out;
+}
+
+QVariantList BibleService::allTranslations()
+{
+    QVariantList out;
+    for (const Translation& t : ordered(libraryTranslations())) {
+        out.append(QVariantMap{
+            { QStringLiteral("code"),        t.code },
+            { QStringLiteral("name"),        t.name },
+            { QStringLiteral("description"), t.description },
+            { QStringLiteral("hidden"),      m_hidden.contains(t.code.toUpper()) },
+        });
+    }
+    return out;
+}
+
+void BibleService::setView(const QStringList& order, const QStringList& hidden)
+{
+    QStringList up;
+    for (const QString& c : hidden) up << c.toUpper();
+    if (order == m_order && up == m_hidden) return;
+    m_order  = order;
+    m_hidden = up;
     ++m_translationsRevision;
     emit translationsChanged();
-    return true;
 }
 
 QList<Book> BibleService::books(QString translationCode)

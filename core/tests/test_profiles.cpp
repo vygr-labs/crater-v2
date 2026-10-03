@@ -18,6 +18,7 @@
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -32,6 +33,7 @@
 #include "bundle/Zip.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
+#include "db/Migrator.h"
 #include "db/Statement.h"
 #include "profile/ProfileArchive.h"
 #include "profile/ProfileSettings.h"
@@ -134,6 +136,21 @@ struct Seeded {
 // A small but complete profile: one picture, a theme using it, a song in
 // a collection, a deck whose slide shows the picture, a schedule pointing
 // at all of them, a one-book Bible and two preferences.
+// The Bible library is shared by every profile (DbPaths::biblesDbPath).
+void ensureSharedBibles()
+{
+    Connection c(DbPaths::biblesDbPath(), crater::db::OpenMode::ReadWriteCreate);
+    crater::db::Migrator::run(c, QStringLiteral("bibles"));
+}
+
+// Start the shared library over, empty.
+void resetSharedBibles()
+{
+    for (const char* suffix : { "", "-wal", "-shm" })
+        QFile::remove(DbPaths::biblesDbPath() + QLatin1String(suffix));
+    ensureSharedBibles();
+}
+
 Seeded seedProfile(const QString& root)
 {
     Seeded s;
@@ -221,8 +238,12 @@ Seeded seedProfile(const QString& root)
         st.bind(1, QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact)));
         st.step();
     }
-    {
-        Connection bib(DbPaths::biblesDbPathIn(root));
+    ensureSharedBibles();
+    if (Connection probe(DbPaths::biblesDbPath(), crater::db::OpenMode::ReadOnly);
+        probe.prepare(QStringLiteral("SELECT 1 FROM translations WHERE code = 'TST'")).step()) {
+        // Already seeded by an earlier test: the library is shared.
+    } else {
+        Connection bib(DbPaths::biblesDbPath());
         bib.exec(QStringLiteral(
             "INSERT INTO translations (code, name, language) VALUES ('TST', 'Test Version', 'en')"));
         const qint64 tr = bib.lastInsertRowId();
@@ -300,14 +321,18 @@ private slots:
         DbPaths::setDataDir(r);
         QVERIFY(!DbPaths::isDefaultDataDir());
         const QString clean = QDir::cleanPath(r);
-        for (const QString& p : { DbPaths::appDbPath(), DbPaths::songsDbPath(), DbPaths::biblesDbPath(),
-                                  DbPaths::importSentinelPath(), DbPaths::mediaDir(), DbPaths::fontsDir(),
+        for (const QString& p : { DbPaths::appDbPath(), DbPaths::songsDbPath(),
+                                  DbPaths::mediaDir(), DbPaths::fontsDir(),
                                   DbPaths::scheduleHistoryDir(), DbPaths::thumbnailsDir(),
                                   DbPaths::importStagingDir() }) {
             QVERIFY2(QDir::cleanPath(p).startsWith(clean + QLatin1Char('/')), qPrintable(p));
         }
         // The machine-wide root never moves.
         QCOMPARE(QDir::cleanPath(DbPaths::appRootDir()), QDir::cleanPath(m_dataDir));
+        // The Bible library and its first-run marker are shared: they stay
+        // at the app root whichever profile is active.
+        QCOMPARE(QFileInfo(DbPaths::biblesDbPath()).absolutePath(), QDir(m_dataDir).absolutePath());
+        QCOMPARE(QFileInfo(DbPaths::importSentinelPath()).absolutePath(), QDir(m_dataDir).absolutePath());
 
         // Pointing at the app root is the Default profile, not an override.
         DbPaths::setDataDir(m_dataDir);
@@ -414,6 +439,9 @@ private slots:
                 QVERIFY2(!n.contains(QLatin1String("..")) && !n.startsWith(QLatin1Char('/')), qPrintable(n));
         }
 
+        // Another machine: its shared library doesn't have TST yet.
+        resetSharedBibles();
+
         const QString dst = root(QStringLiteral("dst-a"));
         QString err;
         QVERIFY2(profile::initProfileRoot(dst, &err), qPrintable(err));
@@ -474,13 +502,11 @@ private slots:
         QCOMPARE(items.at(1).toObject().value("mediaId").toVariant().toLongLong(), newMedia);
         QCOMPARE(items.at(1).toObject().value("mediaPath").toString(), newPath);
 
-        // Bible with its search index, and the first-run marker so the
-        // bundled Bibles are not added on top.
-        Connection bib(DbPaths::biblesDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+        // The Bible lands in the shared library, with its search index.
+        Connection bib(DbPaths::biblesDbPath(), crater::db::OpenMode::ReadOnly);
         QCOMPARE(scalar(bib, QStringLiteral(
             "SELECT count(*) FROM verses v JOIN translations t ON t.id = v.translation_id WHERE t.code = 'TST'")), 2);
         QCOMPARE(scalar(bib, QStringLiteral("SELECT count(*) FROM verses_fts WHERE verses_fts MATCH 'loved'")), 1);
-        QVERIFY(QFile::exists(DbPaths::importSentinelPathIn(dst)));
 
         // Per-profile preferences only.
         const QVariantMap prefs = profile::readProfilePreferences(dst);
@@ -550,7 +576,6 @@ private slots:
         QVERIFY(profile::importArchive(archive, profile::kAllParts, dst, true, staging()).ok);
         Connection songs(DbPaths::songsDbPathIn(dst), crater::db::OpenMode::ReadOnly);
         QCOMPARE(scalar(songs, QStringLiteral("SELECT count(*) FROM songs WHERE theme_id IS NULL")), 1);
-        QVERIFY(!QFile::exists(DbPaths::importSentinelPathIn(dst)));   // no Bibles came along
     }
 
     // Fonts are their own part: themes travel without the font files
@@ -674,6 +699,47 @@ private slots:
             QVERIFY(writeFile(p, QByteArray("{\"kind\":\"craterprofile\"}")));
             QVERIFY(!profile::inspectArchive(p).ok);
         }
+    }
+
+    // Profiles made before the library was shared kept their own Bibles.
+    // Consolidation folds what only they have into the shared library and
+    // retires their file.
+    void testConsolidateMergesProfileBibles()
+    {
+        ensureSharedBibles();
+        const QString legacyRoot = QDir(DbPaths::profilesDir()).filePath(QStringLiteral("p-legacy00000"));
+        QDir().mkpath(legacyRoot);
+        const QString legacy = DbPaths::biblesDbPathIn(legacyRoot);
+        {
+            Connection c(legacy, crater::db::OpenMode::ReadWriteCreate);
+            crater::db::Migrator::run(c, QStringLiteral("bibles"));
+            c.exec(QStringLiteral(
+                "INSERT INTO translations (code, name, language) VALUES ('OLD', 'Old Version', 'en')"));
+            const qint64 tr = c.lastInsertRowId();
+            auto b = c.prepare(QStringLiteral(
+                "INSERT INTO books (translation_id, name, abbrev, testament, book_number) "
+                "VALUES (?, 'Genesis', 'Gen', 'OT', 1)"));
+            b.bind(1, tr);
+            b.step();
+            const qint64 book = c.lastInsertRowId();
+            auto v = c.prepare(QStringLiteral(
+                "INSERT INTO verses (translation_id, book_id, chapter, verse, text) VALUES (?, ?, 1, 1, ?)"));
+            v.bind(1, tr); v.bind(2, book); v.bind(3, QStringLiteral("In the beginning"));
+            v.step();
+        }
+
+        QCOMPARE(profile::consolidateProfileBibles(), 1);
+        // Left in place for older versions, marked as merged.
+        QVERIFY(QFile::exists(legacy));
+        QVERIFY(QFile::exists(legacy + QStringLiteral(".merged")));
+        {
+            Connection bib(DbPaths::biblesDbPath(), crater::db::OpenMode::ReadOnly);
+            QCOMPARE(scalar(bib, QStringLiteral(
+                "SELECT count(*) FROM verses v JOIN translations t ON t.id = v.translation_id "
+                "WHERE t.code = 'OLD'")), 1);
+        }
+        // Done once: nothing left to merge.
+        QCOMPARE(profile::consolidateProfileBibles(), 0);
     }
 
     void testDuplicateRebasesPathsOntoTheCopy()

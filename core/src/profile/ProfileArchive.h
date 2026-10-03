@@ -129,9 +129,25 @@ ImportResult importArchive(const QString&    archivePath,
                            const QString&    stagingParent,
                            const ProgressFn& progress = {});
 
-// Create a profile root's folders and bring its three databases to the
-// current schema. Safe on an existing root (migrations are idempotent).
+// Create a profile root's folders and bring its databases to the current
+// schema. Safe on an existing root (migrations are idempotent). Bibles are
+// not per profile (DbPaths::biblesDbPath), so a profile root has none.
 bool initProfileRoot(const QString& root, QString* error);
+
+// Copy every translation in the Bible database at `srcPath` that the one at
+// `dstPath` doesn't have yet (matched by code, case-insensitive), with its
+// books, verses and search index. Existing translations are left alone.
+// Throws db::Error on a database failure.
+struct BibleMergeResult { int added = 0; int skipped = 0; };
+BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
+                             const std::function<void(double)>& progress = {});
+
+// One-time move to the shared Bible library. Profiles made before it kept
+// their own bibles.sqlite. Merge any translation only a profile has into the
+// shared library and drop a bibles.sqlite.merged marker beside the file,
+// which stays put so an older Crater can still open that profile. Run at
+// startup before BibleService opens. Returns how many were merged.
+int consolidateProfileBibles();
 
 // Copy a whole profile: databases (snapshotted), media, fonts, schedule
 // history, the first-run marker and the per-profile settings. Stored file
