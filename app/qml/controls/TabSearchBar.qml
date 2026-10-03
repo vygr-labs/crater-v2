@@ -339,13 +339,48 @@ Item {
     // display "<book> <chapter>:<verse>" or "—" when unparseable.
     readonly property string activeTranslation:
         (AppState.activeLibraryGroup.scripture || "").toUpperCase()
+    // A typed translation code ("ps 23 1-3 kjv") is a switch, not part of
+    // the reference, so it comes out before parsing. Same rule as
+    // ScriptureTab._strippedQuery: the first whole word matching an
+    // installed translation's code. The tab can't hand its result over (this
+    // bar lives in the sidebar), so the scan is repeated here.
+    readonly property var _translationCodeSet: {
+        const set = {}
+        const trs = BibleService.translations()
+        for (let i = 0; i < trs.length; ++i)
+            set[String(trs[i].code).toUpperCase()] = true
+        return set
+    }
+    readonly property var _splitQuery: {
+        const text = String(queryText || "")
+        const tokens = text.split(/\s+/)
+        for (let i = 0; i < tokens.length; ++i) {
+            const t = tokens[i].toUpperCase()
+            if (t.length > 0 && _translationCodeSet[t]) {
+                const re = new RegExp("\\b" + t + "\\b", "i")
+                return { query: text.replace(re, "").replace(/\s+/g, " ").trim(), code: t }
+            }
+        }
+        return { query: text, code: "" }
+    }
     readonly property var parsedRef: {
         if (tabKey !== "scripture") return null
         if (mode !== "reference")   return null
-        if (!queryText)             return null
+        if (!_splitQuery.query)     return null
         if (!activeTranslation)     return null
-        const v = BibleService.parseReference(queryText, activeTranslation)
+        const v = BibleService.parseReference(_splitQuery.query, activeTranslation)
         return (v && v.text && v.text.length > 0) ? v : null
+    }
+    // "Psalms 23:1-3 (KJV)". parsedRef holds only the opening verse, so the
+    // range end comes from parseReferenceRange. The code shows only when one
+    // was typed, since the sidebar already names the active translation.
+    readonly property string interpretedText: {
+        const v = parsedRef
+        if (!v) return ""
+        const r = BibleService.parseReferenceRange(_splitQuery.query)
+        const end = (r && r.valid && r.verseEnd > v.verse) ? "-" + r.verseEnd : ""
+        const code = _splitQuery.code ? " (" + _splitQuery.code + ")" : ""
+        return v.book + " " + v.chapter + ":" + v.verse + end + code
     }
 
     // Expose the input field so the tab can forceActiveFocus on it when
@@ -889,8 +924,7 @@ Item {
               && root.mode === "reference"
               && root.queryText.length > 0
         text: root.parsedRef
-              ? qsTr("Interpreted: ") + root.parsedRef.book + " "
-                + root.parsedRef.chapter + " " + root.parsedRef.verse
+              ? qsTr("Interpreted: ") + root.interpretedText
               : qsTr("Interpreted: —")
         color: root.parsedRef ? Theme.color.textSecondary : Theme.color.textTertiary
         font.family: Theme.font.family
