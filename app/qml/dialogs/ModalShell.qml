@@ -124,7 +124,7 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 48
+            height: Theme.d(48)
 
             Text {
                 anchors.left: parent.left

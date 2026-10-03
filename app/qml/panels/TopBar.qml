@@ -116,8 +116,8 @@ Rectangle {
         Rectangle {
             id: settingsChip
             anchors.verticalCenter: parent.verticalCenter
-            height: 34
-            width:  34
+            height: Theme.d(34)
+            width:  Theme.d(34)
             color: settingsMa.containsMouse ? Theme.color.overlay
                                             : "transparent"
             border.color: Theme.color.borderStrong
@@ -181,7 +181,7 @@ Rectangle {
             id: ndiBlankChip
             visible: NdiService.available
             anchors.verticalCenter: parent.verticalCenter
-            height: 34
+            height: Theme.d(34)
             width:  ndiBlankRow.implicitWidth + Theme.space.lg * 2
 
             // Three-state palette:
@@ -253,7 +253,7 @@ Rectangle {
             id: ndiOverdueAlert
             visible: root._ndiOverdue
             anchors.verticalCenter: parent.verticalCenter
-            height: 28
+            height: Theme.d(28)
             width:  alertRow.implicitWidth + Theme.space.md * 2
             radius: 0
             color: Theme.color.liveSubtle
@@ -368,7 +368,7 @@ Rectangle {
         Rectangle {
             id: goLiveBtn
             anchors.verticalCenter: parent.verticalCenter
-            height: 36
+            height: Theme.d(36)
             width: goLiveRow.implicitWidth + Theme.space.xl * 2 + caretWidth
             radius: 0   // squared — app-wide button shape (see PrimaryButton)
 

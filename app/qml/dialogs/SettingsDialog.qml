@@ -6,8 +6,8 @@ import QtQuick.Layouts
 ModalShell {
     id: root
 
-    dialogWidth: 760
-    dialogHeight: 560
+    dialogWidth: 900
+    dialogHeight: 680
     title: qsTr("Settings")
 
     readonly property var sections: [

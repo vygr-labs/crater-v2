@@ -8,6 +8,25 @@ import QtQuick.Controls.Basic
 Rectangle {
     id: root
 
+    // Slide card view, picked from the header gear menu: "full" (as
+    // designed), "compact" (tiny text, tight padding) or "lines" (one
+    // line per slide, label inline).
+    readonly property string _cardMode: SettingsService.previewCardMode
+    readonly property bool   _cardsFull: _cardMode !== "compact" && _cardMode !== "lines"
+    function _cardViewMenu() {
+        const opts = [
+            { mode: "full",    label: qsTr("Full") },
+            { mode: "compact", label: qsTr("Compact") },
+            { mode: "lines",   label: qsTr("One line") }
+        ]
+        return opts.map(function(o) {
+            return { label: o.label,
+                     iconName: (root._cardMode === o.mode
+                                || (o.mode === "full" && root._cardsFull)) ? "check" : "",
+                     action: function() { SettingsService.previewCardMode = o.mode } }
+        })
+    }
+
     // Panel surface — matches electron's `bg.muted` panel container.
     color: Theme.color.elevated
 
@@ -78,7 +97,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 40
+        height: Theme.d(40)
 
         Row {
             anchors.left: parent.left
@@ -160,6 +179,8 @@ Rectangle {
             onClicked: {
                 AppState.openContextMenuAt(settingsBtn,
                     settingsBtn.width, settingsBtn.height + 4, [
+                    { label: qsTr("Card view"), iconName: "layout-list",
+                      submenu: root._cardViewMenu() },
                     { label: qsTr("Preview settings…"), iconName: "settings",
                       action: function() { AppState.openModal("settings", {}) } }
                 ], { dx: -220 })
@@ -290,7 +311,7 @@ Rectangle {
                     anchors.topMargin:    1
                     anchors.leftMargin:   1
                     anchors.bottomMargin: 1
-                    width: 32
+                    width: root._cardsFull ? 32 : 24
 
                     color: card.isActive && card._paneFocused ? Theme.color.cueRailPreview
                                                               : card.isHover  ? Theme.color.cueRailHover
@@ -308,7 +329,7 @@ Rectangle {
                         color: card.isActive ? Theme.color.textPrimary
                                              : Theme.color.textTertiary
                         font.family:    Theme.font.monoFamily
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.microSize
                         font.weight:    Theme.font.weightSemiBold
                                             }
                 }
@@ -338,8 +359,8 @@ Rectangle {
                 // bodyArea naturally seats flush against the top inset.
                 Rectangle {
                     id: headerBand
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 22 : 0
+                    visible: card.hasHeader && root._cardMode !== "lines"
+                    height:  visible ? (root._cardsFull ? 22 : 16) : 0
                     anchors.top:   parent.top
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -376,8 +397,8 @@ Rectangle {
                 // otherwise it'd render as a stray line at the card top.
                 Rectangle {
                     id: divider
-                    visible: card.hasHeader
-                    height:  card.hasHeader ? 1 : 0
+                    visible: headerBand.visible
+                    height:  visible ? 1 : 0
                     anchors.top:   headerBand.bottom
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
@@ -394,14 +415,15 @@ Rectangle {
                     anchors.left:  vDivider.right
                     anchors.right: parent.right
                     anchors.rightMargin: 1
-                    height: pageText.implicitHeight + Theme.space.sm * 2
+                    readonly property int _pad: root._cardsFull ? Theme.space.sm : Theme.space.xs
+                    height: pageText.implicitHeight + _pad * 2
 
                     Text {
                         id: pageText
                         anchors.top:   parent.top
                         anchors.left:  parent.left
                         anchors.right: parent.right
-                        anchors.topMargin:   Theme.space.sm
+                        anchors.topMargin:   parent._pad
                         anchors.leftMargin:  Theme.space.sm
                         anchors.rightMargin: Theme.space.sm
                         // Route through dslToHtml so inline formatting
@@ -411,12 +433,21 @@ Rectangle {
                         // valid DSL string with no markers, so unformatted
                         // lyrics still render as themselves.
                         textFormat:     Text.RichText
-                        text:           LyricsService.dslToHtml(modelData.content || "")
+                        // One-line view folds the slide's lines together
+                        // after its label, and clips at one line.
+                        text: root._cardMode === "lines"
+                              ? ((card.headLabel.length > 0
+                                    ? "<b>" + card.headLabel.toUpperCase() + "</b>&nbsp;&nbsp;" : "")
+                                 + LyricsService.dslToHtml(String(modelData.content || "")
+                                                               .split("\n").join(" / ")))
+                              : LyricsService.dslToHtml(modelData.content || "")
+                        maximumLineCount: root._cardMode === "lines" ? 1 : 100000
+                        clip: root._cardMode === "lines"
                         color:          Theme.color.textPrimary
                         font.family:    Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
+                        font.pixelSize: root._cardsFull ? Theme.font.bodySize : Theme.font.smallSize
                         wrapMode:       Text.WordWrap
-                        lineHeight:     1.25
+                        lineHeight:     root._cardsFull ? 1.25 : 1.05
                     }
                 }
 

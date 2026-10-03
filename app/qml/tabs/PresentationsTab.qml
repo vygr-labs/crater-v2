@@ -154,7 +154,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 36
+        height: Theme.d(36)
 
         Text {
             anchors.centerIn: parent
@@ -361,7 +361,7 @@ Item {
         delegate: Item {
             id: deckRow
             width: list.width - Theme.size.scrollBar
-            height: 40
+            height: Theme.d(40)
 
             readonly property bool _selected: list.currentIndex === index
             readonly property bool _paneFocused: AppState.activeFocusPanel === "library"

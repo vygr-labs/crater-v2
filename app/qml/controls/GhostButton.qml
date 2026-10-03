@@ -15,7 +15,7 @@ Rectangle {
 
     signal clicked()
 
-    implicitHeight: 34
+    implicitHeight: Theme.d(34)
     implicitWidth: contentRow.implicitWidth + Theme.space.lg * 2
 
     // Squared — see PrimaryButton.qml comment for the app-wide rationale.

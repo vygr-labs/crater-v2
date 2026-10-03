@@ -9,7 +9,7 @@ Item {
     property string action: ""
     signal actionClicked()
 
-    implicitHeight: 36
+    implicitHeight: Theme.d(36)
     implicitWidth: 200
 
     Text {

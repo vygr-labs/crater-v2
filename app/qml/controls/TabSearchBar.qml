@@ -479,7 +479,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 36
+        height: Theme.d(36)
         radius: 0
         color: Theme.color.canvas
         border.color: inputField.activeFocus ? Theme.color.brand : Theme.color.borderStrong
@@ -500,7 +500,7 @@ Item {
             // just the icon (~16px) — a fixed width would clip the chevron on
             // songs or leave wasted padding elsewhere.
             width: modeRow.implicitWidth + 10
-            height: 28
+            height: Theme.d(28)
             radius: 0
             // Songs and Scripture get a real trigger; others render as a static icon.
             readonly property bool interactive:

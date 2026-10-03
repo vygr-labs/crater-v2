@@ -26,14 +26,10 @@ Item {
             // ── DISPLAY ──────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Display"); first: true }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 68
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Default fit"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("How images and videos frame on the projection output"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Default fit")
+                description: qsTr("How images and videos frame on the projection output")
                 SegmentedControl {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 280
                     height: 34
                     options: [

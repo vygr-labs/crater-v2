@@ -69,36 +69,27 @@ Item {
             // ── DISPLAY ──────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Display"); first: true }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Show author"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show author")
+                ToggleSwitch {
                     value: SettingsService.showSongAuthor
                     onToggled: SettingsService.showSongAuthor = !SettingsService.showSongAuthor }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show CCLI number"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Display copyright tag below song title"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show CCLI number")
+                description: qsTr("Display copyright tag below song title")
+                ToggleSwitch {
                     value: SettingsService.showSongCcli
                     onToggled: SettingsService.showSongCcli = !SettingsService.showSongCcli }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Default theme"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Used for songs that don't carry their own theme"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Default theme")
+                description: qsTr("Used for songs that don't carry their own theme")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 200
                     // Search only kicks in for long theme lists; a handful of
                     // themes reads better as a plain list.
@@ -121,27 +112,20 @@ Item {
 
             // Master toggle. LivePanel owns the actual advance Timer and gates
             // it on a live, multi-slide item — this just flips the preference.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Auto-advance slides"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Move to next slide automatically after a delay"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Auto-advance slides")
+                description: qsTr("Move to next slide automatically after a delay")
+                ToggleSwitch {
                     value: SettingsService.autoAdvance
                     onToggled: SettingsService.autoAdvance = !SettingsService.autoAdvance }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             // Delay + loop — dimmed and inert until auto-advance is on.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+            SettingRow {
                 opacity: SettingsService.autoAdvance ? 1.0 : 0.45
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Advance after"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
+                title: qsTr("Advance after")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 160
                     enabled: SettingsService.autoAdvance
                     searchable: false
@@ -155,13 +139,11 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
+            SettingRow {
                 opacity: SettingsService.autoAdvance ? 1.0 : 0.45
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Loop at end"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Return to the first slide instead of stopping"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                title: qsTr("Loop at end")
+                description: qsTr("Return to the first slide instead of stopping")
+                ToggleSwitch {
                     enabled: SettingsService.autoAdvance
                     value: SettingsService.autoAdvanceLoop
                     onToggled: SettingsService.autoAdvanceLoop = !SettingsService.autoAdvanceLoop }

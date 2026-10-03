@@ -56,6 +56,9 @@ struct SettingsService::Impl
     // QML bindings that fire on every paint.
     QString themeMode        = QStringLiteral("dark");
     QString fontSize         = QStringLiteral("medium");
+    QString uiDensity        = QStringLiteral("compact");
+    QString previewCardMode  = QStringLiteral("full");
+    QString liveCardMode     = QStringLiteral("full");
     bool    showCcli         = true;
     bool    reduceMotion     = false;
     bool    showLogoByDef    = false;
@@ -116,6 +119,9 @@ struct SettingsService::Impl
     // OutputService).
     static constexpr const char* kThemeMode      = "Settings/themeMode";
     static constexpr const char* kFontSize       = "Settings/fontSize";
+    static constexpr const char* kUiDensity      = "Settings/uiDensity";
+    static constexpr const char* kPreviewCards   = "Settings/previewCardMode";
+    static constexpr const char* kLiveCards      = "Settings/liveCardMode";
     static constexpr const char* kShowCcli       = "Settings/showCcli";
     static constexpr const char* kReduceMotion   = "Settings/reduceMotion";
     static constexpr const char* kShowLogo       = "Settings/showLogoByDefault";
@@ -155,6 +161,9 @@ SettingsService::SettingsService(QObject* parent)
     auto& s = m_impl->settings;
     m_impl->themeMode      = s.value(QString::fromLatin1(Impl::kThemeMode),     m_impl->themeMode).toString();
     m_impl->fontSize       = s.value(QString::fromLatin1(Impl::kFontSize),      m_impl->fontSize).toString();
+    m_impl->uiDensity      = s.value(QString::fromLatin1(Impl::kUiDensity),     m_impl->uiDensity).toString();
+    m_impl->previewCardMode = s.value(QString::fromLatin1(Impl::kPreviewCards), m_impl->previewCardMode).toString();
+    m_impl->liveCardMode   = s.value(QString::fromLatin1(Impl::kLiveCards),     m_impl->liveCardMode).toString();
     m_impl->showCcli       = s.value(QString::fromLatin1(Impl::kShowCcli),      m_impl->showCcli).toBool();
     m_impl->reduceMotion   = s.value(QString::fromLatin1(Impl::kReduceMotion),  m_impl->reduceMotion).toBool();
     m_impl->showLogoByDef    = s.value(QString::fromLatin1(Impl::kShowLogo),         m_impl->showLogoByDef).toBool();
@@ -248,6 +257,43 @@ qreal SettingsService::fontScale() const
     if (f == QStringLiteral("small"))  return 0.90;
     if (f == QStringLiteral("large"))  return 1.15;
     return 1.00;  // "medium" + any unrecognized value
+}
+
+QString SettingsService::uiDensity() const { return m_impl->uiDensity; }
+
+qreal SettingsService::densityScale() const
+{
+    // Compact trims padding, row heights and bar heights by a fifth. Text
+    // size stays with fontSize, so density never makes anything harder to
+    // read, only closer together.
+    return m_impl->uiDensity == QStringLiteral("comfortable") ? 1.0 : 0.8;
+}
+
+void SettingsService::setUiDensity(const QString& density)
+{
+    if (m_impl->uiDensity == density) return;
+    m_impl->uiDensity = density;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kUiDensity), density);
+    emit uiDensityChanged();
+}
+
+QString SettingsService::previewCardMode() const { return m_impl->previewCardMode; }
+QString SettingsService::liveCardMode() const    { return m_impl->liveCardMode; }
+
+void SettingsService::setPreviewCardMode(const QString& mode)
+{
+    if (m_impl->previewCardMode == mode) return;
+    m_impl->previewCardMode = mode;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kPreviewCards), mode);
+    emit previewCardModeChanged();
+}
+
+void SettingsService::setLiveCardMode(const QString& mode)
+{
+    if (m_impl->liveCardMode == mode) return;
+    m_impl->liveCardMode = mode;
+    m_impl->settings.setValue(QString::fromLatin1(Impl::kLiveCards), mode);
+    emit liveCardModeChanged();
 }
 
 void SettingsService::setThemeMode(const QString& mode)

@@ -30,7 +30,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 32
+        height: Theme.d(32)
         color: Theme.color.elevated
 
         // Left cluster: playlist glyph + name + count + selection accent.

@@ -6,7 +6,7 @@ import QtQuick
 Item {
     id: root
 
-    height: 42
+    height: Theme.d(42)
 
     // Panel surface for the tab strip — sits on the same `bg.muted`
     // equivalent as electron's Tabs.List so it reads as a raised band over

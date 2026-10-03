@@ -39,6 +39,15 @@ private:
     Q_PROPERTY(QString themeMode          READ themeMode          WRITE setThemeMode          NOTIFY themeModeChanged)
     Q_PROPERTY(QString fontSize           READ fontSize           WRITE setFontSize           NOTIFY fontSizeChanged)
     Q_PROPERTY(qreal   fontScale          READ fontScale                                      NOTIFY fontSizeChanged)
+    // UI density: "compact" (default) or "comfortable". densityScale is the
+    // multiplier Theme applies to spacing and chrome sizes, the same split
+    // as fontSize / fontScale.
+    Q_PROPERTY(QString uiDensity          READ uiDensity          WRITE setUiDensity          NOTIFY uiDensityChanged)
+    Q_PROPERTY(qreal   densityScale       READ densityScale                                   NOTIFY uiDensityChanged)
+    // Preview / Live slide card view: "full", "compact" (tiny text) or
+    // "lines" (one line per slide). Each panel keeps its own choice.
+    Q_PROPERTY(QString previewCardMode    READ previewCardMode    WRITE setPreviewCardMode    NOTIFY previewCardModeChanged)
+    Q_PROPERTY(QString liveCardMode       READ liveCardMode       WRITE setLiveCardMode       NOTIFY liveCardModeChanged)
     Q_PROPERTY(bool    showCcli           READ showCcli           WRITE setShowCcli           NOTIFY showCcliChanged)
     Q_PROPERTY(bool    reduceMotion       READ reduceMotion       WRITE setReduceMotion       NOTIFY reduceMotionChanged)
     Q_PROPERTY(bool    showLogoByDefault  READ showLogoByDefault  WRITE setShowLogoByDefault  NOTIFY showLogoByDefaultChanged)
@@ -212,6 +221,10 @@ public:
     QString themeMode() const;
     QString fontSize() const;
     qreal   fontScale() const;
+    QString uiDensity() const;
+    qreal   densityScale() const;
+    QString previewCardMode() const;
+    QString liveCardMode() const;
     bool    showCcli() const;
     bool    reduceMotion() const;
     bool    showLogoByDefault() const;
@@ -249,6 +262,9 @@ public:
 
     void setThemeMode(const QString& mode);
     void setFontSize(const QString& size);
+    void setUiDensity(const QString& density);
+    void setPreviewCardMode(const QString& mode);
+    void setLiveCardMode(const QString& mode);
     void setShowCcli(bool v);
     void setReduceMotion(bool v);
     void setShowLogoByDefault(bool v);
@@ -288,6 +304,9 @@ public:
 signals:
     void themeModeChanged();
     void fontSizeChanged();
+    void uiDensityChanged();
+    void previewCardModeChanged();
+    void liveCardModeChanged();
     void showCcliChanged();
     void reduceMotionChanged();
     void showLogoByDefaultChanged();

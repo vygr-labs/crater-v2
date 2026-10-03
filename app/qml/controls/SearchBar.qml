@@ -15,7 +15,7 @@ Item {
 
     signal accepted()
 
-    implicitHeight: 36
+    implicitHeight: Theme.d(36)
     implicitWidth: 240
 
     Rectangle {

@@ -74,54 +74,42 @@ Item {
 
             Repeater {
                 model: root._types
-                delegate: Item {
+                delegate: ColumnLayout {
                     required property int index
                     required property var modelData
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 56
+                    spacing: 0
 
-                    Text {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.label
-                        color: Theme.color.textPrimary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
-                        font.weight: Theme.font.weightMedium
-                    }
+                    SettingRow {
+                        title: modelData.label
 
-                    // Projectable types get the full picker.
-                    Combobox {
-                        visible: !modelData.revealOnly
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 200
-                        searchable: false
-                        options: root._actionOptions
-                        value: root._actionLabel(
-                            (SettingsService.globalSearchActions || ({}))[modelData.key] || "reveal")
-                        onValueSelected: function(v) {
-                            SettingsService.setGlobalSearchAction(modelData.key, v)
+                        // Projectable types get the full picker.
+                        Combobox {
+                            visible: !modelData.revealOnly
+                            width: 200
+                            searchable: false
+                            options: root._actionOptions
+                            value: root._actionLabel(
+                                (SettingsService.globalSearchActions || ({}))[modelData.key] || "reveal")
+                            onValueSelected: function(v) {
+                                SettingsService.setGlobalSearchAction(modelData.key, v)
+                            }
                         }
-                    }
 
-                    // Themes are never projected — reveal is the only action.
-                    Text {
-                        visible: !!modelData.revealOnly
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Reveal in tab")
-                        color: Theme.color.textTertiary
-                        font.family: Theme.font.family
-                        font.pixelSize: Theme.font.bodySize
+                        // Themes are never projected — reveal is the only action.
+                        Text {
+                            visible: !!modelData.revealOnly
+                            text: qsTr("Reveal in tab")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize
+                        }
                     }
 
                     Rectangle {
                         visible: index < root._types.length - 1
-                        anchors.bottom: parent.bottom
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        height: 1
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
                         color: Theme.color.borderSubtle
                     }
                 }
@@ -130,23 +118,19 @@ Item {
             // ── SONGS ────────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Songs") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show matched lyric"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Show the matched line of lyrics under a song while searching"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show matched lyric")
+                description: qsTr("Show the matched line of lyrics under a song while searching")
+                ToggleSwitch {
                     value: SettingsService.showMatchedLyricSnippet
                     onToggled: SettingsService.showMatchedLyricSnippet = !SettingsService.showMatchedLyricSnippet }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Highlight matches"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Colour the matched words in titles, authors and lyric snippets"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Highlight matches")
+                description: qsTr("Colour the matched words in titles, authors and lyric snippets")
+                ToggleSwitch {
                     value: SettingsService.highlightSongMatches
                     onToggled: SettingsService.highlightSongMatches = !SettingsService.highlightSongMatches }
             }
@@ -154,12 +138,10 @@ Item {
             // ── SCRIPTURE ────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Scripture") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Highlight matches"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Colour the matched words in verse search results"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Highlight matches")
+                description: qsTr("Colour the matched words in verse search results")
+                ToggleSwitch {
                     value: SettingsService.highlightScriptureMatches
                     onToggled: SettingsService.highlightScriptureMatches = !SettingsService.highlightScriptureMatches }
             }
@@ -167,12 +149,10 @@ Item {
             // ── STRONG'S ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Strong's") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Highlight matches"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Colour the matched words in dictionary results"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Highlight matches")
+                description: qsTr("Colour the matched words in dictionary results")
+                ToggleSwitch {
                     value: SettingsService.highlightStrongsMatches
                     onToggled: SettingsService.highlightStrongsMatches = !SettingsService.highlightStrongsMatches }
             }

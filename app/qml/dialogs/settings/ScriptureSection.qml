@@ -30,14 +30,10 @@ Item {
             // ── READING ──────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Reading"); first: true }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Default version"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Version preselected when opening Scripture"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
+            SettingRow {
+                title: qsTr("Default version")
+                description: qsTr("Version preselected when opening Scripture")
                 Combobox {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
                     width: 180
                     searchable: false
                     // One option per installed translation, shown by code
@@ -61,34 +57,27 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                       text: qsTr("Show verse numbers"); color: Theme.color.textPrimary
-                       font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize
-                       font.weight: Theme.font.weightMedium }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show verse numbers")
+                ToggleSwitch {
                     value: SettingsService.showVerseNumbers
                     onToggled: SettingsService.showVerseNumbers = !SettingsService.showVerseNumbers }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Highlight current verse"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Step a multi-verse passage one verse at a time, dimming the rest"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Highlight current verse")
+                description: qsTr("Step a multi-verse passage one verse at a time, dimming the rest")
+                ToggleSwitch {
                     value: SettingsService.highlightCurrentVerse
                     onToggled: SettingsService.highlightCurrentVerse = !SettingsService.highlightCurrentVerse }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show book:chapter in footer"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Render a reference line at the bottom of the slide"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show book:chapter in footer")
+                description: qsTr("Render a reference line at the bottom of the slide")
+                ToggleSwitch {
                     value: SettingsService.showScriptureFooter
                     onToggled: SettingsService.showScriptureFooter = !SettingsService.showScriptureFooter }
             }
@@ -99,16 +88,10 @@ Item {
             // The only row here whose description can run long (and grows
             // with the UI font size), so it wraps and sizes to its text
             // instead of eliding the memory cost away.
-            Item { Layout.fillWidth: true; Layout.preferredHeight: Math.max(56, preloadText.implicitHeight + Theme.space.lg)
-                Column { id: preloadText
-                         anchors.left: parent.left; anchors.right: preloadToggle.left; anchors.rightMargin: Theme.space.lg
-                         anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Preload all Bible translations"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { width: parent.width; wrapMode: Text.WordWrap
-                           text: qsTr("Instant first switch to any translation. About 13 MB of memory each.")
-                           color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { id: preloadToggle; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Preload all Bible translations")
+                description: qsTr("Instant first switch to any translation. About 13 MB of memory each.")
+                ToggleSwitch { id: preloadToggle
                     value: SettingsService.preloadTranslations
                     onToggled: SettingsService.preloadTranslations = !SettingsService.preloadTranslations }
             }
@@ -116,12 +99,10 @@ Item {
             // ── TABS ─────────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Tabs") }
 
-            Item { Layout.fillWidth: true; Layout.preferredHeight: 56
-                Column { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                    Text { text: qsTr("Show Strong's tab"); color: Theme.color.textPrimary; font.family: Theme.font.family; font.pixelSize: Theme.font.bodySize; font.weight: Theme.font.weightMedium }
-                    Text { text: qsTr("Greek/Hebrew concordance lookup"); color: Theme.color.textTertiary; font.family: Theme.font.family; font.pixelSize: Theme.font.smallSize }
-                }
-                ToggleSwitch { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            SettingRow {
+                title: qsTr("Show Strong's tab")
+                description: qsTr("Greek/Hebrew concordance lookup")
+                ToggleSwitch {
                     value: SettingsService.showStrongsTab
                     onToggled: SettingsService.showStrongsTab = !SettingsService.showStrongsTab }
             }

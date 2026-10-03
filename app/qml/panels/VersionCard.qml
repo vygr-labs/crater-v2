@@ -27,7 +27,7 @@ Item {
     // Intrinsic size — the grid sets an explicit width (cell width) and
     // height, so these are just sane fallbacks.
     implicitWidth: 80
-    implicitHeight: 36
+    implicitHeight: Theme.d(36)
 
     Rectangle {
         id: surface

@@ -903,7 +903,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 32
+        height: Theme.d(32)
         color: "transparent"
 
         Text {
@@ -1140,7 +1140,7 @@ Item {
             // freed enough horizontal weight that the row no longer needs
             // 40 px to breathe. Density win on long passages: Psalm 119
             // gains ~10 visible rows on a 1080p screen.
-            height: 36
+            height: Theme.d(36)
 
             readonly property bool _selected: list.currentIndex === index
             // True if this row is part of a multi-selection (shift+click

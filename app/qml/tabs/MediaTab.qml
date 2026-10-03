@@ -457,7 +457,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 32
+        height: Theme.d(32)
         color: "transparent"
 
         // Center: count + batch indicator
@@ -1282,7 +1282,7 @@ Item {
             delegate: Item {
                 id: listRow
                 width: listView.width - Theme.size.scrollBar
-                height: 48
+                height: Theme.d(48)
 
                 // Same binding-rebind-safe pattern as the grid cell — read
                 // fluidIndex directly rather than listView.currentIndex, which

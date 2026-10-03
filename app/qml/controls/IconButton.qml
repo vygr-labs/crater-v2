@@ -16,8 +16,8 @@ Item {
 
     signal clicked()
 
-    implicitWidth: 30
-    implicitHeight: 30
+    implicitWidth: Theme.d(30)
+    implicitHeight: Theme.d(30)
 
     opacity: enabled ? 1.0 : 0.4
 

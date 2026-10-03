@@ -275,7 +275,7 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 32
+        height: Theme.d(32)
         color: "transparent"
 
         // Center: song count
@@ -636,7 +636,12 @@ Item {
             // compact single-line-with-author look the operator prefers while
             // browsing (the bare estimateSize the port originally used, which
             // only looked cramped once the snippet line was always present).
-            height: _showSnippet ? 52 : 36
+            //
+            // Without a snippet the author sits on the title's line (dimmed,
+            // to its right) so the row really is one line. It used to stack
+            // under the title inside a 36px row and spill into the next song.
+            height: _showSnippet ? Math.max(Theme.d(52), songText.height + Theme.space.sm * 2)
+                                 : Theme.d(36)
 
             readonly property bool _selected: list.currentIndex === index
             // True while the library pane owns keyboard focus. When focus
@@ -742,7 +747,8 @@ Item {
                 }
             }
 
-            Column {
+            Item {
+                id: songText
                 // Anchored to the row's left edge with Theme.space.lg
                 // padding — slightly more generous than the old icon's
                 // leftMargin so the title breathes against the wash edge
@@ -753,9 +759,11 @@ Item {
                 anchors.right: rowRight.left
                 anchors.rightMargin: Theme.space.sm
                 anchors.verticalCenter: parent.verticalCenter
-                // 2px between the title and the subtitle/snippet so the two
-                // lines read as a pair without touching.
-                spacing: 2
+                // Snippet rows stack title over excerpt (2px apart). Other
+                // rows put the subtitle on the title's baseline.
+                height: songRow._showSnippet
+                        ? titleText.height + 2 + subtitleText.height
+                        : titleText.height
 
                 // A query is active — bold the matched terms in title/subtitle,
                 // unless the operator turned song highlighting off (Settings ›
@@ -766,6 +774,7 @@ Item {
                     _hasQuery && SettingsService.highlightSongMatches
 
                 Text {
+                    id: titleText
                     textFormat: parent._colorize ? Text.StyledText : Text.PlainText
                     text: parent._colorize
                             ? SearchFormat.markup(modelData.title, root._debouncedQuery,
@@ -778,9 +787,16 @@ Item {
                     font.weight: songRow._selected ? Theme.font.weightMedium
                                                    : Theme.font.weightRegular
                     elide: Text.ElideRight
-                    width: parent.width
+                    // Inline subtitle keeps at least a third of the row.
+                    width: songRow._showSnippet || !subtitleText.visible
+                           ? parent.width
+                           : Math.min(implicitWidth,
+                                      parent.width - Math.min(subtitleText.implicitWidth,
+                                                              parent.width / 3)
+                                                   - Theme.space.md)
                 }
                 Text {
+                    id: subtitleText
                     // Subtitle. For a lyrics-search hit we show the matched
                     // lyric excerpt (which is far more useful than the author
                     // while scanning results); otherwise the usual author +
@@ -811,7 +827,11 @@ Item {
                     font.family: Theme.font.family
                     font.pixelSize: 14
                     elide: Text.ElideRight
-                    width: parent.width
+                    x: songRow._showSnippet ? 0 : titleText.width + Theme.space.md
+                    y: songRow._showSnippet
+                       ? titleText.height + 2
+                       : titleText.baselineOffset - baselineOffset
+                    width: parent.width - x
                 }
             }
 

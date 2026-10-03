@@ -200,6 +200,7 @@ qt_add_qml_module(crater
 
         # ── Settings sections ─────────────────────────────────────────
         qml/dialogs/settings/SettingsSectionHeader.qml
+        qml/dialogs/settings/SettingRow.qml
         qml/dialogs/settings/AppearanceSection.qml
         qml/dialogs/settings/ProjectionSection.qml
         qml/dialogs/settings/ScriptureSection.qml

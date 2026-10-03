@@ -11,7 +11,7 @@ Rectangle {
     signal clicked()
 
     implicitWidth: chipRow.implicitWidth + Theme.space.lg * 2
-    implicitHeight: 30
+    implicitHeight: Theme.d(30)
     radius: Theme.radius.md
     color: ma.containsMouse ? Theme.color.overlay : Theme.color.canvas
     border.color: Theme.color.borderStrong
