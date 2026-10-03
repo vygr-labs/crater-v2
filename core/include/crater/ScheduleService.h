@@ -90,6 +90,9 @@ public:
     // AppState.resolveItemTheme reads it whenever the projection window
     // re-evaluates its theme binding.
     Q_INVOKABLE void setItemTheme(int index, qint64 themeId);
+    // Per-item service background: a media id painted behind this item's
+    // theme (crater::tokens::applyBackground). 0 clears it.
+    Q_INVOKABLE void setItemBackground(int index, qint64 mediaId);
 
     // Swap a working-schedule row for a rebuilt copy of itself. The item map
     // is canonical-shape (same contract as addItem), so callers rebuild the

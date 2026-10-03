@@ -183,6 +183,79 @@ Rectangle {
             }
         }
 
+        // Background chip: which picture or video is standing in for the
+        // themes' own backgrounds, and an x to go back to them. A row's own
+        // background (on air now) wins over the service one, like
+        // AppState.backgroundFor. Hidden when the themes are on their own.
+        Rectangle {
+            id: bgChip
+            readonly property var _row:
+                (AppState.liveScheduleIndex >= 0
+                 && AppState.liveScheduleIndex < ScheduleService.currentItems.length)
+                    ? ScheduleService.currentItems[AppState.liveScheduleIndex] : null
+            readonly property int _rowBg:
+                _row && AppState._takesBackground(_row.kind || "song")
+                    ? (_row.backgroundMediaId || 0) : 0
+            readonly property var _sb: AppState.sessionBackground
+            readonly property bool _fromRow: _rowBg > 0
+            readonly property var _media: _fromRow ? MediaService.byId(_rowBg) : null
+            readonly property string _title: _fromRow
+                ? (_media && _media.title ? String(_media.title) : qsTr("Background"))
+                : (_sb ? _sb.title : "")
+            readonly property string _type: _fromRow ? (_media ? String(_media.type || "") : "")
+                                                     : (_sb ? _sb.type : "")
+
+            visible: _fromRow || !!_sb
+            anchors.right: settingsBtn.left
+            anchors.rightMargin: Theme.space.sm
+            anchors.verticalCenter: parent.verticalCenter
+            height: 22
+            width: Math.min(chipRow.implicitWidth + Theme.space.sm + 2,
+                            header.width * 0.45)
+            radius: 0
+            color: Theme.color.raised
+            border.color: Theme.color.borderStrong
+            border.width: 1
+
+            Row {
+                id: chipRow
+                anchors.left: parent.left
+                anchors.leftMargin: Theme.space.sm
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Theme.space.xs
+
+                AppIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: bgChip._type === "video" ? "film" : "image"
+                    size: Theme.icon.sm
+                    color: Theme.color.textSecondary
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth,
+                                    header.width * 0.45 - 60)
+                    text: bgChip._fromRow ? qsTr("%1 (this item)").arg(bgChip._title)
+                                          : bgChip._title
+                    elide: Text.ElideRight
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+                IconButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 20; height: 20
+                    iconName: "x"
+                    iconSize: Theme.icon.sm
+                    onClicked: {
+                        if (bgChip._fromRow)
+                            AppState.setScheduleItemBackground(AppState.liveScheduleIndex, 0)
+                        else
+                            AppState.clearSessionBackground()
+                    }
+                }
+            }
+        }
+
         IconButton {
             id: settingsBtn
             anchors.right: parent.right
@@ -669,6 +742,7 @@ Rectangle {
                 anchors.margins: 1.5
                 item: root.liveItem
                 pageIndex: AppState.liveSubIndex
+                backgroundMediaId: AppState.liveBackgroundStamp
                 // Mute when the audience-facing projection is up; unmute
                 // when it's parked (NDI-only) so the operator still hears
                 // the audio. See the audio-ownership paragraph above.

@@ -62,6 +62,27 @@ QVariantMap layout(const QString& id, const QString& name,
     return l;
 }
 
+// A container placed by style, for the service-background cases below.
+QVariantMap boxNode(const QString& id, double x, double y, double w, double h,
+                    double z, const QVariantMap& data = {})
+{
+    return QVariantMap{
+        { QStringLiteral("id"),    id },
+        { QStringLiteral("kind"),  QStringLiteral("container") },
+        { QStringLiteral("style"), QVariantMap{
+              { QStringLiteral("x"), x }, { QStringLiteral("y"), y },
+              { QStringLiteral("width"), w }, { QStringLiteral("height"), h },
+              { QStringLiteral("z"), z } } },
+        { QStringLiteral("data"),  data },
+    };
+}
+
+qint64 mediaOf(const QVariantList& nodes, int i)
+{
+    return nodes.at(i).toMap().value(QStringLiteral("data")).toMap()
+                .value(QStringLiteral("mediaId")).toLongLong();
+}
+
 // A v2 theme: one bare `nodes` array, no layouts. This is what every theme
 // in every existing install looks like.
 QVariantMap v2Theme()
@@ -301,6 +322,104 @@ private slots:
     {
         QCOMPARE(tk::defaultLayoutName(QStringLiteral("myDesign")),
                  QStringLiteral("myDesign"));
+    }
+
+    // ── Service background ──────────────────────────────────────────────
+
+    void backgroundIsTheLowestFullCanvasContainer()
+    {
+        const QVariantList nodes{
+            textNode(QStringLiteral("lyric"), QStringLiteral("lyric")),
+            boxNode(QStringLiteral("scrim"), 0, 60, 100, 40, 1),
+            boxNode(QStringLiteral("wash"),  0, 0, 100, 100, 2),
+            boxNode(QStringLiteral("bg"),    0, 0, 100, 100, 0),
+        };
+        QCOMPARE(tk::backgroundNodeIndex(nodes), 3);
+    }
+
+    void pictureBoxIsNeverTheBackground()
+    {
+        const QVariantList nodes{
+            boxNode(QStringLiteral("pic"), 0, 0, 100, 100, -5,
+                    { { QStringLiteral("linkage"), QStringLiteral("presentationImage") } }),
+        };
+        QCOMPARE(tk::backgroundNodeIndex(nodes), -1);
+    }
+
+    void applyBackgroundSetsOnlyTheBase()
+    {
+        const QVariantList nodes{
+            boxNode(QStringLiteral("bg"),   0, 0, 100, 100, 0),
+            boxNode(QStringLiteral("wash"), 0, 0, 100, 100, 2),
+        };
+        const QVariantList out = tk::applyBackground(nodes, 42);
+        QCOMPARE(out.size(), 2);
+        QCOMPARE(mediaOf(out, 0), qint64(42));
+        QCOMPARE(mediaOf(out, 1), qint64(0));
+    }
+
+    void applyBackgroundAddsABaseWhenThereIsNone()
+    {
+        const QVariantList nodes{
+            boxNode(QStringLiteral("scrim"), 0, 60, 100, 40, -2),
+            textNode(QStringLiteral("lyric"), QStringLiteral("lyric")),
+        };
+        const QVariantList out = tk::applyBackground(nodes, 7);
+        QCOMPARE(out.size(), 3);
+        QCOMPARE(mediaOf(out, 0), qint64(7));
+        const double z = out.at(0).toMap().value(QStringLiteral("style")).toMap()
+                              .value(QStringLiteral("z")).toDouble();
+        QVERIFY(z < -2);
+    }
+
+    void markedContainersTakeOverFromTheBase()
+    {
+        const QVariantList nodes{
+            boxNode(QStringLiteral("bg"),    0, 0, 100, 100, 0),
+            boxNode(QStringLiteral("frame"), 10, 10, 50, 50, 1,
+                    { { QStringLiteral("dynamicBackground"), true },
+                      { QStringLiteral("bgOpacity"), 0.5 } }),
+        };
+        QCOMPARE(tk::dynamicBackgroundIndices(nodes), QList<int>{ 1 });
+        const QVariantList out = tk::applyBackground(nodes, 8);
+        QCOMPARE(mediaOf(out, 0), qint64(0));
+        QCOMPARE(mediaOf(out, 1), qint64(8));
+        // What the designer set on the container rides along.
+        QCOMPARE(out.at(1).toMap().value(QStringLiteral("data")).toMap()
+                     .value(QStringLiteral("bgOpacity")).toDouble(), 0.5);
+    }
+
+    void baseOptsOutUnlessForced()
+    {
+        const QVariantList nodes{
+            boxNode(QStringLiteral("bg"), 0, 0, 100, 100, 0,
+                    { { QStringLiteral("dynamicBackground"), false } }),
+        };
+        QVERIFY(tk::dynamicBackgroundIndices(nodes).isEmpty());
+        QCOMPARE(tk::applyBackground(nodes, 9), nodes);
+        QCOMPARE(mediaOf(tk::applyBackground(nodes, 9, true), 0), qint64(9));
+    }
+
+    void zeroMediaLeavesNodesAlone()
+    {
+        const QVariantList nodes{ boxNode(QStringLiteral("bg"), 0, 0, 100, 100, 0) };
+        QCOMPARE(tk::applyBackground(nodes, 0), nodes);
+    }
+
+    void withBackgroundCoversEveryLayout()
+    {
+        QVariantMap t{
+            { QStringLiteral("version"), 3 },
+            { QStringLiteral("layouts"), QVariantList{
+                  layout(QStringLiteral("a"), QStringLiteral("A"),
+                         { boxNode(QStringLiteral("bg"), 0, 0, 100, 100, 0) }, true),
+                  layout(QStringLiteral("b"), QStringLiteral("B"),
+                         { textNode(QStringLiteral("t"), QStringLiteral("lyric")) }) } },
+        };
+        const QVariantList ls = tk::withBackground(t, 5)
+                                    .value(QStringLiteral("layouts")).toList();
+        QCOMPARE(mediaOf(ls.at(0).toMap().value(QStringLiteral("nodes")).toList(), 0), qint64(5));
+        QCOMPARE(mediaOf(ls.at(1).toMap().value(QStringLiteral("nodes")).toList(), 0), qint64(5));
     }
 };
 

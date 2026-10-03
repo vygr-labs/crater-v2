@@ -99,8 +99,13 @@ Item {
     // was authored under a different theme, and binds the picture
     // placeholder to the slide's own media. A v2 theme resolves to its
     // single implicit layout, so nothing here branches on version.
-    readonly property var _nodes: ThemeService.layoutNodes(
-        _tokens, root._slideLayout, root._slideMediaId)
+    //
+    // The operator's dynamic background (AppState.backgroundFor) was
+    // stamped on the snapshot at go-live, so it is read from the layer's
+    // own item and the outgoing layer keeps the old one through a fade.
+    readonly property var _nodes: ThemeService.applyBackground(
+        ThemeService.layoutNodes(_tokens, root._slideLayout, root._slideMediaId),
+        (layerItem && layerItem.liveBackgroundId) || 0)
 
     // ── Content classification ──────────────────────────────────────────
     // True when the live item is itself a picture / video / PDF (vs a

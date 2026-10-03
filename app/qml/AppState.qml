@@ -751,7 +751,105 @@ QtObject {
     // Text kinds use the plain overload, which resets the crop to full-frame
     // (correct — they have no crop concept, and the reset stops a stale media
     // crop from leaking onto a text render).
+    // ─── Dynamic background ─────────────────────────────────────────────
+    // A picture or video the operator put behind the theme from the Media
+    // tab. It paints through the theme's dynamic background container
+    // (ThemeService.applyBackground), so the designer's size, opacity and
+    // corners still apply. Two scopes, item first:
+    //   - a schedule row's own `backgroundMediaId`
+    //   - sessionBackground, for everything from now on. Session only: a
+    //     new service starts on the themes' own backgrounds.
+    // Media items never take one (they ARE the picture).
+    property var sessionBackground: null    // { id, title, type } or null
+    // The background actually on the projection right now, stamped on the
+    // live snapshot at go-live. The live monitors read this so they agree
+    // with the audience, not with an edit that has not gone live yet.
+    property int liveBackgroundStamp: 0
+
+    function _takesBackground(kind) {
+        return kind === "song" || kind === "scripture" || kind === "presentation"
+    }
+
+    // Background media id for an item, or 0 for the theme's own.
+    function backgroundFor(item) {
+        if (!item || !_takesBackground(item.kind || "song")) return 0
+        if ((item.backgroundMediaId || 0) > 0) return item.backgroundMediaId
+        return sessionBackground ? sessionBackground.id : 0
+    }
+
+    function _mediaSummary(media) {
+        return { id: media.id, title: String(media.title || ""), type: String(media.type || "") }
+    }
+
+    function setSessionBackground(media) {
+        if (!media || !(media.id > 0)) return
+        sessionBackground = _mediaSummary(media)
+        _restampLive()
+    }
+
+    function clearSessionBackground() {
+        if (!sessionBackground) return
+        sessionBackground = null
+        _restampLive()
+    }
+
+    // Per-row background. Pass 0 to clear. A row that is on air re-sends so
+    // the audience sees it now, the same as the session background.
+    function setScheduleItemBackground(index, mediaId) {
+        if (index < 0 || index >= ScheduleService.currentItems.length) return
+        ScheduleService.setItemBackground(index, mediaId)
+        if (index === liveScheduleIndex) {
+            const row = ScheduleService.currentItems[index]
+            const snap = ProjectionService.currentItem
+            let next = {}
+            for (const k in snap) next[k] = snap[k]
+            next.backgroundMediaId = row.backgroundMediaId || 0
+            _projectItemLive(next, liveSubIndex)
+        }
+    }
+
+    // Write the background into a theme for good (every layout, through
+    // its dynamic container). Returns false when the theme is gone.
+    function saveBackgroundIntoTheme(themeId, media) {
+        const t = ThemeService.theme(themeId)
+        if (!(t.id > 0) || !media || !(media.id > 0)) return false
+        ThemeService.update(t.id, t.name, ThemeService.withBackground(t.tokens, media.id))
+        return true
+    }
+
+    // The theme the next background choice would land in: the live item's,
+    // else the staged one's.
+    function backgroundTargetTheme() {
+        const it = (liveIsActive && liveItem) ? liveItem : null
+        if (it && _takesBackground(it.kind || "song")) return resolveItemTheme(it)
+        const sel = libraryPreviewItem
+                    || (selectedScheduleIndex >= 0
+                        && selectedScheduleIndex < ScheduleService.currentItems.length
+                            ? ScheduleService.currentItems[selectedScheduleIndex] : null)
+        if (sel && _takesBackground(sel.kind || "song")) return resolveItemTheme(sel)
+        return null
+    }
+
+    // Re-send what is on air with the current background so the change
+    // crossfades in like any other go-live.
+    function _restampLive() {
+        const snap = ProjectionService.currentItem
+        if (!liveIsActive || !snap || !_takesBackground(snap.kind || "")) return
+        _projectItemLive(snap, liveSubIndex)
+    }
+
     function _projectItemLive(item, page) {
+        if (item && _takesBackground(item.kind || "song")) {
+            // Stamp the resolved background onto a copy, so the projection
+            // snapshot carries it and later edits wait for the next go-live.
+            let stamped = {}
+            for (const k in item) stamped[k] = item[k]
+            stamped.liveBackgroundId = backgroundFor(item)
+            liveBackgroundStamp = stamped.liveBackgroundId
+            item = stamped
+        } else {
+            liveBackgroundStamp = 0
+        }
         if (!item) { ProjectionService.goLive(item, page); return }
         if (item.kind === "pdf") {
             ProjectionService.goLiveWithCrop(item, page, previewCropRect)
