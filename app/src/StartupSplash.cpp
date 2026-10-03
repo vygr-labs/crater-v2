@@ -63,7 +63,8 @@ void StartupSplash::paintEvent(QPaintEvent*)
 
     const QRectF card = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     QPainterPath shape;
-    shape.addRoundedRect(card, 12, 12);
+    // Near-square, like the rest of the UI.
+    shape.addRoundedRect(card, 2, 2);
     p.fillPath(shape, kSurface);
     p.setPen(QPen(kBorder, 1));
     p.drawPath(shape);
@@ -91,13 +92,13 @@ void StartupSplash::paintEvent(QPaintEvent*)
     // Progress
     const QRectF track(pad, height() - pad - 34, width() - 2 * pad, 6);
     QPainterPath trackPath;
-    trackPath.addRoundedRect(track, 3, 3);
+    trackPath.addRect(track);
     p.fillPath(trackPath, kTrack);
     if (m_percent > 0) {
         QRectF fill = track;
         fill.setWidth(track.width() * m_percent / 100.0);
         QPainterPath fillPath;
-        fillPath.addRoundedRect(fill, 3, 3);
+        fillPath.addRect(fill);
         p.fillPath(fillPath, kBrand);
     }
     if (m_tick.isActive()) {
