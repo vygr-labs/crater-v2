@@ -13,6 +13,7 @@
 
 #include <QDir>
 #include <QObject>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QString>
 #include <QTest>
@@ -171,6 +172,43 @@ private slots:
         rewrite(QStringLiteral("T1"), QStringLiteral("edited again"));
         QCOMPARE(firstText(bible, QStringLiteral("T1")), QStringLiteral("T1 original"));
         QCOMPARE(firstText(bible, QStringLiteral("T5")), QStringLiteral("edited"));
+    }
+
+    // ── Translation order ───────────────────────────────────────────────
+
+    static QStringList codesOf(BibleService& bible)
+    {
+        QStringList out;
+        for (const auto& t : bible.translations()) out << t.code;
+        return out;
+    }
+
+    void translationOrderIsSavedAndKeepsUnlistedCodes()
+    {
+        {
+            BibleService bible;
+            QSignalSpy changed(&bible, &BibleService::translationsChanged);
+            const int rev = bible.translationsRevision();
+            // T9 is not installed and T3 is listed twice: both are ignored.
+            QVERIFY(bible.setTranslationOrder({ QStringLiteral("T3"), QStringLiteral("T9"),
+                                                QStringLiteral("T1"), QStringLiteral("T3") }));
+            QCOMPARE(codesOf(bible), (QStringList{ QStringLiteral("T3"), QStringLiteral("T1"),
+                                                   QStringLiteral("T2"), QStringLiteral("T4"),
+                                                   QStringLiteral("T5") }));
+            QCOMPARE(changed.count(), 1);
+            QCOMPARE(bible.translationsRevision(), rev + 1);
+
+            // Same order again is a no-op: no write, no signal.
+            QVERIFY(bible.setTranslationOrder(codesOf(bible)));
+            QCOMPARE(changed.count(), 1);
+        }
+        // A fresh service reads the saved order back from the database.
+        BibleService reopened;
+        QCOMPARE(codesOf(reopened).first(), QStringLiteral("T3"));
+
+        // Put it back for any test that runs after this one.
+        QVERIFY(reopened.setTranslationOrder(m_codes));
+        QCOMPARE(codesOf(reopened), m_codes);
     }
 };
 

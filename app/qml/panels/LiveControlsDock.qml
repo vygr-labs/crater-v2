@@ -769,7 +769,10 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 84
                         searchable: false
-                        options: root._translationCodes()
+                        options: {
+                            BibleService.translationsRevision   // follow a reorder
+                            return root._translationCodes()
+                        }
                         value: scriptureTab.translation
                         onValueSelected: function(v) { AppState.liveDockTranslation = v }
                     }

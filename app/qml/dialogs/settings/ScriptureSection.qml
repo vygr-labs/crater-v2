@@ -42,7 +42,10 @@ Item {
                     // translation while this dialog is open won't refresh the
                     // list (matches the sidebar, which also reads
                     // translations() non-reactively).
-                    options: BibleService.translations().map(function(t) { return t.code })
+                    options: {
+                        BibleService.translationsRevision   // follow a reorder
+                        return BibleService.translations().map(function(t) { return t.code })
+                    }
                     value: SettingsService.defaultScriptureVersion
                     onValueSelected: function(code) {
                         // Persist for next launch AND apply immediately — flip

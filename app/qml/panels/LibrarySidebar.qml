@@ -110,6 +110,66 @@ Rectangle {
         AppState.openContextMenuAt(originItem, 0, originItem.height + 4, items, { menuWidth: 180 })
     }
 
+    // ── Translation order ───────────────────────────────────────────────
+    // The scripture grid's order is the operator's (BibleService sort_order),
+    // and every translation picker in the app follows it. Drag a card onto
+    // another, or use its right-click menu.
+    property int _dragFrom: -1
+    property int _dragTo:   -1
+
+    function _translationOrder() {
+        const out = []
+        for (let i = 0; i < groups.length; i++) out.push(String(groups[i].label))
+        return out
+    }
+
+    // Move the card at `from` so it ends up at index `to`.
+    function _moveTranslation(from, to) {
+        const codes = _translationOrder()
+        if (from < 0 || from >= codes.length) return
+        to = Math.max(0, Math.min(codes.length - 1, to))
+        if (from === to) return
+        const code = codes.splice(from, 1)[0]
+        codes.splice(to, 0, code)
+        BibleService.setTranslationOrder(codes)
+    }
+
+    function _sortTranslationsAtoZ() {
+        const codes = _translationOrder()
+        codes.sort(function(a, b) { return a.localeCompare(b) })
+        BibleService.setTranslationOrder(codes)
+    }
+
+    // Index of the version card under a scene point, or -1.
+    function _cardIndexAt(sceneX, sceneY) {
+        if (sceneX < 0) return -1
+        const p = versionGrid.mapFromItem(null, sceneX, sceneY)
+        for (let i = 0; i < versionRepeater.count; i++) {
+            const it = versionRepeater.itemAt(i)
+            if (it && p.x >= it.x && p.x < it.x + it.width
+                   && p.y >= it.y && p.y < it.y + it.height)
+                return i
+        }
+        return -1
+    }
+
+    function _translationMenu(card, index, x, y) {
+        const last = groups.length - 1
+        AppState.openContextMenuAt(card, x, y, [
+            { label: qsTr("Move Earlier"), iconName: "arrow-left", enabled: index > 0,
+              action: function() { root._moveTranslation(index, index - 1) } },
+            { label: qsTr("Move Later"), iconName: "arrow-right", enabled: index < last,
+              action: function() { root._moveTranslation(index, index + 1) } },
+            { label: qsTr("Move to Start"), iconName: "align-start-vertical", enabled: index > 0,
+              action: function() { root._moveTranslation(index, 0) } },
+            { label: qsTr("Move to End"), iconName: "align-end-vertical", enabled: index < last,
+              action: function() { root._moveTranslation(index, last) } },
+            { separator: true },
+            { label: qsTr("Sort A to Z"), iconName: "arrow-down-az",
+              action: function() { root._sortTranslationsAtoZ() } }
+        ], { menuWidth: 180 })
+    }
+
     readonly property var groups: {
         switch (currentTabKey) {
             case "songs": {
@@ -143,6 +203,7 @@ Rectangle {
                 // AppState.activeLibraryGroup convention. iconName/count stay
                 // at no-op values — the card reads only id + label, but
                 // keeping the shape uniform lets every tab share `groups`.
+                BibleService.translationsRevision   // re-read after a reorder
                 let r = []
                 const tl = BibleService.translations()
                 for (let i = 0; i < tl.length; i++) {
@@ -282,14 +343,36 @@ Rectangle {
                     Math.max(0, Math.floor((width - columnSpacing * (columns - 1)) / columns))
 
                 Repeater {
+                    id: versionRepeater
                     // Emptied for non-scripture tabs so no cards are built
                     // while the accordion is the visible layout.
                     model: groupContent.isScripture ? root.groups : []
                     delegate: VersionCard {
+                        required property var modelData
+                        required property int index
                         width: versionGrid.cellWidth
                         height: Theme.d(36)
                         label: modelData.label
                         active: AppState.activeLibraryGroup["scripture"] === modelData.id
+                        // The bar sits on the side the card will land: after
+                        // the target when moving later, before it otherwise.
+                        dropSide: (root._dragFrom >= 0 && root._dragTo === index
+                                   && root._dragTo !== root._dragFrom)
+                                  ? (root._dragFrom < index ? 1 : -1) : 0
+                        onDragMoved: function(sx, sy) {
+                            root._dragFrom = index
+                            root._dragTo = root._cardIndexAt(sx, sy)
+                        }
+                        onDragEnded: function(sx, sy) {
+                            const to = root._cardIndexAt(sx, sy)
+                            const from = index
+                            root._dragFrom = -1
+                            root._dragTo = -1
+                            if (to >= 0) root._moveTranslation(from, to)
+                        }
+                        onContextMenuRequested: function(x, y) {
+                            root._translationMenu(this, index, x, y)
+                        }
                         onClicked: AppState.setLibraryGroup("scripture", modelData.id)
                         onDoubleClicked: {
                             // Switch translation, then ask ScriptureTab to

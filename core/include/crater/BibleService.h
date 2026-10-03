@@ -31,12 +31,24 @@ class BibleService : public QObject
 {
     Q_OBJECT
 
+    // Bumps whenever the installed set or its order changes. QML bindings
+    // that call translations() read it as a dependency so they re-run.
+    Q_PROPERTY(int translationsRevision READ translationsRevision NOTIFY translationsChanged)
+
 public:
     explicit BibleService(QObject* parent = nullptr);
     ~BibleService() override;
 
-    // List all installed translations.
+    // List all installed translations, in the operator's order.
     Q_INVOKABLE QList<crater::Translation> translations();
+
+    // Save the operator's translation order (sort_order). `codes` lists the
+    // new order. Installed codes it leaves out keep their relative order
+    // after the listed ones, and unknown codes are ignored, so a stale list
+    // can never drop a translation. Returns false if the write failed.
+    Q_INVOKABLE bool setTranslationOrder(QStringList codes);
+
+    int translationsRevision() const { return m_translationsRevision; }
 
     // Books for a specific translation, in canonical order. `chapterCount` is
     // populated via a MAX(chapter) subquery — single indexed lookup per book.
@@ -112,7 +124,11 @@ public:
     // Wired to SettingsService::preloadTranslations in main.cpp.
     void setPreloadAll(bool on);
 
+signals:
+    void translationsChanged();
+
 private:
+    int m_translationsRevision = 0;
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

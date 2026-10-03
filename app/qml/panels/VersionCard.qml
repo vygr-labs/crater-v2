@@ -12,6 +12,11 @@ import QtQuick
 // version; double-click also pushes the focused verse Live in it). This
 // mirrors how LibraryRow stays presentational and lets the sidebar own
 // the AppState calls.
+//
+// Reordering is the same split. The card reports a drag (in scene
+// coordinates) and a right-click, and the sidebar works out where the card
+// lands and saves the order. `dropSide` is set back by the sidebar to draw
+// the insertion bar on the card being dropped onto.
 Item {
     id: root
 
@@ -20,9 +25,17 @@ Item {
     property string label: ""
     // True when this is the currently selected translation.
     property bool   active: false
+    // -1: insertion bar on the left edge, 1: on the right, 0: none.
+    property int    dropSide: 0
+    readonly property bool dragging: ma.dragging
 
     signal clicked()
     signal doubleClicked()
+    signal contextMenuRequested(real x, real y)
+    signal dragMoved(real sceneX, real sceneY)
+    signal dragEnded(real sceneX, real sceneY)
+
+    opacity: dragging ? 0.4 : 1.0
 
     // Intrinsic size — the grid sets an explicit width (cell width) and
     // height, so these are just sane fallbacks.
@@ -82,12 +95,67 @@ Item {
         }
     }
 
+    // Where the dragged card will land, drawn on the card it is over.
+    Rectangle {
+        visible: root.dropSide !== 0
+        width: 2
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: root.dropSide < 0 ? parent.left : undefined
+        anchors.right: root.dropSide > 0 ? parent.right : undefined
+        anchors.leftMargin: -Theme.space.xs / 2 - 1
+        anchors.rightMargin: -Theme.space.xs / 2 - 1
+        color: Theme.color.brandHover
+    }
+
     MouseArea {
         id: ma
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.clicked()
-        onDoubleClicked: root.doubleClicked()
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        cursorShape: dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+        // Keep the drag when the pointer leaves the card or the sidebar's
+        // ScrollView would like to flick.
+        preventStealing: true
+
+        property bool  dragging: false
+        property point _press: Qt.point(0, 0)
+
+        onPressed: function(mouse) {
+            _press = Qt.point(mouse.x, mouse.y)
+            dragging = false
+            if (mouse.button === Qt.RightButton)
+                root.contextMenuRequested(mouse.x, mouse.y)
+        }
+        onPositionChanged: function(mouse) {
+            if (!(pressedButtons & Qt.LeftButton)) return
+            if (!dragging
+                && Math.abs(mouse.x - _press.x) + Math.abs(mouse.y - _press.y) > 8)
+                dragging = true
+            if (dragging) {
+                const p = mapToItem(null, mouse.x, mouse.y)
+                root.dragMoved(p.x, p.y)
+            }
+        }
+        onReleased: function(mouse) {
+            if (!dragging) return
+            const p = mapToItem(null, mouse.x, mouse.y)
+            dragging = false
+            root.dragEnded(p.x, p.y)
+            // A drag is not a click: swallow the click that follows.
+            _press = Qt.point(-1e6, -1e6)
+        }
+        onCanceled: {
+            if (!dragging) return
+            dragging = false
+            root.dragEnded(-1, -1)
+        }
+        onClicked: function(mouse) {
+            if (mouse.button !== Qt.LeftButton || _press.x < -1e5) return
+            root.clicked()
+        }
+        onDoubleClicked: function(mouse) {
+            if (mouse.button === Qt.LeftButton) root.doubleClicked()
+        }
     }
 }

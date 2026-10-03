@@ -272,6 +272,44 @@ QList<Translation> BibleService::translations()
     return out;
 }
 
+bool BibleService::setTranslationOrder(QStringList codes)
+{
+    if (!m_impl) return false;
+
+    // Listed codes first (installed ones only, first mention wins), then
+    // whatever the list missed, in their current order.
+    QStringList current;
+    for (const Translation& t : translations()) current << t.code;
+    QStringList order;
+    for (const QString& c : std::as_const(codes))
+        if (current.contains(c) && !order.contains(c)) order << c;
+    for (const QString& c : std::as_const(current))
+        if (!order.contains(c)) order << c;
+    if (order == current) return true;
+    // translations() ran the cached select to completion. Reset it anyway so
+    // no read cursor is open when the write transaction starts.
+    m_impl->selectTranslations.reset();
+
+    try {
+        db::Transaction tx(m_impl->conn);
+        db::Statement upd = m_impl->conn.prepare(QStringLiteral(
+            "UPDATE translations SET sort_order = ? WHERE code = ?"));
+        for (int i = 0; i < order.size(); ++i) {
+            upd.reset();
+            upd.bind(1, qint64(i));
+            upd.bind(2, order.at(i));
+            upd.step();
+        }
+        tx.commit();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "BibleService::setTranslationOrder():" << e.message();
+        return false;
+    }
+    ++m_translationsRevision;
+    emit translationsChanged();
+    return true;
+}
+
 QList<Book> BibleService::books(QString translationCode)
 {
     if (!m_impl) return {};
