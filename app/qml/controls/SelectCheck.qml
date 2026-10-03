@@ -29,11 +29,11 @@ Rectangle {
     implicitHeight: 16
     radius: 0
     color: root.checked ? Theme.color.brand
-         : root.onImage ? "#000000bb"
+         : root.onImage ? "#bb000000"
          : ma.containsMouse ? Theme.color.overlay
                             : "transparent"
     border.color: root.checked ? Theme.color.brand
-                : root.onImage ? (ma.containsMouse ? "#ffffffcc" : "#ffffff66")
+                : root.onImage ? (ma.containsMouse ? "#ccffffff" : "#66ffffff")
                 : ma.containsMouse ? Theme.color.textSecondary
                                    : Theme.color.borderStrong
     border.width: 1

@@ -867,11 +867,13 @@ Rectangle {
     }
 
     // ── Video transport ─────────────────────────────────────────────────
-    // Lets the operator check a staged clip (scrub to a spot, pause, loop)
-    // before sending it. Preview never makes sound, so no audio controls,
-    // and no shortcut hints: the console video shortcuts drive the live clip.
-    // Going live always cues the clip from its first frame (main.cpp,
-    // ProjectionService::wentLive), whatever was done to it here.
+    // The one place the operator drives a clip. Scrub to a spot, pause or
+    // set loop here and Go Live carries it on from there (marksCue, see
+    // MediaPlaybackService::cueForLive). A clip left alone still goes live
+    // from its first frame. When the staged clip is the one on air the
+    // player is shared, so the bar turns crimson: it now moves the audience
+    // picture. No audio controls (Preview is silent) and no shortcut hints
+    // (the console video shortcuts drive the live clip).
     MediaTransportBar {
         id: previewTransport
         anchors.bottom: parent.bottom
@@ -882,10 +884,9 @@ Rectangle {
         height: root.showTransport ? implicitHeight : 0
         visible: root.showTransport
         source: root.previewVideoUrl
-        accent: Theme.color.preview
+        accent: root.transportIsLive ? Theme.color.live : Theme.color.preview
         showAudio: false
-        readOnly: root.transportIsLive
-        readOnlyHint: qsTr("This clip is live. Use the Live controls.")
+        marksCue: true
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

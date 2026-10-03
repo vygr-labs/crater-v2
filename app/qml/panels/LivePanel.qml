@@ -702,10 +702,9 @@ Rectangle {
     }
 
     // ── Video transport ─────────────────────────────────────────────────
-    // Play / pause / seek / loop / volume for the live clip. The bar drives
-    // MediaPlaybackService's shared player for the URL, which is the same
-    // player the projection window, the NDI scene and this monitor render
-    // from, so the audience and the console move together. Width follows
+    // Position, remaining time and volume for the live clip. Read-only for
+    // the picture: the operator cues and drives clips from Preview, so a
+    // stray click here can never jump what the audience sees. Width follows
     // the (centered, fullsize) monitor so the seek bar lines up under the
     // picture, with a floor so the controls never crush on a short pane.
     MediaTransportBar {
@@ -721,6 +720,8 @@ Rectangle {
         accent: Theme.color.live
         showAudio: true
         shortcutHints: true
+        readOnly: true
+        readOnlyHint: qsTr("Control this clip from Preview")
     }
 
     // ── Item info (right of monitor when compact) ──────────────────────

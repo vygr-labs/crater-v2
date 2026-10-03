@@ -210,10 +210,23 @@ void MediaPlaybackService::setLoopFor(const QString& url, bool loop)
     }
 }
 
-void MediaPlaybackService::cueFromStart(const QString& url, bool loop)
+void MediaPlaybackService::markCued(const QString& url)
+{
+    if (Entry* e = m_byUrl.value(url, nullptr)) e->cued = true;
+}
+
+void MediaPlaybackService::cueForLive(const QString& url, bool loop)
 {
     Entry* e = m_byUrl.value(url, nullptr);
     if (!e) return;
+    const bool cued = e->cued;
+    e->cued = false;
+    // Cued in Preview: the operator chose this frame and loop setting, so go
+    // live exactly there. A cued clip that ran out still starts over.
+    if (cued && e->player->mediaStatus() != QMediaPlayer::EndOfMedia) {
+        e->player->play();
+        return;
+    }
     // A clip that was already decoding before this go-live (the Preview
     // monitor shares the player, so a previewed clip has usually been rolling
     // muted for a while, or has even run out) must still open on its first

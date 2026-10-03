@@ -14,8 +14,9 @@ import Crater
 // Nothing here owns a subscription: the bar is inert until a monitor
 // acquires the URL, and goes inert again when the last one releases.
 //
-// Used by LivePanel (the live clip, with audio controls) and PreviewPanel
-// (the staged clip, no audio controls since Preview is always silent).
+// PreviewPanel hosts the working controls: the operator cues a clip there
+// (scrub, pause, loop) and Go Live carries that spot to the audience. The
+// LivePanel bar is read-only for the picture and keeps the audio controls.
 Item {
     id: root
 
@@ -26,9 +27,8 @@ Item {
     property color  accent: Theme.color.brand
     // Volume slider + mute. Off for Preview, which never makes sound.
     property bool   showAudio: true
-    // Show position but take no input (Preview pointing at the clip that is
-    // live: driving it from there would move the audience picture). The
-    // hint replaces the buttons.
+    // Show position but take no input. The hint replaces the transport
+    // buttons. Remaining time and the audio controls stay.
     property bool   readOnly: false
     property string readOnlyHint: ""
     property int    skipMs: 10000
@@ -36,6 +36,8 @@ Item {
     // this: the shortcuts (Main.qml) always drive the live clip, so naming
     // them on the Preview bar would point at the wrong player.
     property bool   shortcutHints: false
+    // Commands from this bar cue the clip for go-live (Preview only).
+    property bool   marksCue: false
 
     readonly property bool  _canControl: transport.available && !root.readOnly
     readonly property bool  _canSeek:    _canControl && transport.seekable
@@ -48,6 +50,7 @@ Item {
     MediaTransport {
         id: transport
         source: root.source
+        marksCue: root.marksCue
     }
 
     function _tip(label, keys) {
@@ -163,7 +166,7 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: parent.width * root._frac
-                color: root._canControl ? root.accent : Theme.color.textTertiary
+                color: transport.available ? root.accent : Theme.color.textTertiary
             }
 
             // Squared thumb, matching SimpleSlider's chip. Only shown while
@@ -268,7 +271,8 @@ Item {
         Text {
             visible: root.readOnly
             anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.right: rightGroup.left
+            anchors.rightMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
             text: root.readOnlyHint
             color: Theme.color.textTertiary
@@ -279,7 +283,6 @@ Item {
 
         Row {
             id: rightGroup
-            visible: !root.readOnly
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: Theme.space.xs

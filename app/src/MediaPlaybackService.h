@@ -62,7 +62,8 @@ namespace crater {
 //   wins). Once the operator flips loop from a transport, the entry is
 //   "pinned" and later subscriber preferences no longer overwrite it, so a
 //   Preview re-selecting the same file can't silently undo the toggle. A
-//   fresh go-live (cueFromStart) clears the pin and re-seeds the saved flag.
+//   fresh go-live (cueForLive) clears the pin and re-seeds the saved flag,
+//   unless the clip was cued in Preview (see markCued).
 //
 //   Volume / mute are global (one audience bus): `volume` is persisted
 //   through SettingsService.mediaVolume (main.cpp syncs it), `muted` is a
@@ -119,9 +120,17 @@ public:
     Q_INVOKABLE void skip(const QString& url, qint64 deltaMs);
     // Operator loop toggle. Pins the entry's loop flag (see header comment).
     Q_INVOKABLE void setLoopFor(const QString& url, bool loop);
-    // Go-live cue: rewind, play, and reset loop to the item's saved flag. A
-    // URL with no player yet is fine: its first acquire starts at 0 anyway.
-    Q_INVOKABLE void cueFromStart(const QString& url, bool loop);
+    // The operator set this clip up from Preview's transport (scrubbed,
+    // paused, skipped, toggled loop). The next go-live keeps that position
+    // and loop choice instead of starting over. Cleared by cueForLive and
+    // forgotten with the entry when its last subscriber releases.
+    Q_INVOKABLE void markCued(const QString& url);
+    // Go-live cue. A clip cued in Preview plays on from where Preview left
+    // it. Anything else rewinds, plays, and resets loop to the item's saved
+    // flag, because Preview rolls clips muted on its own and that drift is
+    // not a choice. A URL with no player yet is fine: its first acquire
+    // starts at 0 anyway.
+    Q_INVOKABLE void cueForLive(const QString& url, bool loop);
 
     double volume() const { return m_volume; }
     void   setVolume(double v);
@@ -154,6 +163,7 @@ private:
         QList<QPointer<QVideoSink>>   outputs;
         bool                          loop   = true;   // last-writer-wins per URL
         bool                          loopPinned = false; // operator override
+        bool                          cued   = false;  // set up in Preview
     };
 
     Entry* entryForToken(int token) const;

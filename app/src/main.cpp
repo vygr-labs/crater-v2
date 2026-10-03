@@ -520,8 +520,8 @@ int main(int argc, char* argv[])
                          const QString path = item.value(QStringLiteral("mediaPath")).toString();
                          if (path.isEmpty()) return;
                          const QVariant loop = item.value(QStringLiteral("loopVideo"));
-                         mediaPlaybackService.cueFromStart(QStringLiteral("file:///") + path,
-                                                           loop.isValid() ? loop.toBool() : true);
+                         mediaPlaybackService.cueForLive(QStringLiteral("file:///") + path,
+                                                         loop.isValid() ? loop.toBool() : true);
                      });
     // LyricsService is a stateless QML-callable wrapper around the pure
     // crater::lyrics DSL functions (parse / serialize / HTML / palette).

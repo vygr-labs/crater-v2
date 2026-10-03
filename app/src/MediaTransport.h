@@ -48,6 +48,10 @@ class MediaTransport : public QObject
     // Milliseconds. qint64 surfaces as a plain JS number in QML.
     Q_PROPERTY(qint64  position  READ position  NOTIFY positionChanged)
     Q_PROPERTY(qint64  duration  READ duration  NOTIFY stateChanged)
+    // Preview's bar sets this: every command it sends also marks the clip as
+    // cued, so going live keeps the spot the operator picked
+    // (MediaPlaybackService::markCued).
+    Q_PROPERTY(bool    marksCue  MEMBER m_marksCue NOTIFY marksCueChanged)
 
 public:
     explicit MediaTransport(QObject* parent = nullptr);
@@ -77,14 +81,17 @@ signals:
     void sourceChanged();
     void stateChanged();
     void positionChanged();
+    void marksCueChanged();
 
 private:
     void rebind();
+    void cue();
     void dropPlayerConnections();
 
     QString                         m_source;
     QPointer<QMediaPlayer>          m_player;
     QList<QMetaObject::Connection>  m_playerConns;
+    bool                            m_marksCue = false;
 };
 
 }  // namespace crater

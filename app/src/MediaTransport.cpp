@@ -101,8 +101,16 @@ bool MediaTransport::loop() const
 
 void MediaTransport::setLoop(bool loop)
 {
+    cue();
     if (MediaPlaybackService* svc = MediaPlaybackService::instance())
         svc->setLoopFor(m_source, loop);
+}
+
+void MediaTransport::cue()
+{
+    if (!m_marksCue) return;
+    if (MediaPlaybackService* svc = MediaPlaybackService::instance())
+        svc->markCued(m_source);
 }
 
 qint64 MediaTransport::position() const
@@ -117,36 +125,43 @@ qint64 MediaTransport::duration() const
 
 void MediaTransport::play()
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->play(m_source);
 }
 
 void MediaTransport::pause()
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->pause(m_source);
 }
 
 void MediaTransport::togglePlay()
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->togglePlay(m_source);
 }
 
 void MediaTransport::stop()
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->stop(m_source);
 }
 
 void MediaTransport::restart()
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->restart(m_source);
 }
 
 void MediaTransport::seek(qint64 positionMs)
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->seek(m_source, positionMs);
 }
 
 void MediaTransport::skip(qint64 deltaMs)
 {
+    cue();
     if (auto* svc = MediaPlaybackService::instance()) svc->skip(m_source, deltaMs);
 }
 

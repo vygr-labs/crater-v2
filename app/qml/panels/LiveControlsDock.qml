@@ -543,16 +543,19 @@ Item {
                         readonly property bool current: AppState.liveSubIndex === index
                         readonly property string label:
                             modelData && modelData.label ? String(modelData.label) : ""
-                        // One-line plain text: DSL markers stripped line by
-                        // line (marks never cross a line), lines joined.
-                        readonly property string plain: {
+                        // Same text and size the Live panel shows for this
+                        // slide, so the dock never hides a line.
+                        readonly property string mode: SettingsService.liveCardMode
+                        readonly property string html: {
                             const raw = modelData && modelData.content ? String(modelData.content) : ""
-                            return raw.split("\n").map(function(l) {
-                                return LyricsService.flattenLine(l).trim()
-                            }).filter(function(l) { return l.length > 0 }).join(" / ")
+                            return LyricsService.dslToHtml(mode === "lines"
+                                                           ? raw.split("\n").join(" / ") : raw)
                         }
 
-                        width: slideList.width - Theme.size.scrollBar
+                        // Full width until the list overflows, then make room
+                        // for the scrollbar.
+                        width: slideList.width
+                               - (slideList.contentHeight > slideList.height ? Theme.size.scrollBar + 2 : 0)
                         height: Math.max(36, rowText.implicitHeight + Theme.space.sm * 2)
                         color: current ? Theme.color.liveSubtle
                              : rowMa.containsMouse ? Theme.color.overlay
@@ -597,13 +600,15 @@ Item {
                             Text {
                                 width: parent.width
                                 visible: text.length > 0
-                                text: row.plain
+                                textFormat: Text.RichText
+                                text: row.html
                                 color: Theme.color.textPrimary
                                 font.family: Theme.font.family
-                                font.pixelSize: Theme.font.smallSize
+                                font.pixelSize: row.mode === "full" ? Theme.font.bodySize : Theme.font.smallSize
+                                lineHeight: row.mode === "full" ? 1.25 : 1.05
                                 wrapMode: Text.WordWrap
-                                maximumLineCount: 2
-                                elide: Text.ElideRight
+                                maximumLineCount: row.mode === "lines" ? 1 : 100000
+                                clip: row.mode === "lines"
                             }
                         }
 
