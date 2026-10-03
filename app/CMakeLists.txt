@@ -10,6 +10,9 @@ qt_add_executable(crater
     src/FileDialogService.h
     src/LogReportService.cpp
     src/LogReportService.h
+    # First-launch splash while the one-time Bible import runs.
+    src/StartupSplash.cpp
+    src/StartupSplash.h
     # In-app updates — checks GitHub releases, verifies a SHA-256, and hands
     # the installer to the OS. App layer for the same reason as
     # LogReportService: it needs Qt6::Network and QProcess, neither of which

@@ -2,12 +2,14 @@
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 
 #include <cstdio>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFuture>
+#include <QFutureWatcher>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
@@ -18,6 +20,8 @@
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QtQml>
+
+#include <memory>
 
 #ifdef Q_OS_WIN
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -41,6 +45,7 @@
 #include "PdfPageImageProvider.h"
 #include "ProjectionLayering.h"
 #include "RichTextHelper.h"
+#include "StartupSplash.h"
 #include "TranslationService.h"
 #include "WindowChrome.h"
 #include "VideoThumbnailer.h"
@@ -384,18 +389,33 @@ int main(int argc, char* argv[])
 
     // ─── Stage 2: one-time data import ──────────────────────────────────
     // First launch: copy bible verses from electron's bundled DB into our
-    // fresh schemas. Idempotent (writes a sentinel file). Future polish:
-    // a SplashWindow.qml showing progress instead of blocking silently.
+    // fresh schemas. Idempotent (writes a sentinel file). It takes up to half
+    // a minute on a modest PC, so a splash shows progress while the import
+    // runs on its worker thread and stays up until the main window appears.
+    std::unique_ptr<crater::StartupSplash> splash;
     {
         crater::ElectronDataImporter importer;
         if (importer.needsImport() && importer.legacyAvailable()) {
             qInfo() << "Running first-run data import (this can take a few seconds)...";
+            splash = std::make_unique<crater::StartupSplash>();
+            splash->show();
             QObject::connect(&importer, &crater::ElectronDataImporter::progress,
                              [](int percent, const QString& stage) {
                                  qInfo().noquote() << "  import:" << percent << "%" << stage;
                              });
+            QObject::connect(&importer, &crater::ElectronDataImporter::progress,
+                             splash.get(), &crater::StartupSplash::setProgress);
+            // A local event loop instead of waitForFinished(), so the splash
+            // paints and Windows never marks the app as not responding.
+            QFutureWatcher<bool> watcher;
+            QEventLoop wait;
+            QObject::connect(&watcher, &QFutureWatcher<bool>::finished, &wait, &QEventLoop::quit);
             auto future = importer.run();
-            future.waitForFinished();
+            watcher.setFuture(future);
+            if (!future.isFinished())
+                wait.exec();
+            splash->setOpening();
+            QCoreApplication::processEvents();
             qInfo() << "Data import complete.";
         } else if (!importer.legacyAvailable() && importer.needsImport()) {
             qWarning() << "No legacy bibles.sqlite found — Bible DB will be empty "
@@ -668,6 +688,7 @@ int main(int argc, char* argv[])
     engine.loadFromModule("Crater", "Main");
     qInfo().noquote() << "[startup] QML loaded, main window realized: +"
                       << startupClock.elapsed() << "ms";
+    if (splash) splash->close();
 
     // Hand the operator console back to the Windows shell. Must come after
     // loadFromModule — the HWND does not exist until the root Window is
