@@ -631,6 +631,16 @@ Item {
                 hoverEnabled: true
             }
 
+            // A click in the box claims the library even when the input
+            // never lost OS focus. Clicking a Live or Preview slide flips
+            // activeFocusPanel without taking focus from here, so
+            // onActiveFocusChanged alone would leave Enter routed to that
+            // panel. Passive, so the TextInput still positions the cursor.
+            TapHandler {
+                gesturePolicy: TapHandler.DragThreshold
+                onPressedChanged: if (pressed) AppState.setActiveFocus("library")
+            }
+
             // Click on a segment selects that stage. The TextInput's own
             // mouse handling moves the cursor; we react to the cursor
             // position change to snap to the corresponding stage. Skipped
@@ -670,6 +680,14 @@ Item {
             // (no chapter typed yet). All other keys take the standard text-
             // editing path.
             Keys.onPressed: function(event) {
+                // Typing or editing in the box is library work, whichever
+                // panel was clicked last. Arrows and Enter don't claim, so
+                // they still follow a schedule or Live click.
+                if (!(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                    && ((event.text.length === 1 && event.text.charCodeAt(0) >= 32)
+                        || event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete))
+                    AppState.setActiveFocus("library")
+
                 // Ctrl+C — route to Clear instead of the text input's built-
                 // in copy. QQuickTextInput's C++ code accepts the
                 // ShortcutOverride event for QKeySequence::Copy while
