@@ -230,7 +230,7 @@ ModalShell {
                     // every dialog (Main.qml), so it can't also reset here.
                     text: root._isVideo
                           ? qsTr("Drag on the poster to crop · Backspace resets")
-                          : qsTr("Drag to crop · arrows nudge · Backspace resets")
+                          : qsTr("Drag to crop · Ctrl+drag draws a new box · Backspace resets")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize

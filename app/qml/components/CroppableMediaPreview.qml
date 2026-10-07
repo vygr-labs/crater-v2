@@ -34,7 +34,11 @@ import Crater
 //   never lands on the black letterbox bars.
 //
 // Mouse:
-//   • Drag inside the rectangle  → move it.
+//   • Drag inside the rectangle  → move it, once past a small threshold.
+//   • Ctrl+drag inside           → draw a fresh rectangle over it. A plain
+//                                  drag does the same while the rectangle
+//                                  is still the full page, where moving it
+//                                  could do nothing.
 //   • Drag a corner handle       → resize from that corner (aspect-locked
 //                                  to 16:9 unless Shift is held).
 //   • Drag an edge / edge handle → resize that one side, free-form. A
@@ -325,7 +329,7 @@ Item {
                 if (activeHandle === 4 || activeHandle === 6) return Qt.SizeVerCursor
                 return Qt.SizeHorCursor
             }
-            if (m === "move") return Qt.SizeAllCursor
+            if (m === "move" && !_drawsInside(hoverCtrl)) return Qt.SizeAllCursor
             return Qt.CrossCursor
         }
 
@@ -338,6 +342,17 @@ Item {
         property real   startNw: 0
         property real   startNh: 0
         property bool   shiftHeld: false
+        // Ctrl as of the last hover move, so the cursor shows a draw before
+        // the press. Read from the hover events, so it updates on the next
+        // pointer move rather than the instant Ctrl goes down.
+        property bool   hoverCtrl: false
+        // Move and draw wait for the pointer to travel this far. A press
+        // that wobbled a pixel used to nudge the box, or as a draw, collapse
+        // it to under 4px, which _setFromPx snaps back to the full page.
+        readonly property real dragThreshold: 4
+        property bool   pastThreshold: false
+
+        function _drawsInside(ctrl) { return ctrl || !root.cropActive }
 
         // Hit zones in priority order: 4 corners, then 4 edges, then the
         // interior (move), then bare page (draw). Edges are grabbable along
@@ -404,14 +419,26 @@ Item {
             shiftHeld   = (mouse.modifiers & Qt.ShiftModifier) !== 0
             startNx = root._normX; startNy = root._normY
             startNw = root._normW; startNh = root._normH
+            pastThreshold = false
             mode = _hitTest(Qt.point(mouse.x, mouse.y))
+            if (mode === "move"
+                && _drawsInside((mouse.modifiers & Qt.ControlModifier) !== 0))
+                mode = "draw"
         }
 
         onPositionChanged: function(mouse) {
-            if (mode === "idle") return
+            if (mode === "idle") {
+                hoverCtrl = (mouse.modifiers & Qt.ControlModifier) !== 0
+                return
+            }
             const dx = mouse.x - startMouseX
             const dy = mouse.y - startMouseY
             const cr = root._contentRect
+
+            if ((mode === "draw" || mode === "move") && !pastThreshold) {
+                if (Math.abs(dx) < dragThreshold && Math.abs(dy) < dragThreshold) return
+                pastThreshold = true
+            }
 
             if (mode === "draw") {
                 let pw = dx, ph = dy
