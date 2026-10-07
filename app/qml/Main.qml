@@ -846,8 +846,8 @@ ApplicationWindow {
     // active library tab or the schedule). Only reaches here when no text
     // field has focus: a focused TextInput claims Ctrl+A for its own
     // select-all through ShortcutOverride, so typing never loses it. The
-    // library search box forwards Ctrl+A itself while it is empty (see
-    // TabSearchBar), since that is where the keyboard usually sits.
+    // library search box forwards Ctrl+A only to the schedule, when that
+    // was the last panel worked in (see TabSearchBar).
     Shortcut {
         sequence: "Ctrl+A"
         enabled: AppState.consoleShortcutsActive

@@ -723,16 +723,17 @@ Item {
 
                 // Ctrl+A — the field claims it through ShortcutOverride, so
                 // Main.qml's select-all-rows Shortcut never sees it while the
-                // keyboard sits here, which is most of the time. With nothing
-                // typed there is no text to select, so hand it to the list
-                // instead. With text, the field keeps its own select-all. If
-                // the operator last worked in the schedule, it goes there
-                // whatever the box holds, same as the arrow keys below.
+                // keyboard sits here. It stays the field's own select-all,
+                // even with the box empty: Ctrl+A in a text box that ticked
+                // the whole library left the next Delete or drag acting on
+                // every song. Selecting every library row needs the list
+                // focused. The one hand-off is the schedule: if the operator
+                // last worked there, it goes there, same as the arrow keys
+                // below.
                 if ((event.modifiers & Qt.ControlModifier)
                     && event.key === Qt.Key_A
                     && !root.isControlledMode
-                    && (inputField.text.length === 0
-                        || AppState.activeFocusPanel === "schedule")) {
+                    && AppState.activeFocusPanel === "schedule") {
                     if (AppState.requestSelectAll()) {
                         event.accepted = true
                         return

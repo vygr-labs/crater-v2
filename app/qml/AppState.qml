@@ -2086,7 +2086,7 @@ QtObject {
     }
 
     // Ctrl+A. Window-level (Main.qml) when no text field holds the keyboard,
-    // and from TabSearchBar when its box is empty. Routes by the panel that
+    // and from TabSearchBar when the schedule was last worked in. Routes by the panel that
     // owns keyboard focus: the schedule selects every row itself, a library
     // tab gets librarySelectAll() because only the tab knows what is
     // currently visible. Returns false when nothing took it.
