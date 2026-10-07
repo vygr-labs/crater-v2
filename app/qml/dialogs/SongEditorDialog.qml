@@ -366,6 +366,15 @@ ModalShell {
         AppState.setSongEditorViewMode(_viewMode)
     }
 
+    // End of the header's Enter chain: into the lyrics of whichever view
+    // is showing. Structured mode lands in the first section's lyrics, the
+    // thing the operator came to type.
+    function _focusLyrics() {
+        if (_viewMode === "raw") { rawEditor.focusEditor(); return }
+        const first = sectionsRepeater.itemAt(0)
+        if (first) first.focusLines()
+    }
+
     // ── Save & close ────────────────────────────────────────────────────
     function _saveSong() {
         const t = _title.trim()
@@ -580,7 +589,10 @@ ModalShell {
                     selectByMouse: true
                     text: root._title
                     onTextEdited: { root._title = text; root._titleError = false }
-                    onAccepted: root._saveSong()
+                    // Enter moves on to the credits, the way it does down
+                    // the rest of the header. Saving stays on the Save
+                    // button and Ctrl+S, so a half-typed song isn't saved.
+                    onAccepted: authorField.focusField()
 
                     Text {
                         visible: titleInput.text.length === 0
@@ -653,24 +665,30 @@ ModalShell {
                 (width - _ccliWidth - spacing * 2) / 2
 
             CreditField {
+                id: authorField
                 width: headerRow3._flexWidth
                 caption: qsTr("Author")
                 text: root._author
                 onEdited: function(t) { root._author = t }
+                onAdvance: copyrightField.focusField()
             }
             CreditField {
+                id: copyrightField
                 width: headerRow3._flexWidth
                 caption: qsTr("Copyright")
                 text: root._copyright
                 onEdited: function(t) { root._copyright = t }
+                onAdvance: ccliField.focusField()
             }
             CreditField {
+                id: ccliField
                 width: headerRow3._ccliWidth
                 caption: qsTr("CCLI #")
                 text: root._ccli
                 // CCLI song numbers are digits only.
                 validator: RegularExpressionValidator { regularExpression: /[0-9]*/ }
                 onEdited: function(t) { root._ccli = t }
+                onAdvance: root._focusLyrics()
             }
         }
 
@@ -685,13 +703,19 @@ ModalShell {
     }
 
     // One-line credit input: a muted caption on the left, the value after
-    // it. Enter saves, the same as in the title field.
+    // it. Enter moves on to the next field (advance).
     component CreditField: Rectangle {
         id: credit
         property string caption: ""
         property alias  text: creditInput.text
         property alias  validator: creditInput.validator
         signal edited(string text)
+        signal advance()
+
+        function focusField() {
+            creditInput.forceActiveFocus()
+            creditInput.selectAll()
+        }
 
         height: 32
         radius: 0
@@ -736,7 +760,7 @@ ModalShell {
             font.pixelSize: Theme.font.bodySize
             selectByMouse: true
             onTextEdited: credit.edited(text)
-            onAccepted: root._saveSong()
+            onAccepted: credit.advance()
         }
     }
 
@@ -843,6 +867,7 @@ ModalShell {
                                 // `sectionsRepeater.itemAt(i).focusLabel()`
                                 // without having to dig through children.
                                 function focusLabel() { cardEditor.focusLabel() }
+                                function focusLines() { cardEditor.focusLines() }
 
                                 LyricSectionEditor {
                                     id: cardEditor

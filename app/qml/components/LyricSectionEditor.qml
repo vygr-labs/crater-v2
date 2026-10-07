@@ -49,6 +49,10 @@ Rectangle {
     // Forward-edge accessor used by the parent so it can focus the label
     // input of a freshly-added section after the Repeater has built it.
     function focusLabel() { labelInput.forceActiveFocus() }
+    function focusLines() {
+        linesEdit.forceActiveFocus()
+        linesEdit.cursorPosition = linesEdit.length
+    }
 
     // ── WYSIWYG bridging state ──────────────────────────────────────────
     // _settingText: true while we're writing HTML into linesEdit from the
