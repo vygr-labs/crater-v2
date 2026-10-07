@@ -152,13 +152,10 @@ Item {
                 //
                 // Settings > Scripture > Show verse numbers is applied here,
                 // at render time, so flipping it reaches a passage that is
-                // already live without re-sending it. Each number is the
-                // whole "{color=verse}**N.**{/color} " run, so the verse text
-                // after it is untouched.
+                // already live without re-sending it (see
+                // AppState.withVerseNumberSetting).
                 readonly property string _renderedText: {
-                    let t = nodeRoot.resolvedText || ""
-                    if (!SettingsService.showVerseNumbers)
-                        t = t.replace(/\{color=verse\}\*\*[^*]*\*\*\{\/color\} ?/g, "")
+                    let t = AppState.withVerseNumberSetting(nodeRoot.resolvedText)
                     const vc = _data.verseNumberColor
                     if (vc) t = t.split("{color=verse}").join("{color=" + vc + "}")
                     return LyricsService.dslToHtml(t, _style.textTransform || "")

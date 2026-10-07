@@ -453,6 +453,19 @@ QtObject {
         }
     }
 
+    // Slide text under Settings > Scripture > Show verse numbers. The numbers
+    // are baked into a passage (composePassage above), so with the setting
+    // off each whole "{color=verse}**N.**{/color} " run is dropped and the
+    // verse text after it is untouched. Applied at render time by everything
+    // that draws slide text (the projector, Stage display, the Preview and
+    // Live cards), so a flip reaches a passage already live and every screen
+    // agrees. Text without verse numbers passes through unchanged.
+    function withVerseNumberSetting(text) {
+        const t = String(text || "")
+        if (SettingsService.showVerseNumbers) return t
+        return t.replace(/\{color=verse\}\*\*[^*]*\*\*\{\/color\} ?/g, "")
+    }
+
     // "Copy to clipboard" text for a verse array: the verses as one quoted
     // passage, then the reference on its own attribution line.
     //

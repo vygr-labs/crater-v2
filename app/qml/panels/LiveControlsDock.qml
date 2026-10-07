@@ -547,7 +547,7 @@ Item {
                         // slide, so the dock never hides a line.
                         readonly property string mode: SettingsService.liveCardMode
                         readonly property string html: {
-                            const raw = modelData && modelData.content ? String(modelData.content) : ""
+                            const raw = AppState.withVerseNumberSetting(modelData && modelData.content ? String(modelData.content) : "")
                             return LyricsService.dslToHtml(mode === "lines"
                                                            ? raw.split("\n").join(" / ") : raw)
                         }

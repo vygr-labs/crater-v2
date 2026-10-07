@@ -113,6 +113,8 @@ Item {
                 onReleased: function(m) {
                     if (_dragging) {
                         root.commit(_lastLive)
+                        input._editStart = _lastLive
+                        input._typed     = false
                         _dragging = false
                         m.accepted = true
                     }
@@ -123,11 +125,15 @@ Item {
             // focus flag — the workspace derives inputFocused from
             // Window.activeFocusItem.)
             // Value at the start of this edit, the baseline _commitFromText
-            // commits against. Enter resets it, so the blur that follows
-            // doesn't commit a second time.
+            // commits against, and whether the operator has typed since.
+            // Only typing leaves a value uncommitted. A stepper press or a
+            // scrub commits its own undo step and moves the baseline, so the
+            // blur that follows doesn't add a second, empty one.
             property real _editStart: NaN
+            property bool _typed: false
+            onTextEdited: _typed = true
             onActiveFocusChanged: {
-                if (activeFocus) _editStart = root.value
+                if (activeFocus) { _editStart = root.value; _typed = false }
                 else             _commitFromText()
             }
             // Per-keystroke live update. Coalesced via Qt.callLater so a
@@ -190,8 +196,9 @@ Item {
         // through live(), so comparing with root.value skipped the commit,
         // which is the only history snapshot for most callers, and the edit
         // never became an undo step.
-        if (clamped !== input._editStart) root.commit(clamped)
+        if (input._typed && clamped !== input._editStart) root.commit(clamped)
         input._editStart = clamped
+        input._typed     = false
         input.text = _format(clamped)
     }
     function _fireLiveFromText() {
@@ -223,6 +230,8 @@ Item {
         // path: live() to write, commit() to close the undo step.
         root.live(newV)
         root.commit(newV)
+        input._editStart = newV
+        input._typed     = false
     }
     // Keep input.text in sync with root.value. Two cases:
     //   1. Unfocused: always resync — nothing the user is mid-typing
