@@ -200,6 +200,21 @@ Item {
         return _refText
     }
 
+    // Song credits for the optional credits line, gated by Settings > Song >
+    // Show author / Show CCLI number. Read here rather than off the item's
+    // baked subtitle so a toggle reaches the song already on screen. Rows
+    // saved before items carried `credits` fall back to that subtitle, which
+    // was built under the same toggles.
+    readonly property string _songCreditsText: {
+        if (layerKind !== "song" || !layerItem) return ""
+        const c = layerItem.credits
+        if (!c) return layerItem.subtitle || ""
+        let parts = []
+        if (SettingsService.showSongAuthor && c.author) parts.push(c.author)
+        if (SettingsService.showSongCcli && c.ccli)     parts.push("CCLI " + c.ccli)
+        return parts.join(" · ")
+    }
+
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
@@ -325,6 +340,31 @@ Item {
         font.pixelSize: Math.max(12, Math.round(root.height * 0.030))
         font.weight: Theme.font.weightSemiBold
         opacity: 0.92
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+    }
+
+    // ── Song credits line (global toggles) ──────────────────────────────
+    // Same treatment as the scripture footer above: themes have no credits
+    // linkage, so Show author / Show CCLI number draw their own line on top
+    // of whatever theme is in use. Slightly smaller, since it is attribution
+    // rather than content.
+    Text {
+        id: songCredits
+        visible: root.layerKind === "song"
+                 && !ProjectionService.isClear
+                 && text.length > 0
+        text: root._songCreditsText
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Math.round(root.height * 0.035)
+        width: Math.min(implicitWidth, root.width * 0.9)
+        elide: Text.ElideRight
+        color: "#ffffff"
+        style: Text.Outline
+        styleColor: "#cc000000"
+        font.family: Theme.font.family
+        font.pixelSize: Math.max(11, Math.round(root.height * 0.024))
+        opacity: 0.85
         Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
     }
 }

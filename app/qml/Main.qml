@@ -63,6 +63,12 @@ ApplicationWindow {
         function onOutputModeChanged() {
             root._updateNdiSource()
         }
+
+        // A passage already live takes the new layout at once (one page per
+        // verse, or one page). See AppState.relayoutLiveScripture.
+        function onHighlightCurrentVerseChanged() {
+            AppState.relayoutLiveScripture()
+        }
     }
 
     // ── SongService → AppState glue ─────────────────────────────────────
@@ -75,6 +81,19 @@ ApplicationWindow {
         target: SongService
         function onAllSongsChanged() {
             AppState.refreshStagedSong()
+        }
+    }
+
+    // ── Live display settings → projector ──────────────────────────────
+    // ProjectionService holds a go-live snapshot, so a theme set on the live
+    // schedule row, or a change to how passages are laid out, would wait for
+    // the next Go Live. This hands the theme case to AppState, which
+    // re-sends the live item with just that change (the layout case rides
+    // the SettingsService block above).
+    Connections {
+        target: ScheduleService
+        function onCurrentItemsChanged() {
+            AppState.syncLiveTheme()
         }
     }
 
@@ -780,7 +799,8 @@ ApplicationWindow {
     Shortcut {
         sequence: "Escape"
         autoRepeat: false
-        enabled: AppState.activeModal !== "" || AppState.workspaceMode === ""
+        enabled: (AppState.activeModal !== "" || AppState.workspaceMode === "")
+                 && !AppState.colorPopoverOpen
         onActivated: {
             if (AppState.activeModal !== "") {
                 AppState.modalEscape()

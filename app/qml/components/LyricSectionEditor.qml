@@ -229,6 +229,14 @@ Rectangle {
                 text: root.label
                 onTextEdited: root.labelEdited(root.index, text)
                 onActiveFocusChanged: if (activeFocus) root.focused(root.index)
+                // Tab or Enter after typing "Chorus" carries on into the
+                // lyrics below, the next thing the operator fills in.
+                activeFocusOnTab: true
+                KeyNavigation.tab: linesEdit
+                onAccepted: {
+                    linesEdit.forceActiveFocus()
+                    linesEdit.cursorPosition = linesEdit.length
+                }
 
                 // Placeholder
                 Text {

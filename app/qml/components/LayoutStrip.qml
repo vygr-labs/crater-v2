@@ -79,12 +79,13 @@ Item {
         spacing: Theme.space.sm
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.horizontal: AppScrollBar { }
+        ScrollBar.horizontal: AppHScrollBar { id: stripBar }
 
         delegate: Item {
             id: cell
             width: 128
-            height: list.height
+            // Clear of the scrollbar, so it never sits over the caption.
+            height: list.height - (stripBar.shown ? stripBar.height : 0)
 
             readonly property var  _cell:   root._cells[index] || ({})
             readonly property bool _isSel:  _cell.id === root._selectedId
@@ -152,4 +153,7 @@ Item {
             }
         }
     }
+
+    // Plain mouse wheel scrolls the strip sideways.
+    HWheelArea { target: list }
 }

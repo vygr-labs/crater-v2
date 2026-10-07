@@ -352,6 +352,10 @@ ModalShell {
             // is staged with current content before we flip visibility.
             _refreshRawText()
             _viewMode = "raw"
+            // Straight into the text so Ctrl+M, then typing, just works.
+            // Deferred until the raw pane is visible, since a hidden item
+            // can't take focus.
+            Qt.callLater(function() { rawEditor.focusEditor() })
         } else {
             // Commit any raw edits back into structured form before flipping.
             _commitRawText(_rawText)
@@ -695,6 +699,17 @@ ModalShell {
         border.color: creditInput.activeFocus ? Theme.color.brand : Theme.color.borderStrong
         border.width: 1
         Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
+
+        // The whole box is the field: a click on the caption or the padding
+        // focuses the input, which sits above this and keeps its own clicks.
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.IBeamCursor
+            onPressed: {
+                creditInput.forceActiveFocus()
+                creditInput.cursorPosition = creditInput.text.length
+            }
+        }
 
         Text {
             id: creditCaption

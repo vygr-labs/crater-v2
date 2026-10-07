@@ -140,10 +140,8 @@ ModalShell {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Theme.space.sm
 
-                GhostButton {
-                    text: qsTr("Cancel")
-                    onClicked: AppState.closeModal()
-                }
+                // Done only. Every setting saves the moment it changes, so a
+                // Cancel beside it promised an undo that never happened.
                 PrimaryButton {
                     variant: "brand"
                     text: qsTr("Done")

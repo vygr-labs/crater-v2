@@ -50,10 +50,10 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: SettingsService.mediaDefaultFit === "cover"
-                              ? qsTr("Cover — fill the screen; edges outside the frame are cropped.")
+                              ? qsTr("Cover: fill the screen. Edges outside the frame are cropped.")
                         : SettingsService.mediaDefaultFit === "stretch"
-                              ? qsTr("Stretch — fill exactly; the source aspect ratio is ignored.")
-                              : qsTr("Contain — letterbox; the whole frame stays visible.")
+                              ? qsTr("Stretch: fill exactly. The source aspect ratio is ignored.")
+                              : qsTr("Contain: letterbox. The whole frame stays visible.")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize
@@ -88,7 +88,7 @@ Item {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Any image or video can override this from the Media tab — right-click ▸ Edit… to set its fit, crop a region, and (for videos) loop or mute. Items left on “Default” follow the setting above.")
+                    text: qsTr("Any image or video can override this from the Media tab. Right-click ▸ Edit… to set its fit, crop a region, and (for videos) loop or mute. Items left on “Default” follow the setting above.")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize

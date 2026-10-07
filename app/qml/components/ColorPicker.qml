@@ -98,9 +98,24 @@ Rectangle {
         _emit()
     }
 
+    // While the operator types, the hex field is detached from its binding
+    // (see hexInput). A change from anywhere else (wheel, slider, swatch)
+    // re-attaches it, or the field would keep stale text and Enter would
+    // apply it over the new colour. Typed hex and outside values both land
+    // through _applyHsvaFromHex under _suppressUpdate, so they don't count.
+    function _rebindHexIfMoved() {
+        if (_suppressUpdate || !hexInput.activeFocus) return
+        hexInput.text = Qt.binding(function() {
+            return root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
+        })
+    }
+
     Component.onCompleted: _syncFromValue()
     onValueChanged:        if (!_suppressUpdate) _syncFromValue()
-    onHueChanged:   svCanvas.requestPaint()
+    onHueChanged:   { svCanvas.requestPaint(); _rebindHexIfMoved() }
+    onSatChanged:   _rebindHexIfMoved()
+    onValChanged:   _rebindHexIfMoved()
+    onAlphaChanged: _rebindHexIfMoved()
 
     // ── Click absorber ───────────────────────────────────────────────
     // Declared FIRST so it sits beneath the interactive controls in
@@ -328,7 +343,17 @@ Rectangle {
                 // markers and chosen color follow along immediately — no need
                 // to press Enter or blur the field (the old behavior only
                 // committed on focus loss, e.g. switching windows).
-                onTextEdited: root._applyHex(text)
+                //
+                // `text = text` first: the assignment drops the `text`
+                // binding (TextInput ignores the same-value write, so the
+                // caret stays put). Otherwise applying a partial "#123"
+                // re-runs the binding and rewrites the field to "#112233"
+                // mid-typing, and the next digits make an invalid value.
+                // onEditingFinished below puts the binding back.
+                onTextEdited: {
+                    text = text
+                    root._applyHex(text)
+                }
                 // Enter / blur: final commit, then re-establish the `text`
                 // binding that the manual edit broke. Without this the field
                 // would stop reflecting wheel/slider changes after any typed
@@ -395,6 +420,9 @@ Rectangle {
                                 // `value` (keeps the targetValue binding live).
                                 root._applyHsvaFromHex(parent._color)
                                 root._emit()
+                                // Suppressed above, so re-attach the hex
+                                // field to the picked colour by hand.
+                                root._rebindHexIfMoved()
                             }
                         }
                     }

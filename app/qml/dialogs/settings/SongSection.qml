@@ -71,6 +71,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Show author")
+                description: qsTr("Credit the song's author at the foot of each slide")
                 ToggleSwitch {
                     value: SettingsService.showSongAuthor
                     onToggled: SettingsService.showSongAuthor = !SettingsService.showSongAuthor }
@@ -79,7 +80,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Show CCLI number")
-                description: qsTr("Display copyright tag below song title")
+                description: qsTr("Show the song's CCLI number at the foot of each slide")
                 ToggleSwitch {
                     value: SettingsService.showSongCcli
                     onToggled: SettingsService.showSongCcli = !SettingsService.showSongCcli }

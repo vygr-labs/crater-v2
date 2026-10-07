@@ -287,7 +287,11 @@ Item {
         const s = _ctrlSelStart(ctrlStage)
         const e = _ctrlSelEnd(ctrlStage)
         Qt.callLater(function() {
-            if (inputField) inputField.select(s, e)
+            if (!inputField) return
+            inputField.select(s, e)
+            // The text is settled now, so later cursor moves are the
+            // operator's (see onCursorPositionChanged).
+            inputField._ctrlSeenText = inputField.text
         })
     }
 
@@ -646,8 +650,18 @@ Item {
             // position change to snap to the corresponding stage. Skipped
             // when the change came from our own select() call (which doesn't
             // alter the cursor's stage).
+            //
+            // Every accepted key rebuilds ctrlDisplay, and setting new text
+            // parks the cursor at the end, which reads as a click on the
+            // verse. So a move that arrives with new text is ignored; only a
+            // move over unchanged text (click, arrow key) picks a stage.
+            property string _ctrlSeenText: ""
             onCursorPositionChanged: {
                 if (!root.isControlledMode) return
+                if (text !== _ctrlSeenText) {
+                    _ctrlSeenText = text
+                    return
+                }
                 if (!activeFocus) return
                 const stageAtCursor = root.ctrlStageAt(cursorPosition)
                 if (stageAtCursor !== root.ctrlStage) {
@@ -964,7 +978,7 @@ Item {
               && root.queryText.length > 0
         text: root.parsedRef
               ? qsTr("Interpreted: ") + root.interpretedText
-              : qsTr("Interpreted: —")
+              : qsTr("Interpreted: no match")
         color: root.parsedRef ? Theme.color.textSecondary : Theme.color.textTertiary
         font.family: Theme.font.family
         // Body size (13px) — small enough to feel ancillary to the input

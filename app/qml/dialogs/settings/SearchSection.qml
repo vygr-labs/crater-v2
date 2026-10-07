@@ -63,7 +63,7 @@ Item {
                 Layout.topMargin: Theme.space.xs
                 Layout.bottomMargin: Theme.space.md
                 wrapMode: Text.WordWrap
-                text: qsTr("Press Ctrl+K to search across every library at once. Choose what pressing Enter on a result does, per type — Stage to Preview loads it into the Preview pane without projecting, Reveal jumps to it in its library tab, and Go Live projects it immediately. Each row also offers all actions as buttons, and Ctrl+Enter / Shift+Enter always Go Live / Add to Schedule.")
+                text: qsTr("Press Ctrl+K to search across every library at once. Choose what pressing Enter on a result does, per type. Stage to Preview loads it into the Preview pane without projecting, Reveal jumps to it in its library tab, and Go Live projects it immediately. Each row also offers all actions as buttons, and Ctrl+Enter / Shift+Enter always Go Live / Add to Schedule.")
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize

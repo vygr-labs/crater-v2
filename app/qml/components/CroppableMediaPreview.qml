@@ -529,6 +529,9 @@ Item {
         let moved = false
 
         switch (event.key) {
+        // Escape only reaches here where no window Shortcut claims it. In a
+        // dialog, Main.qml's Escape closes the dialog first, so the hint
+        // there names Backspace.
         case Qt.Key_Escape:
         case Qt.Key_Backspace:
             root.resetCrop()

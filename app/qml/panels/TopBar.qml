@@ -399,7 +399,7 @@ Rectangle {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("NDI on %1 min — clear?").arg(root._ndiVisibleMinutes)
+                    text: qsTr("NDI on %1 min. Clear?").arg(root._ndiVisibleMinutes)
                     color: Theme.color.textPrimary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize

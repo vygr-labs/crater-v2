@@ -221,12 +221,14 @@ Rectangle {
         spacing: Theme.space.sm
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.horizontal: AppScrollBar { }
+        ScrollBar.horizontal: AppHScrollBar { id: railBar }
 
         delegate: Item {
             id: cell
             width: 116
-            height: rail.height
+            // Stop above the scrollbar, so the name strip at the foot of the
+            // cell is never under it (it used to swallow clicks on the name).
+            height: rail.height - (railBar.shown ? railBar.height : 0)
 
             readonly property var    _layout: root._layouts[index] || ({})
             readonly property string _id:     cell._layout.id || ""
@@ -336,6 +338,9 @@ Rectangle {
             }
         }
     }
+
+    // Plain mouse wheel scrolls the strip sideways.
+    HWheelArea { target: rail }
 
     // Separator against the canvas below.
     Rectangle {

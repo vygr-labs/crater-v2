@@ -73,6 +73,18 @@ Item {
             z: -1
         }
 
+        // Escape closes just the picker. It is the only enabled Escape while
+        // a picker is open: Main.qml's and the theme editor's both stand down
+        // on AppState.colorPopoverOpen, since two enabled Escape Shortcuts
+        // cancel each other out. Lives on the chrome, which is visible and
+        // parented to the window while open.
+        Shortcut {
+            sequence: "Escape"
+            autoRepeat: false
+            enabled: root._open
+            onActivated: root._close()
+        }
+
         ColorPicker {
             id: picker
             anchors.centerIn: parent
@@ -95,6 +107,10 @@ Item {
         // anchors set when shown
         onClicked: root._close()
     }
+
+    // A picker torn down while open (its panel rebuilt, the editor closed)
+    // must not leave the window's Escape switched off.
+    Component.onDestruction: if (root._open) AppState.colorPopoverOpen = false
 
     function openAt(anchorItem) {
         root._dirty = false
@@ -120,12 +136,14 @@ Item {
         dismissArea.visible = true
         chrome.visible = true
         root._open = true
+        AppState.colorPopoverOpen = true
     }
 
     function _close() {
         chrome.visible = false
         dismissArea.visible = false
         root._open = false
+        AppState.colorPopoverOpen = false
         // Snapshot a single undo step for the whole open session — but only if
         // the color actually changed, so opening then dismissing adds nothing.
         if (root._dirty) {

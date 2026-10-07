@@ -149,8 +149,16 @@ Item {
                 // as {color=verse} (ScriptureTab composePassage), so the
                 // swap is a marker rewrite before parsing; validateTokens
                 // guarantees the value is a plain hex colour.
+                //
+                // Settings > Scripture > Show verse numbers is applied here,
+                // at render time, so flipping it reaches a passage that is
+                // already live without re-sending it. Each number is the
+                // whole "{color=verse}**N.**{/color} " run, so the verse text
+                // after it is untouched.
                 readonly property string _renderedText: {
                     let t = nodeRoot.resolvedText || ""
+                    if (!SettingsService.showVerseNumbers)
+                        t = t.replace(/\{color=verse\}\*\*[^*]*\*\*\{\/color\} ?/g, "")
                     const vc = _data.verseNumberColor
                     if (vc) t = t.split("{color=verse}").join("{color=" + vc + "}")
                     return LyricsService.dslToHtml(t, _style.textTransform || "")

@@ -118,6 +118,7 @@ struct SettingsService::Impl
     bool    highlightVerse   = false;
     bool    showScriptureFooter = false;
     bool    showStrongs      = true;
+    QString scriptureInputMode = QStringLiteral("crater");
     bool    preloadTranslations = false;
     QStringList translationOrder;     // empty: the library's own order
     QStringList hiddenTranslations;   // empty: show everything
@@ -171,6 +172,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
     static constexpr const char* kShowScriptureFooter = "Settings/showScriptureFooter";
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
+    static constexpr const char* kScriptureInputMode = "Settings/scriptureInputMode";
     static constexpr const char* kPreloadTranslations = "Settings/preloadTranslations";
     static constexpr const char* kTranslationOrder    = "Settings/translationOrder";
     static constexpr const char* kHiddenTranslations  = "Settings/hiddenTranslations";
@@ -217,6 +219,9 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightVerse   = m_impl->get(Impl::kHighlightVerse, m_impl->highlightVerse).toBool();
     m_impl->showScriptureFooter = m_impl->get(Impl::kShowScriptureFooter, m_impl->showScriptureFooter).toBool();
     m_impl->showStrongs    = m_impl->get(Impl::kShowStrongs, m_impl->showStrongs).toBool();
+    m_impl->scriptureInputMode = m_impl->get(Impl::kScriptureInputMode, m_impl->scriptureInputMode).toString();
+    if (m_impl->scriptureInputMode != QStringLiteral("controlled"))
+        m_impl->scriptureInputMode = QStringLiteral("crater");
     m_impl->preloadTranslations = m_impl->get(Impl::kPreloadTranslations, m_impl->preloadTranslations).toBool();
     m_impl->translationOrder    = m_impl->get(Impl::kTranslationOrder, QStringList()).toStringList();
     m_impl->hiddenTranslations  = m_impl->get(Impl::kHiddenTranslations, QStringList()).toStringList();
@@ -273,6 +278,7 @@ bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNum
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
+QString SettingsService::scriptureInputMode() const { return m_impl->scriptureInputMode; }
 bool    SettingsService::preloadTranslations() const { return m_impl->preloadTranslations; }
 QStringList SettingsService::translationOrder() const   { return m_impl->translationOrder; }
 QStringList SettingsService::hiddenTranslations() const { return m_impl->hiddenTranslations; }
@@ -522,6 +528,17 @@ void SettingsService::setShowStrongsTab(bool v)
     m_impl->showStrongs = v;
     m_impl->put(Impl::kShowStrongs, v);
     emit showStrongsTabChanged();
+}
+
+void SettingsService::setScriptureInputMode(const QString& mode)
+{
+    // Only the two real modes are accepted. Anything else is ignored rather
+    // than normalised so a stray QML write can't flip the operator's choice.
+    if (mode != QStringLiteral("crater") && mode != QStringLiteral("controlled")) return;
+    if (m_impl->scriptureInputMode == mode) return;
+    m_impl->scriptureInputMode = mode;
+    m_impl->put(Impl::kScriptureInputMode, mode);
+    emit scriptureInputModeChanged();
 }
 
 void SettingsService::setTranslationOrder(const QStringList& codes)

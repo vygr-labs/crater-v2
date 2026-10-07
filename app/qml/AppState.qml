@@ -251,6 +251,10 @@ QtObject {
             kind:     "song",
             title:    song.title,
             subtitle: subtitleParts.join(" · "),
+            // Raw credits for the projector's credits line, which applies the
+            // Show author / Show CCLI toggles at render time so flipping one
+            // reaches a song that is already live (see ProjectionContentLayer).
+            credits:  { author: song.author || "", ccli: song.ccli || "" },
             pages:    pages,
             songId:   song.id,
             // Carried through to resolveItemTheme() so Go Live honors the
@@ -410,12 +414,19 @@ QtObject {
             pages:    pages,
             // The FIRST verse's coordinates, so schedule → scripture sync
             // still has a single jump target; verseEnd keeps the span.
+            // `verses` lists exactly what the passage holds: a Ctrl+click
+            // pick or a set of search hits can skip verses or cross
+            // chapters, so start..end alone can't rebuild it (see
+            // _rebuildScripturePassage).
             scriptureRef: {
                 translationCode: code,
                 book:            first.book,
                 chapter:         first.chapter,
                 verseStart:      first.verse,
-                verseEnd:        last.verse
+                verseEnd:        last.verse,
+                verses:          usable.map(function(v) {
+                    return { book: v.book, chapter: v.chapter, verse: v.verse }
+                })
             }
         }
     }
@@ -677,6 +688,7 @@ QtObject {
         // renameScheduleItem); everything else follows the library.
         if (!row.titleOverride) merged.title = rebuilt.title
         merged.subtitle = rebuilt.subtitle
+        merged.credits  = rebuilt.credits
         // Same contract one field over: a row edited in the schedule item
         // editor keeps its own slides. Without this, the next edit to the
         // underlying song would silently discard the operator's markup —
@@ -737,6 +749,96 @@ QtObject {
         const n = livePages.length
         if (n === 0) return
         commitLivePage(Math.max(0, Math.min(n - 1, liveSubIndex + delta)))
+    }
+
+    // ── Keeping the projector in step with live settings ────────────────
+    // ProjectionService projects a snapshot taken at go-live (see the note on
+    // commitLivePage). Two changes are display choices rather than edits, so
+    // the operator expects them on screen at once: the live row's theme, and
+    // Settings > Scripture > Highlight current verse. These re-send the live
+    // item with only that change applied. Show verse numbers needs nothing
+    // here because NodeRenderer applies it at render time.
+
+    // Theme set on the schedule row that is live (row menu Theme…, or the
+    // bulk theme action). Main.qml calls this on every schedule change.
+    //
+    // It reacts to the ROW's theme changing since go-live, recorded in
+    // _liveRowTheme by goLive(), not to the row and the screen differing.
+    // Those can differ legitimately: commitLivePage's restage adopts a
+    // song's own theme when the row has none, and comparing against the
+    // screen would strip that again on the next unrelated schedule edit.
+    property var _liveRowTheme: ({ id: "", themeId: 0 })
+
+    function syncLiveTheme() {
+        if (libraryLiveActive || liveScheduleIndex < 0) return
+        const row = ScheduleService.currentItems[liveScheduleIndex]
+        const cur = ProjectionService.currentItem
+        if (!row || !cur || !cur.kind) return
+        const rowId = String(row.id || "")
+        if (rowId !== _liveRowTheme.id || rowId !== String(cur.id || "")) return
+        const want = Number(row.themeId || 0)
+        if (want === _liveRowTheme.themeId) return
+        _liveRowTheme = { id: rowId, themeId: want }
+        // Media and PDFs have no theme to change.
+        if (cur.kind === "image" || cur.kind === "video" || cur.kind === "pdf") return
+        const next = Object.assign({}, cur)
+        if (want > 0) next.themeId = want
+        else          delete next.themeId
+        ProjectionService.goLive(next, ProjectionService.pageIndex)
+    }
+
+    // Highlight current verse decides the page layout of a multi-verse
+    // passage (one page per verse, or the whole passage on one), so the
+    // live passage is rebuilt from the Bible. The schedule row it came from
+    // is rebuilt too, or the Live pane's cards would disagree with the
+    // projector. Rows edited in the schedule item editor keep their pages.
+    function relayoutLiveScripture() {
+        const cur = ProjectionService.currentItem
+        if (!cur || cur.kind !== "scripture" || cur.contentOverride) return
+        const rebuilt = _rebuildScripturePassage(cur)
+        if (!rebuilt) return
+
+        const next = Object.assign({}, cur, { pages: rebuilt.pages })
+        // Back to the top of the passage. Turning highlighting on starts at
+        // its first verse, and turning it off leaves a single page.
+        const page = 0
+        liveSubIndex = page
+
+        if (libraryLiveActive) {
+            // pushLibraryLive mirrors live into Preview. Keep the mirror, or
+            // the next Go Live from Preview re-projects the old layout.
+            if (libraryPreviewItem && libraryPreviewItem.kind === "scripture"
+                && libraryPreviewItem.title === cur.title) {
+                libraryPreviewItem = next
+                previewSubIndex    = page
+            }
+        } else if (liveScheduleIndex >= 0) {
+            const row = ScheduleService.currentItems[liveScheduleIndex]
+            if (row && String(row.id || "") === String(cur.id || "") && !row.contentOverride)
+                ScheduleService.replaceItem(liveScheduleIndex,
+                                            Object.assign({}, row, { pages: rebuilt.pages }))
+        }
+        ProjectionService.goLive(next, page)
+    }
+
+    // The passage `item` holds, rebuilt under the current settings, from the
+    // exact verse list buildScriptureItem stamps on it. Null for a single
+    // verse (its layout never depends on the setting), for an item built
+    // before the list existed (its range may not be contiguous, so it is
+    // left as it is), or when any verse can't be read back.
+    function _rebuildScripturePassage(item) {
+        const r = item.scriptureRef
+        const list = r && r.verses
+        if (!list || list.length < 2) return null
+        const code = String(r.translationCode || "")
+        let verses = []
+        for (let i = 0; i < list.length; i++) {
+            const v = BibleService.verse(code, String(list[i].book),
+                                         Number(list[i].chapter), Number(list[i].verse))
+            if (!v || !v.text) return null
+            verses.push(v)
+        }
+        return buildScriptureItem(verses, code)
     }
 
     // Route a go-live through the crop-aware overload for media items so a
@@ -893,12 +995,22 @@ QtObject {
     // for scripture — both are useful, so both get a menu entry.
     //
     // Lands the operator in the Scripture tab on that exact verse, in that
-    // exact translation, ready to adjust the range.
+    // exact translation, ready to adjust the range. The row is remembered
+    // by id in passageRepickId, and the next scripture Add to Schedule
+    // replaces it instead of appending (see addItemToSchedule). The id
+    // rather than the index, so a reorder in the meantime still hits the
+    // right row.
+    property string passageRepickId: ""
+    // Title of the row being re-picked, for the Scripture tab's banner.
+    property string passageRepickTitle: ""
+
     function repickSchedulePassage(index) {
         const items = ScheduleService.currentItems
         if (index < 0 || index >= items.length) return false
         const item = items[index]
         if ((item.kind || "") !== "scripture" || !item.scriptureRef) return false
+        passageRepickId    = String(item.id || "")
+        passageRepickTitle = item.title || ""
         // revealResult wants the global-search row shape, whose verse field
         // is `verse`; a schedule ref spells it `verseStart`.
         const r = item.scriptureRef
@@ -912,6 +1024,28 @@ QtObject {
             }
         })
         return true
+    }
+
+    // True while the re-pick is pending AND its row still exists, so the
+    // banner and the "Replace in Schedule" label drop away when the row is
+    // deleted, the schedule cleared or another loaded. Re-evaluates on
+    // every schedule change through _passageRepickIndex's read.
+    readonly property bool passageRepickActive:
+        passageRepickId !== "" && _passageRepickIndex() >= 0
+
+    function cancelPassageRepick() {
+        passageRepickId    = ""
+        passageRepickTitle = ""
+    }
+
+    // Row index of the pending re-pick, or -1 when there is none or the row
+    // has since been removed (deleted, schedule cleared or another loaded).
+    function _passageRepickIndex() {
+        if (!passageRepickId) return -1
+        const items = ScheduleService.currentItems
+        for (let i = 0; i < items.length; i++)
+            if (String(items[i].id || "") === passageRepickId) return i
+        return -1
     }
 
     // Menu-enablement companion to editScheduleItem — same routing, no
@@ -1243,6 +1377,9 @@ QtObject {
         liveScheduleIndex  = selectedScheduleIndex
         liveSubIndex       = previewSubIndex
         libraryLiveActive  = false   // schedule is driving live now
+        // Baseline for syncLiveTheme: a later theme change on this row is
+        // re-sent to the projector.
+        _liveRowTheme = { id: String(item.id || ""), themeId: Number(item.themeId || 0) }
         // isClear left untouched — clear is sticky across go-live (see pushLibraryLive).
 
         // Theme resolution moved into ProjectionWindow — see pushLibraryLive.
@@ -1317,6 +1454,11 @@ QtObject {
     // modal close so the dialog itself doesn't need to know about the
     // tab's banner UI. Cleared by the tab after surfacing.
     property string lastThemeExportError: ""
+
+    // True while a colour picker popover is open. Its own Escape closes it,
+    // so the window-level Escape shortcuts (Main.qml, the theme editor)
+    // stand down rather than also closing a dialog or deselecting a layer.
+    property bool colorPopoverOpen: false
 
     function openModal(name, props) {
         modalProps = props || {}
@@ -1721,14 +1863,13 @@ QtObject {
     //                  retreats; click a segment to select it.
     //
     // Default "crater" because the gentle learning curve fits a first-launch
-    // operator. Power users can flip via the scripture gear menu. When a
-    // SettingsService lands this should persist across sessions; it's
-    // transient per-session for now.
-    property string scriptureInputMode: "crater"   // "crater" | "controlled"
+    // operator. Power users can flip via the scripture gear menu. Persisted
+    // through SettingsService so the choice survives a restart.
+    readonly property string scriptureInputMode: SettingsService.scriptureInputMode   // "crater" | "controlled"
 
     function setScriptureInputMode(mode) {
         if (mode !== "crater" && mode !== "controlled") return
-        scriptureInputMode = mode
+        SettingsService.scriptureInputMode = mode
     }
 
     // FTS search scope: when false (default) scripture search is scoped to the
@@ -1744,8 +1885,8 @@ QtObject {
     // ── Recent searches (per tab, session-only) ─────────────────────────────
     // A short most-recent-first history of committed queries per library tab,
     // surfaced as suggestions when the search box is focused and empty. Not
-    // persisted (mirrors scriptureInputMode); a SettingsService slot can back
-    // it later. Capped so the suggestion row stays compact.
+    // persisted; a SettingsService slot can back it later. Capped so the
+    // suggestion row stays compact.
     property var recentSearches: ({
         "songs": [], "scripture": [], "strongs": [], "media": []
     })
@@ -1782,9 +1923,8 @@ QtObject {
     // Last view mode the song editor was in. Re-opened editors should
     // land in the operator's last choice rather than always defaulting to
     // structured — a raw-mode user shouldn't have to flip the toggle on
-    // every song. Session-only (same pattern as scriptureInputMode); a
-    // SettingsService-backed persistent slot can replace this later
-    // without touching the editor wiring.
+    // every song. Session-only; a SettingsService-backed persistent slot
+    // can replace this later without touching the editor wiring.
     property string songEditorViewMode: "structured"   // "structured" | "raw"
 
     function setSongEditorViewMode(mode) {
@@ -2059,13 +2199,39 @@ QtObject {
 
     // Convenience for the "Add to Schedule" right-click action — adds the
     // item AND selects it so the operator gets immediate visual feedback.
+    // Returns the row the item landed in, or -1 when nothing was added.
+    //
+    // While a "Change passage" is pending (passageRepickId), a scripture
+    // item replaces that row instead of appending. The row keeps its id,
+    // theme and any name the operator gave it.
     function addItemToSchedule(item) {
-        if (!item) return
+        if (!item) return -1
+        if (passageRepickActive && item.kind === "scripture") {
+            const at = _passageRepickIndex()
+            cancelPassageRepick()
+            if (at >= 0) {
+                const old = ScheduleService.currentItems[at]
+                const next = Object.assign({}, item)
+                next.id = old.id
+                if (old.themeId) next.themeId = old.themeId
+                if (old.titleOverride) {
+                    next.title = old.title
+                    next.titleOverride = true
+                }
+                ScheduleService.replaceItem(at, next)
+                selectScheduleItem(at)
+                return at
+            }
+        }
+        // A pick whose row has gone (deleted, schedule cleared) is dropped,
+        // so a later Add to Schedule appends as normal.
+        if (passageRepickId && !passageRepickActive) cancelPassageRepick()
         ScheduleService.addItem(item)
         // selectScheduleItem keeps the multi-set in sync with the primary
         // index and clears any active library-preview override.
         selectScheduleItem(ScheduleService.currentItems.length - 1)
         scheduleItemAppended(ScheduleService.currentItems.length - 1)
+        return ScheduleService.currentItems.length - 1
     }
 
     // ─── Global search (command palette, Ctrl+K) ─────────────────────────

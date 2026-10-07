@@ -308,7 +308,7 @@ Rectangle {
                 workspace.savedIndex = workspace.historyIndex
                 AppState.closeThemeEditor()
             } else {
-                saveError = qsTr("Could not save theme — check the log for details")
+                saveError = qsTr("Could not save theme. Check the log for details.")
                 saveErrorClearTimer.restart()
             }
         } else {
@@ -448,10 +448,12 @@ Rectangle {
             workspace.saveToHistory()
         } }
     // Off while a modal is open over the workspace: Main.qml's Escape closes
-    // that modal then. The trailing-Escape check stops the second press of
-    // a double tap that closed a dialog from also deselecting or closing.
+    // that modal then. Off while a colour picker is open too, whose own
+    // Escape closes just the picker and leaves the layer selected. The
+    // trailing-Escape check stops the second press of a double tap that
+    // closed a dialog from also deselecting or closing.
     Shortcut { sequence: "Escape"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.activeModal === "" && !AppState.colorPopoverOpen
         onActivated: {
             if (AppState.isTrailingEscape()) return
             if (workspace.selectedNodeId !== "") workspace.selectedNodeId = ""
