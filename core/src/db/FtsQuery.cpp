@@ -120,8 +120,10 @@ FtsQuery buildFtsQuery(const QString& raw)
 
         // Trigram floor: a term shorter than 3 chars produces no trigrams and
         // can never match; including it would zero an implicit-AND query, so
-        // drop it (and clear any pending negation it carried).
+        // drop it from the MATCH (and clear any pending negation it carried).
+        // An include one is handed back in shortTerms for a by-hand check.
         if (text.size() < kTrigramFloor) {
+            if (!negateNext && !text.isEmpty()) q.shortTerms.append(text.toLower());
             negateNext = false;
             continue;
         }
@@ -135,6 +137,8 @@ FtsQuery buildFtsQuery(const QString& raw)
             q.terms.append(text.toLower());
         }
     }
+
+    q.useOr = useOr;
 
     // A pure-exclude query ("just -foo") has nothing positive to match on, so
     // there is no useful result set — treat it as unsearchable.
