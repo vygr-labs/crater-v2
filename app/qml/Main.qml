@@ -64,10 +64,10 @@ ApplicationWindow {
             root._updateNdiSource()
         }
 
-        // A passage already live takes the new layout at once (one page per
-        // verse, or one page). See AppState.relayoutLiveScripture.
+        // Passages in the schedule and on screen take the new layout at once
+        // (one page per verse, or one page). See AppState.relayoutScripture.
         function onHighlightCurrentVerseChanged() {
-            AppState.relayoutLiveScripture()
+            AppState.relayoutScripture()
         }
     }
 

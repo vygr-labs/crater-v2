@@ -810,10 +810,54 @@ QtObject {
     }
 
     // Highlight current verse decides the page layout of a multi-verse
-    // passage (one page per verse, or the whole passage on one), so the
-    // live passage is rebuilt from the Bible. The schedule row it came from
-    // is rebuilt too, or the Live pane's cards would disagree with the
-    // projector. Rows edited in the schedule item editor keep their pages.
+    // passage (one page per verse, or the whole passage on one). Main.qml
+    // calls this when the setting changes. Every passage in the schedule is
+    // re-split, not just the live one: the setting lives in Settings, so it
+    // is usually changed while preparing, with the schedule already built,
+    // and rows left on the old layout made the setting look broken.
+    function relayoutScripture() {
+        _relayoutScheduleScripture()
+        relayoutLiveScripture()
+    }
+
+    // Re-split each scripture row from its verse list. Rows edited in the
+    // schedule item editor keep their own slides, and rows built before the
+    // list existed are left as they are (see _rebuildScripturePassage).
+    //
+    // The rebuild is a layout change, not an edit, so a saved schedule that
+    // had no unsaved changes is saved again straight after, and stays clean.
+    // One that already had unsaved changes is left for the operator to save,
+    // since saving here would commit their edits along with it. An untitled
+    // schedule has nowhere to save to, so it simply shows as changed.
+    function _relayoutScheduleScripture() {
+        const wasClean = !ScheduleService.isDirty
+        const items = ScheduleService.currentItems
+        let changed = false
+        for (let i = 0; i < items.length; i++) {
+            const row = items[i]
+            if (!row || row.kind !== "scripture" || row.contentOverride) continue
+            const rebuilt = _rebuildScripturePassage(row)
+            // A single verse, or a layout that came out the same, is
+            // skipped, so it neither dirties nor re-saves the schedule.
+            if (!rebuilt || JSON.stringify(rebuilt.pages) === JSON.stringify(row.pages))
+                continue
+            ScheduleService.replaceItem(i, Object.assign({}, row, { pages: rebuilt.pages }))
+            changed = true
+        }
+        if (!changed) return
+        if (wasClean && ScheduleService.loadedScheduleId > 0)
+            ScheduleService.saveCurrent()
+        // The staged row's pages were swapped under Preview, so start it
+        // from the top, the same as the live passage.
+        const sel = (selectedScheduleIndex >= 0
+                     && selectedScheduleIndex < ScheduleService.currentItems.length)
+                        ? ScheduleService.currentItems[selectedScheduleIndex] : null
+        if (sel && sel.kind === "scripture" && !libraryPreviewItem)
+            previewSubIndex = 0
+    }
+
+    // Puts the live passage on screen under the new layout. Its schedule row
+    // was already rebuilt by _relayoutScheduleScripture.
     function relayoutLiveScripture() {
         const cur = ProjectionService.currentItem
         if (!cur || cur.kind !== "scripture" || cur.contentOverride) return
@@ -826,19 +870,13 @@ QtObject {
         const page = 0
         liveSubIndex = page
 
-        if (libraryLiveActive) {
-            // pushLibraryLive mirrors live into Preview. Keep the mirror, or
-            // the next Go Live from Preview re-projects the old layout.
-            if (libraryPreviewItem && libraryPreviewItem.kind === "scripture"
-                && libraryPreviewItem.title === cur.title) {
-                libraryPreviewItem = next
-                previewSubIndex    = page
-            }
-        } else if (liveScheduleIndex >= 0) {
-            const row = ScheduleService.currentItems[liveScheduleIndex]
-            if (row && String(row.id || "") === String(cur.id || "") && !row.contentOverride)
-                ScheduleService.replaceItem(liveScheduleIndex,
-                                            Object.assign({}, row, { pages: rebuilt.pages }))
+        // pushLibraryLive mirrors live into Preview. Keep the mirror, or the
+        // next Go Live from Preview re-projects the old layout.
+        if (libraryLiveActive && libraryPreviewItem
+            && libraryPreviewItem.kind === "scripture"
+            && libraryPreviewItem.title === cur.title) {
+            libraryPreviewItem = next
+            previewSubIndex    = page
         }
         ProjectionService.goLive(next, page)
     }
