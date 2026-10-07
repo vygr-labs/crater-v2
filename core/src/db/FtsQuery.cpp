@@ -131,6 +131,7 @@ FtsQuery buildFtsQuery(const QString& raw)
         const QString literal = quoteFts(text);
         if (negateNext) {
             exclude.append(literal);
+            q.excludeTerms.append(text.toLower());
             negateNext = false;
         } else {
             include.append(literal);

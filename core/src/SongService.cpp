@@ -238,6 +238,19 @@ bool containsWords(QString text, const QStringList& words, bool any)
     return !any;
 }
 
+// Whether `text` holds any of `terms` as a substring, which is how the trigram
+// index matches an excluded word. Normalised the same way as containsWords.
+bool containsAnyTerm(QString text, const QStringList& terms)
+{
+    if (terms.isEmpty()) return false;
+    text.remove(QLatin1Char('\''));
+    text.remove(QChar(0x2019));
+    text = text.toLower();
+    for (const QString& t : terms)
+        if (text.contains(t)) return true;
+    return false;
+}
+
 // Max edit distance tolerated for a query word of the given length. Short
 // words get 0 (a 1-char slip on a 3-letter word matches half the dictionary);
 // longer words scale up.
@@ -619,7 +632,13 @@ QList<Song> SongService::search(QString query, QString field)
         // Only short words. Two passes over the cached library: title and
         // author first, which needs no lyrics read and ranks those hits
         // first (as the bm25 weights do), then lyrics for the rest, which
-        // stops at the cap.
+        // stops at the cap. Excluded words ("I -love") are checked by hand
+        // too, since there is no MATCH to carry the NOT.
+        //
+        // The lyrics pass reads every song's lyrics when little matches, so
+        // it waits for two short words. A lone one or two letters is nearly
+        // always the start of a longer word ("gr" on the way to "grace"),
+        // and the search runs after every pause in typing.
         const QList<Song> all = allSongs();
         QSet<qint64> taken;
         if (!scoped || field != QLatin1String("lyrics")) {
@@ -629,18 +648,22 @@ QList<Song> SongService::search(QString query, QString field)
                                    : (field == QLatin1String("author")) ? s.author
                                    : QString(s.title + QLatin1Char(' ') + s.author);
                 if (!containsWords(meta, shortWords, fts.useOr)) continue;
+                const QString lyrics = m_impl->fetchFlattenedLyrics(s.id);
+                if (containsAnyTerm(scopeText(s, lyrics), fts.excludeTerms)) continue;
                 Song hit = s;
-                hit.snippet = makeSnippet(m_impl->fetchFlattenedLyrics(s.id), {}, shortWords);
+                hit.snippet = makeSnippet(lyrics, {}, shortWords);
                 out.append(std::move(hit));
                 taken.insert(s.id);
             }
         }
-        if (unified || field == QLatin1String("lyrics")) {
+        if ((unified || field == QLatin1String("lyrics")) && shortWords.size() >= 2) {
             for (const Song& s : all) {
                 if (out.size() >= kResultCap) break;
                 if (taken.contains(s.id)) continue;
                 const QString lyrics = m_impl->fetchFlattenedLyrics(s.id);
-                if (!containsWords(scopeText(s, lyrics), shortWords, fts.useOr)) continue;
+                const QString text = scopeText(s, lyrics);
+                if (!containsWords(text, shortWords, fts.useOr)) continue;
+                if (containsAnyTerm(text, fts.excludeTerms)) continue;
                 Song hit = s;
                 hit.snippet = makeSnippet(lyrics, {}, shortWords);
                 out.append(std::move(hit));

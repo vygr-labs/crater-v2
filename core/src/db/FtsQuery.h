@@ -36,6 +36,7 @@ struct FtsQuery
     QString     match;       // safe MATCH expression, or "" when unsearchable
     QStringList terms;       // plain lowercased include terms — for snippet/highlight
     QStringList shortTerms;  // lowercased include terms under the trigram floor
+    QStringList excludeTerms;  // lowercased -term / NOT term words, for the same by-hand path
     bool        useOr = false;  // terms were joined with OR rather than AND
 
     bool isEmpty() const { return match.isEmpty(); }
