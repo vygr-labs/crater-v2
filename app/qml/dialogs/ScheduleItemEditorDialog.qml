@@ -63,6 +63,12 @@ ModalShell {
             ? AppState.modalProps.itemIndex
             : -1
 
+    // Mark Up on a passage that isn't in the schedule yet edits this item
+    // instead of a row, and Save adds it (AppState.markUpScripture).
+    readonly property var _pendingItem:
+        (AppState.modalProps && AppState.modalProps.pendingItem) || null
+    readonly property bool _isPending: root._pendingItem !== null
+
     // A snapshot taken once on load, NOT a live binding on
     // ScheduleService.currentItems. The schedule auto-saves every 5s and a
     // library edit rewrites song rows in place, either of which would swap
@@ -113,6 +119,10 @@ ModalShell {
     // ── Load ────────────────────────────────────────────────────────────
     Component.onCompleted: {
         const items = ScheduleService.currentItems
+        if (root._isPending) {
+            root._load(root._pendingItem)
+            return
+        }
         if (root._index < 0 || root._index >= items.length) {
             // Nothing to edit — the row went away between opening the menu
             // and the dialog instantiating. Close rather than show an
@@ -120,7 +130,10 @@ ModalShell {
             AppState.closeModal()
             return
         }
-        const it = items[root._index]
+        root._load(items[root._index])
+    }
+
+    function _load(it) {
         root._item = it
 
         let pages = root._clone(it.pages || [])
@@ -272,6 +285,13 @@ ModalShell {
     }
 
     function _save() {
+        if (root._isPending) {
+            // Untouched, it goes in as a plain Add to Schedule would, with
+            // no override stamped on it.
+            AppState.addItemToSchedule(root._isDirty ? root._buildRow(true) : root._item)
+            AppState.closeModal()
+            return
+        }
         if (root._index < 0) { AppState.closeModal(); return }
         ScheduleService.replaceItem(root._index, root._buildRow(true))
         AppState.closeModal()
@@ -728,7 +748,7 @@ ModalShell {
             }
             PrimaryButton {
                 variant: "brand"
-                text: qsTr("Save to Schedule")
+                text: root._isPending ? qsTr("Add to Schedule") : qsTr("Save to Schedule")
                 onClicked: root._save()
             }
         }

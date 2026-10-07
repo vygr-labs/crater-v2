@@ -439,9 +439,15 @@ Item {
     // Returns the schedule row the passage landed in, or -1. During a
     // "Change passage" that row is the one being replaced, not a new one.
     function addToScheduleFor(idx) {
-        const sel = AppState.librarySelectedIndices[tabKey] || []
-        const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
+        const item = itemFor(idx)
         return item ? AppState.addItemToSchedule(item) : -1
+    }
+
+    // The passage a row action works on: the multi-selection if there is
+    // one, else the single verse at idx.
+    function itemFor(idx) {
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        return (sel.length > 0) ? _activeItem() : verseItemAt(idx)
     }
 
     // Sync the sidebar search input to the verse at idx. Used after every
@@ -1186,16 +1192,12 @@ Item {
                 // Group order matches SongsTab and MediaTab: row-edit
                 // actions first, then projection. Verses come from
                 // read-only Bible DBs, so markup lives on a schedule row:
-                // Mark Up adds the verse and opens that row's editor, the
-                // same one the schedule's Edit… opens.
+                // Mark Up opens the same editor the schedule's Edit… opens,
+                // on the passage's row if it has one, else on a row that is
+                // only added when the markup is saved (AppState.markUpScripture).
                 menuItems: [
                     { label: qsTr("Mark Up…"), iconName: "edit-3",
-                      action: function() {
-                          // Only open the editor if a row was really added,
-                          // or it would open on whatever row was last.
-                          const row = root.addToScheduleFor(index)
-                          if (row >= 0) AppState.editScheduleItem(row)
-                      } },
+                      action: function() { AppState.markUpScripture(root.itemFor(index)) } },
                     { separator: true },
                     { label: AppState.passageRepickActive
                              ? qsTr("Replace in Schedule") : qsTr("Add to Schedule"),

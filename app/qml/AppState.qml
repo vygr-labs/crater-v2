@@ -1061,6 +1061,62 @@ QtObject {
         return false
     }
 
+    // Mark Up from the Scripture tab. A passage already in the schedule
+    // opens its row, so marking it up again edits that row instead of
+    // adding a second copy. One that isn't goes to the editor unsaved
+    // (modalProps.pendingItem), and the row is only added when the markup
+    // is saved, so backing out leaves the schedule as it was.
+    //
+    // A pending "Change passage" keeps its own meaning: the pick replaces
+    // that row, and the editor opens on it.
+    function markUpScripture(item) {
+        if (!item) return
+        if (passageRepickActive) {
+            const at = addItemToSchedule(item)
+            if (at >= 0) editScheduleItem(at)
+            return
+        }
+        const row = scheduleRowForPassage(item)
+        if (row >= 0) {
+            selectScheduleItem(row)
+            editScheduleItem(row)
+            return
+        }
+        openModal("scheduleItemEditor", { pendingItem: item })
+    }
+
+    // The schedule row holding exactly this passage (same translation, same
+    // verses), or -1. The selected row wins when several match, since that
+    // is the copy the operator is looking at.
+    function scheduleRowForPassage(item) {
+        const key = _scripturePassageKey(item)
+        if (!key) return -1
+        const items = ScheduleService.currentItems
+        if (selectedScheduleIndex >= 0 && selectedScheduleIndex < items.length
+            && _scripturePassageKey(items[selectedScheduleIndex]) === key)
+            return selectedScheduleIndex
+        for (let i = 0; i < items.length; i++)
+            if (_scripturePassageKey(items[i]) === key) return i
+        return -1
+    }
+
+    // A single verse carries no `verses` list (see buildScriptureItem), so
+    // both shapes are spelled out verse by verse before comparing.
+    function _scripturePassageKey(item) {
+        if (!item || item.kind !== "scripture" || !item.scriptureRef) return ""
+        const r = item.scriptureRef
+        let verses = []
+        if (r.verses && r.verses.length > 0) {
+            for (let i = 0; i < r.verses.length; i++)
+                verses.push(r.verses[i].book + " " + r.verses[i].chapter + ":" + r.verses[i].verse)
+        } else {
+            for (let v = Number(r.verseStart); v <= Number(r.verseEnd); v++)
+                verses.push(r.book + " " + r.chapter + ":" + v)
+        }
+        if (verses.length === 0) return ""
+        return String(r.translationCode || "").toUpperCase() + "|" + verses.join(",")
+    }
+
     // Re-pick a scripture row's passage. Editing the row's TEXT is
     // ScheduleItemEditorDialog's job; changing WHICH verses it holds is
     // this, because the range lives in the Bible DB rather than on the row.
