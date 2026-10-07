@@ -47,6 +47,7 @@ Item {
     // title design's subtitle is visibly subordinate to its title.
     readonly property string mockSlideSubtitle:   "Luke 15"
     readonly property string mockSlideBodyRight:  "The elder son stayed home and was just as lost."
+    readonly property string mockSongCredits:     "John Newton · CCLI 22025"
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -59,6 +60,7 @@ Item {
             case "presentationBody":  return mockSlideBody
             case "presentationSubtitle":  return mockSlideSubtitle
             case "presentationBodyRight": return mockSlideBodyRight
+            case "songCredits":       return mockSongCredits
             case "custom":            return data.text || ""
         }
         return data.text || ""

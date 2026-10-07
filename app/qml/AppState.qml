@@ -264,6 +264,22 @@ QtObject {
         }
     }
 
+    // A song item's credits line under Settings > Song > Show author / Show
+    // CCLI number. Read off the item's raw `credits` at render time so a
+    // toggle reaches a song already on screen. Rows saved before items
+    // carried `credits` fall back to the baked subtitle, which was built
+    // under the same toggles. Shared by the `songCredits` text linkage and
+    // the projector's fallback credits line.
+    function songCreditsText(item) {
+        if (!item || item.kind !== "song") return ""
+        const c = item.credits
+        if (!c) return item.subtitle || ""
+        let parts = []
+        if (SettingsService.showSongAuthor && c.author) parts.push(c.author)
+        if (SettingsService.showSongCcli && c.ccli)     parts.push("CCLI " + c.ccli)
+        return parts.join(" · ")
+    }
+
     // Build the canonical schedule-item shape from a presentation deck plus
     // the slides PresentationService returned for it.
     //

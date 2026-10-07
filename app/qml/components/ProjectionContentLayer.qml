@@ -200,19 +200,21 @@ Item {
         return _refText
     }
 
-    // Song credits for the optional credits line, gated by Settings > Song >
-    // Show author / Show CCLI number. Read here rather than off the item's
-    // baked subtitle so a toggle reaches the song already on screen. Rows
-    // saved before items carried `credits` fall back to that subtitle, which
-    // was built under the same toggles.
-    readonly property string _songCreditsText: {
-        if (layerKind !== "song" || !layerItem) return ""
-        const c = layerItem.credits
-        if (!c) return layerItem.subtitle || ""
-        let parts = []
-        if (SettingsService.showSongAuthor && c.author) parts.push(c.author)
-        if (SettingsService.showSongCcli && c.ccli)     parts.push("CCLI " + c.ccli)
-        return parts.join(" · ")
+    // Song credits (Settings > Song > Show author / Show CCLI number), for
+    // the `songCredits` linkage and the fallback credits line below.
+    readonly property string _songCreditsText:
+        layerKind === "song" ? AppState.songCreditsText(layerItem) : ""
+
+    // A theme that places its own credits node owns the credits, so the
+    // fallback line stands down rather than printing them twice.
+    readonly property bool _themeHasCredits: {
+        const n = _nodes || []
+        for (let i = 0; i < n.length; i++) {
+            if (n[i] && n[i].kind === "text" && n[i].data
+                    && n[i].data.linkage === "songCredits")
+                return true
+        }
+        return false
     }
 
     function resolveText(node) {
@@ -226,6 +228,7 @@ Item {
             case "presentationBody":  return _pageText
             case "presentationSubtitle":  return _slideSubtitle
             case "presentationBodyRight": return _slideBodyRight
+            case "songCredits":       return _songCreditsText
             case "custom":            return data.text || ""
         }
         return data.text || ""
@@ -344,13 +347,15 @@ Item {
     }
 
     // ── Song credits line (global toggles) ──────────────────────────────
-    // Same treatment as the scripture footer above: themes have no credits
-    // linkage, so Show author / Show CCLI number draw their own line on top
-    // of whatever theme is in use. Slightly smaller, since it is attribution
-    // rather than content.
+    // The fallback for themes without a `songCredits` node: Show author /
+    // Show CCLI number draw their own line on top of the theme, the same way
+    // the scripture footer above does. Slightly smaller, since it is
+    // attribution rather than content. A theme with its own credits node
+    // places and styles them itself, so this stays hidden there.
     Text {
         id: songCredits
         visible: root.layerKind === "song"
+                 && !root._themeHasCredits
                  && !ProjectionService.isClear
                  && text.length > 0
         text: root._songCreditsText

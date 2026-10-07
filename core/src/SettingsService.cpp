@@ -122,8 +122,8 @@ struct SettingsService::Impl
     bool    preloadTranslations = false;
     QStringList translationOrder;     // empty: the library's own order
     QStringList hiddenTranslations;   // empty: show everything
-    bool    showSongAuthor   = true;
-    bool    showSongCcli     = true;
+    bool    showSongAuthor   = false;
+    bool    showSongCcli     = false;
     // Auto-advance defaults: off, 20 s between slides, no looping.
     bool    autoAdvance      = false;
     int     autoAdvanceDelay = 20;

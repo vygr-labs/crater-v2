@@ -174,6 +174,9 @@ Rectangle {
     // twice and the author can judge the balance between them.
     readonly property string mockSlideSubtitle:  "Luke 15"
     readonly property string mockSlideBodyRight: "The elder son stayed home and was just as lost."
+    // Shown whatever the Show author / Show CCLI toggles say, so the author
+    // can always see and style the node they placed.
+    readonly property string mockSongCredits:    "John Newton · CCLI 22025"
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -186,6 +189,7 @@ Rectangle {
             case "presentationBody":  return mockSlideBody
             case "presentationSubtitle":  return mockSlideSubtitle
             case "presentationBodyRight": return mockSlideBodyRight
+            case "songCredits":       return mockSongCredits
             case "custom":            return data.text || qsTr("(empty)")
         }
         return ""

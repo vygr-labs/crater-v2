@@ -26,6 +26,8 @@ Column {
     // is no separate manifest to keep in step.
     //
     // The list is flat rather than scoped to the theme's kind on purpose.
+    // Song credits is the author / CCLI line, filled per Settings > Song.
+    //
     // Linkage is already cross-kind by design -- scriptureRef resolves to
     // the ITEM TITLE for every kind, which is how several song themes show
     // the song name -- so filtering by kind would hide a working technique
@@ -38,6 +40,7 @@ Column {
         { label: qsTr("Slide subtitle"),    value: "presentationSubtitle"  },
         { label: qsTr("Slide body"),        value: "presentationBody"      },
         { label: qsTr("Slide right column"), value: "presentationBodyRight" },
+        { label: qsTr("Song credits"),      value: "songCredits"           },
         { label: qsTr("Custom text"),       value: "custom"                }
     ]
     readonly property string _linkageLabel: {
