@@ -266,14 +266,20 @@ QtObject {
 
     // A song item's credits line under Settings > Song > Show author / Show
     // CCLI number. Read off the item's raw `credits` at render time so a
-    // toggle reaches a song already on screen. Rows saved before items
-    // carried `credits` fall back to the baked subtitle, which was built
-    // under the same toggles. Shared by the `songCredits` text linkage and
-    // the projector's fallback credits line.
+    // toggle reaches a song already on screen. Shared by the `songCredits`
+    // text linkage and the projector's fallback credits line.
+    //
+    // Rows saved before items carried `credits` fall back to their baked
+    // subtitle, but only while a toggle is on. Those subtitles were built
+    // when both toggles defaulted on, so with both now off by default they
+    // would otherwise put credits on screen the operator never asked for.
     function songCreditsText(item) {
         if (!item || item.kind !== "song") return ""
         const c = item.credits
-        if (!c) return item.subtitle || ""
+        if (!c) {
+            const anyOn = SettingsService.showSongAuthor || SettingsService.showSongCcli
+            return anyOn ? (item.subtitle || "") : ""
+        }
         let parts = []
         if (SettingsService.showSongAuthor && c.author) parts.push(c.author)
         if (SettingsService.showSongCcli && c.ccli)     parts.push("CCLI " + c.ccli)

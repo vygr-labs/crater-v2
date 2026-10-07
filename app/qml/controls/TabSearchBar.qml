@@ -657,11 +657,13 @@ Item {
             // move over unchanged text (click, arrow key) picks a stage.
             property string _ctrlSeenText: ""
             onCursorPositionChanged: {
-                if (!root.isControlledMode) return
+                // Tracked in both modes, so switching to controlled mode
+                // doesn't start from text it never saw.
                 if (text !== _ctrlSeenText) {
                     _ctrlSeenText = text
                     return
                 }
+                if (!root.isControlledMode) return
                 if (!activeFocus) return
                 const stageAtCursor = root.ctrlStageAt(cursorPosition)
                 if (stageAtCursor !== root.ctrlStage) {

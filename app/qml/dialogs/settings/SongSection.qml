@@ -71,7 +71,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Show author")
-                description: qsTr("Credit the song's author at the foot of each slide")
+                description: qsTr("Credit the song's author on song slides")
                 ToggleSwitch {
                     value: SettingsService.showSongAuthor
                     onToggled: SettingsService.showSongAuthor = !SettingsService.showSongAuthor }
@@ -80,7 +80,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Show CCLI number")
-                description: qsTr("Show the song's CCLI number at the foot of each slide")
+                description: qsTr("Show the song's CCLI number on song slides")
                 ToggleSwitch {
                     value: SettingsService.showSongCcli
                     onToggled: SettingsService.showSongCcli = !SettingsService.showSongCcli }
