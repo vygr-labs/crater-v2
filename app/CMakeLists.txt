@@ -238,6 +238,7 @@ qt_add_qml_module(crater
         qml/dialogs/settings/UpdatesSection.qml
         qml/dialogs/settings/ProfilesSection.qml
         qml/dialogs/settings/DiagnosticsSection.qml
+        qml/dialogs/settings/HelpSection.qml
 )
 
 # Animated-gradient fragment shader. qt_add_shaders (Qt6::ShaderTools)

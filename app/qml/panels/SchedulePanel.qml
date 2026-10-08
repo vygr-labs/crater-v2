@@ -316,6 +316,14 @@ Rectangle {
             iconName: "list-music"
             title: qsTr("No items in schedule")
             body: qsTr("Add songs, scriptures, or media from the tabs below")
+
+            // Every first-run user lands here, so it carries the way into
+            // the tutorials.
+            GhostButton {
+                iconName: "circle-play"
+                text: qsTr("Watch Getting started")
+                onClicked: Qt.openUrlExternally(HelpLinks.playlist("getting-started"))
+            }
         }
 
         ListView {

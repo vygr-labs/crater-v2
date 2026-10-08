@@ -39,6 +39,7 @@ add_library(crater-core STATIC
 
     # Services.
     src/Version.cpp
+    src/HelpLinks.cpp
     src/Checksums.cpp
     src/BibleService.cpp
     src/StrongsService.cpp
@@ -100,6 +101,7 @@ add_library(crater-core STATIC
     include/crater/value/OutputBinding.h
     include/crater/LyricsDSL.h
     include/crater/LyricsService.h
+    include/crater/HelpLinks.h
 )
 
 target_include_directories(crater-core

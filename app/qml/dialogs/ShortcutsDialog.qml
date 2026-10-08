@@ -136,6 +136,33 @@ ModalShell {
             width: scroller.width - Theme.space.lg * 2 - Theme.size.scrollBar
             spacing: 0
 
+            // The Keyboard shortcuts tutorial playlist, ahead of the list.
+            Item {
+                width: body.width
+                height: videoButton.height + Theme.space.md
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: videoButton.left
+                    anchors.rightMargin: Theme.space.md
+                    anchors.verticalCenter: videoButton.verticalCenter
+                    text: qsTr("See these shortcuts in use in the tutorial videos.")
+                    elide: Text.ElideRight
+                    color: Theme.color.textSecondary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+
+                GhostButton {
+                    id: videoButton
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    iconName: "circle-play"
+                    text: qsTr("Watch")
+                    onClicked: Qt.openUrlExternally(HelpLinks.playlist("shortcuts"))
+                }
+            }
+
             Repeater {
                 model: root.groups
 
