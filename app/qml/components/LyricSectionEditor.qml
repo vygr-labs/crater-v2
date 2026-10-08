@@ -49,6 +49,10 @@ Rectangle {
     // Forward-edge accessor used by the parent so it can focus the label
     // input of a freshly-added section after the Repeater has built it.
     function focusLabel() { labelInput.forceActiveFocus() }
+    function focusLines() {
+        linesEdit.forceActiveFocus()
+        linesEdit.cursorPosition = linesEdit.length
+    }
 
     // ── WYSIWYG bridging state ──────────────────────────────────────────
     // _settingText: true while we're writing HTML into linesEdit from the
@@ -229,6 +233,14 @@ Rectangle {
                 text: root.label
                 onTextEdited: root.labelEdited(root.index, text)
                 onActiveFocusChanged: if (activeFocus) root.focused(root.index)
+                // Tab or Enter after typing "Chorus" carries on into the
+                // lyrics below, the next thing the operator fills in.
+                activeFocusOnTab: true
+                KeyNavigation.tab: linesEdit
+                onAccepted: {
+                    linesEdit.forceActiveFocus()
+                    linesEdit.cursorPosition = linesEdit.length
+                }
 
                 // Placeholder
                 Text {

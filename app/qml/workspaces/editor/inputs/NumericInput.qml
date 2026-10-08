@@ -113,6 +113,8 @@ Item {
                 onReleased: function(m) {
                     if (_dragging) {
                         root.commit(_lastLive)
+                        input._editStart = _lastLive
+                        input._typed     = false
                         _dragging = false
                         m.accepted = true
                     }
@@ -122,7 +124,18 @@ Item {
             // Commit on blur. (Shortcut gating no longer needs a manual
             // focus flag — the workspace derives inputFocused from
             // Window.activeFocusItem.)
-            onActiveFocusChanged: if (!activeFocus) _commitFromText()
+            // Value at the start of this edit, the baseline _commitFromText
+            // commits against, and whether the operator has typed since.
+            // Only typing leaves a value uncommitted. A stepper press or a
+            // scrub commits its own undo step and moves the baseline, so the
+            // blur that follows doesn't add a second, empty one.
+            property real _editStart: NaN
+            property bool _typed: false
+            onTextEdited: _typed = true
+            onActiveFocusChanged: {
+                if (activeFocus) { _editStart = root.value; _typed = false }
+                else             _commitFromText()
+            }
             // Per-keystroke live update. Coalesced via Qt.callLater so a
             // burst of typed digits doesn't fire N setNodeStyle writes
             // within the same event-loop tick — only the last one sticks.
@@ -133,6 +146,19 @@ Item {
             property real _lastLiveText: NaN
             onTextChanged: Qt.callLater(_fireLiveFromText)
 
+            // Select the whole value so the next keystroke replaces it.
+            // Claimed at the override stage so no window-level Ctrl+A
+            // Shortcut takes it first.
+            Keys.onShortcutOverride: function(event) {
+                if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier))
+                    event.accepted = true
+            }
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+                    input.selectAll()
+                    event.accepted = true
+                }
+            }
             Keys.onReturnPressed: { _commitFromText(); root.focus = false }
             Keys.onEnterPressed:  { _commitFromText(); root.focus = false }
             Keys.onEscapePressed: { text = _format(root.value); root.focus = false }
@@ -162,7 +188,17 @@ Item {
         const parsed = parseFloat(input.text)
         if (!isFinite(parsed)) { input.text = _format(root.value); return }
         const clamped = Math.max(root.min, Math.min(root.max, parsed))
-        if (clamped !== root.value) root.commit(clamped)
+        // Text outside the range never went out live (see _fireLiveFromText),
+        // so write the clamped value first, as _bump does.
+        if (clamped !== root.value) root.live(clamped)
+        // Commit against where the edit STARTED, not the current value: an
+        // in-range value typed digit by digit has already reached the model
+        // through live(), so comparing with root.value skipped the commit,
+        // which is the only history snapshot for most callers, and the edit
+        // never became an undo step.
+        if (input._typed && clamped !== input._editStart) root.commit(clamped)
+        input._editStart = clamped
+        input._typed     = false
         input.text = _format(clamped)
     }
     function _fireLiveFromText() {
@@ -171,13 +207,18 @@ Item {
         // what we already sent (avoids redundant writes when the user
         // types a separator like "5." that doesn't change the numeric
         // value).
+        //
+        // Out-of-range text is left alone until commit, which clamps. Typing
+        // is built a digit at a time, so "1" on the way to "120" is below a
+        // minimum of 8. Clamping it live wrote 8 to the model, onValueChanged
+        // then rewrote the field to "8", and the next digits appended to that.
         if (!input.activeFocus) return
         const parsed = parseFloat(input.text)
         if (!isFinite(parsed)) return
-        const clamped = Math.max(root.min, Math.min(root.max, parsed))
-        if (clamped === input._lastLiveText) return
-        input._lastLiveText = clamped
-        root.live(clamped)
+        if (parsed < root.min || parsed > root.max) return
+        if (parsed === input._lastLiveText) return
+        input._lastLiveText = parsed
+        root.live(parsed)
     }
     function _bump(dir) {
         const newV = Math.max(root.min, Math.min(root.max, root.value + dir * root.step))
@@ -189,6 +230,8 @@ Item {
         // path: live() to write, commit() to close the undo step.
         root.live(newV)
         root.commit(newV)
+        input._editStart = newV
+        input._typed     = false
     }
     // Keep input.text in sync with root.value. Two cases:
     //   1. Unfocused: always resync — nothing the user is mid-typing

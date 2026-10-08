@@ -308,14 +308,18 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
     // theme that never declares one simply leaves that slide field unread,
     // and the editor derives which fields to offer by scanning for exactly
     // these linkages (crater::tokens::layoutSlots).
+    //
+    // songCredits is a song's author / CCLI line. Its text follows Settings >
+    // Song > Show author / Show CCLI number, and a theme that carries one
+    // replaces the projector's fallback credits line.
     static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric",
                                          "presentationTitle", "presentationBody",
                                          "presentationSubtitle", "presentationBodyRight",
-                                         "custom" };
+                                         "songCredits", "custom" };
     if (!data.contains("linkage") || !linkages.contains(data.value("linkage").toString()))
         errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|"
                                "presentationTitle|presentationBody|presentationSubtitle|"
-                               "presentationBodyRight|custom").arg(idx);
+                               "presentationBodyRight|songCredits|custom").arg(idx);
 
     // Recolours scripture verse numbers in this box (NodeRenderer). DSL
     // colours take #rgb or #rrggbb only, so alpha is refused here rather

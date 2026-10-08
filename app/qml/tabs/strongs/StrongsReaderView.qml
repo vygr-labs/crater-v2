@@ -43,7 +43,13 @@ Item {
         root.book        = r.book
         root.bookName    = r.bookName
         root.chapterNum  = r.chapter
+        // `verses` re-evaluates synchronously on each assignment above, so it
+        // already holds the target chapter here. Scrolling from this point,
+        // not from onVersesChanged, also covers a query in the chapter that
+        // is already open (no reload at all) and a book change that reloads
+        // twice (book first, then chapter).
         root._pendingVerse = r.verse
+        root._scrollToPendingVerse()
     }
 
     function _indexOfVerse(vn) {
@@ -52,12 +58,11 @@ Item {
         return -1
     }
 
-    onVersesChanged: {
-        if (_pendingVerse > 0) {
-            var idx = _indexOfVerse(_pendingVerse)
-            _pendingVerse = 0
-            if (idx >= 0) Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Beginning) })
-        }
+    function _scrollToPendingVerse() {
+        if (_pendingVerse <= 0) return
+        var idx = _indexOfVerse(_pendingVerse)
+        _pendingVerse = 0
+        if (idx >= 0) Qt.callLater(function() { list.positionViewAtIndex(idx, ListView.Beginning) })
     }
 
     Component.onCompleted: root._applyQuery()

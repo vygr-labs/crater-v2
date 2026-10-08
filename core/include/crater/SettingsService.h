@@ -165,6 +165,10 @@ private:
     // so the global toggle is always meaningful. Default off.
     Q_PROPERTY(bool    showScriptureFooter READ showScriptureFooter WRITE setShowScriptureFooter NOTIFY showScriptureFooterChanged)
     Q_PROPERTY(bool    showStrongsTab     READ showStrongsTab     WRITE setShowStrongsTab     NOTIFY showStrongsTabChanged)
+    // How the Scripture tab's reference box takes input: "crater" (free text
+    // with book autocomplete) or "controlled" (segmented book/chapter/verse
+    // editor). Flipped from the scripture gear menu. Default "crater".
+    Q_PROPERTY(QString scriptureInputMode READ scriptureInputMode WRITE setScriptureInputMode NOTIFY scriptureInputModeChanged)
     // Keep every installed Bible translation in memory so the first switch
     // to any of them is instant. Default off: Crater aims to stay light, and
     // this costs ~13 MB per installed translation. With it off the few most
@@ -272,6 +276,7 @@ public:
     bool    highlightCurrentVerse() const;
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
+    QString scriptureInputMode() const;
     bool    preloadTranslations() const;
     QStringList translationOrder() const;
     QStringList hiddenTranslations() const;
@@ -317,6 +322,7 @@ public:
     void setHighlightCurrentVerse(bool v);
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
+    void setScriptureInputMode(const QString& mode);
     void setPreloadTranslations(bool v);
     void setTranslationOrder(const QStringList& codes);
     void setHiddenTranslations(const QStringList& codes);
@@ -364,6 +370,7 @@ signals:
     void highlightCurrentVerseChanged();
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
+    void scriptureInputModeChanged();
     void preloadTranslationsChanged();
     void translationOrderChanged();
     void hiddenTranslationsChanged();

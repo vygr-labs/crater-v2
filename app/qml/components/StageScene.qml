@@ -91,9 +91,11 @@ Item {
     // Inline lyric/scripture markup ({color=…}, **bold**) reaches us in the
     // same DSL the audience renderer receives. Route it through the same
     // service so a highlighted verse reads identically on both screens
-    // rather than showing raw markers here.
+    // rather than showing raw markers here. Show verse numbers applies here
+    // too, so the stage display matches the audience screen.
     function _rich(s) {
-        return s.length > 0 ? LyricsService.dslToHtml(s, "") : ""
+        const t = AppState.withVerseNumberSetting(s)
+        return t.length > 0 ? LyricsService.dslToHtml(t, "") : ""
     }
 
     // No anchors on the root: a Loader already sizes its item, and a component

@@ -24,12 +24,20 @@ namespace crater::db {
 //   -term / NOT term  → exclude rows containing the term
 //
 // `match` is empty when nothing searchable remains (query blank, or every term
-// shorter than the 3-char trigram floor). Callers should treat an empty match
-// as "no results" and skip the FTS query entirely rather than binding "".
+// shorter than the 3-char trigram floor). Callers should skip the FTS query
+// entirely rather than binding "".
+//
+// The dropped short words ("I", "O", "my") still matter in lyrics, so the
+// include ones are kept in `shortTerms` for callers that can check them by
+// hand (SongService::search). A query of only short words then has an empty
+// `match` and a non-empty `shortTerms`.
 struct FtsQuery
 {
-    QString     match;    // safe MATCH expression, or "" when unsearchable
-    QStringList terms;    // plain lowercased include terms — for snippet/highlight
+    QString     match;       // safe MATCH expression, or "" when unsearchable
+    QStringList terms;       // plain lowercased include terms — for snippet/highlight
+    QStringList shortTerms;  // lowercased include terms under the trigram floor
+    QStringList excludeTerms;  // lowercased -term / NOT term words, for the same by-hand path
+    bool        useOr = false;  // terms were joined with OR rather than AND
 
     bool isEmpty() const { return match.isEmpty(); }
 };

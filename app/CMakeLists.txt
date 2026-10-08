@@ -108,6 +108,8 @@ qt_add_qml_module(crater
         # ── Reusable control atoms ────────────────────────────────────
         qml/controls/AppIcon.qml
         qml/controls/AppScrollBar.qml
+        qml/controls/AppHScrollBar.qml
+        qml/controls/HWheelArea.qml
         qml/controls/IconButton.qml
         qml/controls/Badge.qml
         qml/controls/ElidedText.qml

@@ -133,7 +133,7 @@ Rectangle {
             Text {
                 visible: workspace._isBuiltin
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Built-in themes can't be edited — duplicate to customize")
+                text: qsTr("Built-in themes can't be edited. Duplicate one to customize it.")
                 color: Theme.color.warning
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize

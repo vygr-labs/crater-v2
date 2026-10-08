@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QSet>
 #include <QMediaPlayer>
 #include <QObject>
 #include <QString>
@@ -68,6 +69,9 @@ private slots:
 private:
     void processNext();
     void finishCurrent();
+    // Failure path: queue the current video once more after a short delay,
+    // then finish it. A second failure gives up for this session.
+    void retryOrGiveUp();
 
     MediaService* m_media   = nullptr;
     QMediaPlayer* m_player  = nullptr;
@@ -75,6 +79,8 @@ private:
     QTimer*       m_timeout = nullptr;
 
     QList<qint64> m_queue;
+    // Videos already given their one retry (see retryOrGiveUp).
+    QSet<qint64>  m_retried;
     qint64        m_currentId    = 0;
     bool          m_captured     = false;
     int           m_readyCounter = 0;

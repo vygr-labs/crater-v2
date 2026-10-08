@@ -7,7 +7,7 @@ import Crater
 //
 // Controls:
 //   • Crop — CroppableMediaPreview seeded with the item's saved crop. Drag to
-//     frame a sub-region (arrows nudge, Esc resets). Video crops against its
+//     frame a sub-region (arrows nudge, Backspace resets). Video crops against its
 //     first-frame poster; the rect applies to the live clip at render.
 //   • Fit  — Default (follow the global default) / Contain / Cover / Stretch.
 //   • Video only — Loop and Mute toggles.
@@ -226,9 +226,11 @@ ModalShell {
                 Text {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
+                    // Backspace, not Esc: Esc is the one key that closes
+                    // every dialog (Main.qml), so it can't also reset here.
                     text: root._isVideo
-                          ? qsTr("Drag on the poster to crop · Esc resets")
-                          : qsTr("Drag to crop · arrows nudge · Esc resets")
+                          ? qsTr("Drag on the poster to crop · Backspace resets")
+                          : qsTr("Drag to crop · Ctrl+drag draws a new box · Backspace resets")
                     color: Theme.color.textTertiary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize

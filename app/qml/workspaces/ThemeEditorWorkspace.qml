@@ -174,6 +174,9 @@ Rectangle {
     // twice and the author can judge the balance between them.
     readonly property string mockSlideSubtitle:  "Luke 15"
     readonly property string mockSlideBodyRight: "The elder son stayed home and was just as lost."
+    // Shown whatever the Show author / Show CCLI toggles say, so the author
+    // can always see and style the node they placed.
+    readonly property string mockSongCredits:    "John Newton · CCLI 22025"
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -186,6 +189,7 @@ Rectangle {
             case "presentationBody":  return mockSlideBody
             case "presentationSubtitle":  return mockSlideSubtitle
             case "presentationBodyRight": return mockSlideBodyRight
+            case "songCredits":       return mockSongCredits
             case "custom":            return data.text || qsTr("(empty)")
         }
         return ""
@@ -308,7 +312,7 @@ Rectangle {
                 workspace.savedIndex = workspace.historyIndex
                 AppState.closeThemeEditor()
             } else {
-                saveError = qsTr("Could not save theme — check the log for details")
+                saveError = qsTr("Could not save theme. Check the log for details.")
                 saveErrorClearTimer.restart()
             }
         } else {
@@ -448,10 +452,12 @@ Rectangle {
             workspace.saveToHistory()
         } }
     // Off while a modal is open over the workspace: Main.qml's Escape closes
-    // that modal then. The trailing-Escape check stops the second press of
-    // a double tap that closed a dialog from also deselecting or closing.
+    // that modal then. Off while a colour picker is open too, whose own
+    // Escape closes just the picker and leaves the layer selected. The
+    // trailing-Escape check stops the second press of a double tap that
+    // closed a dialog from also deselecting or closing.
     Shortcut { sequence: "Escape"
-        enabled: AppState.activeModal === ""
+        enabled: AppState.activeModal === "" && !AppState.colorPopoverOpen
         onActivated: {
             if (AppState.isTrailingEscape()) return
             if (workspace.selectedNodeId !== "") workspace.selectedNodeId = ""

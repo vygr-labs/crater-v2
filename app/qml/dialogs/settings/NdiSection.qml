@@ -15,9 +15,9 @@ Item {
     // Pixel-format + resolution options. `value` is the SettingsService enum
     // string; NdiService maps it to a FourCC / target size at start().
     readonly property var _formatOptions: [
-        { label: qsTr("BGRA — full color + alpha"), value: "bgra" },
-        { label: qsTr("BGRX — opaque"),             value: "bgrx" },
-        { label: qsTr("UYVY — low bandwidth"),      value: "uyvy" }
+        { label: qsTr("BGRA: full color + alpha"), value: "bgra" },
+        { label: qsTr("BGRX: opaque"),             value: "bgrx" },
+        { label: qsTr("UYVY: low bandwidth"),      value: "uyvy" }
     ]
     readonly property var _resolutionOptions: [
         { label: qsTr("Native (1080p)"),  value: "native" },
@@ -253,7 +253,7 @@ Item {
                 title: qsTr("Hide pictures and video")
                 description: SettingsService.useHeadlessNdi
                     ? qsTr("Send a blank frame while an image or video is live. Lyrics and scripture still go out.")
-                    : qsTr("Needs the headless renderer, below — the legacy path mirrors the audience screen as-is.")
+                    : qsTr("Needs the headless renderer, below. The legacy path mirrors the audience screen as-is.")
                 ToggleSwitch {
                     id: hideMediaToggle
                     enabled: SettingsService.useHeadlessNdi

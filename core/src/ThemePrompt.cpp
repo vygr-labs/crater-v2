@@ -41,6 +41,9 @@ QString linkageTable(const QString& kind)
             "  \"scriptureRef\" resolves to the SONG TITLE for a song item. This\n"
             "                 is the normal way to label the screen with the\n"
             "                 song's name.\n"
+            "  \"songCredits\"  the song's author and CCLI number. Optional.\n"
+            "                 Keep it small, it is attribution. Empty when\n"
+            "                 the operator hides both.\n"
             "  \"custom\"       literal text you supply in data.text.\n");
     }
     if (kind == QLatin1String("scripture")) {

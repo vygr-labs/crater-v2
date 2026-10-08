@@ -436,10 +436,18 @@ Item {
         if (item) AppState.pushLibraryLive(item)
     }
 
+    // Returns the schedule row the passage landed in, or -1. During a
+    // "Change passage" that row is the one being replaced, not a new one.
     function addToScheduleFor(idx) {
+        const item = itemFor(idx)
+        return item ? AppState.addItemToSchedule(item) : -1
+    }
+
+    // The passage a row action works on: the multi-selection if there is
+    // one, else the single verse at idx.
+    function itemFor(idx) {
         const sel = AppState.librarySelectedIndices[tabKey] || []
-        const item = (sel.length > 0) ? _activeItem() : verseItemAt(idx)
-        if (item) AppState.addItemToSchedule(item)
+        return (sel.length > 0) ? _activeItem() : verseItemAt(idx)
     }
 
     // Sync the sidebar search input to the verse at idx. Used after every
@@ -896,6 +904,45 @@ Item {
         }
     }
 
+    // ── Change-passage banner ───────────────────────────────────────────
+    // Shown while a schedule row's "Change passage…" is pending, so the
+    // operator knows the next Add to Schedule replaces that row. Collapses
+    // to zero height otherwise, which keeps the content anchored to it.
+    Rectangle {
+        id: repickBanner
+        anchors.top: actionBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        readonly property bool active: AppState.passageRepickActive
+        visible: active
+        height: active ? Theme.d(36) : 0
+        color: Theme.color.brandSubtle
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.space.md
+            anchors.right: repickCancel.left
+            anchors.rightMargin: Theme.space.md
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Pick a new passage for %1. Add to Schedule replaces it.")
+                    .arg(AppState.passageRepickTitle)
+            elide: Text.ElideRight
+            color: Theme.color.textPrimary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
+        }
+
+        GhostButton {
+            id: repickCancel
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space.sm
+            anchors.verticalCenter: parent.verticalCenter
+            implicitHeight: Theme.d(26)
+            text: qsTr("Cancel")
+            onClicked: AppState.cancelPassageRepick()
+        }
+    }
+
     // ── Empty states ────────────────────────────────────────────────────
     // Two cases, mirroring electron's Switch:
     //   1. No verses available (no translation selected, or selected
@@ -904,7 +951,7 @@ Item {
     // The "no query in search mode" case from before was removed because
     // currentVerses now falls back to the full list — matches electron.
     EmptyState {
-        anchors.top: actionBar.bottom
+        anchors.top: repickBanner.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -916,7 +963,7 @@ Item {
     }
 
     EmptyState {
-        anchors.top: actionBar.bottom
+        anchors.top: repickBanner.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
@@ -933,7 +980,7 @@ Item {
         id: list
         ScrollBar.vertical: AppScrollBar {}
 
-        anchors.top: actionBar.bottom
+        anchors.top: repickBanner.bottom
         anchors.topMargin: Theme.space.sm
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -1145,20 +1192,16 @@ Item {
                 // Group order matches SongsTab and MediaTab: row-edit
                 // actions first, then projection. Verses come from
                 // read-only Bible DBs, so markup lives on a schedule row:
-                // Mark Up adds the verse and opens that row's editor, the
-                // same one the schedule's Edit… opens.
+                // Mark Up opens the same editor the schedule's Edit… opens,
+                // on the passage's row if it has one, else on a row that is
+                // only added when the markup is saved (AppState.markUpScripture).
                 menuItems: [
                     { label: qsTr("Mark Up…"), iconName: "edit-3",
-                      action: function() {
-                          // Only open the editor if a row was really added,
-                          // or it would open on whatever row was last.
-                          const before = ScheduleService.currentItems.length
-                          root.addToScheduleFor(index)
-                          const after = ScheduleService.currentItems.length
-                          if (after > before) AppState.editScheduleItem(after - 1)
-                      } },
+                      action: function() { AppState.markUpScripture(root.itemFor(index)) } },
                     { separator: true },
-                    { label: qsTr("Add to Schedule"), iconName: "plus",
+                    { label: AppState.passageRepickActive
+                             ? qsTr("Replace in Schedule") : qsTr("Add to Schedule"),
+                      iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
                     { label: qsTr("Push to Live"), iconName: "play",
                       action: function() { root.pushLiveFor(index) } }

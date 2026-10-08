@@ -28,6 +28,9 @@ namespace {
 // stalling the whole queue.
 constexpr int kPerItemTimeoutMs = 6000;
 
+// Pause before a failed video's one retry (see retryOrGiveUp).
+constexpr int kRetryDelayMs = 1500;
+
 // Thumb dimensions — 16:9, large enough for the widest grid cell
 // (cellWidth ~320 at 4 columns) at near-native crispness.
 constexpr int kThumbW = 320;
@@ -168,13 +171,24 @@ void VideoThumbnailer::onMediaStatus(QMediaPlayer::MediaStatus status)
     // the backend can't open the file at all. Surface the player's own
     // error string and the path we passed so the next failure (if any) is
     // actionable.
-    if (status == QMediaPlayer::InvalidMedia
-            || status == QMediaPlayer::NoMedia) {
+    //
+    // NoMedia is deliberately NOT a failure. finishCurrent()'s
+    // setSource(QUrl{}) reports NoMedia, and that report can land after
+    // processNext() has already handed the player the next file. Treating
+    // it as a failure dropped that next video, which is how the first
+    // video of a batch import ended up with no thumbnail. A file that
+    // really can't be opened reports InvalidMedia, and the timeout covers
+    // a backend that goes quiet.
+    //
+    // A status that no longer matches the player's own is a late report
+    // from an earlier file, so it is skipped rather than charged to this one.
+    if (status != m_player->mediaStatus()) return;
+    if (status == QMediaPlayer::InvalidMedia) {
         const QString err = m_player->errorString();
         qWarning().noquote() << "VideoThumbnailer: invalid media for id"
                              << m_currentId
                              << (err.isEmpty() ? QString() : QStringLiteral("— ") + err);
-        finishCurrent();
+        retryOrGiveUp();
     }
 }
 
@@ -223,15 +237,38 @@ void VideoThumbnailer::onTimeout()
     if (m_currentId == 0) return;
     qWarning().noquote() << "VideoThumbnailer: timeout extracting frame for id"
                          << m_currentId << "— moving on";
-    finishCurrent();
+    retryOrGiveUp();
 }
 
 void VideoThumbnailer::onPlayerError(QMediaPlayer::Error error,
                                      const QString& errorString)
 {
     if (m_currentId == 0 || error == QMediaPlayer::NoError) return;
+    // Same late-report guard as onMediaStatus: once the next source is set
+    // the player's error resets, so a stale error reads NoError here.
+    if (m_player->error() == QMediaPlayer::NoError) return;
     qWarning().noquote() << "VideoThumbnailer: player error for id"
                          << m_currentId << "—" << errorString;
+    retryOrGiveUp();
+}
+
+void VideoThumbnailer::retryOrGiveUp()
+{
+    // One more go, a little later. The first decode after an idle spell
+    // can be slow (decoder warm-up, the Media tab opening the same file in
+    // Preview at the same moment), and a second attempt with the backend
+    // warm usually lands. The delay keeps the retry clear of any late
+    // signal from this attempt. Only once, so a genuinely broken file
+    // can't cycle forever.
+    const qint64 id = m_currentId;
+    if (!m_retried.contains(id) && !m_queue.contains(id)) {
+        m_retried.insert(id);
+        QTimer::singleShot(kRetryDelayMs, this, [this, id]() {
+            if (id == m_currentId || m_queue.contains(id)) return;
+            m_queue.append(id);
+            if (m_currentId == 0) processNext();
+        });
+    }
     finishCurrent();
 }
 

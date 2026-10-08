@@ -126,6 +126,7 @@ Item {
             case "presentationBody":  return _pageText
             case "presentationSubtitle":  return _slideSubtitle
             case "presentationBodyRight": return _slideBodyRight
+            case "songCredits":       return AppState.songCreditsText(item)
             case "custom":            return data.text || ""
         }
         return data.text || ""

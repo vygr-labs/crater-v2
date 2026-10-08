@@ -200,6 +200,23 @@ Item {
         return _refText
     }
 
+    // Song credits (Settings > Song > Show author / Show CCLI number), for
+    // the `songCredits` linkage and the fallback credits line below.
+    readonly property string _songCreditsText:
+        layerKind === "song" ? AppState.songCreditsText(layerItem) : ""
+
+    // A theme that places its own credits node owns the credits, so the
+    // fallback line stands down rather than printing them twice.
+    readonly property bool _themeHasCredits: {
+        const n = _nodes || []
+        for (let i = 0; i < n.length; i++) {
+            if (n[i] && n[i].kind === "text" && n[i].data
+                    && n[i].data.linkage === "songCredits")
+                return true
+        }
+        return false
+    }
+
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
@@ -211,6 +228,7 @@ Item {
             case "presentationBody":  return _pageText
             case "presentationSubtitle":  return _slideSubtitle
             case "presentationBodyRight": return _slideBodyRight
+            case "songCredits":       return _songCreditsText
             case "custom":            return data.text || ""
         }
         return data.text || ""
@@ -325,6 +343,33 @@ Item {
         font.pixelSize: Math.max(12, Math.round(root.height * 0.030))
         font.weight: Theme.font.weightSemiBold
         opacity: 0.92
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+    }
+
+    // ── Song credits line (global toggles) ──────────────────────────────
+    // The fallback for themes without a `songCredits` node: Show author /
+    // Show CCLI number draw their own line on top of the theme, the same way
+    // the scripture footer above does. Slightly smaller, since it is
+    // attribution rather than content. A theme with its own credits node
+    // places and styles them itself, so this stays hidden there.
+    Text {
+        id: songCredits
+        visible: root.layerKind === "song"
+                 && !root._themeHasCredits
+                 && !ProjectionService.isClear
+                 && text.length > 0
+        text: root._songCreditsText
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Math.round(root.height * 0.035)
+        width: Math.min(implicitWidth, root.width * 0.9)
+        elide: Text.ElideRight
+        color: "#ffffff"
+        style: Text.Outline
+        styleColor: "#cc000000"
+        font.family: Theme.font.family
+        font.pixelSize: Math.max(11, Math.round(root.height * 0.024))
+        opacity: 0.85
         Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
     }
 }

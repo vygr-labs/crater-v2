@@ -287,7 +287,11 @@ Item {
         const s = _ctrlSelStart(ctrlStage)
         const e = _ctrlSelEnd(ctrlStage)
         Qt.callLater(function() {
-            if (inputField) inputField.select(s, e)
+            if (!inputField) return
+            inputField.select(s, e)
+            // The text is settled now, so later cursor moves are the
+            // operator's (see onCursorPositionChanged).
+            inputField._ctrlSeenText = inputField.text
         })
     }
 
@@ -646,7 +650,19 @@ Item {
             // position change to snap to the corresponding stage. Skipped
             // when the change came from our own select() call (which doesn't
             // alter the cursor's stage).
+            //
+            // Every accepted key rebuilds ctrlDisplay, and setting new text
+            // parks the cursor at the end, which reads as a click on the
+            // verse. So a move that arrives with new text is ignored; only a
+            // move over unchanged text (click, arrow key) picks a stage.
+            property string _ctrlSeenText: ""
             onCursorPositionChanged: {
+                // Tracked in both modes, so switching to controlled mode
+                // doesn't start from text it never saw.
+                if (text !== _ctrlSeenText) {
+                    _ctrlSeenText = text
+                    return
+                }
                 if (!root.isControlledMode) return
                 if (!activeFocus) return
                 const stageAtCursor = root.ctrlStageAt(cursorPosition)
@@ -707,16 +723,17 @@ Item {
 
                 // Ctrl+A — the field claims it through ShortcutOverride, so
                 // Main.qml's select-all-rows Shortcut never sees it while the
-                // keyboard sits here, which is most of the time. With nothing
-                // typed there is no text to select, so hand it to the list
-                // instead. With text, the field keeps its own select-all. If
-                // the operator last worked in the schedule, it goes there
-                // whatever the box holds, same as the arrow keys below.
+                // keyboard sits here. It stays the field's own select-all,
+                // even with the box empty: Ctrl+A in a text box that ticked
+                // the whole library left the next Delete or drag acting on
+                // every song. Selecting every library row needs the list
+                // focused. The one hand-off is the schedule: if the operator
+                // last worked there, it goes there, same as the arrow keys
+                // below.
                 if ((event.modifiers & Qt.ControlModifier)
                     && event.key === Qt.Key_A
                     && !root.isControlledMode
-                    && (inputField.text.length === 0
-                        || AppState.activeFocusPanel === "schedule")) {
+                    && AppState.activeFocusPanel === "schedule") {
                     if (AppState.requestSelectAll()) {
                         event.accepted = true
                         return
@@ -964,7 +981,7 @@ Item {
               && root.queryText.length > 0
         text: root.parsedRef
               ? qsTr("Interpreted: ") + root.interpretedText
-              : qsTr("Interpreted: —")
+              : qsTr("Interpreted: no match")
         color: root.parsedRef ? Theme.color.textSecondary : Theme.color.textTertiary
         font.family: Theme.font.family
         // Body size (13px) — small enough to feel ancillary to the input

@@ -103,8 +103,11 @@ ModalShell {
     function confirm() {
         const trimmed = input.text.trim()
         if (trimmed.length === 0) return
+        // Close BEFORE running the callback. A callback that opens the next
+        // dialog (Create presentation opens its editor) would otherwise be
+        // the modal this closeModal() shuts, straight after it opened.
         const cb = AppState.modalProps.onConfirm
-        if (typeof cb === "function") cb(trimmed)
         AppState.closeModal()
+        if (typeof cb === "function") cb(trimmed)
     }
 }

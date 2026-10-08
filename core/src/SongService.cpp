@@ -126,9 +126,14 @@ QString flattenSectionsForFts(const QVariantList& sections)
 // The window is snapped out to whole words and bracketed with ellipses when
 // it doesn't reach the start/end of the lyrics. Returns empty when no term is
 // present (e.g. the FTS hit was on title/author, not lyrics).
-QString makeSnippet(const QString& lyrics, const QStringList& terms, int radius = 44)
+//
+// `words` are matched whole, not as substrings. They are the short words
+// ("o", "my"), which as substrings would land inside the first longer word
+// that happens to contain them.
+QString makeSnippet(const QString& lyrics, const QStringList& terms,
+                    const QStringList& words = {}, int radius = 44)
 {
-    if (lyrics.isEmpty() || terms.isEmpty()) return QString();
+    if (lyrics.isEmpty() || (terms.isEmpty() && words.isEmpty())) return QString();
 
     const QString hay = lyrics.toLower();
     int matchPos = -1;
@@ -138,6 +143,19 @@ QString makeSnippet(const QString& lyrics, const QStringList& terms, int radius 
         if (pos >= 0 && (matchPos < 0 || pos < matchPos)) {
             matchPos = pos;
             matchLen = term.size();
+        }
+    }
+    for (const QString& word : words) {
+        for (int pos = hay.indexOf(word); pos >= 0; pos = hay.indexOf(word, pos + 1)) {
+            const int after = pos + word.size();
+            const bool whole = (pos == 0 || !hay.at(pos - 1).isLetterOrNumber())
+                && (after >= hay.size() || !hay.at(after).isLetterOrNumber());
+            if (!whole) continue;
+            if (matchPos < 0 || pos < matchPos) {
+                matchPos = pos;
+                matchLen = word.size();
+            }
+            break;
         }
     }
     if (matchPos < 0) return QString();
@@ -204,6 +222,35 @@ QStringList wordTokens(const QString& s)
     return out;
 }
 
+// Whether `text` holds every one of `words` (any one, when `any`) as a whole
+// word. Apostrophes are dropped first, the same normalisation the FTS index
+// and buildFtsQuery apply, so a query "im" finds "I'm".
+bool containsWords(QString text, const QStringList& words, bool any)
+{
+    text.remove(QLatin1Char('\''));
+    text.remove(QChar(0x2019));
+    const QStringList tokens = wordTokens(text);
+    const QSet<QString> have(tokens.cbegin(), tokens.cend());
+    for (const QString& w : words) {
+        if (have.contains(w)) { if (any) return true; }
+        else if (!any) return false;
+    }
+    return !any;
+}
+
+// Whether `text` holds any of `terms` as a substring, which is how the trigram
+// index matches an excluded word. Normalised the same way as containsWords.
+bool containsAnyTerm(QString text, const QStringList& terms)
+{
+    if (terms.isEmpty()) return false;
+    text.remove(QLatin1Char('\''));
+    text.remove(QChar(0x2019));
+    text = text.toLower();
+    for (const QString& t : terms)
+        if (text.contains(t)) return true;
+    return false;
+}
+
 // Max edit distance tolerated for a query word of the given length. Short
 // words get 0 (a 1-char slip on a 3-letter word matches half the dictionary);
 // longer words scale up.
@@ -217,10 +264,15 @@ int termThreshold(int len)
 
 // Score a candidate: every query term must fuzzily match some token, else the
 // candidate is rejected (returns -1). Otherwise returns the summed distance —
-// lower is a closer match.
-int fuzzyScore(const QStringList& qterms, const QStringList& tokens)
+// lower is a closer match. Each of `shortWords` missing from the tokens adds 1
+// rather than rejecting, so "O come" ranks "O Come All Ye Faithful" first
+// without dropping a title that only matched the longer word.
+int fuzzyScore(const QStringList& qterms, const QStringList& tokens,
+               const QStringList& shortWords = {})
 {
     int total = 0;
+    for (const QString& w : shortWords)
+        if (!tokens.contains(w)) ++total;
     for (const QString& q : qterms) {
         const int thr = termThreshold(q.size());
         int best = thr + 1;
@@ -295,8 +347,10 @@ struct SongService::Impl
             "       bm25(songs_fts, 10.0, 6.0, 1.0) AS score "
             "FROM songs_fts "
             "JOIN songs s ON s.id = songs_fts.rowid "
-            "WHERE songs_fts MATCH ? "
-            "ORDER BY score ASC LIMIT 100")))
+            // ?2 is the row cap. -1 lifts it, for when short words still
+            // have to filter the rows (see search()).
+            "WHERE songs_fts MATCH ?1 "
+            "ORDER BY score ASC LIMIT ?2")))
         , insertSong(conn.prepare(QStringLiteral(
             // Binds: 1=title, 2=author, 3=ccli, 4=theme_id, 5=created_at,
             // 6=updated_at, 7=copyright
@@ -549,9 +603,74 @@ QList<Song> SongService::search(QString query, QString field)
 
     // Sanitize the raw query into a safe FTS5 MATCH expression (quote every
     // term, drop sub-3-char words the trigram tokenizer can't match, honor
-    // "phrases"/OR/-exclude). Empty → nothing searchable; skip FTS entirely.
+    // "phrases"/OR/-exclude).
     const db::FtsQuery fts = db::buildFtsQuery(query);
-    if (fts.isEmpty()) return out;
+
+    // The dropped short words ("I", "O", "my") are checked by hand, as whole
+    // words: against the rows the longer words found, or across the library
+    // when there are no longer words. With OR and longer words present they
+    // stay dropped, since an OR'd short word would have to ADD rows the index
+    // can't find.
+    QStringList shortWords;
+    for (const QString& t : fts.shortTerms)
+        for (const QString& w : wordTokens(t))
+            if (!shortWords.contains(w)) shortWords.append(w);
+    if (fts.isEmpty() && shortWords.isEmpty()) return out;
+    const bool filterShort = !shortWords.isEmpty() && !fts.useOr;
+
+    constexpr int kResultCap = 100;
+
+    // The text a short word has to appear in, matching the search's scope.
+    const auto scopeText = [&](const Song& s, const QString& lyrics) -> QString {
+        if (field == QLatin1String("title"))  return s.title;
+        if (field == QLatin1String("author")) return s.author;
+        if (field == QLatin1String("lyrics")) return lyrics;
+        return s.title + QLatin1Char(' ') + s.author + QLatin1Char(' ') + lyrics;
+    };
+
+    if (fts.isEmpty()) {
+        // Only short words. Two passes over the cached library: title and
+        // author first, which needs no lyrics read and ranks those hits
+        // first (as the bm25 weights do), then lyrics for the rest, which
+        // stops at the cap. Excluded words ("I -love") are checked by hand
+        // too, since there is no MATCH to carry the NOT.
+        //
+        // The lyrics pass reads every song's lyrics when little matches, so
+        // it waits for two short words. A lone one or two letters is nearly
+        // always the start of a longer word ("gr" on the way to "grace"),
+        // and the search runs after every pause in typing.
+        const QList<Song> all = allSongs();
+        QSet<qint64> taken;
+        if (!scoped || field != QLatin1String("lyrics")) {
+            for (const Song& s : all) {
+                if (out.size() >= kResultCap) break;
+                const QString meta = (field == QLatin1String("title"))  ? s.title
+                                   : (field == QLatin1String("author")) ? s.author
+                                   : QString(s.title + QLatin1Char(' ') + s.author);
+                if (!containsWords(meta, shortWords, fts.useOr)) continue;
+                const QString lyrics = m_impl->fetchFlattenedLyrics(s.id);
+                if (containsAnyTerm(scopeText(s, lyrics), fts.excludeTerms)) continue;
+                Song hit = s;
+                hit.snippet = makeSnippet(lyrics, {}, shortWords);
+                out.append(std::move(hit));
+                taken.insert(s.id);
+            }
+        }
+        if ((unified || field == QLatin1String("lyrics")) && shortWords.size() >= 2) {
+            for (const Song& s : all) {
+                if (out.size() >= kResultCap) break;
+                if (taken.contains(s.id)) continue;
+                const QString lyrics = m_impl->fetchFlattenedLyrics(s.id);
+                const QString text = scopeText(s, lyrics);
+                if (!containsWords(text, shortWords, fts.useOr)) continue;
+                if (containsAnyTerm(text, fts.excludeTerms)) continue;
+                Song hit = s;
+                hit.snippet = makeSnippet(lyrics, {}, shortWords);
+                out.append(std::move(hit));
+            }
+        }
+        return out;
+    }
 
     // Column-scope the whole expression when a single field is requested:
     // `{lyrics}:(…)` restricts every term to that column of the FTS index.
@@ -563,6 +682,9 @@ QList<Song> SongService::search(QString query, QString field)
         auto& stmt = m_impl->searchFts;
         stmt.reset();
         stmt.bind(1, matchExpr);
+        // Uncapped while short words still have to filter, or a match
+        // ranked past the cap could never surface.
+        stmt.bind(2, filterShort ? -1 : kResultCap);
         while (stmt.step()) {
             out.append(m_impl->readSongRow(stmt));
         }
@@ -572,19 +694,28 @@ QList<Song> SongService::search(QString query, QString field)
         return out;
     }
 
-    // Second pass — attach a matched-lyric snippet to each hit. Run only after
-    // the search cursor drains to SQLITE_DONE (self-releasing its read txn) so
-    // we never interleave two open cursors on the one connection.
+    // Second pass — drop rows missing a short word, and attach a matched-lyric
+    // snippet to each hit. Run only after the search cursor drains to
+    // SQLITE_DONE (self-releasing its read txn) so we never interleave two
+    // open cursors on the one connection.
+    QList<Song> kept;
     for (Song& song : out) {
+        if (kept.size() >= kResultCap) break;
         const QString lyrics = m_impl->fetchFlattenedLyrics(song.id);
-        song.snippet = makeSnippet(lyrics, fts.terms);
+        if (filterShort && !containsWords(scopeText(song, lyrics), shortWords, false))
+            continue;
+        song.snippet = makeSnippet(lyrics, fts.terms, filterShort ? shortWords : QStringList());
+        kept.append(std::move(song));
     }
+    out = std::move(kept);
 
     // Typo-tolerant fallback: exact FTS found nothing, so fuzzy-match the query
     // words against song title + author tokens (metadata only — cheap, and the
     // title is what operators misspell). allSongs() is cached; this pass only
     // runs on the otherwise-empty path, and only for a unified search (fuzzing
     // title/author while the user explicitly scoped to Lyrics would be wrong).
+    // Short words only rank here (see fuzzyScore), so a title that matched
+    // the longer words is never dropped for missing an "a".
     if (out.isEmpty() && unified) {
         QStringList qterms;
         for (const QString& w : wordTokens(query)) {
@@ -597,7 +728,7 @@ QList<Song> SongService::search(QString query, QString field)
             for (const Song& s : all) {
                 QStringList tokens = wordTokens(s.title);
                 tokens += wordTokens(s.author);
-                const int sc = fuzzyScore(qterms, tokens);
+                const int sc = fuzzyScore(qterms, tokens, shortWords);
                 if (sc >= 0) scored.push_back({ sc, s });
             }
             std::stable_sort(scored.begin(), scored.end(),

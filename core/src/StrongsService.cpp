@@ -82,15 +82,19 @@ QString decodeEntities(QString s)
 }
 
 // Flatten a Strong's HTML `data` blob into trimmed, non-empty text lines.
-// Block-level closers become line breaks; every other tag is dropped.
+// Block-level tags become line breaks; every other tag is dropped.
 QStringList htmlToLines(const QString& html)
 {
     QString s = html;
     // Block boundaries → newlines so fields/list-items don't run together.
-    static const QRegularExpression blockClose(
-        QStringLiteral("</p>|</li>|</ol>|</ul>|<br\\s*/?>"),
+    // Openers count as well as closers: Thayer nests lists as
+    // "of speech<ol><li>a word", which read "of speecha word" when only
+    // closers broke the line. Blank lines from back-to-back tags are
+    // dropped below.
+    static const QRegularExpression blockTag(
+        QStringLiteral("</?(?:p|li|ol|ul|div)\\b[^>]*>|<br\\s*/?>"),
         QRegularExpression::CaseInsensitiveOption);
-    s.replace(blockClose, QStringLiteral("\n"));
+    s.replace(blockTag, QStringLiteral("\n"));
     // Drop every remaining tag.
     static const QRegularExpression anyTag(QStringLiteral("<[^>]*>"));
     s.replace(anyTag, QString());
@@ -484,8 +488,12 @@ QList<StrongsWord> StrongsService::tokenize(QString verseText)
     s.remove(title);
 
     // 2. Remove every tag EXCEPT the Strong's tags (<WH####> / <WG####>),
-    //    keeping the enclosed text of formatting tags like <FI>..<Fi>.
-    static const QRegularExpression nonStrongsTag(QStringLiteral("<(?!W[HG]\\d)[^>]*>"));
+    //    keeping the enclosed text of formatting tags like <FI>..<Fi>. The
+    //    digits must run to the '>': a suffixed tag such as <WG1161x> (a
+    //    Greek word with no English rendering, as at the start of John 3:1)
+    //    has no word to attach to, so it goes too. Matching only "<WG" plus
+    //    a digit kept it, and tokenRx then read it as part of the next word.
+    static const QRegularExpression nonStrongsTag(QStringLiteral("<(?!W[HG]\\d+>)[^>]*>"));
     s.replace(nonStrongsTag, QStringLiteral(" "));
 
     // 3. Walk word tokens and Strong's tags in order. A tag attaches its number

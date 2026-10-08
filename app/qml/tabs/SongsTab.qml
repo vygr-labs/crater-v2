@@ -454,6 +454,9 @@ Item {
                 width: 28; height: 22
                 radius: 0
                 color: addMa.containsMouse ? Theme.color.raised : "transparent"
+                ToolTip.visible: addMa.containsMouse
+                ToolTip.text: qsTr("New song")
+                ToolTip.delay: 400
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
                 AppIcon {
@@ -482,6 +485,10 @@ Item {
                 width: 28; height: 22
                 radius: 0
                 color: importMa.containsMouse ? Theme.color.raised : "transparent"
+                // A bare download icon doesn't say "import", so name it.
+                ToolTip.visible: importMa.containsMouse
+                ToolTip.text: qsTr("Import songs from EasyWorship")
+                ToolTip.delay: 400
                 Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
 
                 AppIcon {

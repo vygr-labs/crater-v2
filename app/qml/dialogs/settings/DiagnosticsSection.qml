@@ -30,7 +30,7 @@ Item {
             // explicit button below; that press is the opt-in.
             Text {
                 Layout.fillWidth: true
-                text: qsTr("If something isn't working right, send your log file to the Crater team — it helps them track down the cause. The log lists file names and paths from your media library and a record of recent app activity. It contains no passwords.")
+                text: qsTr("If something isn't working right, send your log file to the Crater team. It helps them track down the cause. The log lists file names and paths from your media library and a record of recent app activity. It contains no passwords.")
                 color: Theme.color.textSecondary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
@@ -103,7 +103,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: LogReportService.status === LogReportService.Sent
-                          ? qsTr("Logs sent — thank you. The team has what they need.")
+                          ? qsTr("Logs sent. Thank you, the team has what they need.")
                           : qsTr("Couldn't send the logs: %1").arg(LogReportService.lastError)
                     color: LogReportService.status === LogReportService.Sent
                            ? Theme.color.textSecondary : Theme.color.live
@@ -119,7 +119,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.topMargin: Theme.space.md
                 visible: !LogReportService.logAvailable
-                text: qsTr("No log file has been created yet — there is nothing to send.")
+                text: qsTr("No log file has been created yet, so there is nothing to send.")
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize

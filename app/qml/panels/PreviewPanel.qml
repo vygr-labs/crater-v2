@@ -450,9 +450,9 @@ Rectangle {
                         text: root._cardMode === "lines"
                               ? ((card.headLabel.length > 0
                                     ? "<b>" + card.headLabel.toUpperCase() + "</b>&nbsp;&nbsp;" : "")
-                                 + LyricsService.dslToHtml(String(modelData.content || "")
+                                 + LyricsService.dslToHtml(AppState.withVerseNumberSetting(modelData.content)
                                                                .split("\n").join(" / ")))
-                              : LyricsService.dslToHtml(modelData.content || "")
+                              : LyricsService.dslToHtml(AppState.withVerseNumberSetting(modelData.content))
                         maximumLineCount: root._cardMode === "lines" ? 1 : 100000
                         clip: root._cardMode === "lines"
                         color:          Theme.color.textPrimary

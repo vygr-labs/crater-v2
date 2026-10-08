@@ -404,7 +404,7 @@ Item {
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
-                            text: qsTr("Audience screen — configured under Output above")
+                            text: qsTr("Audience screen, configured under Output above")
                             color: Theme.color.textTertiary
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
@@ -456,7 +456,7 @@ Item {
                             return modelData.screenName.length > 0
                                 ? qsTr("Display \"%1\" is not connected — this output is dark until it returns.")
                                       .arg(modelData.screenName)
-                                : qsTr("No display assigned — pick one for this output to appear.")
+                                : qsTr("No display assigned. Pick one for this output to appear.")
                         }
                         const screens = OutputService.screens
                         if (idx < screens.length && screens[idx].isPrimary
@@ -512,7 +512,7 @@ Item {
                                 width: parent.width
                                 wrapMode: Text.WordWrap
                                 text: outRow._isStageMode
-                                        ? qsTr("Presenter view — live text, speaker notes, what is next")
+                                        ? qsTr("Presenter view: live text, speaker notes, what is next")
                                         : qsTr("Mirrors the audience render, with its own theme and transition")
                                 color: Theme.color.textTertiary
                                 font.family: Theme.font.family

@@ -139,7 +139,7 @@ Item {
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Remote control ships in v1.1 — controls below are a preview.")
+                        text: qsTr("Remote control ships in v1.1. The controls below are a preview.")
                         color: Theme.color.textSecondary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
