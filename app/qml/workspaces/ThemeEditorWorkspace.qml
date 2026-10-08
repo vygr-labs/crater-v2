@@ -155,12 +155,24 @@ Rectangle {
     function undo() {
         if (historyIndex <= 0) return
         historyIndex--
-        workingTheme.loadFrom(JSON.parse(JSON.stringify(historyStack[historyIndex])))
+        _restoreSnapshot(historyStack[historyIndex])
     }
     function redo() {
         if (historyIndex >= historyStack.length - 1) return
         historyIndex++
-        workingTheme.loadFrom(JSON.parse(JSON.stringify(historyStack[historyIndex])))
+        _restoreSnapshot(historyStack[historyIndex])
+    }
+    // loadFrom re-emits currentLayoutChanged even when the design stays the
+    // same, and that clears the selection (see the Connections below). An
+    // undo or redo keeps the layer selected when it is still in the same
+    // design, so the operator can keep stepping through its edits.
+    function _restoreSnapshot(snapshot) {
+        const keepId     = selectedNodeId
+        const keepLayout = workingTheme.currentLayoutId
+        workingTheme.loadFrom(JSON.parse(JSON.stringify(snapshot)))
+        if (keepId !== "" && workingTheme.currentLayoutId === keepLayout
+                && workingTheme.indexOf(keepId) >= 0)
+            selectedNodeId = keepId
     }
 
     // ── Mock content (preview / editor canvas) ────────────────────────
