@@ -170,6 +170,9 @@ jobs:
             echo '::error::Crater never reached its event loop'; fail=1; }
           grep -q 'Importer: using legacy DB at' "$log" || {
             echo '::error::First-run import did not find the bundled bibles.sqlite'; fail=1; }
+          if grep 'Importer failed' "$log"; then
+            echo '::error::First-run import failed (matched line above)'; fail=1
+          fi
           if grep -E 'failed to load component|is not installed|module ".*" plugin ".*" not found|Could not load the Qt platform plugin|StrongsService: .* not found' "$log"; then
             echo '::error::Loading errors in crater.log (matched lines above)'
             fail=1

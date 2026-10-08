@@ -235,7 +235,13 @@ void importBibleData(db::Connection& legacy,
     // 6. Populate FTS5 from the now-fully-imported verses table.
     {
         db::Transaction tx(target);
-        target.exec(QStringLiteral("DELETE FROM verses_fts"));
+        // verses_fts is contentless (content=''), which rejects a plain
+        // DELETE. 'delete-all' is the only clear, as in
+        // BibleService::rebuildFtsIndex. The DELETE failed every first-run
+        // import, so the sentinel was never written and the import re-ran on
+        // every launch with no search index.
+        target.exec(QStringLiteral(
+            "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
         target.exec(QStringLiteral(
             // Apostrophe-strip verse text at index time (ASCII ' + curly
             // char(8217)) so the trigram index matches the apostrophe-normalised
