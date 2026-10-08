@@ -51,6 +51,7 @@
 #include "VideoThumbnailer.h"
 
 #include "crater/BibleService.h"
+#include "crater/HelpLinks.h"
 #include "crater/StrongsService.h"
 #include "crater/CollectionService.h"
 #include "crater/PresentationService.h"
@@ -517,6 +518,8 @@ int main(int argc, char* argv[])
     // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
     // takes the path main.cpp logs to so it reports the exact file in use.
     crater::LogReportService  logReportService(logPath);
+    // Tutorial, docs and website addresses for Settings > Help.
+    crater::HelpLinks         helpLinks;
     // In-app updates (docs/auto-update.md). Constructing it touches nothing
     // but QSettings; the first network request is armed further down, after
     // the UI is up, and only when a check is actually due.
@@ -600,6 +603,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "HelpLinks",             &helpLinks);
     qmlRegisterSingletonInstance("Crater", 1, 0, "UpdateService",         &updateService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);

@@ -23,7 +23,8 @@ ModalShell {
         { id: "ndi",           label: qsTr("NDI"),            iconName: "radio" },
         { id: "profiles",      label: qsTr("Profiles"),       iconName: "users" },
         { id: "updates",       label: qsTr("Updates"),        iconName: "download" },
-        { id: "diagnostics",   label: qsTr("Diagnostics"),    iconName: "info" }
+        { id: "diagnostics",   label: qsTr("Diagnostics"),    iconName: "info" },
+        { id: "help",          label: qsTr("Help"),           iconName: "circle-help" }
     ]
 
     Item {
@@ -111,6 +112,7 @@ ModalShell {
                         case "profiles":      return profilesComp
                         case "updates":       return updatesComp
                         case "diagnostics":   return diagnosticsComp
+                        case "help":          return helpComp
                     }
                     return appearanceComp
                 }
@@ -162,4 +164,5 @@ ModalShell {
     Component { id: profilesComp;   ProfilesSection      { } }
     Component { id: updatesComp;    UpdatesSection       { } }
     Component { id: diagnosticsComp; DiagnosticsSection   { } }
+    Component { id: helpComp;       HelpSection          { } }
 }

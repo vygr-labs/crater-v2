@@ -86,6 +86,12 @@ QtObject {
         "upload":          "\ue19e",
         "external-link":   "\ue0b9",
 
+        // Help (Settings > Help)
+        "circle-help":     "\ue082",
+        "circle-play":     "\ue080",
+        "globe":           "\ue0e8",
+        "life-buoy":       "\ue101",
+
         // Output / display
         "monitor":         "\ue11d",
         "tv":              "\ue195",

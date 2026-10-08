@@ -84,6 +84,21 @@ target_link_libraries(test_version_compare PRIVATE
 
 add_test(NAME version_compare COMMAND test_version_compare)
 
+# -- Help links -- Settings > Help, the F1 dialog, the empty schedule ----
+# Every address must be a real https link, since a blank or mistyped one
+# only shows up when an operator presses the button.
+qt_add_executable(test_help_links
+    test_help_links.cpp
+)
+
+target_link_libraries(test_help_links PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME help_links COMMAND test_help_links)
+
 # -- SHA256SUMS parsing -- docs/auto-update.md --------------------------
 # The lookup that decides whether a downloaded installer may run. Pure text
 # in, hex out, so it tests headlessly; and it MUST be tested here, because
