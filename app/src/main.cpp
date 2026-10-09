@@ -65,6 +65,7 @@
 #include "crater/OutputService.h"
 #include "crater/ProjectionService.h"
 #include "crater/ScheduleService.h"
+#include "crater/NarrationService.h"
 #include "crater/SettingsService.h"
 #include "crater/SongService.h"
 #include "crater/ThemeService.h"
@@ -580,6 +581,14 @@ int main(int argc, char* argv[])
     // display. Installs a native event filter, so it must outlive every
     // window: constructed here, destroyed after app.exec() returns.
     crater::ProjectionLayering projectionLayering;
+    // AI scripture narration (docs/narration.md). Constructing it does NOT
+    // open the microphone — capture starts only on an explicit operator
+    // arm() and there is no setting that changes that (§8). It takes
+    // bibleService to validate that a heard reference actually exists,
+    // projectionService to suppress re-sending what is already on screen,
+    // and settingsService for the trust mode and model path.
+    crater::NarrationService  narrationService(&bibleService, &projectionService,
+                                               &settingsService);
     qInfo().noquote() << "[startup] crater-core services constructed: +"
                       << startupClock.elapsed() << "ms";
 
@@ -599,6 +608,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionService",  &projectionService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProfileService",     &profileService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "NarrationService",   &narrationService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
