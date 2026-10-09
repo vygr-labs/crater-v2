@@ -140,6 +140,32 @@ struct SettingsService::Impl
     bool    highlightSongMatches      = true;
     bool    highlightScriptureMatches = true;
     bool    highlightStrongsMatches   = true;
+    // ── Narration (docs/narration.md) ────────────────────────────────────
+    // Empty model path by default and NO auto-arm key of any kind. §8 makes
+    // "the microphone opens on an explicit operator action and on nothing
+    // else" a property of the design rather than a default, so there is
+    // deliberately no setting here that could turn it into a preference.
+    QString narrationModelPath;
+    // "stage" is the default trust level per the §5 matrix: detections reach
+    // the Preview pane, never the audience screen, without the operator
+    // opting into Auto.
+    QString narrationMode    = QStringLiteral("stage");
+    // Empty = the system default input. See the header for why the id is
+    // stored rather than the device name.
+    QString narrationInputDeviceId;
+    // Cancel window before an Auto-mode detection is projected. 1.5 s is long
+    // enough for an operator watching the console to catch a wrong call and
+    // short enough that a correct one still feels automatic.
+    int     narrationGraceMs = 1500;
+    // A build without whisper has one engine, so that is the default. Asking
+    // the operator to pick the only option before Listen works is a step that
+    // can only go wrong.
+#ifdef CRATER_WITH_WHISPER
+    QString narrationEngine  = QStringLiteral("whisper");
+#else
+    QString narrationEngine  = QStringLiteral("deepgram");
+#endif
+    QString deepgramApiKey;
     // UI language — "en" is the built-in English source; any other value is a
     // Qt locale code with a bundled crater_<code>.qm catalog. See header.
     QString language         = QStringLiteral("en");
@@ -195,6 +221,12 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
     static constexpr const char* kLanguage         = "Settings/language";
     static constexpr const char* kGlobalSearchActions = "Settings/globalSearchActions";
+    static constexpr const char* kNarrationModelPath = "Settings/narrationModelPath";
+    static constexpr const char* kNarrationMode      = "Settings/narrationMode";
+    static constexpr const char* kNarrationGraceMs   = "Settings/narrationGraceMs";
+    static constexpr const char* kNarrationInputDeviceId = "Settings/narrationInputDeviceId";
+    static constexpr const char* kNarrationEngine    = "Settings/narrationEngine";
+    static constexpr const char* kDeepgramApiKey     = "Settings/deepgramApiKey";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -246,6 +278,31 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->highlightScriptureMatches = m_impl->get(Impl::kHighlightScriptureMatches, m_impl->highlightScriptureMatches).toBool();
     m_impl->highlightStrongsMatches   = m_impl->get(Impl::kHighlightStrongsMatches, m_impl->highlightStrongsMatches).toBool();
     m_impl->language         = m_impl->get(Impl::kLanguage, m_impl->language).toString();
+    m_impl->narrationModelPath = m_impl->get(Impl::kNarrationModelPath, m_impl->narrationModelPath).toString();
+    m_impl->narrationInputDeviceId = m_impl->get(Impl::kNarrationInputDeviceId, m_impl->narrationInputDeviceId).toString();
+    m_impl->deepgramApiKey     = m_impl->get(Impl::kDeepgramApiKey, m_impl->deepgramApiKey).toString().trimmed();
+
+    // Stored values pass the same checks the setters apply. These are safety
+    // controls: a hand-edited grace of 0 would project with no chance to
+    // cancel, and a mode the UI doesn't recognise would show no mode at all.
+    {
+        const QString mode = m_impl->get(Impl::kNarrationMode, m_impl->narrationMode).toString();
+        if (mode == QLatin1String("suggest") || mode == QLatin1String("stage")
+            || mode == QLatin1String("auto"))
+            m_impl->narrationMode = mode;
+
+        bool      ok    = false;
+        const int grace = m_impl->get(Impl::kNarrationGraceMs, m_impl->narrationGraceMs).toInt(&ok);
+        if (ok) m_impl->narrationGraceMs = qBound(500, grace, 10000);
+
+        const QString engine = m_impl->get(Impl::kNarrationEngine, m_impl->narrationEngine).toString();
+#ifdef CRATER_WITH_WHISPER
+        if (engine == QLatin1String("whisper") || engine == QLatin1String("deepgram"))
+            m_impl->narrationEngine = engine;
+#else
+        Q_UNUSED(engine);   // one engine in this build
+#endif
+    }
 
     // Global-search actions: start from the per-type defaults, then overlay any
     // persisted overrides. Each override is validated so a hand-edited or
@@ -305,6 +362,12 @@ bool    SettingsService::showMatchedLyricSnippet() const   { return m_impl->show
 bool    SettingsService::highlightSongMatches() const      { return m_impl->highlightSongMatches; }
 bool    SettingsService::highlightScriptureMatches() const { return m_impl->highlightScriptureMatches; }
 bool    SettingsService::highlightStrongsMatches() const   { return m_impl->highlightStrongsMatches; }
+QString SettingsService::narrationModelPath() const      { return m_impl->narrationModelPath; }
+QString SettingsService::narrationMode() const           { return m_impl->narrationMode; }
+int     SettingsService::narrationGraceMs() const        { return m_impl->narrationGraceMs; }
+QString SettingsService::narrationInputDeviceId() const  { return m_impl->narrationInputDeviceId; }
+QString SettingsService::narrationEngine() const         { return m_impl->narrationEngine; }
+QString SettingsService::deepgramApiKey() const          { return m_impl->deepgramApiKey; }
 QString SettingsService::language() const                { return m_impl->language; }
 bool    SettingsService::hasExplicitLanguage() const     { return m_impl->settings.contains(QString::fromLatin1(Impl::kLanguage)); }
 QVariantMap SettingsService::globalSearchActions() const { return m_impl->globalSearchActions; }
@@ -634,6 +697,75 @@ void SettingsService::setAutoAdvanceDelaySeconds(int v)
     m_impl->autoAdvanceDelay = clamped;
     m_impl->put(Impl::kAutoAdvanceDelay, clamped);
     emit autoAdvanceDelaySecondsChanged();
+}
+
+void SettingsService::setNarrationModelPath(const QString& path)
+{
+    if (m_impl->narrationModelPath == path) return;
+    m_impl->narrationModelPath = path;
+    m_impl->put(Impl::kNarrationModelPath, path);
+    emit narrationModelPathChanged();
+}
+
+void SettingsService::setNarrationInputDeviceId(const QString& id)
+{
+    if (m_impl->narrationInputDeviceId == id) return;
+    m_impl->narrationInputDeviceId = id;
+    m_impl->put(Impl::kNarrationInputDeviceId, id);
+    emit narrationInputDeviceIdChanged();
+}
+
+void SettingsService::setNarrationEngine(const QString& engine)
+{
+    // Validated like the mode: this decides whether audio leaves the machine,
+    // so an unknown value must never be persisted or interpreted.
+#ifndef CRATER_WITH_WHISPER
+    if (engine == QLatin1String("whisper")) return;   // not in this build
+#endif
+    if (engine != QLatin1String("whisper") && engine != QLatin1String("deepgram"))
+        return;
+    if (m_impl->narrationEngine == engine) return;
+    m_impl->narrationEngine = engine;
+    m_impl->put(Impl::kNarrationEngine, engine);
+    emit narrationEngineChanged();
+}
+
+void SettingsService::setDeepgramApiKey(const QString& key)
+{
+    const QString trimmed = key.trimmed();
+    if (m_impl->deepgramApiKey == trimmed) return;
+    m_impl->deepgramApiKey = trimmed;
+    m_impl->put(Impl::kDeepgramApiKey, trimmed);
+    emit deepgramApiKeyChanged();
+}
+
+void SettingsService::setNarrationMode(const QString& mode)
+{
+    // Validated rather than stored blind. The mode is a safety control (it is
+    // what decides whether a detection can reach the projector), so an unknown
+    // value must not be persisted and must not be interpreted — an accidental
+    // "Auto " with a trailing space should stay on the previous mode, not fall
+    // through to some default.
+    if (mode != QLatin1String("suggest")
+        && mode != QLatin1String("stage")
+        && mode != QLatin1String("auto"))
+        return;
+    if (m_impl->narrationMode == mode) return;
+    m_impl->narrationMode = mode;
+    m_impl->put(Impl::kNarrationMode, mode);
+    emit narrationModeChanged();
+}
+
+void SettingsService::setNarrationGraceMs(int ms)
+{
+    // Floor of 500 ms: below that there is no realistic chance for a human to
+    // read the pending reference and cancel, which is the entire purpose of
+    // the grace period. Ceiling of 10 s keeps Auto feeling automatic.
+    const int clamped = qBound(500, ms, 10000);
+    if (m_impl->narrationGraceMs == clamped) return;
+    m_impl->narrationGraceMs = clamped;
+    m_impl->put(Impl::kNarrationGraceMs, clamped);
+    emit narrationGraceMsChanged();
 }
 
 void SettingsService::setAutoAdvanceLoop(bool v)

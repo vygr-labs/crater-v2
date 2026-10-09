@@ -309,7 +309,10 @@ done_msg "Strong's databases staged to $LEGACY_DIR"
 # play and the team is ready to manage notarization secrets.
 if [[ -n "${APPLE_DEVELOPER_ID:-}" ]]; then
     step "Codesigning with identity: $APPLE_DEVELOPER_ID"
+    # The hardened runtime denies microphone access unless the signature
+    # carries the audio-input entitlement, and narration needs it.
     codesign --force --deep --options runtime --timestamp \
+        --entitlements "$SCRIPT_DIR/../packaging/macos/crater.entitlements" \
         --sign "$APPLE_DEVELOPER_ID" "$APP_BUNDLE"
     codesign --verify --strict --verbose=2 "$APP_BUNDLE"
 else

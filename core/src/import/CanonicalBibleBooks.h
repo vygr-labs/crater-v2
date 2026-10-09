@@ -34,6 +34,24 @@ struct BibleBookMeta {
 // Returns nullopt only when nothing clears the fuzzy quality gate.
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt);
 
+// Strict near-miss resolver, for text nobody typed.
+//
+// lookupBook() is tuned for an operator at a search box, where a wrong guess
+// costs one keystroke to correct. That tolerance is wrong for speech: it
+// accepts subsequences and edit distance up to three, so "page" resolves to
+// Jude and "in" to 1 Kings. A speech recogniser's mistakes do not look like
+// that — it substitutes a phoneme, and "join" for "john" is one edit.
+//
+// So this variant drops the prefix and subsequence tiers entirely, takes
+// `maxDistance` as a hard cap the caller chooses, and matches canonical names
+// only (nobody says "Phlm" out loud). It also refuses ambiguity: when two
+// different books tie at the best distance there is no evidence to choose
+// between them, and returning nothing is the honest answer.
+//
+// Exact table hits — including the aliases lookupBook knows — still resolve,
+// so this is a strictly narrower door into the same room.
+std::optional<BibleBookMeta> lookupBookNearMiss(QStringView nameOrAlt, int maxDistance);
+
 // All 66 books in canonical order.
 const QList<BibleBookMeta>& allCanonicalBooks();
 
