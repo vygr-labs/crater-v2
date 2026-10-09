@@ -316,6 +316,13 @@ certain, and each rule below exists because of one of them.
   other book it is the chapter already in context, if the context is that
   book, at `high`. "Romans, verse nine" in the middle of Romans 8 is 8:9; with
   no Romans in play it is nothing, never Romans 1:9.
+- **In Obadiah, Philemon and Jude the number is the verse.** "Turn to Jude 8"
+  is Jude 1:8 and `certain`, because that is how the book is cited. Without a
+  cue it is `high`, since Jude is also a name. Two numbers ("Jude eight verse
+  19", "Obadiah four seventeen") name a chapter the book doesn't have, so the
+  verse is a guess (the one after "verse", else the second number) and stays
+  `high`. 2 John and 3 John are left out: "two john fourteen six" is "to John
+  14:6" misheard, not 2 John 1:6.
 - **Ordinals only in "the Nth psalm".** "My first job" and "first acts of
   kindness" used to be Job 1 and Acts 1.
 - **A book name never spans punctuation.** Recognizers that punctuate (Deepgram
@@ -953,13 +960,8 @@ interim text while the words are still being spoken. It is also more
 accurate on accented and noisy speech than any model a church laptop can run.
 
 **Who pays.** Each church uses its own Deepgram API key, entered in Settings >
-Narration. Crater has no account, no proxy and no server in the path. At the
-time of writing a new Deepgram account carries $200 of free credit and
-streaming nova-3 costs about $0.0077 per minute, so a two-hour service is
-under a dollar and the credit covers years of weekly services. Billing is per
-minute of audio sent, and the microphone streams the whole time Listen is on,
-silence included. Skipping long silences is the obvious saving and has not
-been built.
+Narration. Crater has no account, no proxy and no server in the path. §7.4.1
+works out what that costs a church.
 
 **The connection** (`DeepgramRecognizer`):
 
@@ -1004,6 +1006,78 @@ the live guess, so the strip shows the sentence growing.
 - A `KeepAlive` goes up after 5 s with nothing sent, so a capture stall that
   doesn't fail outright doesn't turn into a reconnect cycle.
 
+### 7.4.1 What it costs a church
+
+Prices were read from deepgram.com/pricing on 9 October 2026, Pay As You Go.
+They change, so re-check before quoting them to anyone.
+
+**The rate Crater pays.** Streaming nova-3 English is $0.0048/min, marked as
+a limited-time promotion over a regular $0.0077/min. Keyterm prompting is a
+separate add-on at $0.0013/min, and Crater always sends keyterms. Smart
+formatting is included. So a minute of Listen costs $0.0061 at today's rate
+and $0.0090 once the promotion ends, about $0.37 or $0.54 an hour. Billing is
+per second with no rounding.
+
+**The training opt-out costs nothing extra.** Crater sends `mip_opt_out=true`
+so Deepgram doesn't keep church audio for training. A Deepgram engineer wrote
+in June 2025 that opting out "forgoes a 50% discount for participating in the
+program" (github.com/orgs/deepgram/discussions/1292), so we checked the bill.
+On 9 October 2026, 1 min 20 s of opted-out streaming across three requests
+was billed $0.00843: 78% nova-3 and 22% keyterms. That is $0.0049/min and
+$0.0014/min, the listed rates to within rounding of the duration. Whatever
+the 2025 rule was, it doesn't apply to these rates today. Re-check when the
+promotion ends.
+
+**What is billed.** Every second of audio sent. Crater streams the microphone
+the whole time Listen is on, so singing, prayer and announcements are billed
+the same as the sermon. Deepgram's docs say time on an open socket with
+nothing sent, kept alive by a `KeepAlive` message, is not billable. That is
+what makes the silence skip below a real saving.
+
+**Per month, by church size.** "Armed" is the hours per week Listen is on.
+Months are 4.33 weeks. "Today" is the promotional rate, "regular" is after
+it ends.
+
+| Church | Armed per week | Per month today | Per month regular |
+|---|---|---|---|
+| Small: one Sunday service and a midweek | 2.5 h | $4 | $6 |
+| Medium: two Sunday services and a midweek | 5.5 h | $9 | $13 |
+| Large: three services, midweek and youth | 9.5 h | $15 | $22 |
+
+**How long the free $200 lasts.** Every new account gets $200 once. It does
+not expire and does not renew, and it cannot be moved to another account. No
+card is needed to start.
+
+| Church | Today | Regular |
+|---|---|---|
+| Small | about 4 years | about 3 years |
+| Medium | about 23 months | about 15 months |
+| Large | about 13 months | about 9 months |
+
+**In naira.** UBA charged ₦1,378 to the dollar on naira cards in August 2026.
+At that rate the small church pays about ₦5,500 to ₦8,000 a month, the medium
+church ₦12,000 to ₦18,000 and the large church ₦21,000 to ₦31,000. Paying is
+possible from Nigeria again. Banks resumed international spending on naira
+cards in 2025, and GTBank, Zenith, FirstBank and Access now allow thousands
+of dollars a quarter or more. Stanbic IBTC is the exception at $100 a month,
+which still covers every row above.
+
+**Things that change the bill.**
+
+- *Arm for the sermon only.* A 45-minute sermon in a two-hour service is
+  about 40% of the time, so arming just for it cuts the bill by about 60%.
+  This needs no code, only a habit at the desk.
+- *Silence skip (not built).* Stop sending audio while VoiceGate hears
+  nothing and let the existing `KeepAlive` hold the socket open. It saves
+  pauses, prayer and dead air, but not worship, because the band is loud.
+- *Drop keyterms.* Saves $0.0013/min, about 21% today, but costs accuracy on
+  exactly the words the detector needs ("Habakkuk", "John" not "join").
+  Not worth it.
+- *Auto top-up.* Once a church buys credit, Deepgram by default reloads $100
+  whenever the balance falls below $10. A church on a tight budget should
+  turn that off in the console and top up by hand. Unused credit bought in
+  the last 30 days can be refunded.
+
 **Settings.** `narrationEngine` is `whisper` or `deepgram`, validated on
 load as well as on set. A build without whisper (`CRATER_WITH_WHISPER` OFF,
 which includes release builds today) has one engine: the default is
@@ -1012,9 +1086,13 @@ which includes release builds today) has one engine: the default is
 not part of `.craterprofile` exports. It is not exported because a key is a
 billing credential, not a preference.
 
-**Not yet measured.** End-to-end latency and word error rate on real
-sanctuary audio. `narration_bench --deepgram <wav> --truth <txt>` streams a
-recording in real time and reports both.
+**Measured on the desk recording** (9 October 2026, the same 15 s clip as
+§7.1.3): no word errors over 9 words, finals 0.39 s after the words were
+spoken (0.35 to 0.42), partials 0.33 s, and 2.6 s to connect at arm. Whisper
+on the same laptop takes 3.2 s per final, so the cloud engine is about eight
+times faster and well inside §9's 2.5 s. Real sanctuary audio, with a PA and
+a room, is still unmeasured. `narration_bench --deepgram <wav> --truth <txt>`
+streams a recording in real time and reports both.
 
 ## 8. Privacy and security — amendment to `architecture.md` §5
 
