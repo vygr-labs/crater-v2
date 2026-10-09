@@ -21,9 +21,12 @@ Item {
                                    || root._state === UpdateService.Downloading
                                    || root._state === UpdateService.ReadyToInstall
 
-    function _sizeLabel(bytes) {
-        if (bytes <= 0) return ""
+    function _mb(bytes) {
         return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+    }
+
+    function _sizeLabel(bytes) {
+        return bytes > 0 ? _mb(bytes) : ""
     }
 
     function _lastCheckedLabel() {
@@ -207,7 +210,7 @@ Item {
                     anchors.left: parent.left
                     anchors.top: parent.top
                     text: UpdateService.totalBytes > 0
-                          ? qsTr("%1 of %2").arg(root._sizeLabel(UpdateService.receivedBytes))
+                          ? qsTr("%1 of %2").arg(root._mb(UpdateService.receivedBytes))
                                             .arg(root._sizeLabel(UpdateService.totalBytes))
                           : qsTr("Starting download...")
                     color: Theme.color.textTertiary
