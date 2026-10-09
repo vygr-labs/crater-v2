@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -11,6 +12,8 @@
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QIcon>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQmlEngine>
@@ -19,6 +22,7 @@
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QUrl>
 #include <QtQml>
 
 #include <memory>
@@ -262,6 +266,57 @@ void relaunchIntoProfile()
                              << QCoreApplication::applicationFilePath();
 }
 
+// The data was upgraded by a newer Crater that this build can't read. Before
+// this, Crater quit with nothing on screen and looked broken. The newer
+// version's number comes from the data when it was recorded.
+void showNewerDataDialog(const QString& writtenBy)
+{
+    const QString mine = crater::versionString();
+    QMessageBox box;
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(QCoreApplication::translate("Startup", "Crater needs an update"));
+    if (writtenBy.isEmpty()) {
+        box.setText(QCoreApplication::translate(
+            "Startup", "Your Crater data was saved by a newer version of Crater than this one (%1).")
+                .arg(mine));
+        box.setInformativeText(QCoreApplication::translate(
+            "Startup", "Install the latest Crater to open it. Nothing has been changed."));
+    } else {
+        box.setText(QCoreApplication::translate(
+            "Startup", "Your Crater data was saved by Crater %1, which is newer than this one (%2).")
+                .arg(writtenBy, mine));
+        box.setInformativeText(QCoreApplication::translate(
+            "Startup", "Install Crater %1 or later to open it. Nothing has been changed.")
+                .arg(writtenBy));
+    }
+    QPushButton* download =
+        box.addButton(QCoreApplication::translate("Startup", "Download Crater"), QMessageBox::AcceptRole);
+    box.addButton(QMessageBox::Close);
+    box.setDefaultButton(download);
+    box.exec();
+    if (box.clickedButton() == download)
+        QDesktopServices::openUrl(QUrl(crater::HelpLinks().website() + QStringLiteral("downloads/")));
+}
+
+// Any other startup data failure. It used to quit silently too.
+void showStartupFailureDialog(const QString& logPath)
+{
+    QMessageBox box;
+    box.setIcon(QMessageBox::Critical);
+    box.setWindowTitle(QCoreApplication::translate("Startup", "Crater couldn't start"));
+    box.setText(QCoreApplication::translate(
+        "Startup", "Crater couldn't get your data ready, so it has closed."));
+    box.setInformativeText(QCoreApplication::translate(
+        "Startup", "The details are in the log file. Send it with a bug report so we can fix the problem.\n\n%1")
+            .arg(QDir::toNativeSeparators(logPath)));
+    QPushButton* open =
+        box.addButton(QCoreApplication::translate("Startup", "Open Log Folder"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Close);
+    box.exec();
+    if (box.clickedButton() == open)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(logPath).absolutePath()));
+}
+
 }  // namespace
 
 int main(int argc, char* argv[])
@@ -381,8 +436,13 @@ int main(int argc, char* argv[])
     // so this is safe to call every launch.
     try {
         crater::runAllMigrations();
+    } catch (const crater::NewerDataError& e) {
+        qCritical().noquote() << "Migration failed:" << e.what();
+        showNewerDataDialog(e.writtenBy());
+        return -1;
     } catch (const std::exception& e) {
         qCritical().noquote() << "Migration failed:" << e.what();
+        showStartupFailureDialog(logPath);
         return -1;
     }
     qInfo().noquote() << "[startup] schema migrations done: +"
