@@ -360,10 +360,9 @@ Rectangle {
         // that. If this control has not been clicked, the room is not being
         // heard.
         //
-        // Hidden entirely in builds without speech support rather than shown
-        // disabled — a permanently dead control in the top bar is noise, and
-        // the Settings > Narration page explains the absence for anyone who
-        // goes looking.
+        // Shown in every build. One without on-device recognition still has
+        // the Deepgram engine, and pressing this with no key set says where
+        // to add one.
         //
         // While armed this chip is only the secondary indicator; the primary
         // one is the full-width red NarrationBar directly below, which is what

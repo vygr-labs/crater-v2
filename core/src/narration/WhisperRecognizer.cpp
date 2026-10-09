@@ -1,5 +1,6 @@
 #include "narration/WhisperRecognizer.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QThread>
 
@@ -189,8 +190,20 @@ whisper_context* openModel(const QString& modelPath, QString* error)
     // never satisfy it.
     cparams.use_gpu = true;
 
-    whisper_context* ctx =
-        whisper_init_from_file_with_params(modelPath.toLocal8Bit().constData(), cparams);
+    // whisper opens the file with a narrow path, which on Windows means the
+    // ANSI code page. A path it can't express (a user folder in another
+    // script) is read here instead and handed over as a buffer.
+    const QByteArray narrow = modelPath.toLocal8Bit();
+    whisper_context* ctx = nullptr;
+    if (QString::fromLocal8Bit(narrow) == modelPath) {
+        ctx = whisper_init_from_file_with_params(narrow.constData(), cparams);
+    } else {
+        QFile f(modelPath);
+        if (f.open(QIODevice::ReadOnly)) {
+            QByteArray bytes = f.readAll();
+            ctx = whisper_init_from_buffer_with_params(bytes.data(), size_t(bytes.size()), cparams);
+        }
+    }
     if (!ctx && error)
         *error = QStringLiteral("Failed to load speech model %1").arg(fi.fileName());
     return ctx;
@@ -292,6 +305,12 @@ QString WhisperRecognizer::run(QList<float>& mono16k, bool interim, QString* err
     p.no_context          = true;
 
     p.audio_ctx           = audioCtxFor(mono16k.size());
+
+    // Lets disarm end a decode in progress instead of waiting it out.
+    p.abort_callback = [](void* self) {
+        return static_cast<WhisperRecognizer*>(self)->abortRequested();
+    };
+    p.abort_callback_user_data = this;
 
     // An interim pass runs while the speaker is still talking, and another
     // one follows a second later. Spending temperature fallbacks on a

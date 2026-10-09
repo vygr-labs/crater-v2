@@ -66,6 +66,25 @@ bool psalmValidator(const QString& book, int chapter, int verse)
     return chapter >= 1 && chapter <= 150;
 }
 
+// Enough of the Bible's shape to tell real references from misheard ones:
+// Romans 8 ends at verse 39, 2 John has one chapter of 13 verses.
+bool smallBible(const QString& book, int chapter, int verse)
+{
+    if (verse < 1) return false;
+    if (book == QStringLiteral("Romans"))
+        return chapter >= 1 && chapter <= 16 && verse <= (chapter == 8 ? 39 : 33);
+    if (book == QStringLiteral("2 John")) return chapter == 1 && verse <= 13;
+    if (book == QStringLiteral("John"))   return chapter >= 1 && chapter <= 21 && verse <= 40;
+    return true;
+}
+
+bool noneCertain(const QList<HeardReference>& refs)
+{
+    for (const auto& r : refs)
+        if (r.tier == QStringLiteral("certain")) return false;
+    return true;
+}
+
 }  // namespace
 
 class TestReferenceDetector : public QObject
@@ -357,17 +376,17 @@ private slots:
         QCOMPARE(r[0].verseStart, 5);
     }
 
-    // An explicit "verse" is the preacher disambiguating for us. Honour it
-    // even when the resulting reference fails validation.
+    // An explicit "verse" is the preacher disambiguating for us, so it must
+    // never be recomposed into Psalm 119. Psalm 1:19 doesn't exist either,
+    // and a verse the Bible doesn't contain is a mishearing, so nothing is
+    // offered at all.
     void ambiguity_explicit_verse_keyword_blocks_composition()
     {
         CitationDetector d;
         d.setValidator(psalmValidator);
 
         const auto r = d.detect(QStringLiteral("psalm one verse nineteen"), 0);
-        QCOMPARE(r.size(), 1);
-        QCOMPARE(r[0].chapter,    1);
-        QCOMPARE(r[0].verseStart, 19);
+        QVERIFY(r.isEmpty());
     }
 
     // Without a validator the detector is pure and must not invent facts.
@@ -478,6 +497,114 @@ private slots:
     // A correctly spelled book must be taken by the strict table, never by the
     // fuzzy rescue. If this starts routing through the rescue, precision on
     // every other test in this file is no longer what it appears to be.
+    // ── Auto-mode safety ────────────────────────────────────────────────
+    //
+    // "certain" is what Auto projects without a human. Each phrase here is
+    // ordinary speech that used to come back certain.
+
+    // A book name and one number is how English sounds, not only scripture.
+    void prose_book_and_number_is_never_certain()
+    {
+        CitationDetector d;
+        QVERIFY(noneCertain(d.detect(QStringLiteral("I called John three times"), 0)));
+        QVERIFY(noneCertain(d.detect(QStringLiteral("my job two years ago was hard"), 0)));
+        QVERIFY(noneCertain(d.detect(QStringLiteral("the numbers 3 and 4 matter"), 0)));
+        QVERIFY(noneCertain(d.detect(QStringLiteral("Mark, two people asked me"), 0)));
+
+        const auto r = d.detect(QStringLiteral("I called John three times"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].tier, QStringLiteral("possible"));
+    }
+
+    // Book, chapter and verse said aloud is still certain.
+    void spoken_book_chapter_verse_is_certain()
+    {
+        CitationDetector d;
+        const auto r = d.detect(QStringLiteral("john three sixteen"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].tier, QStringLiteral("certain"));
+    }
+
+    void ordinals_in_prose_do_not_fire()
+    {
+        CitationDetector d;
+        QVERIFY(d.detect(QStringLiteral("my first job was at a bank"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("first acts of kindness"), 0).isEmpty());
+    }
+
+    // Written punctuation splits "First, John" back into a list item and John.
+    void comma_keeps_ordinal_out_of_the_book_name()
+    {
+        CitationDetector d;
+        auto r = d.detect(QStringLiteral("First, John 3:16 says it plainly"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("John 3:16"));
+
+        r = d.detect(QStringLiteral("Point one, John 3:16."), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("John 3:16"));
+
+        // "3.16" is a British-style verse, not a sentence break.
+        r = d.detect(QStringLiteral("First John 3.16"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("1 John 3:16"));
+    }
+
+    // "Romans, verse nine" in the middle of Romans 8 is 8:9, not 1:9.
+    void book_then_verse_uses_the_chapter_in_play()
+    {
+        CitationDetector d;
+        d.setContext(RefContext{ QStringLiteral("Romans"), 8, 1, 0 });
+        auto r = d.detect(QStringLiteral("Romans, verse nine"), 1000);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Romans 8:9"));
+        QCOMPARE(r[0].tier, QStringLiteral("high"));
+
+        CitationDetector fresh;
+        QVERIFY(fresh.detect(QStringLiteral("in John, verse sixteen"), 0).isEmpty());
+    }
+
+    // A reference the Bible doesn't contain is a mishearing.
+    void nonexistent_references_are_dropped()
+    {
+        CitationDetector d;
+        d.setValidator(smallBible);
+        QVERIFY(d.detect(QStringLiteral("romans 8 40"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("two john fourteen six"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("romans chapter twenty"), 0).isEmpty());
+
+        const auto r = d.detect(QStringLiteral("romans 8 39"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Romans 8:39"));
+    }
+
+    void vs_is_not_a_verse()
+    {
+        CitationDetector d;
+        d.setContext(RefContext{ QStringLiteral("Romans"), 8, 1, 0 });
+        QVERIFY(d.detect(QStringLiteral("lakers vs 76ers last night"), 1000).isEmpty());
+    }
+
+    void and_adds_a_second_verse()
+    {
+        CitationDetector d;
+        const auto r = d.detect(QStringLiteral("romans 8 28 and 31"), 0);
+        QCOMPARE(r.size(), 2);
+        QCOMPARE(r[0].reference, QStringLiteral("Romans 8:28"));
+        QCOMPARE(r[1].reference, QStringLiteral("Romans 8:31"));
+
+        // A count, not a verse.
+        const auto c = d.detect(QStringLiteral("romans 8 28 and 5 other verses"), 0);
+        QCOMPARE(c.size(), 1);
+    }
+
+    void service_numbers_are_not_books()
+    {
+        CitationDetector d;
+        QVERIFY(d.detect(QStringLiteral("let's go back to song three"), 0).isEmpty());
+        QVERIFY(d.detect(QStringLiteral("turn to number four in your hymnal"), 0).isEmpty());
+    }
+
     void mangled_rescue_does_not_shadow_exact_matches()
     {
         CitationDetector d;

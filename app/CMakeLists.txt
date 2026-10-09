@@ -391,6 +391,10 @@ if(APPLE)
         MACOSX_BUNDLE_ICON_FILE            "crater.icns"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION       "${PROJECT_VERSION}"
+        # Our own template, so the bundle can declare why it wants the
+        # microphone (narration). macOS kills an app that opens audio input
+        # without NSMicrophoneUsageDescription.
+        MACOSX_BUNDLE_INFO_PLIST           "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/macos/Info.plist.in"
     )
 endif()
 
@@ -427,6 +431,15 @@ if(WIN32)
             "$<TARGET_FILE:Qt6::Network>"
             "$<TARGET_FILE_DIR:crater>"
         COMMENT "Copying Qt6Network.dll next to crater.exe"
+        VERBATIM)
+
+    # Qt6WebSockets.dll — narration's Deepgram backend (crater-core links it
+    # privately, so nothing on the app side pulls it in).
+    add_custom_command(TARGET crater POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Qt6::WebSockets>"
+            "$<TARGET_FILE_DIR:crater>"
+        COMMENT "Copying Qt6WebSockets.dll next to crater.exe"
         VERBATIM)
 
     # QtMultimedia QML module — Qt's qmlimportscanner doesn't see the

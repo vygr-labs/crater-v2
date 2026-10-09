@@ -317,6 +317,57 @@ private slots:
         QVERIFY(!b.isLoaded());
     }
 
+    // The header is read from disk. A count no file could hold must be
+    // refused before it sizes an allocation or a read loop.
+    void an_impossible_count_is_refused()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = QDir(dir.path()).filePath(QStringLiteral("big.crai"));
+
+        AllusionIndex a;
+        QVERIFY(a.build(makeCorpus(20), QStringLiteral("m")));
+        QVERIFY(a.save(path));
+
+        // magic, version, dims, then count at byte 12, little-endian.
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.seek(12));
+        const char huge[4] = { '\xff', '\xff', '\xff', '\x7f' };
+        QCOMPARE(f.write(huge, 4), qint64(4));
+        f.close();
+
+        AllusionIndex b;
+        QString err;
+        QVERIFY(!b.load(path, QString(), &err));
+        QVERIFY(!b.isLoaded());
+    }
+
+    // A NaN score breaks the ranking's ordering, and std::sort with it.
+    void a_nan_scale_is_refused()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = QDir(dir.path()).filePath(QStringLiteral("nan.crai"));
+
+        AllusionIndex a;
+        QVERIFY(a.build(makeCorpus(20), QStringLiteral("m")));
+        QVERIFY(a.save(path));
+
+        // The scale block ends the file: overwrite the last row's scale.
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.seek(f.size() - 4));
+        const char nan[4] = { '\x00', '\x00', '\xc0', '\x7f' };
+        QCOMPARE(f.write(nan, 4), qint64(4));
+        f.close();
+
+        AllusionIndex b;
+        QString err;
+        QVERIFY(!b.load(path, QString(), &err));
+        QVERIFY(!b.isLoaded());
+    }
+
     void a_missing_file_is_not_a_crash()
     {
         AllusionIndex idx;
@@ -347,7 +398,14 @@ private slots:
 
         qInfo().noquote() << QStringLiteral("flat scan over 31,102 x %1 int8: %2 ms")
                                  .arg(kDims).arg(ms, 0, 'f', 2);
-        QVERIFY2(ms < 25.0,
+        // Unoptimised builds run the same loop several times slower, and the
+        // claim is about what ships.
+#ifdef QT_DEBUG
+        constexpr double kBudgetMs = 250.0;
+#else
+        constexpr double kBudgetMs = 25.0;
+#endif
+        QVERIFY2(ms < kBudgetMs,
                  qPrintable(QStringLiteral("%1 ms; the no-ANN argument rests on this "
                                            "being cheap").arg(ms)));
     }

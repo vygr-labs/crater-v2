@@ -115,10 +115,11 @@ written once against that type.
   ┌─────────────┐   ring buffer, never written to disk (§8)
   │ AudioTap    │
   └─────────────┘
-      │  VAD-segmented utterances (Silero, ~1.8 MB ONNX)
+      │  utterances cut by VoiceGate (§7.1), or the whole
+      │  stream for a streaming engine (Deepgram, §7.4)
       ▼
-  ┌─────────────┐   whisper.cpp, own thread, partials + finals
-  │ Recognizer  │   (SpeechRecognizer interface — swappable)
+  ┌─────────────┐   whisper.cpp or Deepgram, own thread,
+  │ Recognizer  │   partials + finals (SpeechRecognizer interface)
   └─────────────┘
       │  rolling transcript window
       ▼
@@ -157,6 +158,7 @@ gets a mic toggle, a heard queue, and a settings page. Nothing else.
 | `AllusionIndex` | `src/narration/AllusionIndex.cpp` | none |
 | `SpeechRecognizer` | `src/narration/SpeechRecognizer.h` | abstract interface |
 | `WhisperRecognizer` | `src/narration/WhisperRecognizer.cpp` | none |
+| `DeepgramRecognizer` | `src/narration/DeepgramRecognizer.cpp` | none (cloud, opt-in, §7.4) |
 | `NarrationService` | `include/crater/NarrationService.h` | `QML_ELEMENT` singleton |
 
 One QML-visible singleton, per `architecture.md` §4. The recognizer, the three
@@ -292,6 +294,43 @@ emitting `certain` on the same kind of evidence.
 
 ---
 
+### 4.4 What the words have to prove
+
+"Certain" is what Auto projects with nobody's hand on it, so the detector
+only assigns it when the sentence could not be anything but a citation. The
+first review of this code found five ordinary sentences that came back
+certain, and each rule below exists because of one of them.
+
+- **Book, chapter and verse, all said, all real.** "John three sixteen" is
+  certain. "I called John three times" names a book and a number and is how
+  English sounds; it comes back `possible` and only queues. A book and a
+  chapter is `high` when the word "chapter" or a cue (§4.3) says it was a
+  citation, and `possible` when nothing does.
+- **The reference has to exist.** Every candidate goes through the validator
+  before it is recorded, verse range ends included. "Romans 8 40" is a
+  mishearing and is dropped, and so is "psalm one verse nineteen" (the
+  explicit "verse" blocks the Psalm 119 reading of §11, and Psalm 1:19 does
+  not exist). A range whose end doesn't exist keeps its start.
+- **"Book, verse N" needs a chapter from somewhere.** For the five one-chapter
+  books (Obadiah, Philemon, 2 John, 3 John, Jude) it is chapter 1. For any
+  other book it is the chapter already in context, if the context is that
+  book, at `high`. "Romans, verse nine" in the middle of Romans 8 is 8:9; with
+  no Romans in play it is nothing, never Romans 1:9.
+- **Ordinals only in "the Nth psalm".** "My first job" and "first acts of
+  kindness" used to be Job 1 and Acts 1.
+- **A book name never spans punctuation.** Recognizers that punctuate (Deepgram
+  with `smart_format`) are telling us where a phrase ended. "First, John 3:16"
+  is a list item and John, and reading it as 1 John projects a different
+  verse. `tokenize()` reports a break before each token for `, . ; ! ?` and
+  ignores a `.` between digits ("3.16").
+- **"and" adds a verse, nothing else.** "Romans 8:28 and 31" is two
+  references. A smaller number ("and 5 other verses") or another chapter:verse
+  pair ("and 5:8") is left alone. "vs" is no longer a verse keyword:
+  recognizers write it for "versus".
+- **Service numbering is not scripture.** "Song", "hymn", "number", "page",
+  "slide" and similar never reach the near-miss matcher, so "back to song
+  three" and "turn to number four in your hymnal" stay silent.
+
 ## 5. Confidence tiers and the trust model
 
 This is the section that makes the feature safe to ship.
@@ -344,9 +383,40 @@ Two consequences that only became obvious while building it:
   a log claiming a verse went out when a human stopped it is worse than no
   log. `HeardReference` therefore carries a session `id` that the queue, the
   log and the signal all share, and `amendLog()` accepts only `cancelled`,
-  `superseded` and `live` so the audit trail cannot be written to freely.
-  (`superseded` is its own outcome: the preacher moving on before the window
-  expired is not the same event as the operator intervening.)
+  `superseded`, `staged` and `live` so the audit trail cannot be written to
+  freely. (`superseded` is its own outcome: the preacher moving on before the
+  window expired is not the same event as the operator intervening.)
+
+The grace period only counts if a human can actually use it, so the
+countdown is cancelled, or never started, whenever they can't:
+
+- **Nobody can see it.** With the console hidden (projector-only, theme
+  editor) or a dialog open, an Auto detection goes to Preview and is logged
+  `staged`. A dialog opening mid-countdown cancels it.
+- **The operator changed their mind.** Leaving Auto mode cancels a running
+  countdown. So does anything else reaching the live output during the
+  window: the operator's own choice wins, and projecting over it a second
+  later would undo it.
+- **Keyboard.** Escape cancels, ahead of every other Escape action, because
+  an operator's hands are on the keyboard. The button says so.
+
+Partials are capped at staged (TrustGate.h). When the finished sentence then
+confirms a reference that a partial already staged, and Auto would project
+it, that confirmation is not a duplicate: it is the reason the cap exists.
+`route()` lets it through once and removes the staged chip it replaces.
+Without this a streaming engine, which nearly always guesses a citation
+before the sentence ends, could never put anything live.
+
+Partials read the reference context but never move it. Interim passes
+re-read the same growing sentence, and "let's read the next verse" would
+otherwise step 3:17, 3:18, 3:19 forward on successive guesses.
+
+The **Settings test box** (`testTranscript()`) runs the real detectors and the
+real trust rules and logs what they decided, marked `(test)`, but never stages
+or projects, in any mode. Typed mid-service in Auto, it would otherwise put a
+verse on screen from behind the modal that hides the Cancel button. Tests use
+`injectTranscript()`, which is the full routing path and is not reachable from
+QML.
 
 ---
 
@@ -374,7 +444,10 @@ also does two suppressions that matter more than they look:
 
 ## 7. Recognition and retrieval engines
 
-Both run fully offline. Nothing this subsystem does touches the network.
+Retrieval always runs offline, and so does speech on the default engine.
+The one exception is the Deepgram speech backend (§7.4), which the operator
+chooses in Settings with their own API key, and which the privacy text there
+names.
 
 ### 7.1 Speech: whisper.cpp
 
@@ -398,10 +471,10 @@ Until we have that, `minSpeechMs` and the hangover are doing that work, and
 they are the two constants to tune first if segmentation misbehaves on real
 room audio.
 
-`SpeechRecognizer` is an abstract interface with exactly one implementation at
-first. That is deliberate and not speculative generality: the offline
-constraint is a decision this church-software domain revisits, and a cloud or
-Vosk backend must be a file, not a refactor.
+`SpeechRecognizer` is an abstract interface. It started with one
+implementation on purpose, because the offline constraint is a decision this
+domain revisits and a cloud or Vosk backend had to be a file, not a refactor.
+That is exactly how Deepgram arrived (§7.4).
 
 ### 7.1.1 Suggestions while the sentence is still being spoken
 
@@ -629,7 +702,8 @@ verses — a failure that looks exactly like a working system.
 **SHA-256**, not by version tag — this is a binary we execute, and a tag can be
 re-pointed where a content hash cannot. The model itself is never fetched: it
 is operator-supplied, like the whisper model, because nothing in this
-subsystem may touch the network at run time (§8).
+subsystem downloads anything at run time. The only network traffic narration
+ever makes is the Deepgram audio stream, and only when chosen (§7.4, §8).
 
 Two details are taken from the model's own config rather than from convention,
 and both would have failed silently:
@@ -869,6 +943,79 @@ moment it mattered.
 
 ---
 
+### 7.4 Speech in the cloud: Deepgram
+
+**Why.** On a CPU-only machine the local engine finishes a sentence about
+3.2 s after the preacher stops (§7.1.3), against a 2.5 s budget (§9), and
+whisper has no true streaming mode to close the gap. Deepgram's streaming API
+returns a finished sentence a few hundred milliseconds after the pause and
+interim text while the words are still being spoken. It is also more
+accurate on accented and noisy speech than any model a church laptop can run.
+
+**Who pays.** Each church uses its own Deepgram API key, entered in Settings >
+Narration. Crater has no account, no proxy and no server in the path. At the
+time of writing a new Deepgram account carries $200 of free credit and
+streaming nova-3 costs about $0.0077 per minute, so a two-hour service is
+under a dollar and the credit covers years of weekly services. Billing is per
+minute of audio sent, and the microphone streams the whole time Listen is on,
+silence included. Skipping long silences is the obvious saving and has not
+been built.
+
+**The connection** (`DeepgramRecognizer`):
+
+- `wss://api.deepgram.com/v1/listen`, model `nova-3` pinned (a model change on
+  their side should be one we make), 16 kHz mono `linear16`,
+  `interim_results`, `smart_format`.
+- `endpointing=300` ends an utterance after 300 ms of silence.
+  `utterance_end_ms=1000` is the backstop when steady room noise hides the
+  pause from the endpointer.
+- `keyterm` for every book name, plus "Psalm" because that is how preachers
+  say it. This does what the whisper prompt in §7.1.3 does ("join" vs
+  "john"), without a prompt that can leak into the transcript.
+- `mip_opt_out=true` keeps the audio out of Deepgram's model-improvement
+  programme. The settings page says Crater asks Deepgram not to keep it.
+- The key goes only in the `Authorization: Token` header, never in the URL,
+  and is never logged.
+
+**Segmentation.** A streaming engine decides where utterances end, so
+`NarrationService::drain()` sends every chunk up the socket and skips
+VoiceGate's segmentation and the interim cadence. VoiceGate still runs,
+because it owns the session clock and the level meter. Deepgram finalizes
+stretches of a long sentence (`is_final`) before deciding the speaker has
+finished (`speech_final` or `UtteranceEnd`), and only the whole sentence goes
+to the detectors as a final transcript. Partials carry the finalized part plus
+the live guess, so the strip shows the sentence growing.
+
+**Failure handling.**
+
+- `load()` waits up to 8 s for the first connection so a bad key or a dead
+  network is reported at arm, before the microphone opens. A 401 becomes
+  "Deepgram rejected the API key". Pressing Stop during that wait ends it
+  cleanly: `unload()` sees the wait in progress and lets `load()` clean up on
+  its way out, instead of deleting the socket under it.
+- Every later reconnect is asynchronous. A drop shows a warning in the bar
+  ("Reconnecting...") and retries after 1, 2, 4, 8 and 16 s. A rejected key
+  is not retried. After five failures the recognizer emits `lost()` and the
+  service disarms, so the microphone indicator never stays lit over a dead
+  pipeline.
+- Audio while disconnected is dropped, not queued. A replayed backlog would
+  surface verses from seconds ago as if just spoken, and in Auto that is a
+  stale verse on screen.
+- A `KeepAlive` goes up after 5 s with nothing sent, so a capture stall that
+  doesn't fail outright doesn't turn into a reconnect cycle.
+
+**Settings.** `narrationEngine` is `whisper` or `deepgram`, validated on
+load as well as on set. A build without whisper (`CRATER_WITH_WHISPER` OFF,
+which includes release builds today) has one engine: the default is
+`deepgram`, the picker offers only that, and `whisper` can't be set.
+`deepgramApiKey` is stored in plain text in QSettings, machine-wide, and is
+not part of `.craterprofile` exports. It is not exported because a key is a
+billing credential, not a preference.
+
+**Not yet measured.** End-to-end latency and word error rate on real
+sanctuary audio. `narration_bench --deepgram <wav> --truth <txt>` streams a
+recording in real time and reports both.
+
 ## 8. Privacy and security — amendment to `architecture.md` §5
 
 This subsystem adds a threat surface the original security model has no entry
@@ -885,9 +1032,15 @@ than a normal feature.
 - **Audio never touches disk.** Fixed-size ring buffer, overwritten
   continuously. No recording, no cache, no "debug mode" that writes WAVs.
   If we ever need capture for debugging, it is a separate build, not a flag.
-- **Audio never leaves the machine.** No network calls in this subsystem at
-  all. This is what makes the offline requirement (§7) a security property and
-  not just a convenience.
+- **Audio leaves the machine only on the cloud engine, and only by choice.**
+  The default engine makes no network calls at all, which is what makes the
+  offline requirement (§7) a security property and not just a convenience.
+  The Deepgram engine (§7.4) streams microphone audio to Deepgram over TLS
+  while Listen is on. It is never the default in a build that has a local
+  engine, it needs the church's own key, the operator picks it by name, and
+  the privacy text on the settings page changes with the engine so it always
+  says where the audio goes. Nothing is written to disk on this machine either
+  way.
 - **Explicit arming only.** The mic opens on an operator action and never on
   app start, schedule load, or go-live. There is no configuration that makes
   it auto-arm.
@@ -918,7 +1071,7 @@ else. Crater with narration disarmed must still hit every number in §6.
 | Additional resident memory, armed (`small.en`) | < 550 MB |
 | Additional resident memory, armed (`base.en`) | < 300 MB |
 | Draft model, when one is found (§7.1.1.1) | + ~110 MB (`base.en` q5_1: 59 MB weights, rest compute buffers) |
-| Speech to on-screen, Certain tier | < 2.5 s |
+| Speech to on-screen, Certain tier | < 2.5 s (Deepgram: endpointing 300 ms + network, §7.4) |
 | **Main-thread** detector work per utterance | < 20 ms |
 | Quotation pass (own thread) | < 250 ms |
 | Allusion index scan | < 5 ms |
@@ -974,6 +1127,7 @@ and needs no audio hardware, no models, and no UI.
 | **3** | `QuotationMatcher` over existing FTS, on its own thread (§9.1) | `test_quotation_matcher`: fixture corpus for the gate logic, then the real 31,102-verse index for precision and latency |
 | **4** | `AllusionIndex`, `AllusionMatcher`, `WordPieceTokenizer`, `OnnxEmbedder` — **index generation still to do** (§7.2.1) | `test_allusion_index` (quantization, format, scan cost, gates), `test_wordpiece_tokenizer` (exact ids), `test_onnx_embedder` (real model, real geometry, end to end) |
 | **5** | Auto mode, grace period, heard log, settings page | `test_narration_service` for log amendment and lifetime; a full service run in Auto with the log reviewed after |
+| **6** | `DeepgramRecognizer`, engine picker, partial-to-live upgrade (§7.4) | `test_deepgram_recognizer` replays recorded messages; `narration_bench --deepgram` for latency and accuracy on real audio |
 
 Phase 0 carries most of the design risk and none of the dependencies, so it
 goes first and it goes in with tests.

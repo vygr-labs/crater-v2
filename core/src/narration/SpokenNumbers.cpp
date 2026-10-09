@@ -94,13 +94,45 @@ std::optional<int> digitOrdinal(const QString& w)
 
 QStringList tokenize(const QString& utterance)
 {
+    return tokenize(utterance, nullptr);
+}
+
+QStringList tokenize(const QString& utterance, QList<bool>* breakBefore)
+{
     // Everything that isn't a letter or a digit becomes a separator. That
     // folds "3:16" into two tokens (matching the spoken "three sixteen" shape)
     // and "twenty-two" into the two the tens+unit rule wants, and it disposes
     // of whatever punctuation and dash variants the recognizer emitted without
     // us enumerating them.
-    static const QRegularExpression nonWord(QStringLiteral("[^a-z0-9]+"));
-    return utterance.toLower().split(nonWord, Qt::SkipEmptyParts);
+    static const QRegularExpression word(QStringLiteral("[a-z0-9]+"));
+
+    const QString lower = utterance.toLower();
+    QStringList   out;
+    if (breakBefore) breakBefore->clear();
+
+    qsizetype prevEnd = 0;
+    auto      it      = word.globalMatch(lower);
+    while (it.hasNext()) {
+        const auto m = it.next();
+        if (breakBefore) {
+            const QStringView gap = QStringView(lower).mid(prevEnd, m.capturedStart() - prevEnd);
+            bool brk = false;
+            for (const QChar c : gap) {
+                if (c == u',' || c == u'.' || c == u';' || c == u'!' || c == u'?') {
+                    brk = true;
+                    break;
+                }
+            }
+            // "3.16" is a verse written the British way, not a sentence end.
+            if (brk && gap == QLatin1String(".") && !out.isEmpty()
+                && isDigitRun(out.last()) && isDigitRun(m.captured()))
+                brk = false;
+            breakBefore->append(brk);
+        }
+        out.append(m.captured());
+        prevEnd = m.capturedEnd();
+    }
+    return out;
 }
 
 bool isNumericToken(QStringView word)

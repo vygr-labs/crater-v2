@@ -834,6 +834,10 @@ ApplicationWindow {
         onActivated: {
             if (AppState.activeModal !== "") {
                 AppState.modalEscape()
+            } else if (narrationBar.cancelPending()) {
+                // An Auto countdown is running. Stopping a verse on its way
+                // to the screen outranks every selection below, and the
+                // operator's hands are on the keyboard, not the mouse.
             } else if (AppState.isTrailingEscape()) {
                 // Second half of a double tap that already closed a
                 // dialog. Leave the schedule selection alone.

@@ -12,6 +12,8 @@
 //   narration_bench --analyze out.wav
 //   narration_bench --transcribe out.wav --model <ggml.bin> [--repeat 3]
 //   narration_bench --score out.wav --model <ggml.bin> --truth truth.txt
+//   narration_bench --deepgram out.wav [--truth truth.txt]
+//     (key from DEEPGRAM_API_KEY, else Settings > Narration; never printed)
 //
 // A developer tool, not part of the application, and the reason it can write
 // audio to disk at all: §8's "audio never touches disk" is a property of
@@ -36,6 +38,8 @@
 #include "narration/AudioTap.h"
 #include "narration/SpokenNumbers.h"
 #include "narration/VoiceGate.h"
+#include "crater/SettingsService.h"
+#include "narration/DeepgramRecognizer.h"
 #include "narration/WhisperRecognizer.h"
 
 #include <cmath>
@@ -43,6 +47,7 @@
 using namespace crater;
 using narration::AudioTap;
 using narration::VoiceGate;
+using narration::DeepgramRecognizer;
 using narration::WhisperRecognizer;
 
 namespace {
@@ -607,6 +612,133 @@ int transcribe(const QString& wav, const QString& model, int repeat, const QStri
 
 }  // namespace
 
+// Streams the file to Deepgram at real-time pace, as the microphone would,
+// and reports how long after each word was spoken its text came back. The key
+// comes from DEEPGRAM_API_KEY or Settings, never the command line, so it stays out of
+// shell history.
+int deepgram(const QString& wav, const QString& truthFile)
+{
+    QList<float> samples;
+    QString      error;
+    if (!readWav(wav, &samples, &error)) {
+        out() << "error: " << error << "\n";
+        out().flush();
+        return 1;
+    }
+    // Falls back to the key saved in Settings > Narration, so testing never
+    // needs the key typed anywhere else.
+    QString key = qEnvironmentVariable("DEEPGRAM_API_KEY");
+    if (key.isEmpty()) key = crater::SettingsService().deepgramApiKey();
+    if (key.isEmpty()) {
+        out() << "error: set DEEPGRAM_API_KEY or save a key in Settings > Narration\n";
+        out().flush();
+        return 2;
+    }
+
+    DeepgramRecognizer rec;
+    QElapsedTimer      connectClock;
+    connectClock.start();
+    if (!rec.load(key, &error)) {
+        out() << "error: " << error << "\n";
+        out().flush();
+        return 1;
+    }
+    out() << "engine: " << rec.engineName() << "\n";
+    out() << "connect " << connectClock.elapsed() << " ms\n";
+    out() << "audio:  " << QString::number(double(samples.size()) / kRate, 'f', 1) << " s\n\n";
+    out().flush();
+
+    QElapsedTimer  wall;
+    QList<double>  interimLag, finalLag;
+    QStringList    finals;
+    QString        lastPartial;
+
+    QObject::connect(&rec, &DeepgramRecognizer::segmentTiming, &rec,
+                     [&](bool isFinal, double audioEndSec) {
+                         const double lag = double(wall.elapsed()) / 1000.0 - audioEndSec;
+                         (isFinal ? finalLag : interimLag).append(lag);
+                     });
+    QObject::connect(&rec, &DeepgramRecognizer::partial, &rec, [&](const QString& t, qint64) {
+        if (t == lastPartial) return;
+        lastPartial = t;
+        out() << QStringLiteral("  %1 s  partial  \"%2\"\n")
+                     .arg(double(wall.elapsed()) / 1000.0, 5, 'f', 2).arg(t);
+        out().flush();
+    });
+    // A dropped connection mid-run would otherwise read as a quiet recording.
+    QObject::connect(&rec, &DeepgramRecognizer::connectionChanged, &rec,
+                     [&](bool connected, const QString& message) {
+                         out() << QStringLiteral("  %1 s  %2\n")
+                                      .arg(double(wall.elapsed()) / 1000.0, 5, 'f', 2)
+                                      .arg(connected ? QStringLiteral("reconnected") : message);
+                         out().flush();
+                     });
+    QObject::connect(&rec, &DeepgramRecognizer::lost, &rec, [&](const QString& message) {
+        out() << "error: " << message << "\n";
+        out().flush();
+    });
+    QObject::connect(&rec, &DeepgramRecognizer::transcribed, &rec, [&](const QString& t, qint64) {
+        if (t.isEmpty()) return;
+        finals << t;
+        out() << QStringLiteral("  %1 s  FINAL    \"%2\"\n")
+                     .arg(double(wall.elapsed()) / 1000.0, 5, 'f', 2).arg(t);
+        out().flush();
+    });
+
+    // 20 ms chunks on a 20 ms timer, plus two seconds of silence at the end so
+    // the endpointer sees the speaker stop, as it would in a room.
+    constexpr int kChunk = kRate / 50;
+    samples.append(QList<float>(2 * kRate, 0.0f));
+    qsizetype  sent = 0;
+    QEventLoop loop;
+    QTimer     pump;
+    pump.setTimerType(Qt::PreciseTimer);
+    QObject::connect(&pump, &QTimer::timeout, &loop, [&]() {
+        // Catch up to wall time rather than trusting the timer's cadence.
+        const qsizetype due = std::min<qsizetype>(samples.size(), wall.elapsed() * kRate / 1000);
+        while (sent < due) {
+            const qsizetype n = std::min<qsizetype>(kChunk, due - sent);
+            rec.pushAudio(samples.mid(sent, n), sent * 1000 / kRate);
+            sent += n;
+        }
+        if (sent >= samples.size()) {
+            pump.stop();
+            QTimer::singleShot(3000, &loop, &QEventLoop::quit);
+        }
+    });
+    wall.start();
+    pump.start(20);
+    loop.exec();
+    rec.unload();
+
+    const auto stats = [](const QList<double>& v) {
+        if (v.isEmpty()) return QStringLiteral("none");
+        double lo = v.first(), hi = v.first(), sum = 0.0;
+        for (const double x : v) { lo = std::min(lo, x); hi = std::max(hi, x); sum += x; }
+        return QStringLiteral("%1 s mean, %2 best, %3 worst (%4)")
+            .arg(sum / double(v.size()), 0, 'f', 2).arg(lo, 0, 'f', 2).arg(hi, 0, 'f', 2)
+            .arg(v.size());
+    };
+    const QString heard = finals.join(QLatin1Char(' '));
+    out() << "\nheard:  \"" << heard << "\"\n";
+    out() << "lag after the words were spoken\n";
+    out() << "  partial  " << stats(interimLag) << "\n";
+    out() << "  final    " << stats(finalLag) << "\n";
+
+    if (!truthFile.isEmpty()) {
+        QFile tf(truthFile);
+        if (tf.open(QIODevice::ReadOnly)) {
+            const Wer w = wordErrorRate(normalize(decodeText(tf.readAll())), normalize(heard));
+            const int errors = w.substitutions + w.deletions + w.insertions;
+            out() << QStringLiteral("WER      %1%  (%2 errors over %3 words)\n")
+                         .arg(w.refWords > 0 ? 100.0 * errors / w.refWords : 0.0, 0, 'f', 1)
+                         .arg(errors).arg(w.refWords);
+        }
+    }
+    out().flush();
+    return 0;
+}
+
 int main(int argc, char* argv[])
 {
     QCoreApplication app(argc, argv);
@@ -627,6 +759,7 @@ int main(int argc, char* argv[])
         else if (a == QLatin1String("--record")     && i + 1 < args.size())  { mode = a; wav = args.at(++i); }
         else if (a == QLatin1String("--analyze")    && i + 1 < args.size())  { mode = a; wav = args.at(++i); }
         else if (a == QLatin1String("--transcribe") && i + 1 < args.size())  { mode = a; wav = args.at(++i); }
+        else if (a == QLatin1String("--deepgram")   && i + 1 < args.size())  { mode = a; wav = args.at(++i); }
         else if (a == QLatin1String("--score")      && i + 1 < args.size())  { mode = QStringLiteral("--transcribe"); wav = args.at(++i); }
         else if (a == QLatin1String("--model")      && i + 1 < args.size())    model    = args.at(++i);
         else if (a == QLatin1String("--device")     && i + 1 < args.size())    deviceId = args.at(++i);
@@ -642,6 +775,7 @@ int main(int argc, char* argv[])
     if (mode == QLatin1String("--list"))     return listDevices();
     if (mode == QLatin1String("--record"))   return record(wav, deviceId, std::max(1, seconds));
     if (mode == QLatin1String("--analyze"))  return analyze(wav);
+    if (mode == QLatin1String("--deepgram")) return deepgram(wav, truth);
     if (mode == QLatin1String("--transcribe")) {
         if (model.isEmpty()) {
             out() << "error: --transcribe needs --model <ggml.bin>\n";
@@ -664,7 +798,10 @@ int main(int argc, char* argv[])
              "                                         instead of the finished-utterance one\n"
              "  ... --window <seconds>                 keep only the last N seconds, as the\n"
              "                                         interim pass does (app uses 5)\n"
-             "  ... --threads <n>                      override the recognizer's thread count\n\n"
+             "  ... --threads <n>                      override the recognizer's thread count\n"
+             "  --deepgram <in.wav> [--truth truth.txt]\n"
+             "                                         stream to Deepgram in real time and\n"
+             "                                         time each result (key from Settings)\n\n"
              "Start with --list, then --record, and read the level report before\n"
              "concluding anything about the model.\n";
     out().flush();

@@ -119,8 +119,17 @@ bool AudioTap::start(const QAudioDevice& device, QString* error)
         if (!m_source || m_source->error() == QAudio::NoError) return;
         const QString reason = QStringLiteral("Audio capture stopped unexpectedly on \"%1\".")
                                    .arg(m_deviceName);
-        stop();
-        emit stopped(reason);
+        // Queued: stop() destroys the QAudioSource, and this handler is still
+        // running inside that source's own signal emission. Deleting the
+        // sender under its backend's stack is a crash on device unplug.
+        QMetaObject::invokeMethod(
+            this,
+            [this, reason]() {
+                if (!m_source) return;
+                stop();
+                emit stopped(reason);
+            },
+            Qt::QueuedConnection);
     });
 
     m_io = m_source->start();

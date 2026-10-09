@@ -106,6 +106,23 @@ Rectangle {
         graceTimer.stop()
     }
 
+    // Escape from Main.qml. Returns whether there was anything to cancel, so
+    // the shortcut can fall through to its other jobs when there was not.
+    function cancelPending() {
+        if (!_pending) return false
+        _cancelPending("cancelled")
+        return true
+    }
+
+    // Can the operator see the countdown and reach Cancel? Not while the
+    // console is hidden (projector-only, theme editor) and not behind a
+    // dialog. Auto never projects where nobody can stop it.
+    readonly property bool _canWatch: consoleActive && !AppState.dialogOpen
+
+    // True only inside _commitPending, so the live change it causes is not
+    // mistaken for the operator taking something else live.
+    property bool _committing: false
+
     function _commitPending() {
         const entry = _pending
         _pending = null
@@ -121,7 +138,9 @@ Rectangle {
             NarrationService.amendLog(entry.id, "cancelled")
             return
         }
+        _committing = true
         AppState.pushLibraryLive(item, 0)
+        _committing = false
         NarrationService.dismiss(entry.id)
     }
 
@@ -158,6 +177,13 @@ Rectangle {
             if (root._pending) root._cancelPending("superseded")
 
             root.stage(ref)                       // show what is about to go out
+
+            // Nobody can see the countdown, so it goes no further than
+            // Preview, and the log says so rather than claiming a cancel.
+            if (!root._canWatch) {
+                NarrationService.amendLog(ref.id, "staged")
+                return
+            }
             root._pending = ref
             root._pendingRemainingMs = SettingsService.narrationGraceMs
         }
@@ -166,6 +192,25 @@ Rectangle {
         // out. Whatever was pending was based on audio that has stopped.
         function onListeningChanged() {
             if (!NarrationService.listening) root._cancelPending("cancelled")
+        }
+
+        // Switching out of Auto is the operator saying "not automatically".
+        // A countdown that started under Auto doesn't get to finish.
+        function onModeChanged() {
+            if (NarrationService.mode !== "auto") root._cancelPending("cancelled")
+        }
+    }
+
+    // A dialog opening or the console hiding mid-countdown takes away the
+    // Cancel button, so it takes away the countdown too.
+    on_CanWatchChanged: if (!_canWatch) _cancelPending("cancelled")
+
+    // The operator took something else live during the window. Their choice
+    // wins; projecting over it a second later would undo what they just did.
+    Connections {
+        target: ProjectionService
+        function onStateChanged() {
+            if (root._pending && !root._committing) root._cancelPending("cancelled")
         }
     }
 
@@ -251,7 +296,7 @@ Rectangle {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Cancel")
+                    text: qsTr("Cancel (Esc)")
                     color: Theme.color.textPrimary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize

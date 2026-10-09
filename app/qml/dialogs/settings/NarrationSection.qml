@@ -9,8 +9,9 @@ import Crater
 // this is the one feature in Crater that opens a microphone in a church
 // building, and an operator deciding whether to switch it on deserves the
 // facts before the knobs. Everything claimed in that banner is enforced in
-// code: the fixed ring buffer in AudioRing, the absence of any network call
-// in the subsystem, and the absence of any auto-arm key in SettingsService.
+// code: the fixed ring buffer in AudioRing, no network call on the local
+// engine (Deepgram is the one exception, chosen here and named in the
+// banner), and the absence of any auto-arm key in SettingsService.
 Item {
     id: root
 
@@ -24,6 +25,10 @@ Item {
     property int _deviceRevision: 0
     onVisibleChanged: if (visible) root._deviceRevision++
 
+    readonly property bool   _cloud:      SettingsService.narrationEngine === "deepgram"
+    readonly property string _localLabel: qsTr("On this computer")
+    readonly property string _cloudLabel: qsTr("Deepgram (cloud)")
+
     readonly property var _deviceOptions: {
         root._deviceRevision;   // dependency, deliberately unused
 
@@ -31,17 +36,31 @@ Item {
         // device that happens to be default today: it means "keep following
         // whatever Windows decides", which is what an operator who moves
         // between rooms usually wants.
-        const list = [{ label: qsTr("System default"), value: "" }]
+        //
+        // Combobox shows `value` on its button and marks the row whose value
+        // matches, so each option's value is its label and the device id
+        // rides alongside. An id as the value would put a raw device path on
+        // the button, and the empty id for "System default" reads as falsy
+        // there and comes back as the label.
+        const list = [{ label: qsTr("System default"), value: qsTr("System default"), id: "" }]
         const devices = NarrationService.inputDevices()
         for (let i = 0; i < devices.length; i++) {
-            list.push({
-                label: devices[i].isDefault
-                       ? qsTr("%1 (system default)").arg(devices[i].name)
-                       : devices[i].name,
-                value: devices[i].id
-            })
+            let label = devices[i].isDefault
+                        ? qsTr("%1 (system default)").arg(devices[i].name)
+                        : devices[i].name
+            // Two identical USB microphones would otherwise be one row.
+            let n = 2
+            const base = label
+            while (list.some(o => o.label === label)) label = base + " (" + (n++) + ")"
+            list.push({ label: label, value: label, id: devices[i].id })
         }
         return list
+    }
+
+    function _selectDevice(label) {
+        const opts = root._deviceOptions
+        for (let i = 0; i < opts.length; i++)
+            if (opts[i].label === label) { NarrationService.setInputDevice(opts[i].id); return }
     }
 
     // What the button shows. Three genuinely different states, because a
@@ -53,7 +72,7 @@ Item {
         if (id.length === 0) return false
         const opts = root._deviceOptions
         for (let i = 0; i < opts.length; i++)
-            if (opts[i].value === id) return false
+            if (opts[i].id === id) return false
         return true
     }
 
@@ -65,7 +84,7 @@ Item {
             return qsTr("Not connected (using %1)").arg(NarrationService.inputDeviceName)
         const opts = root._deviceOptions
         for (let i = 0; i < opts.length; i++)
-            if (opts[i].value === id) return opts[i].label
+            if (opts[i].id === id) return opts[i].label
         return NarrationService.inputDeviceName
     }
 
@@ -94,7 +113,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: unavailableText.implicitHeight + Theme.space.lg * 2
                 Layout.bottomMargin: Theme.space.lg
-                visible: !NarrationService.available
+                visible: !NarrationService.localEngineAvailable && !root._cloud
                 color: Theme.color.previewSubtle
                 border.width: 1
                 border.color: Theme.color.preview
@@ -106,7 +125,7 @@ Item {
                     anchors.margins: Theme.space.lg
                     anchors.verticalCenter: parent.verticalCenter
                     wrapMode: Text.WordWrap
-                    text: qsTr("This build of Crater was compiled without speech recognition, so narration cannot listen. The detection settings below still apply, and the transcript test at the bottom of this page works without a microphone.")
+                    text: qsTr("This build of Crater has no on-device speech recognition. Choose Deepgram below to listen with a cloud engine instead. The detection settings still apply either way, and the transcript test at the bottom of this page works without a microphone.")
                     color: Theme.color.textPrimary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.smallSize
@@ -139,7 +158,12 @@ Item {
                     Text {
                         width: privacyCol.width
                         wrapMode: Text.WordWrap
-                        text: qsTr("The microphone opens only when you press Listen, and closes when you press Stop. Audio is held in a 30-second buffer in memory and is never written to disk. Nothing is sent anywhere: speech recognition runs entirely on this machine and this feature makes no network requests at all. Transcripts are discarded when you stop listening.")
+                        // The one place the operator learns where the audio
+                        // goes, so it must change with the engine. Deepgram
+                        // is the only path off the machine.
+                        text: root._cloud
+                              ? qsTr("The microphone opens only when you press Listen, and closes when you press Stop. While listening, audio from the microphone is streamed to Deepgram over an encrypted connection to be transcribed, using your church's API key. Crater asks Deepgram not to keep it for training. Nothing is written to disk on this machine, and transcripts here are discarded when you stop listening. Choose On this computer to keep all audio local.")
+                              : qsTr("The microphone opens only when you press Listen, and closes when you press Stop. Audio is held in a 30-second buffer in memory and is never written to disk. Nothing is sent anywhere: speech recognition runs entirely on this machine and this feature makes no network requests at all. Transcripts are discarded when you stop listening.")
                         color: Theme.color.textSecondary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
@@ -148,12 +172,143 @@ Item {
                 }
             }
 
-            // ── SPEECH MODEL ─────────────────────────────────────────────
-            SettingsSectionHeader { title: qsTr("Speech model") }
+            // -- SPEECH ENGINE --------------------------------------------
+            //
+            // On this computer is the default and keeps every byte local.
+            // Deepgram is opt-in, runs on the church's own key, and is the
+            // fast path: it streams and answers within a few hundred ms of
+            // the preacher stopping (docs/narration.md 7.4).
+            SettingsSectionHeader { title: qsTr("Speech engine") }
 
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 64
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: engineCombo.left
+                    anchors.rightMargin: Theme.space.lg
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Text {
+                        text: qsTr("Recognition")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: root._cloud
+                              ? qsTr("Fastest. Needs an internet connection and a Deepgram API key.")
+                              : qsTr("Private and offline. Slower on a computer without a graphics card.")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+                Combobox {
+                    id: engineCombo
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 260
+                    searchable: false
+                    // Changing engines mid-service would silently reopen the
+                    // microphone on a different path, so it waits for Stop.
+                    enabled: !NarrationService.listening
+                             && NarrationService.engineState !== "loading"
+                    // A build without whisper has one engine to offer.
+                    options: NarrationService.localEngineAvailable
+                             ? [root._localLabel, root._cloudLabel]
+                             : [root._cloudLabel]
+                    value: root._cloud ? root._cloudLabel : root._localLabel
+                    onValueSelected: function(v) {
+                        SettingsService.narrationEngine = (v === root._cloudLabel) ? "deepgram" : "whisper"
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 84
+                visible: root._cloud
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.space.xs
+                    Text {
+                        text: qsTr("Deepgram API key")
+                        color: Theme.color.textPrimary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.bodySize
+                        font.weight: Theme.font.weightMedium
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 34
+                        color: Theme.color.canvas
+                        border.width: 1
+                        border.color: keyInput.activeFocus ? Theme.color.brand
+                                                           : Theme.color.borderStrong
+                        TextInput {
+                            id: keyInput
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.space.md
+                            anchors.rightMargin: Theme.space.md
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: Theme.color.textPrimary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.bodySize
+                            echoMode: TextInput.Password
+                            selectByMouse: true
+                            clip: true
+                            text: SettingsService.deepgramApiKey
+                            // Saved on leaving the field rather than per
+                            // keystroke, so a half-pasted key is never stored.
+                            onEditingFinished: SettingsService.deepgramApiKey = text
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                visible: keyInput.text.length === 0
+                                text: qsTr("Paste the key from console.deepgram.com")
+                                color: Theme.color.textDisabled
+                                font.family: Theme.font.family
+                                font.pixelSize: Theme.font.bodySize
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        // engineName is only set while armed, and it is the
+                        // proof the key worked: Deepgram accepted it.
+                        text: NarrationService.listening
+                              && NarrationService.engineState === "listening"
+                              && NarrationService.engineName.length > 0
+                              ? qsTr("Connected: %1").arg(NarrationService.engineName)
+                              : qsTr("Your church's key, billed to your Deepgram account. Stored on this computer only.")
+                        color: Theme.color.textTertiary
+                        font.family: Theme.font.family
+                        font.pixelSize: Theme.font.smallSize
+                    }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle
+                visible: root._cloud
+            }
+
+            // -- SPEECH MODEL ---------------------------------------------
+            SettingsSectionHeader { title: qsTr("Speech model"); visible: !root._cloud }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+                visible: !root._cloud
                 Column {
                     anchors.left: parent.left
                     anchors.right: modelBtn.left
@@ -269,12 +424,12 @@ Item {
                     enabled: NarrationService.available
                     options: root._deviceOptions
                     value: root._deviceLabel
-                    onValueSelected: function(v) { NarrationService.setInputDevice(v) }
+                    onValueSelected: function(v) { root._selectDevice(v) }
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+            SettingsSectionHeader { title: qsTr("Detection") }
 
             // Paraphrase detection is a separate asset pair (an embedding
             // model and a vector index) that lives beside the speech model
@@ -307,36 +462,6 @@ Item {
                 }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 56
-                Text {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Microphone")
-                    color: Theme.color.textPrimary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.bodySize
-                    font.weight: Theme.font.weightMedium
-                }
-                Text {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    // Read-only for now: capture uses the system default input,
-                    // which is what a fixed installation's mixer feed already
-                    // is. A picker lands with the device list this reads from.
-                    text: {
-                        const devs = NarrationService.inputDevices()
-                        for (let i = 0; i < devs.length; ++i)
-                            if (devs[i].isDefault) return devs[i].name
-                        return devs.length > 0 ? devs[0].name : qsTr("None detected")
-                    }
-                    color: Theme.color.textTertiary
-                    font.family: Theme.font.family
-                    font.pixelSize: Theme.font.smallSize
-                }
-            }
 
             // ── TRUST ────────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Trust") }
@@ -507,8 +632,8 @@ Item {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         text: NarrationService.listening
-                              ? qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules.")
-                              : qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules, and never opens the microphone. Paraphrase detection is skipped unless narration is already listening, because loading its model would stall this dialog.")
+                              ? qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules, and shows the result in the log below without putting anything in Preview or on screen.")
+                              : qsTr("Type what a preacher might say and see what Crater would do with it. Runs the real detectors and the real trust rules, and shows the result in the log below without putting anything in Preview or on screen. Never opens the microphone. Paraphrase detection is skipped unless narration is already listening, because loading its model would stall this dialog.")
                         color: Theme.color.textTertiary
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.smallSize
@@ -677,7 +802,12 @@ Item {
                             anchors.right: parent.right
                             anchors.rightMargin: Theme.space.md
                             anchors.verticalCenter: parent.verticalCenter
-                            text: logRow.modelData.action
+                            // A test from the box above shows what the
+                            // rules decided, marked so it is never read as
+                            // something that actually happened.
+                            text: logRow.modelData.test
+                                  ? qsTr("%1 (test)").arg(logRow.modelData.action)
+                                  : logRow.modelData.action
                             color: logRow.actionColor
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.smallSize
@@ -704,9 +834,9 @@ Item {
 
     function _runTest() {
         if (testInput.text.trim().length === 0) return
-        NarrationService.injectTranscript(testInput.text)
+        NarrationService.testTranscript(testInput.text)
         testInput.text = ""
-        // Detections land in NarrationService.heard, which the narration bar
-        // renders the moment the dialog closes.
+        // Detections land in the session log below and as plain suggestions
+        // in NarrationService.heard. Never staged, never projected.
     }
 }

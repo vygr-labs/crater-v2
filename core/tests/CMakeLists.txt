@@ -357,10 +357,30 @@ target_include_directories(test_voice_gate PRIVATE
 
 add_test(NAME voice_gate COMMAND test_voice_gate)
 
+# ── Deepgram message assembly — docs/narration.md §7.4 ─────────────────
+# Recorded server messages replayed into the recognizer. No socket, no key,
+# no network: what is tested is how interim, final and end-of-utterance
+# messages become partial() and transcribed().
+qt_add_executable(test_deepgram_recognizer
+    test_deepgram_recognizer.cpp
+)
+
+target_link_libraries(test_deepgram_recognizer PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_deepgram_recognizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME deepgram_recognizer COMMAND test_deepgram_recognizer)
+
 # ── Narration routing + trust gate, phase 2 — docs/narration.md §5 ─────
 # The tier x mode matrix asserted cell by cell, plus NarrationService driven
-# end to end through injectTranscript() — the same entry point the operator
-# gets in Settings > Narration. No microphone and no speech model: this
+# end to end through injectTranscript(), the transcript path minus the
+# microphone, and testTranscript(), the Settings > Narration test box. No microphone and no speech model: this
 # covers what the system DECIDES, which is the part that can put a wrong
 # verse in front of a congregation.
 qt_add_executable(test_narration_service

@@ -3,14 +3,15 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
+
 namespace crater::narration {
 
 // Abstract speech-to-text backend. See docs/narration.md §7.1.
 //
-// There is exactly one real implementation to begin with (whisper.cpp), and
-// this interface is still worth having: "fully offline" is a decision this
-// domain revisits, and a Vosk or cloud backend has to be a new file rather
-// than a refactor of NarrationService. It also lets the phase-2 UI and the
+// Two real implementations: whisper.cpp on this machine, and Deepgram's
+// streaming API (§7.4), which the operator opts into with their own key. A
+// third backend is a new file rather than a refactor of NarrationService. It also lets the phase-2 UI and the
 // phase-3/4 matchers be developed against NullRecognizer with no model on
 // disk at all.
 //
@@ -58,6 +59,22 @@ public:
     // disarming has to actually give the memory back.
     virtual void unload() = 0;
 
+    // A streaming backend takes the microphone's audio continuously through
+    // pushAudio() and decides for itself where an utterance ends, emitting
+    // partial() and transcribed() as it goes. NarrationService then skips
+    // VoiceGate segmentation and the interim cadence entirely, because both
+    // exist only to approximate what a streaming engine does natively.
+    virtual bool isStreaming() const { return false; }
+
+    // Safe from any thread. Asks a long call already running on the worker,
+    // such as a whisper decode, to give up early. Used on disarm, so the
+    // thread can be joined without waiting out an utterance nobody needs.
+    // Once set it stays set: the recognizer is on its way out.
+    void requestAbort() { m_abort.store(true, std::memory_order_relaxed); }
+
+protected:
+    bool abortRequested() const { return m_abort.load(std::memory_order_relaxed); }
+
 public slots:
     // Transcribe one complete utterance of 16 kHz mono float samples, as
     // segmented by VoiceGate. Emits transcribed() or failed() when done.
@@ -88,6 +105,15 @@ public slots:
         emit partial(QString(), startedAtMs);
     }
 
+    // Streaming backends only (isStreaming()). `atMs` is the session-clock
+    // time of the chunk's first sample, so results can be timestamped against
+    // the same clock the utterance path uses.
+    virtual void pushAudio(QList<float> mono16k, qint64 atMs)
+    {
+        Q_UNUSED(mono16k);
+        Q_UNUSED(atMs);
+    }
+
 signals:
     // A finished utterance. `startedAtMs` echoes back what was passed to
     // transcribe() so downstream stages can timestamp against the session
@@ -100,7 +126,21 @@ signals:
     // off a partial — see the grace period in docs/narration.md §5.
     void partial(const QString& text, qint64 startedAtMs);
 
+    // One utterance could not be transcribed. The engine is still usable.
     void failed(const QString& message);
+
+    // The engine is gone for the rest of the session, for example a streaming
+    // connection that could not be restored. Nothing the microphone hears can
+    // be used after this, so the service stops listening rather than leave a
+    // live microphone indicator over a dead pipeline.
+    void lost(const QString& message);
+
+    // Streaming backends only. The connection dropped and is being retried
+    // (false, with what to tell the operator), or it came back (true).
+    void connectionChanged(bool connected, const QString& message);
+
+private:
+    std::atomic<bool> m_abort{ false };
 };
 
 // Does nothing, successfully. Lets the whole narration stack build, run, and

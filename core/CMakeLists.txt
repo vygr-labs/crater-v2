@@ -57,12 +57,16 @@ add_library(crater-core STATIC
     src/narration/VoiceGate.cpp
     src/narration/AudioTap.cpp
     src/narration/WhisperRecognizer.cpp
+    # Cloud streaming backend, opt-in with a church's own API key (§7.4).
+    # Always compiled: it needs only Qt WebSockets, no model and no FetchContent.
+    src/narration/DeepgramRecognizer.cpp
 
     # AUTOMOC needs to see the QObject headers under src/ too — these aren't
     # in include/ because narration's only public type is HeardReference.
     src/narration/SpeechRecognizer.h
     src/narration/AudioTap.h
     src/narration/WhisperRecognizer.h
+    src/narration/DeepgramRecognizer.h
 
     # Public bootstrap entry point — runs migrations on all DBs.
     src/Bootstrap.cpp
@@ -177,6 +181,10 @@ target_link_libraries(crater-core
         # header exposes an audio type: the tap normalizes everything to
         # 16 kHz mono float before anything else in crater-core sees it.
         Qt6::Multimedia
+        # Narration's Deepgram backend streams audio over a WebSocket. PRIVATE
+        # for the same reason as Multimedia: no public header names a socket.
+        Qt6::Network
+        Qt6::WebSockets
         # NOTE: deliberately do NOT link Qt6::Sql. We build sqlite3 ourselves
         # with custom compile flags (FTS5, THREADSAFE=2, DQS=0). See the plan's
         # "Deviations from Electron" table.
@@ -253,13 +261,14 @@ qt_add_resources(crater-core "narration_vocab"
 # OFF by default, and deliberately so. whisper.cpp is a source dependency
 # fetched at configure time and it materially lengthens a cold build, which
 # nobody working on themes or the schedule should have to pay for. With it
-# off, WhisperRecognizer compiles to stubs that fail loudly and
-# NarrationService falls back to NullRecognizer.
+# off, WhisperRecognizer compiles to stubs that fail loudly and the only
+# speech engine is Deepgram (docs/narration.md 7.4).
 #
 # Enable with: cmake -S . -B build -DCRATER_WITH_WHISPER=ON
 #
 # Models are NOT fetched — they're downloaded separately and pointed at by
-# the operator. Nothing here phones home at build time or at run time.
+# the operator. The local engine makes no network calls at build time or at
+# run time.
 option(CRATER_WITH_WHISPER "Build the whisper.cpp speech recognizer for narration" OFF)
 
 if(CRATER_WITH_WHISPER)
@@ -293,9 +302,9 @@ endif()
 # Enable with: cmake -S . -B build -DCRATER_WITH_EMBEDDINGS=ON
 #
 # The MODEL is not fetched. Like the whisper model, it is downloaded
-# separately and pointed at by the operator — nothing in this subsystem
-# touches the network at run time, which is what makes the offline
-# requirement in §8 a security property rather than a convenience.
+# separately and pointed at by the operator. Retrieval never touches the
+# network at run time; the only narration traffic is the opt-in Deepgram
+# audio stream (docs/narration.md 7.4, 8).
 option(CRATER_WITH_EMBEDDINGS "Build the ONNX Runtime embedder for narration's allusion path" OFF)
 
 if(CRATER_WITH_EMBEDDINGS)

@@ -97,6 +97,13 @@ private slots:
         m_savedMode      = s.narrationMode();
         m_savedGraceMs   = s.narrationGraceMs();
         m_savedDeviceId  = s.narrationInputDeviceId();
+        m_savedEngine    = s.narrationEngine();
+        m_savedKey       = s.deepgramApiKey();
+
+        // No test in this suite may reach Deepgram. A developer machine set to
+        // the cloud engine with a real key would otherwise open a billed
+        // session from whichever test happens to arm.
+        s.setDeepgramApiKey(QString());
     }
 
     void cleanupTestCase()
@@ -106,6 +113,8 @@ private slots:
         s.setNarrationMode(m_savedMode);
         s.setNarrationGraceMs(m_savedGraceMs);
         s.setNarrationInputDeviceId(m_savedDeviceId);
+        s.setNarrationEngine(m_savedEngine);
+        s.setDeepgramApiKey(m_savedKey);
     }
 
     // ── Microphone selection ────────────────────────────────────────────
@@ -413,6 +422,106 @@ private slots:
         QCOMPARE(ref.tier,       QStringLiteral("high"));
     }
 
+    // Ordinary speech with a book name and a number in it. Before the
+    // detector learned the difference, Auto put John 3 on the screen.
+    void auto_mode_never_projects_prose()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("auto"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy live(&svc, &NarrationService::referenceAutoLive);
+        svc.injectTranscript(QStringLiteral("I called John three times last week"));
+        svc.injectTranscript(QStringLiteral("my first job was at a bank"));
+        svc.injectTranscript(QStringLiteral("First, John 3:16 tells us"));
+        QCOMPARE(live.count(), 1);
+        QCOMPARE(live.at(0).at(0).value<HeardReference>().reference, QStringLiteral("John 3:16"));
+    }
+
+    // The Settings test box, in Auto, mid-service. It reports what the rules
+    // decided and moves nothing.
+    void the_test_box_never_stages_or_projects()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("auto"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy live(&svc,     &NarrationService::referenceAutoLive);
+        QSignalSpy staged(&svc,   &NarrationService::referenceStaged);
+        QSignalSpy detected(&svc, &NarrationService::referenceDetected);
+
+        svc.testTranscript(QStringLiteral("turn with me to john chapter three verse sixteen"));
+
+        QCOMPARE(live.count(),     0);
+        QCOMPARE(staged.count(),   0);
+        QCOMPARE(detected.count(), 1);
+
+        // The log tells the truth about the rules, and says it was a test.
+        const QVariantMap e = entryFor(svc.sessionLog(), QStringLiteral("John 3:16"));
+        QCOMPARE(e.value(QStringLiteral("action")).toString(), QStringLiteral("live"));
+        QVERIFY(e.value(QStringLiteral("test")).toBool());
+
+        // And it did not occupy the de-duplication window: the preacher
+        // saying it for real a moment later still goes live.
+        svc.injectTranscript(QStringLiteral("turn with me to john chapter three verse sixteen"));
+        QCOMPARE(live.count(), 1);
+    }
+
+    // ── Partial hypotheses ──────────────────────────────────────────────
+
+    void a_partial_never_goes_live()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("auto"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy live(&svc,   &NarrationService::referenceAutoLive);
+        QSignalSpy staged(&svc, &NarrationService::referenceStaged);
+        svc.injectTranscript(QStringLiteral("turn with me to john chapter three verse sixteen"),
+                             /*asPartial=*/true);
+        QCOMPARE(live.count(),   0);
+        QCOMPARE(staged.count(), 1);
+    }
+
+    // Staged mid-sentence, confirmed when the sentence ends. Auto takes it the
+    // rest of the way, once, and the staged chip makes way for it.
+    void the_final_transcript_can_take_a_partial_live()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("auto"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy live(&svc, &NarrationService::referenceAutoLive);
+        svc.injectTranscript(QStringLiteral("turn with me to john chapter three verse sixteen"),
+                             /*asPartial=*/true);
+        svc.injectTranscript(QStringLiteral("turn with me to john chapter three verse sixteen"));
+        QCOMPARE(live.count(), 1);
+        QCOMPARE(svc.heardCount(), 1);
+
+        // A third hearing is a plain duplicate.
+        svc.injectTranscript(QStringLiteral("john chapter three verse sixteen"));
+        QCOMPARE(live.count(), 1);
+    }
+
+    // Each interim pass re-reads the same growing sentence. It must not walk
+    // "the next verse" forward one step per pass.
+    void partials_do_not_move_the_context()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("stage"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        svc.injectTranscript(QStringLiteral("turn to john chapter three verse sixteen"));
+
+        QSignalSpy staged(&svc, &NarrationService::referenceStaged);
+        svc.injectTranscript(QStringLiteral("let's read the next verse"), true);
+        svc.injectTranscript(QStringLiteral("let's read the next verse together"), true);
+        svc.injectTranscript(QStringLiteral("let's read the next verse together church"), true);
+
+        QCOMPARE(staged.count(), 1);
+        QCOMPARE(staged.at(0).at(0).value<HeardReference>().reference, QStringLiteral("John 3:17"));
+    }
+
     // ── Suppression ─────────────────────────────────────────────────────
 
     void the_same_reference_twice_fires_once()
@@ -671,27 +780,36 @@ private slots:
 
     // ── Arming refusals ─────────────────────────────────────────────────
 
+    // The refusal has to name the reason, because "nothing happened" is
+    // indistinguishable from a microphone that is on but hearing nothing.
     void arming_refuses_and_explains_itself()
     {
         SettingsService settings;
         NarrationService svc(nullptr, nullptr, &settings);
-
         QVERIFY(!svc.listening());
 
-        if (!svc.available()) {
-            // Default build: whisper is compiled out. The refusal has to name
-            // the reason, because "nothing happened" is indistinguishable from
-            // a microphone that is on but hearing nothing.
-            QVERIFY(!svc.arm());
-            QCOMPARE(svc.engineState(), QStringLiteral("unavailable"));
-            QVERIFY(!svc.statusMessage().isEmpty());
-        } else {
-            // Speech build with no model configured.
+        // Cloud engine with no key.
+        settings.setNarrationEngine(QStringLiteral("deepgram"));
+        QVERIFY(settings.deepgramApiKey().isEmpty());
+        QVERIFY(!svc.modelReady());
+        QVERIFY(!svc.arm());
+        QCOMPARE(svc.engineState(), QStringLiteral("error"));
+        QVERIFY(svc.statusMessage().contains(QStringLiteral("API key")));
+        QVERIFY(!svc.listening());
+
+        if (svc.localEngineAvailable()) {
+            // On-device engine with no model configured.
+            settings.setNarrationEngine(QStringLiteral("whisper"));
             settings.setNarrationModelPath(QString());
             QVERIFY(!svc.modelReady());
             QVERIFY(!svc.arm());
             QCOMPARE(svc.engineState(), QStringLiteral("error"));
             QVERIFY(!svc.statusMessage().isEmpty());
+        } else {
+            // A build without whisper has one engine, and can't be talked out
+            // of it.
+            settings.setNarrationEngine(QStringLiteral("whisper"));
+            QCOMPARE(settings.narrationEngine(), QStringLiteral("deepgram"));
         }
 
         // A refused arm must never leave the microphone open.
@@ -724,6 +842,8 @@ private:
     QString m_savedMode;
     int     m_savedGraceMs = 1500;
     QString m_savedDeviceId;
+    QString m_savedEngine;
+    QString m_savedKey;
 };
 
 QTEST_MAIN(TestNarrationService)

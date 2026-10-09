@@ -184,9 +184,22 @@ bool AllusionIndex::load(const QString& path, const QString& expectedModelId, QS
                         .arg(dims).arg(count));
         return false;
     }
+    // The header is read from disk, so it is checked against the file before
+    // anything is allocated from it. Each row needs 8 bytes of address, `dims`
+    // bytes of vector and 4 of scale. A corrupt count would otherwise reserve
+    // gigabytes or spin through billions of reads past the end.
+    if (qint64(count) * (qint64(dims) + 12) > f.size()) {
+        fail(error, QStringLiteral("Index header claims %1 verses, more than the file holds.")
+                        .arg(count));
+        return false;
+    }
 
     quint32 modelLen = 0;
     s >> modelLen;
+    if (modelLen > 4096) {
+        fail(error, QStringLiteral("Index model identifier is not sane (%1 bytes).").arg(modelLen));
+        return false;
+    }
     QByteArray model(int(modelLen), Qt::Uninitialized);
     if (modelLen > 0 && s.readRawData(model.data(), int(modelLen)) != int(modelLen)) {
         fail(error, QStringLiteral("Index truncated in the model identifier."));
@@ -231,6 +244,10 @@ bool AllusionIndex::load(const QString& path, const QString& expectedModelId, QS
     for (quint32 r = 0; r < count; ++r) {
         quint16 b = 0, c = 0, v = 0, pad = 0;
         s >> b >> c >> v >> pad;
+        if (s.status() != QDataStream::Ok) {
+            fail(error, QStringLiteral("Index truncated in the verse table."));
+            return false;
+        }
         if (b >= bookCount) {
             fail(error, QStringLiteral("Index row %1 references book %2 of %3.")
                             .arg(r).arg(b).arg(bookCount));
@@ -254,6 +271,12 @@ bool AllusionIndex::load(const QString& path, const QString& expectedModelId, QS
     for (quint32 r = 0; r < count; ++r) {
         float sc = 0.0f;
         s >> sc;
+        // A NaN score compares false against everything, which breaks the
+        // ranking's ordering and std::sort with it.
+        if (!std::isfinite(sc) || sc < 0.0f) {
+            fail(error, QStringLiteral("Index row %1 has an invalid scale.").arg(r));
+            return false;
+        }
         scale.append(sc);
     }
 

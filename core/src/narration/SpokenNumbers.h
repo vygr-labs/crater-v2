@@ -35,6 +35,12 @@ struct NumberPhrase
 // the tens+unit composition rule expects.
 QStringList tokenize(const QString& utterance);
 
+// The same tokens, plus whether written punctuation (, . ; ! ?) separated each
+// one from the token before it. Speech has no commas, but recognizers that
+// punctuate are telling us where a phrase ended: in "First, John 3:16" the
+// comma is the only evidence the preacher meant John and not 1 John.
+QStringList tokenize(const QString& utterance, QList<bool>* breakBefore);
+
 // Parse exactly ONE number phrase beginning at `words[i]`. Returns nullopt
 // when words[i] does not start a number.
 //

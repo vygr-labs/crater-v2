@@ -279,6 +279,13 @@ private:
     // arm — the microphone the operator picked last month being unplugged is
     // not a reason to have no sound on Sunday.
     Q_PROPERTY(QString narrationInputDeviceId READ narrationInputDeviceId WRITE setNarrationInputDeviceId NOTIFY narrationInputDeviceIdChanged)
+    // "whisper" (on this machine, the default) | "deepgram" (cloud, §7.4).
+    // Choosing Deepgram is the one way audio leaves the machine, so it is
+    // never a default and the settings page says so where it is chosen.
+    Q_PROPERTY(QString narrationEngine    READ narrationEngine    WRITE setNarrationEngine    NOTIFY narrationEngineChanged)
+    // The church's own Deepgram key. Machine-wide like the rest of narration,
+    // which also keeps it out of .craterprofile exports.
+    Q_PROPERTY(QString deepgramApiKey     READ deepgramApiKey     WRITE setDeepgramApiKey     NOTIFY deepgramApiKeyChanged)
     // Note what is NOT here: any form of auto-arm. §8 forbids the microphone
     // opening on app start, schedule load, or go-live, and the way to keep
     // that true is to never give it a key it could be enabled from.
@@ -335,6 +342,8 @@ public:
     QString narrationMode() const;
     int     narrationGraceMs() const;
     QString narrationInputDeviceId() const;
+    QString narrationEngine() const;
+    QString deepgramApiKey() const;
     QString language() const;
     // True once the operator has explicitly chosen a UI language (the key
     // exists in QSettings). False on a fresh install — TranslationService uses
@@ -391,6 +400,8 @@ public:
     void setNarrationMode(const QString& mode);
     void setNarrationGraceMs(int ms);
     void setNarrationInputDeviceId(const QString& id);
+    void setNarrationEngine(const QString& engine);
+    void setDeepgramApiKey(const QString& key);
     void setLanguage(const QString& code);
 
     // Set the global-search primary action for one result type. `type` and
@@ -448,6 +459,8 @@ signals:
     void narrationModeChanged();
     void narrationGraceMsChanged();
     void narrationInputDeviceIdChanged();
+    void narrationEngineChanged();
+    void deepgramApiKeyChanged();
 
 private:
     struct Impl;

@@ -46,11 +46,17 @@ class NarrationService : public QObject
 {
     Q_OBJECT
 
-    // Compiled with speech-recognition support at all. False in a default
-    // build (CRATER_WITH_WHISPER is OFF), where arm() refuses and says so.
+    // Some speech engine can run in this build. Always true since the
+    // Deepgram backend (§7.4), which needs no build option; kept so the UI
+    // binds to one place.
     Q_PROPERTY(bool available READ available CONSTANT)
 
-    // A speech model exists at the configured path. Distinct from `available`
+    // The on-device engine (whisper.cpp) was compiled in. False in a default
+    // build (CRATER_WITH_WHISPER is OFF), where only Deepgram can listen.
+    Q_PROPERTY(bool localEngineAvailable READ localEngineAvailable CONSTANT)
+
+    // The chosen engine has what it needs: a model file at the configured
+    // path for whisper, an API key for Deepgram. Distinct from `available`
     // because the two failure modes need different remedies — one is "your
     // build can't do this", the other is "point me at a model file".
     Q_PROPERTY(bool modelReady READ modelReady NOTIFY engineStateChanged)
@@ -147,6 +153,7 @@ public:
     ~NarrationService() override;
 
     bool    available()   const;
+    bool    localEngineAvailable() const;
     bool    modelReady()  const;
     bool    listening()   const;
     QString mode()        const;
@@ -213,12 +220,18 @@ public:
     // rather than silently continuing on the old one.
     Q_INVOKABLE void setInputDevice(const QString& id);
 
-    // Feed a transcript line straight into the detectors, bypassing audio.
-    // This is how the pipeline is exercised without a microphone: the phase-2
-    // tests drive it, and it is genuinely useful for an operator debugging why
-    // a phrasing didn't fire. It cannot start a recording and it does not
-    // require arming, because it never touches the microphone.
-    Q_INVOKABLE void injectTranscript(const QString& text);
+    // The Settings > Narration test box. Runs a typed line through the real
+    // detectors and the real trust rules and logs what they decided, marked
+    // as a test, but never stages or projects anything in any mode: an
+    // operator trying a phrase mid-service in Auto must not put it on the
+    // screen from behind a modal. Never touches the microphone.
+    Q_INVOKABLE void testTranscript(const QString& text);
+
+    // A transcript line through the full pipeline exactly as if the
+    // recognizer had produced it, routing included, so in Auto it can go
+    // live. For tests and tools, deliberately not reachable from QML.
+    // `asPartial` treats it as an in-progress hypothesis instead.
+    void injectTranscript(const QString& text, bool asPartial = false);
 
 signals:
     void listeningChanged();

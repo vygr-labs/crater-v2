@@ -77,12 +77,35 @@ struct BookMatch
     int     endIdx = 0;
 };
 
+// True when written punctuation falls inside tokens [from, to).
+bool spanHasBreak(const QList<bool>& breaks, int from, int to)
+{
+    for (int k = from + 1; k < to && k < int(breaks.size()); ++k)
+        if (breaks[k]) return true;
+    return false;
+}
+
+// The books with no chapter to say. "Jude verse nine" is complete; "Romans
+// verse nine" is missing its chapter and has to find one somewhere else.
+bool isSingleChapterBook(const QString& canonical)
+{
+    static const QSet<QString> s = {
+        QStringLiteral("Obadiah"), QStringLiteral("Philemon"), QStringLiteral("2 John"),
+        QStringLiteral("3 John"),  QStringLiteral("Jude"),
+    };
+    return s.contains(canonical);
+}
+
 // Longest-first, so "third john" beats "john" and "song of solomon" isn't
 // truncated. Getting this order wrong turns 3 John into John 3.
-std::optional<BookMatch> matchBookAt(const QStringList& w, int i)
+//
+// A book name never spans punctuation. "First, John 3:16" is a list item
+// followed by John, and reading it as 1 John projects a different verse.
+std::optional<BookMatch> matchBookAt(const QStringList& w, int i, const QList<bool>& breaks)
 {
     const int maxLen = std::min(kMaxBookTokens, int(w.size()) - i);
     for (int len = maxLen; len >= 1; --len) {
+        if (spanHasBreak(breaks, i, i + len)) continue;
         const QString key = QStringList(w.mid(i, len)).join(QLatin1Char(' '));
         if (const auto it = spokenBooks().constFind(key); it != spokenBooks().constEnd())
             return BookMatch{ *it, i + len };
@@ -140,10 +163,10 @@ bool isChapterKeyword(const QString& w)
     return w == QStringLiteral("chapter") || w == QStringLiteral("chapters");
 }
 
+// Not "vs": nobody says it aloud, and recognizers write it for "versus".
 bool isVerseKeyword(const QString& w)
 {
-    return w == QStringLiteral("verse") || w == QStringLiteral("verses")
-           || w == QStringLiteral("vs");
+    return w == QStringLiteral("verse") || w == QStringLiteral("verses");
 }
 
 bool isRangeKeyword(const QString& w)
@@ -184,6 +207,15 @@ const QSet<QString>& rescueStopwords()
         QStringLiteral("previous"),QStringLiteral("above"),QStringLiteral("below"),
         QStringLiteral("into"),   QStringLiteral("in"),    QStringLiteral("verse"),
         QStringLiteral("verses"), QStringLiteral("about"), QStringLiteral("through"),
+        // Things a service numbers that are not books. "Song" and "num" are
+        // also book abbreviations, and "number" is one edit from Numbers, so
+        // "back to song three" and "turn to number four in your hymnal" would
+        // otherwise resolve to scripture.
+        QStringLiteral("song"),   QStringLiteral("songs"), QStringLiteral("hymn"),
+        QStringLiteral("hymns"),  QStringLiteral("number"),QStringLiteral("num"),
+        QStringLiteral("page"),   QStringLiteral("slide"), QStringLiteral("point"),
+        QStringLiteral("step"),   QStringLiteral("track"), QStringLiteral("item"),
+        QStringLiteral("part"),   QStringLiteral("line"),
     };
     return s;
 }
@@ -250,12 +282,14 @@ std::optional<BookMatch> rescueBookBefore(const QStringList& w, int chapterIdx)
 //
 // Two tokens at most, so a mangled "first corinthans" survives; three would
 // start swallowing clauses.
-std::optional<BookMatch> nearMissBookAfterCue(const QStringList& w, int i)
+std::optional<BookMatch> nearMissBookAfterCue(const QStringList& w, int i,
+                                              const QList<bool>& breaks)
 {
     constexpr int kMinProbeChars = 4;
 
     const int maxLen = std::min(2, int(w.size()) - i);
     for (int len = maxLen; len >= 1; --len) {
+        if (spanHasBreak(breaks, i, i + len)) continue;
         if (!citationStructureFollows(w, i + len)) continue;
         if (const auto name = nearMissSpan(w.mid(i, len), kMinProbeChars))
             return BookMatch{ *name, i + len };
@@ -276,7 +310,8 @@ QString spanText(const QStringList& w, int from, int to)
 QList<crater::HeardReference> CitationDetector::detect(const QString& utterance, qint64 nowMs)
 {
     QList<crater::HeardReference> out;
-    const QStringList w = tokenize(utterance);
+    QList<bool>       breaks;
+    const QStringList w = tokenize(utterance, &breaks);
     const int         n = int(w.size());
     if (n == 0) return out;
 
@@ -288,9 +323,22 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         return m_validate ? m_validate(book, chapter, verse) : true;
     };
 
+    const QString kCertain  = QStringLiteral("certain");
+    const QString kHigh     = QStringLiteral("high");
+    const QString kPossible = QStringLiteral("possible");
+
     // NB: not named `emit` — that's a Qt macro and expands to nothing.
+    //
+    // Returns false when the reference does not exist. Nothing the Bible
+    // doesn't contain reaches the operator: "Romans 8 40" is a mishearing,
+    // and projecting an empty slide is as wrong as projecting the wrong verse.
     const auto record = [&](const QString& book, int chapter, int verseStart, int verseEnd,
-                            const QString& tier, int spanFrom, int spanTo) {
+                            const QString& tier, int spanFrom, int spanTo) -> bool {
+        if (!validate(book, chapter, verseStart > 0 ? verseStart : 1)) return false;
+        // A range whose end doesn't exist keeps its start. The preacher named
+        // that verse, and the misheard end is the less important half.
+        if (verseEnd > verseStart && !validate(book, chapter, verseEnd)) verseEnd = 0;
+
         crater::HeardReference r;
         r.book       = book;
         r.chapter    = chapter;
@@ -307,7 +355,7 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         // Within one utterance the same reference said twice is one
         // reference. Cross-utterance de-duping is RefContext's job upstream.
         for (const auto& prior : std::as_const(out)) {
-            if (prior.reference == r.reference && prior.verseEnd == r.verseEnd) return;
+            if (prior.reference == r.reference && prior.verseEnd == r.verseEnd) return true;
         }
 
         m_ctx.book      = book;
@@ -315,6 +363,7 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         m_ctx.lastVerse = r.verseEnd;
         m_ctx.atMs      = nowMs;
         out.append(r);
+        return true;
     };
 
     // Reads an optional "verse N [through M]" tail starting at `k`, advancing
@@ -338,6 +387,21 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         return true;
     };
 
+    // "Romans 8:28 and 31": the second verse is its own reference in the same
+    // chapter. Only a later verse counts, and only a lone number, so "and 5:8"
+    // (another chapter) and "and 5 other verses" (a count) are left alone.
+    const auto readAndVerses = [&](int& k, const QString& book, int chapter, int lastVerse,
+                                   const QString& tier) {
+        while (k + 1 < n && w[k] == QStringLiteral("and")) {
+            const auto more = parseNumberPhrase(w, k + 1);
+            if (!more || more->value <= lastVerse) return;
+            if (more->endIdx < n && parseNumberPhrase(w, more->endIdx)) return;
+            if (!record(book, chapter, more->value, 0, tier, k + 1, more->endIdx)) return;
+            lastVerse = more->value;
+            k         = more->endIdx;
+        }
+    };
+
     int i = 0;
     while (i < n) {
         // ── Book-first: "first corinthians chapter thirteen verse four" ──
@@ -349,25 +413,22 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         // accepts a near-miss — "turn with me to join chapter three" is what a
         // recognizer does to "john", and refusing it means the single most
         // common citation in English preaching fails on a one-letter slip.
-        auto bm        = matchBookAt(w, i);
+        auto bm        = matchBookAt(w, i, breaks);
         bool fuzzyBook = false;
         if (!bm && hasCueBefore(w, i)) {
-            bm        = nearMissBookAfterCue(w, i);
+            bm        = nearMissBookAfterCue(w, i, breaks);
             fuzzyBook = bm.has_value();
         }
         if (bm) {
-            // A book name we had to guess at is not the evidence a book name
-            // we read is. Both are citations; only the exact one is "certain".
-            // That difference is the whole safety story here — at "high" a
-            // mishearing can reach the Preview pane and no further, even in
-            // Auto mode, so the cost of being wrong is an operator glancing at
-            // a wrong chip rather than a congregation reading one.
-            const QString bookTier =
-                fuzzyBook ? QStringLiteral("high") : QStringLiteral("certain");
-            const int start = i;
-            int       k     = bm->endIdx;
+            const int  start = i;
+            const bool cued  = hasCueBefore(w, start);
+            int        k     = bm->endIdx;
 
-            if (k < n && isChapterKeyword(w[k])) ++k;
+            bool sawChapterKeyword = false;
+            if (k < n && isChapterKeyword(w[k])) {
+                sawChapterKeyword = true;
+                ++k;
+            }
 
             const auto ch              = parseNumberPhrase(w, k);
             int        chapter         = 0;
@@ -375,27 +436,52 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
             int        verseStart      = 0;
             int        verseEnd        = 0;
             bool       hasVerse        = false;
+            // The chapter came from context rather than from this sentence.
+            bool       inferredChapter = false;
 
             if (ch) {
                 chapter  = ch->value;
                 k        = ch->endIdx;
                 hasVerse = readVerseTail(k, sawVerseKeyword, verseStart, verseEnd);
-            } else {
-                // No chapter number. A verse keyword straight after the book
-                // is the single-chapter-book form — "third john verse four",
-                // "jude verse nine". Those books have no chapter to say.
-                if (k < n && isVerseKeyword(w[k])) {
-                    hasVerse = readVerseTail(k, sawVerseKeyword, verseStart, verseEnd);
-                    if (hasVerse) chapter = 1;
-                }
-                if (!hasVerse) {
-                    // Bare book name, no numbers at all. Needs an intent cue.
-                    if (hasCueBefore(w, start))
-                        record(bm->canonical, 1, 0, 0, QStringLiteral("high"), start, bm->endIdx);
-                    i = bm->endIdx;
-                    continue;
+            } else if (k < n && isVerseKeyword(w[k])) {
+                // No chapter number. For a one-chapter book that is complete:
+                // "jude verse nine". For any other book the chapter is the one
+                // already in play, if it is this book — "Romans, verse nine"
+                // in the middle of Romans 8 means 8:9, never 1:9.
+                hasVerse = readVerseTail(k, sawVerseKeyword, verseStart, verseEnd);
+                if (hasVerse) {
+                    if (isSingleChapterBook(bm->canonical)) {
+                        chapter = 1;
+                    } else if (m_ctx.valid() && m_ctx.book == bm->canonical) {
+                        chapter         = m_ctx.chapter;
+                        inferredChapter = true;
+                    } else {
+                        hasVerse = false;
+                    }
                 }
             }
+
+            if (chapter == 0) {
+                // Bare book name, or a verse with no chapter to put it in.
+                // Needs an intent cue, and then only names the book.
+                if (cued && !hasVerse && k == bm->endIdx)
+                    record(bm->canonical, 1, 0, 0, kHigh, start, bm->endIdx);
+                i = std::max(k, bm->endIdx);
+                continue;
+            }
+
+            // How much the words prove. docs/narration.md §5: "certain" is a
+            // book read exactly, a chapter and a verse, all said aloud. A
+            // book and a lone number is how ordinary English sounds too — "I
+            // called John three times", "Mark, two people asked" — so it is
+            // offered, never projected: "high" when a cue or the word
+            // "chapter" says it was a citation, and only "possible" when
+            // nothing does.
+            QString tier;
+            if (hasVerse)
+                tier = (!fuzzyBook && !inferredChapter) ? kCertain : kHigh;
+            else
+                tier = (sawChapterKeyword || cued) ? kHigh : kPossible;
 
             // Ambiguous composition — docs/narration.md §11. "Psalm one
             // nineteen" reads literally as 1:19, but Psalm 1 has six verses
@@ -404,37 +490,49 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
             // composed reading. Skipped when the preacher actually said
             // "verse", because then he meant a verse, and skipped without a
             // validator installed, because then we have no grounds to judge.
+            //
+            // "high", not "certain": the composed chapter is our reading of
+            // the numbers, not what was said.
             if (ch && hasVerse && !sawVerseKeyword && verseEnd == 0
                 && chapter < 10 && verseStart < 100
                 && !validate(bm->canonical, chapter, verseStart)) {
                 const int composed = chapter * 100 + verseStart;
                 if (validate(bm->canonical, composed, 1)) {
-                    record(bm->canonical, composed, 0, 0, bookTier, start, k);
+                    record(bm->canonical, composed, 0, 0, kHigh, start, k);
                     i = k;
                     continue;
                 }
             }
 
-            record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
-                   bookTier, start, k);
+            if (record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
+                       tier, start, k)
+                && hasVerse) {
+                readAndVerses(k, bm->canonical, chapter,
+                              verseEnd > 0 ? verseEnd : verseStart, tier);
+            }
             i = k;
             continue;
         }
 
         // ── Ordinal-first: "the twenty-third psalm" ─────────────────────
         //
-        // Gated on the number being ordinal. A cardinal here would fire on
-        // any stray number that happened to precede a book name.
-        if (const auto np = parseNumberPhrase(w, i); np && np->ordinal) {
-            if (const auto bm = matchBookAt(w, np->endIdx)) {
-                record(bm->canonical, np->value, 0, 0, QStringLiteral("certain"), i, bm->endIdx);
-                i = bm->endIdx;
-                continue;
+        // Only "the Nth psalm". Any wider and ordinary English walks in: "my
+        // first job", "the first acts of kindness". Psalms is the one book
+        // people number this way, and the "the" is part of how they say it.
+        if (i > 0 && w[i - 1] == QStringLiteral("the")) {
+            if (const auto np = parseNumberPhrase(w, i); np && np->ordinal) {
+                if (const auto bm = matchBookAt(w, np->endIdx, breaks);
+                    bm && bm->canonical == QStringLiteral("Psalms")
+                    && !spanHasBreak(breaks, i, bm->endIdx)) {
+                    record(bm->canonical, np->value, 0, 0, kHigh, i, bm->endIdx);
+                    i = bm->endIdx;
+                    continue;
+                }
             }
         }
 
         // ── Mangled book rescue: "phillipians chapter four" ─────────────
-        if (isChapterKeyword(w[i]) && i > 0) {
+        if (isChapterKeyword(w[i]) && i > 0 && !breaks.value(i)) {
             if (const auto bm = rescueBookBefore(w, i)) {
                 int        k  = i + 1;
                 const auto ch = parseNumberPhrase(w, k);
@@ -447,8 +545,12 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
                     const bool hasVerse = readVerseTail(k, sawVerseKeyword, verseStart, verseEnd);
                     // "high", not "certain", for the same reason as the
                     // cue-anchored path above: the book name was guessed at.
-                    record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
-                           QStringLiteral("high"), i - 1, k);
+                    if (record(bm->canonical, chapter, hasVerse ? verseStart : 0, verseEnd,
+                               kHigh, i - 1, k)
+                        && hasVerse) {
+                        readAndVerses(k, bm->canonical, chapter,
+                                      verseEnd > 0 ? verseEnd : verseStart, kHigh);
+                    }
                     i = k;
                     continue;
                 }
@@ -462,8 +564,10 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
             int  verseStart      = 0;
             int  verseEnd        = 0;
             if (readVerseTail(k, sawVerseKeyword, verseStart, verseEnd)) {
-                record(m_ctx.book, m_ctx.chapter, verseStart, verseEnd,
-                       QStringLiteral("high"), i, k);
+                const QString book    = m_ctx.book;
+                const int     chapter = m_ctx.chapter;
+                if (record(book, chapter, verseStart, verseEnd, kHigh, i, k))
+                    readAndVerses(k, book, chapter, verseEnd > 0 ? verseEnd : verseStart, kHigh);
                 i = k;
                 continue;
             }
@@ -472,8 +576,7 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
         // ── "the next verse" ────────────────────────────────────────────
         if (w[i] == QStringLiteral("next") && i + 1 < n && isVerseKeyword(w[i + 1])
             && m_ctx.valid() && m_ctx.lastVerse > 0) {
-            record(m_ctx.book, m_ctx.chapter, m_ctx.lastVerse + 1, 0,
-                   QStringLiteral("high"), i, i + 2);
+            record(m_ctx.book, m_ctx.chapter, m_ctx.lastVerse + 1, 0, kHigh, i, i + 2);
             i += 2;
             continue;
         }
