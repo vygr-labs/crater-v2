@@ -32,10 +32,10 @@ MouseArea {
         const t = root.target
         // A non-interactive view (the schedule mid-drag) ignores the wheel,
         // as Flickable itself would.
-        if (!t.interactive) return
+        if (!t.interactive) { wheel.accepted = false; return }
         const dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y
                                             : wheel.angleDelta.y / 120 * root.step
-        if (dy === 0) return
+        if (dy === 0) { wheel.accepted = false; return }
         const top = t.originY - t.topMargin
         const bottom = Math.max(top, t.originY + t.contentHeight + t.bottomMargin - t.height)
         t.cancelFlick()

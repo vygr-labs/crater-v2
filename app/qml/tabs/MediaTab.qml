@@ -117,6 +117,20 @@ Item {
     // Keep the current tile fully in view, scrolling only as far as needed.
     // The views' own tracking is off (highlightFollowsCurrentItem) so that
     // arrow keys can honour Settings > Scrolling while clicks always do this.
+    // Switching grid / list shows the current tile in the view that appears
+    // (only the visible view is positioned as the current tile moves).
+    Connections {
+        target: AppState
+        function onMediaViewModeChanged() {
+            const i = root.fluidIndex
+            if (i < 0) return
+            Qt.callLater(function() {
+                if (grid.visible && i < grid.count) grid.positionViewAtIndex(i, GridView.Contain)
+                if (listView.visible && i < listView.count) listView.positionViewAtIndex(i, ListView.Contain)
+            })
+        }
+    }
+
     onFluidIndexChanged: {
         if (fluidIndex < 0 || !_followKeys) return
         if (grid.visible && fluidIndex < grid.count)
@@ -888,10 +902,6 @@ Item {
         // ── Grid view ───────────────────────────────────────────────────
         GridView {
             id: grid
-            // Switching grid / list shows the current item in the view that
-            // appears (only the visible one is positioned as it moves).
-            onVisibleChanged: if (visible && root.fluidIndex >= 0 && root.fluidIndex < count)
-                                  positionViewAtIndex(root.fluidIndex, GridView.Contain)
             ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm
@@ -1272,10 +1282,6 @@ Item {
         // ── List view ───────────────────────────────────────────────────
         ListView {
             id: listView
-            // Switching grid / list shows the current item in the view that
-            // appears (only the visible one is positioned as it moves).
-            onVisibleChanged: if (visible && root.fluidIndex >= 0 && root.fluidIndex < count)
-                                  positionViewAtIndex(root.fluidIndex, ListView.Contain)
             ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm

@@ -2251,10 +2251,24 @@ QtObject {
     signal liveJump(string where)
 
     // Sends a jump to whichever of Preview / Live holds focus. False when
-    // neither does, so the caller can leave the key alone.
+    // neither does, or that pane has nothing to page through, so the caller
+    // (the search box) can give the key to its caret instead.
     function routePageJump(where) {
-        if (activeFocusPanel === "live")    { liveJump(where);    return true }
-        if (activeFocusPanel === "preview") { previewJump(where); return true }
+        if (activeFocusPanel === "live") {
+            if (livePages.length === 0) return false
+            liveJump(where)
+            return true
+        }
+        if (activeFocusPanel === "preview") {
+            const item = libraryPreviewItem !== null ? libraryPreviewItem
+                       : (selectedScheduleIndex >= 0
+                          && selectedScheduleIndex < ScheduleService.currentItems.length
+                              ? ScheduleService.currentItems[selectedScheduleIndex] : null)
+            if (!item || ((!item.pages || item.pages.length === 0) && !(item.pageCount > 0)))
+                return false
+            previewJump(where)
+            return true
+        }
         return false
     }
 

@@ -703,6 +703,11 @@ Item {
                     && ((event.text.length === 1 && event.text.charCodeAt(0) >= 32)
                         || event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete))
                     AppState.setActiveFocus("library")
+                // Paste, cut, undo and redo edit the box too, so a Home or End
+                // pressed next moves the caret rather than a Preview slide.
+                if (event.matches(StandardKey.Paste) || event.matches(StandardKey.Cut)
+                    || event.matches(StandardKey.Undo) || event.matches(StandardKey.Redo))
+                    AppState.setActiveFocus("library")
 
                 // Ctrl+C — route to Clear instead of the text input's built-
                 // in copy. QQuickTextInput's C++ code accepts the
