@@ -10,12 +10,12 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
-#include <QStringList>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QPair>
 #include <QString>
+#include <QStringList>
 #include <QtConcurrent>
 
 #include <functional>
