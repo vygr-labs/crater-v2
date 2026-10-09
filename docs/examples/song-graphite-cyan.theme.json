@@ -1,0 +1,106 @@
+{
+  "name": "Graphite & Cyan",
+  "kind": "song",
+  "tokens": {
+    "version": 3,
+    "canvas": {
+      "width": 1920,
+      "height": 1080
+    },
+    "layouts": [
+      {
+        "id": "content",
+        "name": "Content",
+        "default": true,
+        "nodes": [
+          {
+            "id": "bg",
+            "kind": "container",
+            "style": {
+              "x": 0,
+              "y": 0,
+              "width": 100,
+              "height": 100,
+              "z": 0,
+              "opacity": 1.0,
+              "backgroundColor": "#0b0c0e"
+            },
+            "data": {
+              "layerName": "Background",
+              "fill": {
+                "type": "gradient",
+                "gradient": {
+                  "style": "mesh",
+                  "colors": [
+                    "#0b0c0e",
+                    "#17343c",
+                    "#0e1013",
+                    "#191c24"
+                  ],
+                  "angle": 0,
+                  "animate": false
+                }
+              }
+            }
+          },
+          {
+            "id": "lyric",
+            "kind": "text",
+            "style": {
+              "x": 6,
+              "y": 12,
+              "width": 88,
+              "height": 70,
+              "z": 2,
+              "opacity": 1,
+              "color": "#f4f6f8",
+              "fontFamily": "Funnel Sans",
+              "fontPixelSize": 72,
+              "fontWeight": 600,
+              "lineHeightMultiplier": 1.22,
+              "letterSpacing": -0.5,
+              "textAlign": "center",
+              "verticalAlign": "center",
+              "textShadowColor": "#030405",
+              "textShadowOffsetX": 0,
+              "textShadowOffsetY": 4,
+              "textShadowBlur": 18
+            },
+            "data": {
+              "layerName": "Lyric",
+              "linkage": "lyric",
+              "autoResize": true,
+              "maxFontSize": 80
+            }
+          },
+          {
+            "id": "credits",
+            "kind": "text",
+            "style": {
+              "x": 10,
+              "y": 88.5,
+              "width": 80,
+              "height": 6,
+              "z": 3,
+              "opacity": 1,
+              "color": "#9fb0b6",
+              "fontFamily": "Funnel Sans",
+              "fontPixelSize": 30,
+              "fontWeight": 500,
+              "letterSpacing": 1,
+              "lineHeightMultiplier": 1.2,
+              "textAlign": "center",
+              "verticalAlign": "center"
+            },
+            "data": {
+              "layerName": "Credits",
+              "linkage": "songCredits",
+              "autoResize": true,
+              "maxFontSize": 30
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

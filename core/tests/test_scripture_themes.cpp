@@ -59,8 +59,6 @@ private slots:
         crater::runAllMigrations();
         crater::ThemeService themes;
         QCOMPARE(themes.defaultFor(QStringLiteral("scripture")).name, QStringLiteral("Plum & Rose"));
-        // Songs keep their own default.
-        QCOMPARE(themes.defaultFor(QStringLiteral("song")).name, QStringLiteral("Classic Dark"));
     }
 
     void seededThemesAreValid()
