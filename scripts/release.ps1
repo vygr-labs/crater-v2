@@ -158,8 +158,8 @@ $VcRedistUrl  = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
 # the dev workflow on machines that still have the electron repo cloned.
 $BibleDbPath        = Join-Path $PackagingDir 'bibles.sqlite'
 $BibleDbLocalSource = Join-Path $QtRoot '..\electron\src\assets\default\databases\bibles.sqlite'
-$BibleDbUrl         = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v1/bibles.sqlite'
-$BibleDbSha256      = 'd86eed30ff7e28f213a06dcc7e6d7439ea3c851756f593a999b110247a7e044c'
+$BibleDbUrl         = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v2/bibles.sqlite'
+$BibleDbSha256      = '004c641e918631be24ba46bd952873d2eb2decde4ef64771e6d795125690ca68'
 
 # Strong's concordance databases (dictionary lexicon + KJV-with-Strong's).
 # Same fetch/cache/verify pipeline as the Bible DB above — StrongsService
@@ -295,7 +295,7 @@ Write-Step 'Staging Bible database'
 #   2. ../electron/.../bibles.sqlite -- legacy dev-box layout where the
 #      Electron tree sits as a sibling of the Qt tree. Promotes it into
 #      packaging/ so subsequent runs don't depend on that layout.
-#   3. Download from the data-v1 GitHub Release asset and verify SHA-256.
+#   3. Download from the data-v2 GitHub Release asset and verify SHA-256.
 # All three converge on $BibleDbPath; staging copies from there.
 if (-not (Test-Path $BibleDbPath)) {
     if (Test-Path $BibleDbLocalSource) {

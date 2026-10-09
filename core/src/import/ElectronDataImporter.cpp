@@ -15,6 +15,7 @@
 #include <QHash>
 #include <QPair>
 #include <QString>
+#include <QStringList>
 #include <QtConcurrent>
 
 #include <functional>
@@ -74,6 +75,7 @@ QList<int> parseVerseRange(const QString& s)
 
 void importBibleData(db::Connection& legacy,
                      db::Connection& target,
+                     bool onlyMissing,
                      std::function<void(int, QString)> progress)
 {
     // 1. Translations.
@@ -89,10 +91,24 @@ void importBibleData(db::Connection& legacy,
             "SELECT id FROM translations WHERE code = ?"));
 
         int sortOrder = 0;
+        if (onlyMissing) {
+            // Added translations go after the ones the install already has.
+            auto last = target.prepare(QStringLiteral(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM translations"));
+            if (last.step()) sortOrder = last.columnInt(0);
+        }
         while (sel.step()) {
             const qint64 legacyId = sel.columnInt64(0);
             const QString code    = sel.columnText(1);
             const QString desc    = sel.columnText(2);
+
+            if (onlyMissing) {
+                find.reset();
+                find.bind(1, code);
+                const bool have = find.step();
+                find.reset();
+                if (have) continue;
+            }
 
             ins.reset();
             ins.bind(1, code);
@@ -115,6 +131,10 @@ void importBibleData(db::Connection& legacy,
         }
     }
     progress(5, QStringLiteral("Translations imported"));
+    if (legacyTransToOurs.isEmpty()) {
+        progress(100, QStringLiteral("Done"));
+        return;
+    }
 
     // 2. Resolve canonical book metadata for every distinct book_name in the legacy DB.
     QHash<QString, import::BibleBookMeta> metaByLegacyName;
@@ -240,8 +260,16 @@ void importBibleData(db::Connection& legacy,
         // BibleService::rebuildFtsIndex. The DELETE failed every first-run
         // import, so the sentinel was never written and the import re-ran on
         // every launch with no search index.
-        target.exec(QStringLiteral(
-            "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+        QString onlyThese;
+        if (onlyMissing) {
+            // Index just the added translations; the rest are indexed already.
+            QStringList ids;
+            for (qint64 id : legacyTransToOurs) ids << QString::number(id);
+            onlyThese = QStringLiteral(" WHERE v.translation_id IN (%1)").arg(ids.join(u','));
+        } else {
+            target.exec(QStringLiteral(
+                "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+        }
         target.exec(QStringLiteral(
             // Apostrophe-strip verse text at index time (ASCII ' + curly
             // char(8217)) so the trigram index matches the apostrophe-normalised
@@ -255,7 +283,7 @@ void importBibleData(db::Connection& legacy,
             "       b.name, t.code "
             "FROM verses v "
             "JOIN books b        ON b.id = v.book_id "
-            "JOIN translations t ON t.id = v.translation_id"));
+            "JOIN translations t ON t.id = v.translation_id") + onlyThese);
         tx.commit();
     }
     progress(100, QStringLiteral("Done"));
@@ -267,7 +295,7 @@ void writeSentinel()
     if (!f.open(QIODevice::WriteOnly)) {
         throw db::Error(QStringLiteral("Could not write import sentinel: %1").arg(f.fileName()));
     }
-    f.write("v1\n");
+    f.write("v2\n");
     f.close();
 }
 
@@ -307,7 +335,11 @@ QFuture<bool> ElectronDataImporter::run()
             db::Connection legacy(legacyPath, db::OpenMode::ReadOnly);
             db::Connection target(db::DbPaths::biblesDbPath());
 
-            importBibleData(legacy, target,
+            const bool onlyMissing =
+                QFile::exists(db::DbPaths::previousImportSentinelPath());
+            if (onlyMissing)
+                qInfo() << "Importer: upgrading, adding only missing translations";
+            importBibleData(legacy, target, onlyMissing,
                             [this](int p, const QString& s) { emit progress(p, s); });
 
             writeSentinel();
