@@ -79,8 +79,10 @@ def nodes(t):
             # both sit in the middle of the wall. Auto-fit only ever shrinks
             # a long stanza. The soft shadow keeps the words clean when the
             # output is keyed over video in a stream.
+            # 92% wide keeps a 47-character hymn line ("Strength for today and
+            # bright hope for tomorrow") on one line at the full 80px.
             "id": "lyric", "kind": "text",
-            "style": {"x": 6, "y": 12, "width": 88, "height": 70, "z": 2, "opacity": 1,
+            "style": {"x": 4, "y": 12, "width": 92, "height": 70, "z": 2, "opacity": 1,
                       "color": t["text"], "fontFamily": FONT, "fontPixelSize": 72,
                       "fontWeight": 600, "lineHeightMultiplier": 1.22,
                       "letterSpacing": -0.5,
