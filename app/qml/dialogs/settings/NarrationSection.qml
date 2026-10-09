@@ -29,6 +29,17 @@ Item {
     readonly property string _localLabel: qsTr("On this computer")
     readonly property string _cloudLabel: qsTr("Deepgram (cloud)")
 
+    // True while the field matches what is stored, so Save lights up only
+    // when there is something to save and reads "Saved" once it is.
+    readonly property bool _keySaved: keyInput.text.trim() === SettingsService.deepgramApiKey
+
+    function _saveKey() {
+        SettingsService.deepgramApiKey = keyInput.text
+        // The setter trims; show the stored form so the field and the
+        // "Saved" state agree.
+        keyInput.text = SettingsService.deepgramApiKey
+    }
+
     readonly property var _deviceOptions: {
         root._deviceRevision;   // dependency, deliberately unused
 
@@ -245,40 +256,55 @@ Item {
                         font.pixelSize: Theme.font.bodySize
                         font.weight: Theme.font.weightMedium
                     }
-                    Rectangle {
+                    Row {
                         width: parent.width
-                        height: 34
-                        color: Theme.color.canvas
-                        border.width: 1
-                        border.color: keyInput.activeFocus ? Theme.color.brand
-                                                           : Theme.color.borderStrong
-                        TextInput {
-                            id: keyInput
-                            anchors.fill: parent
-                            anchors.leftMargin: Theme.space.md
-                            anchors.rightMargin: Theme.space.md
-                            verticalAlignment: TextInput.AlignVCenter
-                            color: Theme.color.textPrimary
-                            font.family: Theme.font.family
-                            font.pixelSize: Theme.font.bodySize
-                            echoMode: TextInput.Password
-                            selectByMouse: true
-                            clip: true
-                            text: SettingsService.deepgramApiKey
-                            // Saved on leaving the field rather than per
-                            // keystroke, so a half-pasted key is never stored.
-                            onEditingFinished: SettingsService.deepgramApiKey = text
-
-                            Text {
+                        spacing: Theme.space.sm
+                        Rectangle {
+                            width: parent.width - keySaveBtn.width - parent.spacing
+                            height: 34
+                            color: Theme.color.canvas
+                            border.width: 1
+                            border.color: keyInput.activeFocus ? Theme.color.brand
+                                                               : Theme.color.borderStrong
+                            TextInput {
+                                id: keyInput
                                 anchors.fill: parent
-                                verticalAlignment: Text.AlignVCenter
-                                visible: keyInput.text.length === 0
-                                text: qsTr("Paste the key from console.deepgram.com")
-                                color: Theme.color.textDisabled
+                                anchors.leftMargin: Theme.space.md
+                                anchors.rightMargin: Theme.space.md
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: Theme.color.textPrimary
                                 font.family: Theme.font.family
                                 font.pixelSize: Theme.font.bodySize
-                                elide: Text.ElideRight
+                                echoMode: TextInput.Password
+                                selectByMouse: true
+                                clip: true
+                                text: SettingsService.deepgramApiKey
+                                // Saved by the button or Enter, not on leaving the
+                                // field: closing the dialog straight after a paste
+                                // never fired editingFinished, so the key was lost
+                                // with nothing on screen to say so.
+                                onAccepted: root._saveKey()
+    
+                                Text {
+                                    anchors.fill: parent
+                                    verticalAlignment: Text.AlignVCenter
+                                    visible: keyInput.text.length === 0
+                                    text: qsTr("Paste the key from console.deepgram.com")
+                                    color: Theme.color.textDisabled
+                                    font.family: Theme.font.family
+                                    font.pixelSize: Theme.font.bodySize
+                                    elide: Text.ElideRight
+                                }
                             }
+                        }
+                        PrimaryButton {
+                            id: keySaveBtn
+                            variant: "brand"
+                            height: 34
+                            enabled: !root._keySaved
+                            text: root._keySaved && keyInput.text.length > 0 ? qsTr("Saved") : qsTr("Save")
+                            iconName: root._keySaved && keyInput.text.length > 0 ? "check" : ""
+                            onClicked: root._saveKey()
                         }
                     }
                     Text {
