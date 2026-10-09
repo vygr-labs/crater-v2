@@ -53,6 +53,11 @@ public:
     // Shared, like the library it guards.
     static QString importSentinelPath();
 
+    // The marker an older Crater wrote after the first bundled set. When it
+    // is there but importSentinelPath() isn't, the install is upgrading and
+    // only the translations it doesn't have yet get imported.
+    static QString previousImportSentinelPath();
+
     // Directories the services create on demand.
     static QString scheduleHistoryDir();   // schedules/.history/
     static QString thumbnailsDir();        // thumbnails/

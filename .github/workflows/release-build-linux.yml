@@ -103,7 +103,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packaging/bibles.sqlite
-          key: bibles-sqlite-data-v1-${{ runner.os }}
+          key: bibles-sqlite-data-v2-${{ runner.os }}
 
       - name: Cache Strong's databases
         uses: actions/cache@v4

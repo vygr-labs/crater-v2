@@ -87,6 +87,11 @@ QString DbPaths::importSentinelPath()
     return importSentinelPathIn(appRootDir());
 }
 
+QString DbPaths::previousImportSentinelPath()
+{
+    return QDir(appRootDir()).filePath(QStringLiteral(".imported-v1"));
+}
+
 QString DbPaths::scheduleHistoryDir()
 {
     return ensureDir(QDir(dataDir()).filePath(QStringLiteral("schedules/.history")));
@@ -129,7 +134,7 @@ QString DbPaths::appDbPathIn(const QString& root)
 
 QString DbPaths::importSentinelPathIn(const QString& root)
 {
-    return QDir(root).filePath(QStringLiteral(".imported-v1"));
+    return QDir(root).filePath(QStringLiteral(".imported-v2"));
 }
 
 QString DbPaths::mediaDirIn(const QString& root)

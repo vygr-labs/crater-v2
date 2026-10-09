@@ -65,8 +65,8 @@ TOOLS_DIR="$BUILD_DIR/linuxdeploy"
 # Bible DB: same fixed Release asset, same SHA-256 as the other drivers.
 BIBLE_DB_PATH="$PACKAGING_DIR/bibles.sqlite"
 BIBLE_DB_LOCAL_SOURCE="$QT_ROOT/../electron/src/assets/default/databases/bibles.sqlite"
-BIBLE_DB_URL='https://github.com/vygr-labs/crater-v2/releases/download/data-v1/bibles.sqlite'
-BIBLE_DB_SHA256='d86eed30ff7e28f213a06dcc7e6d7439ea3c851756f593a999b110247a7e044c'
+BIBLE_DB_URL='https://github.com/vygr-labs/crater-v2/releases/download/data-v2/bibles.sqlite'
+BIBLE_DB_SHA256='004c641e918631be24ba46bd952873d2eb2decde4ef64771e6d795125690ca68'
 
 # Strong's concordance databases, "name:sha256" pairs.
 STRONGS_DB_LOCAL_DIR="$QT_ROOT/../electron/src/assets/default/databases"

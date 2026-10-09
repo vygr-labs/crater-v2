@@ -214,6 +214,26 @@ target_include_directories(test_bible_cache PRIVATE
 
 add_test(NAME bible_cache COMMAND test_bible_cache)
 
+# -- Bundled Bible import -- ElectronDataImporter first run and upgrade --
+# A release can ship a different Bible set. An install that already ran the
+# first import only takes the translations it lacks, keeps what it has, and
+# indexes the new ones once. Writes its fixture to <exe-dir>/legacy/.
+qt_add_executable(test_bible_import
+    test_bible_import.cpp
+)
+
+target_link_libraries(test_bible_import PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_bible_import PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME bible_import COMMAND test_bible_import)
+
 # -- Media relocation -- issue #14 ----------------------------------------
 # Rows store the absolute path a managed file had at import. A data folder
 # restored under another profile made the startup orphan sweep delete every

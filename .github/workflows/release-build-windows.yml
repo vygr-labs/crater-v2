@@ -95,7 +95,7 @@ jobs:
           # build workflow's cache so the data-revision tag (v1) and the
           # SHA-256 inside release.ps1 stay in lockstep across platforms.
           path: packaging/bibles.sqlite
-          key: bibles-sqlite-data-v1-${{ runner.os }}
+          key: bibles-sqlite-data-v2-${{ runner.os }}
 
       - name: Cache Strong's databases
         uses: actions/cache@v4

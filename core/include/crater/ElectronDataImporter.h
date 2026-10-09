@@ -10,9 +10,13 @@ namespace crater {
 // into our fresh schemas. Runs on a worker thread; emits progress/completed/
 // failed back to the main thread via queued signals.
 //
-// Sentinel file `.imported-v1` in AppDataLocation guards against re-running.
+// Sentinel file `.imported-v2` in AppDataLocation guards against re-running.
 // Idempotent — partial runs are safe to retry because we use `INSERT OR IGNORE`
 // keyed on natural keys (translation code, book number, verse coordinates).
+//
+// An install that already has `.imported-v1` is upgrading from the first
+// bundled set: it imports only the translations it doesn't have yet and
+// indexes just those, so the upgrade is quick and what it has stays as is.
 //
 // Where to find the legacy bibles.sqlite (search order, walking up from the EXE):
 //   1. <exe-dir>/legacy/bibles.sqlite                                     (production)
