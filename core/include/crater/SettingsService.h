@@ -96,6 +96,12 @@ private:
     // on its own screen must stay on TOP, or a notification toast lands
     // in front of the congregation. See ProjectionWindow.qml.
     Q_PROPERTY(bool    projectionBehindConsole READ projectionBehindConsole WRITE setProjectionBehindConsole NOTIFY projectionBehindConsoleChanged)
+    // Arrow keys scroll the panel to keep the highlighted slide or row in
+    // view. One switch per panel, all on by default. Off, the highlight can
+    // move past the visible area and the list stays where it is.
+    Q_PROPERTY(bool    autoScrollPreview READ autoScrollPreview WRITE setAutoScrollPreview NOTIFY autoScrollPreviewChanged)
+    Q_PROPERTY(bool    autoScrollLive READ autoScrollLive WRITE setAutoScrollLive NOTIFY autoScrollLiveChanged)
+    Q_PROPERTY(bool    autoScrollLibrary READ autoScrollLibrary WRITE setAutoScrollLibrary NOTIFY autoScrollLibraryChanged)
     // Live controls over dialogs. When true, opening an editor or Settings
     // (anything shown through ModalLayer except menus and small prompts)
     // brings up a compact live dock beside the dialog: the live item, its
@@ -265,6 +271,9 @@ public:
     QString outputMode() const;
     bool    projectionInAltTab() const;
     bool    projectionBehindConsole() const;
+    bool    autoScrollPreview() const;
+    bool    autoScrollLive() const;
+    bool    autoScrollLibrary() const;
     bool    liveControlsOverDialogs() const;
     bool    useHeadlessNdi() const;
     bool    ndiOnDemand() const;
@@ -311,6 +320,9 @@ public:
     void setOutputMode(const QString& mode);
     void setProjectionInAltTab(bool v);
     void setProjectionBehindConsole(bool v);
+    void setAutoScrollPreview(bool v);
+    void setAutoScrollLive(bool v);
+    void setAutoScrollLibrary(bool v);
     void setLiveControlsOverDialogs(bool v);
     void setUseHeadlessNdi(bool v);
     void setNdiOnDemand(bool v);
@@ -359,6 +371,9 @@ signals:
     void outputModeChanged();
     void projectionInAltTabChanged();
     void projectionBehindConsoleChanged();
+    void autoScrollPreviewChanged();
+    void autoScrollLiveChanged();
+    void autoScrollLibraryChanged();
     void liveControlsOverDialogsChanged();
     void useHeadlessNdiChanged();
     void ndiOnDemandChanged();

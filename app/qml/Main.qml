@@ -816,6 +816,10 @@ ApplicationWindow {
                 // Same staging for the schedule: drop the multi-selection
                 // back to the anchor row first.
                 AppState.collapseScheduleSelection()
+            } else if (AppState.activeFocusPanel === "schedule"
+                       && AppState.scheduleSelectMode) {
+                // Then leave select mode, as a library tab does.
+                AppState.setScheduleSelectMode(false)
             } else if (AppState.selectedScheduleIndex >= 0) {
                 AppState.selectScheduleItem(-1)
             }
@@ -938,6 +942,21 @@ ApplicationWindow {
             }
         }
     }
+    // Home / End jump to the first / last page of the Preview or Live item,
+    // Page Up / Page Down to the previous / next chorus or tag. Bound only
+    // while one of those two panes holds focus, so the keys keep their
+    // usual meaning everywhere else.
+    readonly property bool _pageJumpKeys:
+        AppState.consoleShortcutsActive
+        && (AppState.activeFocusPanel === "preview" || AppState.activeFocusPanel === "live")
+    // A focused library search box claims Home / End for its own caret
+    // before any Shortcut sees them, so TabSearchBar routes those two
+    // itself (AppState.routePageJump) when Preview or Live has focus.
+    Shortcut { sequence: "Home";   enabled: root._pageJumpKeys; onActivated: AppState.routePageJump("first") }
+    Shortcut { sequence: "End";    enabled: root._pageJumpKeys; onActivated: AppState.routePageJump("last") }
+    Shortcut { sequence: "PgUp";   enabled: root._pageJumpKeys; onActivated: AppState.routePageJump("prevChorus") }
+    Shortcut { sequence: "PgDown"; enabled: root._pageJumpKeys; onActivated: AppState.routePageJump("nextChorus") }
+
     // Ctrl+Arrow — walk the Live pane's page list without projecting; the
     // Ctrl release commits (mainArea's Keys.onReleased). Bound only while
     // the Live pane holds focus, so Ctrl+Arrow keeps its word-wise meaning

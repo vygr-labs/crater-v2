@@ -46,6 +46,11 @@ Rectangle {
                    ? ScheduleService.currentItems[AppState.selectedScheduleIndex]
                    : null)
 
+    // True while an arrow or jump key is moving the page, so the
+    // auto-scroll in onPreviewSubIndexChanged can tell keys from clicks.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+
     // Canonical-shape items carry `pages` (array of {label, content}).
     //
     // Filter to pages that have *content* to display in the list. Media
@@ -243,6 +248,7 @@ Rectangle {
             clip: true
             cacheBuffer: 200
             spacing: Theme.space.sm
+            boundsBehavior: Flickable.StopAtBounds
 
             // Production-cue card delegate. Three zones:
             //   • indexCol — a full-height 32px left strip carrying the
@@ -491,6 +497,10 @@ Rectangle {
             }
         }
 
+        // Wheel scrolls straight to a fixed step and stops at the ends,
+        // with no momentum or overshoot (see DirectWheel).
+        DirectWheel { target: pagesList }
+
         // ── Keyboard navigation ─────────────────────────────────────────
         // Driven by Main.qml's window-level Up/Down shortcuts, which fan
         // out via AppState.previewNavigate{Up,Down} when
@@ -503,7 +513,10 @@ Rectangle {
         // scripture verse list's positionViewAtIndex policy.
         Connections {
             target: AppState
-            function onPreviewNavigateUp() {
+            function onPreviewNavigateUp() { root._keyMove(_navUp) }
+            function onPreviewNavigateDown() { root._keyMove(_navDown) }
+            function onPreviewJump(where) { root._keyMove(function() { _jump(where) }) }
+            function _navUp() {
                 // PDF: Up/Down moves the page (the same thing the mouse
                 // wheel does inside the cropper — this is the keyboard
                 // fallback when the cropper itself doesn't hold focus).
@@ -518,7 +531,7 @@ Rectangle {
                 if (root.pages.length === 0) return
                 AppState.previewSubIndex = Math.max(AppState.previewSubIndex - 1, 0)
             }
-            function onPreviewNavigateDown() {
+            function _navDown() {
                 if (root.isPdfMedia) {
                     if (!root.selectedItem) return
                     const total = (root.selectedItem.pageCount > 0)
@@ -532,12 +545,29 @@ Rectangle {
                 AppState.previewSubIndex = Math.min(AppState.previewSubIndex + 1,
                                                    root.pages.length - 1)
             }
+            // Home / End / Page Up / Page Down. A PDF has no section labels,
+            // so only first and last apply to it.
+            function _jump(where) {
+                if (root.isPdfMedia) {
+                    if (!root.selectedItem) return
+                    const total = (root.selectedItem.pageCount > 0)
+                                      ? root.selectedItem.pageCount : 1
+                    if (where === "first") AppState.previewSubIndex = 0
+                    else if (where === "last") AppState.previewSubIndex = total - 1
+                    return
+                }
+                if (root.isImageMedia) return
+                const t = AppState.pageJumpTarget(root.pages, AppState.previewSubIndex, where)
+                if (t >= 0) AppState.previewSubIndex = t
+            }
             function onPreviewSubIndexChanged() {
                 // Fires on every previewSubIndex update — click, key,
                 // schedule sync, anything. positionViewAtIndex with
                 // Contain is a no-op when the card is already fully
                 // visible (the common case on click), so the unified
                 // handler is safe to wire here.
+                // Arrow and jump keys honour Settings > Scrolling.
+                if (root._keyNav && !SettingsService.autoScrollPreview) return
                 if (pagesList.visible && AppState.previewSubIndex >= 0
                                       && AppState.previewSubIndex < root.pages.length) {
                     pagesList.positionViewAtIndex(AppState.previewSubIndex,

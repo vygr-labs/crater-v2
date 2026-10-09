@@ -1261,6 +1261,19 @@ QtObject {
             ? [selectedScheduleIndex] : []
     }
 
+    // Select mode for the schedule: the Select toggle in its header, like
+    // the library tabs' librarySelectMode. Row checkboxes only show while it
+    // is on (or once Ctrl / Shift+click has picked 2+ rows), and a plain
+    // click then ticks the row instead of moving Preview. Turning it off
+    // drops back to the anchor row.
+    property bool scheduleSelectMode: false
+
+    function setScheduleSelectMode(on) {
+        if (scheduleSelectMode === !!on) return
+        scheduleSelectMode = !!on
+        if (!on) collapseScheduleSelection()
+    }
+
     // Row checkbox. Unlike toggleScheduleSelection (Ctrl+click) this never
     // moves the anchor onto the toggled row, so ticking boxes does not keep
     // swapping what the Preview pane shows. The anchor only moves when it
@@ -2230,6 +2243,56 @@ QtObject {
     signal previewNavigateDown()
     signal liveNavigateUp()
     signal liveNavigateDown()
+
+    // Home / End / Page Up / Page Down in the same two panels. `where` is
+    // "first", "last", "nextChorus" or "prevChorus". Like the arrows, each
+    // panel resolves it against its own visible page list (pageJumpTarget).
+    signal previewJump(string where)
+    signal liveJump(string where)
+
+    // Sends a jump to whichever of Preview / Live holds focus. False when
+    // neither does, or that pane has nothing to page through, so the caller
+    // (the search box) can give the key to its caret instead.
+    function routePageJump(where) {
+        if (activeFocusPanel === "live") {
+            if (livePages.length === 0) return false
+            liveJump(where)
+            return true
+        }
+        if (activeFocusPanel === "preview") {
+            const item = libraryPreviewItem !== null ? libraryPreviewItem
+                       : (selectedScheduleIndex >= 0
+                          && selectedScheduleIndex < ScheduleService.currentItems.length
+                              ? ScheduleService.currentItems[selectedScheduleIndex] : null)
+            if (!item || ((!item.pages || item.pages.length === 0) && !(item.pageCount > 0)))
+                return false
+            previewJump(where)
+            return true
+        }
+        return false
+    }
+
+    // The page a jump lands on, or -1 when there is nowhere to go (no
+    // pages, or no chorus further on in that direction).
+    function pageJumpTarget(pages, from, where) {
+        const n = pages ? pages.length : 0
+        if (n === 0) return -1
+        if (where === "first") return 0
+        if (where === "last")  return n - 1
+        const step = where === "nextChorus" ? 1 : -1
+        for (let i = from + step; i >= 0 && i < n; i += step)
+            if (isChorusLabel(pages[i] ? pages[i].label : "")) return i
+        return -1
+    }
+
+    // A song page counts as a chorus when its section label starts with
+    // "chorus" or "refrain", or is a "Tag" section (the operator's own
+    // labels; core's inferKindFromLabel reads them much the same way).
+    // "Pre-chorus" and "Tagline" do not count.
+    function isChorusLabel(label) {
+        const l = String(label || "").trim().toLowerCase()
+        return l.startsWith("chorus") || l.startsWith("refrain") || l === "tag" || l.startsWith("tag ")
+    }
 
     // ── Live scrub (Ctrl+Arrow) ─────────────────────────────────────────
     // Plain Up/Down in the Live pane is a control gesture: every press goes

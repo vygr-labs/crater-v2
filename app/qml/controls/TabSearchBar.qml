@@ -703,6 +703,11 @@ Item {
                     && ((event.text.length === 1 && event.text.charCodeAt(0) >= 32)
                         || event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete))
                     AppState.setActiveFocus("library")
+                // Paste, cut, undo and redo edit the box too, so a Home or End
+                // pressed next moves the caret rather than a Preview slide.
+                if (event.matches(StandardKey.Paste) || event.matches(StandardKey.Cut)
+                    || event.matches(StandardKey.Undo) || event.matches(StandardKey.Redo))
+                    AppState.setActiveFocus("library")
 
                 // Ctrl+C — route to Clear instead of the text input's built-
                 // in copy. QQuickTextInput's C++ code accepts the
@@ -717,6 +722,18 @@ Item {
                 if ((event.modifiers & Qt.ControlModifier)
                     && event.key === Qt.Key_C) {
                     AppState.clearLive()
+                    event.accepted = true
+                    return
+                }
+
+                // Home / End: same story. The input's ShortcutOverride
+                // claims them for its caret, so Main.qml's page-jump
+                // Shortcuts never fire while it holds focus. When Preview
+                // or Live owns the keyboard, jump there instead.
+                if (!(event.modifiers & (Qt.ControlModifier | Qt.ShiftModifier | Qt.AltModifier))
+                    && (event.key === Qt.Key_Home || event.key === Qt.Key_End)
+                    && AppState.consoleShortcutsActive
+                    && AppState.routePageJump(event.key === Qt.Key_Home ? "first" : "last")) {
                     event.accepted = true
                     return
                 }

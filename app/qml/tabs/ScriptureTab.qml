@@ -20,6 +20,12 @@ import QtQuick.Controls.Basic
 //   • Verse count shows in the action bar.
 Item {
     id: root
+    // True while the arrow keys move the highlight, so the auto-scroll can
+    // honour Settings > Scrolling without affecting clicks or typed jumps.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+    readonly property bool _followKeys: !_keyNav || SettingsService.autoScrollLibrary
+
 
     readonly property string tabKey: "scripture"
 
@@ -512,7 +518,10 @@ Item {
         const idx = indexOf(parsedRef.book, parsedRef.chapter, parsedRef.verse)
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
-            list.positionViewAtIndex(idx, ListView.Contain)
+            // An echo of the arrow keys' own input sync (debounced, so it
+            // lands after the key) honours Settings > Scrolling too.
+            if (!(_inputIsSyncEcho() && !SettingsService.autoScrollLibrary))
+                list.positionViewAtIndex(idx, ListView.Contain)
             if (_inputIsSyncEcho()) refreshPreviewFor(idx)
             else                    pushPreviewFor(idx)
         }
@@ -978,6 +987,9 @@ Item {
     // ── Verse list ──────────────────────────────────────────────────────
     ListView {
         id: list
+        // Qt's own scroll-to-current, on only while the arrow keys should
+        // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+        highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
         ScrollBar.vertical: AppScrollBar {}
 
         anchors.top: repickBanner.bottom
@@ -1011,7 +1023,7 @@ Item {
             const v = root.currentVerses[currentIndex]
             if (v) {
                 root._focusedCoord = { book: v.book, chapter: v.chapter, verse: v.verse }
-                positionViewAtIndex(currentIndex, ListView.Contain)
+                if (root._followKeys) positionViewAtIndex(currentIndex, ListView.Contain)
             }
         }
 
@@ -1450,7 +1462,7 @@ Item {
         AppState.setLibraryFluid(tabKey, anchor)
         AppState.setLibrarySelected(tabKey, range)
         AppState.setActiveFocus("library")
-        list.positionViewAtIndex(next, ListView.Contain)
+        if (SettingsService.autoScrollLibrary) list.positionViewAtIndex(next, ListView.Contain)
         pushPreviewFor(anchor)
     }
 
@@ -1467,7 +1479,7 @@ Item {
             AppState.clearLibrarySelected(root.tabKey)
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.currentVerses.length - 1)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
             root._syncInputToVerse(next)
         }
@@ -1477,7 +1489,7 @@ Item {
             if (extend) { root._extendSelectionByKey(-1); return }
             AppState.clearLibrarySelected(root.tabKey)
             const next = Math.max(root.fluidIndex - 1, 0)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
             root._syncInputToVerse(next)
         }

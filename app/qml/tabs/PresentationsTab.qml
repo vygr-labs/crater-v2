@@ -21,6 +21,12 @@ import QtQuick.Controls.Basic
 // to answer a question a substring scan answers instantly.
 Item {
     id: root
+    // True while the arrow keys move the highlight, so the auto-scroll can
+    // honour Settings > Scrolling without affecting clicks or typed jumps.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+    readonly property bool _followKeys: !_keyNav || SettingsService.autoScrollLibrary
+
 
     readonly property string tabKey: "presentations"
 
@@ -458,9 +464,12 @@ Item {
         spacing: 0
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: root.fluidIndex
+        // Qt's own scroll-to-current, on only while the arrow keys should
+        // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+        highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
 
         onCurrentIndexChanged: {
-            if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+            if (currentIndex >= 0 && root._followKeys) positionViewAtIndex(currentIndex, ListView.Contain)
         }
 
         delegate: Item {
@@ -631,14 +640,14 @@ Item {
             if (root.filteredDecks.length === 0) return
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.filteredDecks.length - 1)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.filteredDecks.length === 0) return
             const next = Math.max(root.fluidIndex - 1, 0)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryActivate() {

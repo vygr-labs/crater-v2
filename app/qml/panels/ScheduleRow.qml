@@ -31,8 +31,8 @@ Item {
     // row silently stops following the song it came from, so without a
     // mark the divergence is invisible until it is on screen.
     property bool hasContentOverride: false
-    // The panel is in multi-select mode (2+ rows selected): every row shows
-    // its checkbox, not just the hovered one.
+    // The panel's Select toggle is on, or 2+ rows are selected: every row
+    // shows its checkbox. Never on hover alone.
     property bool selectionMode: false
 
     // Drag state. The row translates by dragOffsetY while a drag is in
@@ -186,12 +186,11 @@ Item {
         }
 
         // ── Multi-select checkbox ────────────────────────────────────────
-        // Between the grip and the kind icon, shown on hover and in
-        // selection mode. The grip keeps its column, so the drag affordance
+        // Between the grip and the kind icon, shown in select mode or
+        // while 2+ rows are selected. The grip keeps its column, so the drag affordance
         // never disappears (the reason the old grip/check swap was dropped).
         // z above the row's click area so the toggle reaches it.
-        readonly property bool _checkVisible:
-            root.selectionMode || ma.containsMouse || rowCheck.hovered
+        readonly property bool _checkVisible: root.selectionMode
         SelectCheck {
             id: rowCheck
             z: 2

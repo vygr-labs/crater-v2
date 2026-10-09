@@ -27,6 +27,16 @@ Rectangle {
     // only take over once the operator has actually picked several.
     readonly property bool selectionMode: AppState.selectedScheduleIndices.length > 1
 
+    // The header's Select toggle (SelectModeToggle reads these two). On, the
+    // rows show their checkboxes and a plain click ticks a row.
+    readonly property bool selectMode: AppState.scheduleSelectMode
+    // Turning it on is a schedule gesture, so the schedule takes the
+    // keyboard and Escape can step back out.
+    function setSelectMode(on) {
+        AppState.setScheduleSelectMode(on)
+        if (on) AppState.setActiveFocus("schedule")
+    }
+
     // Selected rows in schedule order. Snapshotted by each action so a
     // click during a confirm dialog can't change what it acts on.
     function selectedRows() {
@@ -129,6 +139,8 @@ Rectangle {
         target: ScheduleService
         function onCurrentItemsChanged() {
             const n = ScheduleService.currentItems.length
+            // Nothing left to select (cleared, or an empty schedule loaded).
+            if (n === 0) AppState.setScheduleSelectMode(false)
             const sel = AppState.selectedScheduleIndices
             const kept = sel.filter(function(i) { return i >= 0 && i < n })
             if (kept.length !== sel.length) AppState.selectedScheduleIndices = kept
@@ -215,6 +227,13 @@ Rectangle {
             anchors.rightMargin: Theme.space.sm
             anchors.verticalCenter: parent.verticalCenter
             spacing: 2
+
+            // Select mode: shows the row checkboxes.
+            SelectModeToggle {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: ScheduleService.currentItems.length > 0 || root.selectMode
+                target: root
+            }
 
             // Trash — bulk-delete the current multi-selection, or "clear all"
             // when nothing is selected (matches electron's deleteSelectedItems).
@@ -399,7 +418,7 @@ Rectangle {
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
                 hasContentOverride: modelData.contentOverride === true
-                selectionMode: root.selectionMode
+                selectionMode: root.selectionMode || root.selectMode
 
                 // Checkbox: toggles this row in or out of the selection
                 // without moving the anchor (Preview stays put). Counts as a
@@ -431,6 +450,11 @@ Rectangle {
                         AppState.setActiveFocus("schedule")
                     } else if (modifiers & Qt.ShiftModifier) {
                         AppState.extendScheduleSelectionTo(index)
+                        AppState.setActiveFocus("schedule")
+                    } else if (root.selectMode) {
+                        // Select mode: a plain click ticks the row, like its
+                        // checkbox.
+                        AppState.toggleScheduleChecked(index)
                         AppState.setActiveFocus("schedule")
                     } else {
                         AppState.selectScheduleItem(index)
@@ -654,6 +678,10 @@ Rectangle {
                 Behavior on y { NumberAnimation { duration: Theme.motion.instant } }
             }
         }
+
+        // Wheel scrolls straight to a fixed step and stops at the ends,
+        // with no momentum or overshoot (see DirectWheel).
+        DirectWheel { target: list }
 
         // Bulk-action bar while 2+ rows are selected. Clear drops back to
         // the anchor row alone (the "current" row Preview shows) rather

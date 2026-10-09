@@ -8,6 +8,12 @@ import QtQuick.Controls.Basic
 // Live" pushes the definition Live as auto-sized slides.
 Item {
     id: root
+    // True while the arrow keys move the highlight, so the auto-scroll can
+    // honour Settings > Scrolling without affecting clicks or typed jumps.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+    readonly property bool _followKeys: !_keyNav || SettingsService.autoScrollLibrary
+
 
     property string tabKey: "strongs"
 
@@ -112,14 +118,14 @@ Item {
         function onLibraryNavigateDown() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.results.length === 0) return
-            root.selIndex = Math.min((root.selIndex < 0 ? -1 : root.selIndex) + 1,
-                                     root.results.length - 1)
+            root._keyMove(function() { root.selIndex = Math.min((root.selIndex < 0 ? -1 : root.selIndex) + 1,
+                                     root.results.length - 1) })
             root.pushPreviewFor(root.selIndex)
         }
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if (root.results.length === 0) return
-            root.selIndex = Math.max(root.selIndex - 1, 0)
+            root._keyMove(function() { root.selIndex = Math.max(root.selIndex - 1, 0) })
             root.pushPreviewFor(root.selIndex)
         }
         function onLibraryActivate() {
@@ -159,9 +165,12 @@ Item {
                 cacheBuffer: 400
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.results
+                // Qt's own scroll-to-current, on only while the arrow keys should
+                // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+                highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
 
                 onCurrentIndexChanged: {
-                    if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+                    if (currentIndex >= 0 && root._followKeys) positionViewAtIndex(currentIndex, ListView.Contain)
                 }
 
                 delegate: Item {
