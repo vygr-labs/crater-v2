@@ -406,8 +406,8 @@ Vosk backend must be a file, not a refactor.
 ### 7.1.1 Suggestions while the sentence is still being spoken
 
 Pause-based segmentation is right for accuracy and, on its own, unusable
-live. The gate closes an utterance after 600 ms of silence with a 15 s
-backstop, so a preacher in full flow says "turn with me to John three sixteen"
+live. The gate closes an utterance after 600 ms of silence with a 10 s
+backstop (15 s before §7.1.3), so a preacher in full flow says "turn with me to John three sixteen"
 and the operator sees nothing until they stop for breath. The first live run
 reported exactly that: *"I want it to bring suggestions as we talk."*
 
@@ -463,8 +463,8 @@ spectrogram before the encoder runs, so a two-second clip costs very nearly
 what a thirty-second one does — which is why shortening `kInterimWindowMs`, on
 its own, buys much less than it looks like it should. `audio_ctx` caps how much
 of that padded window the encoder attends to and is the only parameter that
-makes encoder cost track the audio actually present. Interim only; the final
-pass keeps the full context.
+makes encoder cost track the audio actually present. This was interim only at
+first. The final pass uses it too since §7.1.3.
 
 Measured on a 15 s desk-microphone recording of "turn with me to John chapter 3
 verse 16", i7-8750H, CPU only, 11 threads:
@@ -528,6 +528,68 @@ Peak separates those windows by 15 dB and misorders them; RMS separates them by
 gap at about -55 dBFS. It is deliberately far looser than VoiceGate's -38 dBFS
 speech threshold, so anything the gate was confident enough to forward passes
 comfortably — this catches what the gate let through, not what it decided.
+
+### 7.1.3 CPU-only latency, and a prompt that fixes "join"
+
+The development laptop has no working GPU (its GTX 1050 Ti is dead), so
+everything below is CPU only: i7-8750H, 6 cores, the same 15 s desk
+recording and truth file as §7.1.1.1. Each row is the mean of 3-4 runs.
+
+| change | small.en final | WER | base.en draft interim | WER |
+|---|---|---|---|---|
+| before (full context, no prompt, whisper.cpp v1.7.4) | 8.2 s | 11.1% ("join") | 1.2 s | 22.2% |
+| `audio_ctx` on the final pass too | 4.7 s | 11.1% | | |
+| + one-sentence prompt, final pass on small.en or larger | 4.3 s | **0%** | 1.2 s | 22.2% |
+| + whisper.cpp v1.9.5 (flash attention on by default) | **3.2 s** | **0%** | **1.0 s** | 22.2% |
+
+**Threads did not help.** The guess was that 11 threads on 6 physical cores
+would lose to 6. It went the other way: 7.3 s at 11, 8.9 s at 6, 9.6 s at 4.
+`cores - 1` stays. `narration_bench --threads <n>` exists to re-check this on
+other hardware.
+
+**`audio_ctx` costs no accuracy on the final pass.** §7.1.1.1 kept the final
+pass on the full 1500-frame window for accuracy. Measured, the transcript was
+identical and the pass took 43% less time, so both passes now use
+`audioCtxFor()`.
+
+**The prompt is the fix for "join", and it is dangerous.** whisper conditions
+on `initial_prompt` as if it were the preceding text. A prompt that names
+books or carries references gets copied into audio that starts mid-sentence.
+The probe is the last 11 s of the recording, which opens on "...verse 16":
+
+| prompt | full clip | mid-sentence probe |
+|---|---|---|
+| none | "join chapter 3 verse 16" | "16." |
+| "Turn with me to John chapter 3 verse 16. Romans 8:28. Psalm 23." | correct | **"Romans 16."** |
+| "Turn with me to the book of John." plus seven book names | correct | **"Genesis 16."** |
+| an example citation plus all 66 book names | correct, +1 s | (not run) |
+| **"Turn with me to the book of John."** (shipping) | correct | "It says 16." |
+
+"Romans 16" is a fabricated citation, the worst output this subsystem can
+produce. The shipping prompt names one book, carries no numbers, and leaked
+only filler words on the probe.
+
+**base.en cannot take a prompt at all.** With the shipping prompt it returned
+"Turn with me to the book of John." verbatim, as the operator's model and as
+the draft. The prompt is therefore gated on decoder depth
+(`whisper_model_n_text_layer >= 12`, small.en and up) and never used on the
+interim pass, which cannot project anyway.
+
+**The utterance backstop went from 15 s to 10 s, for Auto mode, not speed.**
+Final-pass time barely depends on how much is said: the full clip (9 words)
+and the probe (1 word) both took about 4 s, because the encoder dominates and
+`kMinAudioCtx` (768 frames) already covers about 15 s of audio. What the cap
+does decide is how long continuous speech runs before anything can go live,
+since partials never can. 10 s rather than less because every cut risks
+splitting a citation across two utterances, which RefContext only partly
+repairs.
+
+**Still open on CPU.** 3.2 s is above §9's 2.5 s speech-to-screen target for
+the Certain tier, and that target also includes the gate's 600 ms hangover.
+The next steps are a faster final model (distil-small.en, a drop-in ggml file),
+whisper.cpp's built-in Silero VAD in place of the energy gate (`whisper_vad_*`,
+available since the v1.9.5 pin), and a Vulkan build for machines with a GPU
+that works.
 
 ### 7.2 Allusion: flat vector retrieval
 

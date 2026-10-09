@@ -270,7 +270,7 @@ if(CRATER_WITH_WHISPER)
     # in phases 3-5 unreproducible.
     FetchContent_Declare(whisper_cpp
         GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp.git
-        GIT_TAG        v1.7.4
+        GIT_TAG        v1.9.5
         GIT_SHALLOW    TRUE
     )
 

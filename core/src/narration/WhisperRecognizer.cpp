@@ -76,8 +76,9 @@ float rmsOf(const QList<float>& samples)
 // it is the only parameter that makes encoder cost track the audio actually
 // present. Halving it roughly halves the dominant term.
 //
-// Interim only. The final pass is the answer an operator acts on; trading its
-// accuracy for latency it does not have would be spending the wrong currency.
+// Both passes. The final pass used to keep the full window on the theory that
+// trimming it would cost accuracy. Measured, it did not: the 15 s desk
+// recording kept the same transcript and dropped from 8.2 s to 4.7 s.
 constexpr int kFullAudioCtx = 1500;   // 30 s at 50 encoder frames/s
 // A floor rather than a strict proportion: below roughly this, the encoder
 // loses enough context that the text degrades faster than the time saved is
@@ -93,6 +94,21 @@ int audioCtxFor(qsizetype samples)
     const int     want    = (seconds * kFullAudioCtx) / 30;
     return std::clamp(want, kMinAudioCtx, kFullAudioCtx);
 }
+
+// Decoder prompt for the final pass. Without it small.en hears "turn with me
+// to John chapter 3 verse 16" as "join", which loses the citation outright.
+//
+// One sentence with no chapter or verse in it, on purpose. Measured on the
+// desk recording (docs/narration.md 7.1.3): a prompt carrying references or a
+// list of book names leaks into audio that starts mid-sentence, so "...verse
+// 16" came back as "Romans 16" or "Genesis 16", a fabricated citation. This
+// one leaked only "it says" there, which no detector reads as a reference.
+//
+// Only decoders of small.en's depth (12 text layers) or more get it. base.en
+// (6) repeats the prompt back verbatim instead of transcribing, whether it is
+// the operator's model or the draft.
+constexpr const char* kFinalPrompt = "Turn with me to the book of John.";
+constexpr int kMinPromptTextLayers = 12;
 
 // Scale to kTargetPeak in place. Also attenuates: a hot desk mic that clips
 // is just as bad for recognition as a quiet one.
@@ -275,13 +291,18 @@ QString WhisperRecognizer::run(QList<float>& mono16k, bool interim, QString* err
     // since neither matches a book name or a number.
     p.no_context          = true;
 
+    p.audio_ctx           = audioCtxFor(mono16k.size());
+
     // An interim pass runs while the speaker is still talking, and another
     // one follows a second later. Spending temperature fallbacks on a
     // hypothesis with that shelf life would only make the NEXT one late.
     if (interim) {
         p.temperature_inc = 0.0f;
         p.max_tokens      = 96;
-        p.audio_ctx       = audioCtxFor(mono16k.size());
+    } else if (whisper_model_n_text_layer(ctx) >= kMinPromptTextLayers) {
+        // Final pass only. A partial can never project, so the draft gains
+        // nothing from the prompt and is usually base.en, which echoes it.
+        p.initial_prompt  = kFinalPrompt;
     }
 
     const int rc = whisper_full(ctx, p, mono16k.constData(), int(mono16k.size()));

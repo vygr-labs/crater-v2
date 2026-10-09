@@ -85,7 +85,7 @@ constexpr int    kTranscriptCap   = 200;
 // ── Live suggestions while the speaker is still talking ─────────────────
 //
 // VoiceGate only closes an utterance after `hangoverMs` of silence, with a
-// 15 s backstop. That is right for accuracy — whisper reads a whole phrase
+// 10 s backstop. That is right for accuracy — whisper reads a whole phrase
 // far better than a fragment — and wrong for the operator, who watches a
 // preacher say "turn with me to John three sixteen" and gets nothing until
 // the sentence ends. So the utterance-so-far is re-transcribed on a cadence

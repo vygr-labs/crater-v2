@@ -36,10 +36,14 @@ public:
         // that neither the citation grammar nor the quote matcher can use.
         int hangoverMs = 600;
 
-        // Backstop for continuous speech. Whisper's cost grows with input
-        // length and a preacher can talk for minutes without a real pause, so
-        // force a cut and let RefContext carry meaning across the seam.
-        int maxUtteranceMs = 15000;
+        // Backstop for continuous speech. A preacher can talk for minutes
+        // without a real pause, so force a cut and let RefContext carry
+        // meaning across the seam. 10 s rather than 15 s for Auto mode: a
+        // partial can never go live, so in unbroken speech this cap is the
+        // wait before anything can. Not shorter, because every cut is a
+        // chance to split a citation in two, and it buys no speed per pass:
+        // the encoder's audio_ctx floor already covers about 15 s of audio.
+        int maxUtteranceMs = 10000;
 
         // Analysis frame. 20 ms is 320 frames at 16 kHz.
         int frameMs = 20;

@@ -461,7 +461,7 @@ int analyze(const QString& path)
 // so being able to measure it separately is the difference between tuning the
 // latency they feel and tuning the one they only meet after they stop talking.
 int transcribe(const QString& wav, const QString& model, int repeat, const QString& truthFile,
-               const QString& draftModel, bool interim, int windowSecs)
+               const QString& draftModel, bool interim, int windowSecs, int threads)
 {
     QList<float> samples;
     QString      error;
@@ -482,6 +482,7 @@ int transcribe(const QString& wav, const QString& model, int repeat, const QStri
     }
 
     WhisperRecognizer rec;
+    if (threads > 0) rec.setThreadCount(threads);
     if (!rec.load(model, &error)) {
         out() << "error: " << error << "\n";
         out().flush();
@@ -616,6 +617,7 @@ int main(int argc, char* argv[])
     int  seconds = 20;
     int  repeat  = 1;
     int  window  = 0;
+    int  threads = 0;
     bool interim = false;
 
     const QStringList args = app.arguments();
@@ -633,6 +635,7 @@ int main(int argc, char* argv[])
         else if (a == QLatin1String("--seconds")    && i + 1 < args.size())    seconds  = args.at(++i).toInt();
         else if (a == QLatin1String("--repeat")     && i + 1 < args.size())    repeat   = args.at(++i).toInt();
         else if (a == QLatin1String("--window")     && i + 1 < args.size())    window   = args.at(++i).toInt();
+        else if (a == QLatin1String("--threads")    && i + 1 < args.size())    threads  = args.at(++i).toInt();
         else if (a == QLatin1String("--interim"))                              interim  = true;
     }
 
@@ -645,7 +648,7 @@ int main(int argc, char* argv[])
             out().flush();
             return 2;
         }
-        return transcribe(wav, model, repeat, truth, draft, interim, window);
+        return transcribe(wav, model, repeat, truth, draft, interim, window, threads);
     }
 
     out() << "narration_bench - measure the narration audio chain\n\n"
@@ -660,7 +663,8 @@ int main(int argc, char* argv[])
              "  ... --interim [--draft <fast.bin>]     measure the live-hypothesis pass\n"
              "                                         instead of the finished-utterance one\n"
              "  ... --window <seconds>                 keep only the last N seconds, as the\n"
-             "                                         interim pass does (app uses 5)\n\n"
+             "                                         interim pass does (app uses 5)\n"
+             "  ... --threads <n>                      override the recognizer's thread count\n\n"
              "Start with --list, then --record, and read the level report before\n"
              "concluding anything about the model.\n";
     out().flush();

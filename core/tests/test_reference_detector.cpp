@@ -114,6 +114,8 @@ private slots:
     {
         QCOMPARE(allNumbers(QStringLiteral("3 16")),  (QList<int>{ 3, 16 }));
         QCOMPARE(allNumbers(QStringLiteral("3:16")),  (QList<int>{ 3, 16 }));
+        // whisper v1.9.5's base.en writes "three sixteen" this way.
+        QCOMPARE(allNumbers(QStringLiteral("3/16")),  (QList<int>{ 3, 16 }));
         QCOMPARE(allNumbers(QStringLiteral("119")),   (QList<int>{ 119 }));
     }
 
