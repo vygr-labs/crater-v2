@@ -67,6 +67,25 @@ target_include_directories(test_scripture_themes PRIVATE
 )
 
 add_test(NAME scripture_themes COMMAND test_scripture_themes)
+
+# V013 does the same for songs: Plum & Rose on fresh installs, and an
+# upgrade keeps whatever song theme the congregation already sees.
+qt_add_executable(test_song_themes
+    test_song_themes.cpp
+)
+
+target_link_libraries(test_song_themes PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_song_themes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME song_themes COMMAND test_song_themes)
 # -- Version ordering -- docs/auto-update.md ----------------------------
 # Pure string comparison behind the updater's "is this an upgrade?"
 # decision. No network, no database, no Gui: crater::compareVersions is
