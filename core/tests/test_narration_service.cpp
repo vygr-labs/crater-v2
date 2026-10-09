@@ -503,6 +503,23 @@ private slots:
         QCOMPARE(live.count(), 1);
     }
 
+    // The live run's shape: Deepgram's partials name the chapter before the
+    // verse is spoken. The chapter-only partial must not block the verse.
+    void a_chapter_partial_does_not_block_the_verse()
+    {
+        SettingsService settings;
+        settings.setNarrationMode(QStringLiteral("auto"));
+        NarrationService svc(nullptr, nullptr, &settings);
+
+        QSignalSpy live(&svc, &NarrationService::referenceAutoLive);
+        svc.injectTranscript(QStringLiteral("Jeremiah 14"), true);
+        svc.injectTranscript(QStringLiteral("Jeremiah 14 verse"), true);
+        svc.injectTranscript(QStringLiteral("Jeremiah 14 verse seven."));
+        QCOMPARE(live.count(), 1);
+        QCOMPARE(live.at(0).at(0).value<HeardReference>().reference,
+                 QStringLiteral("Jeremiah 14:7"));
+    }
+
     // Each interim pass re-reads the same growing sentence. It must not walk
     // "the next verse" forward one step per pass.
     void partials_do_not_move_the_context()

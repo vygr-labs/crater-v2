@@ -75,6 +75,8 @@ bool smallBible(const QString& book, int chapter, int verse)
         return chapter >= 1 && chapter <= 16 && verse <= (chapter == 8 ? 39 : 33);
     if (book == QStringLiteral("2 John")) return chapter == 1 && verse <= 13;
     if (book == QStringLiteral("John"))   return chapter >= 1 && chapter <= 21 && verse <= 40;
+    if (book == QStringLiteral("Jude"))   return chapter == 1 && verse <= 25;
+    if (book == QStringLiteral("Obadiah")) return chapter == 1 && verse <= 21;
     return true;
 }
 
@@ -208,6 +210,45 @@ private slots:
         QCOMPARE(r[0].chapter,    1);
         QCOMPARE(r[0].verseStart, 9);
         QCOMPARE(r[0].reference,  QStringLiteral("Jude 1:9"));
+    }
+
+    // "Jude 8" is how the book is cited: the number is the verse. Found in a
+    // live run, where "Jude 8", "Jude eight verse 19" and "Obadiah four
+    // seventeen" all read as chapters that don't exist and were dropped.
+    void single_chapter_book_number_is_the_verse()
+    {
+        CitationDetector d;
+        d.setValidator(smallBible);
+
+        auto r = d.detect(QStringLiteral("turn to jude eight"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Jude 1:8"));
+        QCOMPARE(r[0].tier,      QStringLiteral("certain"));
+
+        // No cue: it might be a person called Jude, so offered, not projected.
+        r = d.detect(QStringLiteral("jude eight"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Jude 1:8"));
+        QCOMPARE(r[0].tier,      QStringLiteral("high"));
+
+        r = d.detect(QStringLiteral("Jude eight verse 19."), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Jude 1:19"));
+        QCOMPARE(r[0].tier,      QStringLiteral("high"));
+
+        r = d.detect(QStringLiteral("Let's take a turn to the book of Obadiah four seventeen."), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Obadiah 1:17"));
+        QCOMPARE(r[0].tier,      QStringLiteral("high"));
+
+        // The ordinary forms are unchanged.
+        r = d.detect(QStringLiteral("turn to jude one twenty"), 0);
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].reference, QStringLiteral("Jude 1:20"));
+        QCOMPARE(r[0].tier,      QStringLiteral("certain"));
+
+        // A verse the book doesn't have is still dropped.
+        QVERIFY(d.detect(QStringLiteral("turn to jude forty"), 0).isEmpty());
     }
 
     void citation_chapter_only()

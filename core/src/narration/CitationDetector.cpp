@@ -96,6 +96,15 @@ bool isSingleChapterBook(const QString& canonical)
     return s.contains(canonical);
 }
 
+// The one-chapter books whose name nothing else sounds like. 2 John and
+// 3 John are left out: "two john fourteen six" is a mishearing of "to John
+// 14:6", and reading it as 2 John 1:6 would put the wrong verse up.
+bool citedByVerseAlone(const QString& canonical)
+{
+    return canonical == QStringLiteral("Obadiah") || canonical == QStringLiteral("Philemon")
+        || canonical == QStringLiteral("Jude");
+}
+
 // Longest-first, so "third john" beats "john" and "song of solomon" isn't
 // truncated. Getting this order wrong turns 3 John into John 3.
 //
@@ -467,6 +476,27 @@ QList<crater::HeardReference> CitationDetector::detect(const QString& utterance,
                 if (cued && !hasVerse && k == bm->endIdx)
                     record(bm->canonical, 1, 0, 0, kHigh, start, bm->endIdx);
                 i = std::max(k, bm->endIdx);
+                continue;
+            }
+
+            // One-chapter books are cited by verse alone, so the first number
+            // is never a chapter unless it is 1. "Jude 8" is Jude 1:8. With a
+            // second number, the one after "verse" is the verse ("jude eight
+            // verse nineteen"), and without that word the second number is,
+            // as in "obadiah four seventeen", where "four" is usually a
+            // misheard "for" or "verse".
+            if (chapter != 1 && citedByVerseAlone(bm->canonical)) {
+                const int v  = hasVerse ? verseStart : chapter;
+                const int ve = hasVerse ? verseEnd : 0;
+                // Certain only for "turn to Jude 8": a cue and one number,
+                // which is how the book is properly cited. Two numbers mean
+                // the speaker said a chapter the book doesn't have, so which
+                // verse they meant is our guess and the operator confirms it.
+                const bool sure = !fuzzyBook && !hasVerse && cued;
+                const QString t = sure ? kCertain : kHigh;
+                if (record(bm->canonical, 1, v, ve, t, start, k))
+                    readAndVerses(k, bm->canonical, 1, ve > 0 ? ve : v, t);
+                i = k;
                 continue;
             }
 
