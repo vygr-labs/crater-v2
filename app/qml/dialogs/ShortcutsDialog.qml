@@ -49,6 +49,8 @@ ModalShell {
         ] },
         { title: qsTr("Preview and Live"), rows: [
             { keys: ["Up", "Down"],                    label: qsTr("Previous or next slide in the focused panel") },
+            { keys: ["Home", "End"],                   label: qsTr("First or last slide in the focused panel") },
+            { keys: ["PgUp", "PgDn"],                  label: qsTr("Previous or next chorus or tag in the focused panel") },
             { keys: ["Enter"],                     label: qsTr("Send the Preview slide live") },
             { keys: ["Ctrl+Up", "Ctrl+Down"],          label: qsTr("Live: pick a slide, release Ctrl to send it") }
         ] },

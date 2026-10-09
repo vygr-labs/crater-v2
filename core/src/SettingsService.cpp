@@ -98,6 +98,9 @@ struct SettingsService::Impl
     // preserves the standard behavior (own taskbar button + switcher slot).
     bool    projectionInAltTab = true;
     bool    projectionBehindConsole = false;
+    bool    autoScrollPreview = true;
+    bool    autoScrollLive = true;
+    bool    autoScrollLibrary = true;
     // Live dock over dialogs — see header for why this defaults on.
     bool    liveControlsOverDialogs = true;
     // Headless NDI renderer toggle — see header. Default true so the QRhi
@@ -161,6 +164,9 @@ struct SettingsService::Impl
     static constexpr const char* kOutputMode       = "Settings/outputMode";
     static constexpr const char* kProjectionInAltTab = "Settings/projectionInAltTab";
     static constexpr const char* kProjectionBehindConsole = "Settings/projectionBehindConsole";
+    static constexpr const char* kAutoScrollPreview = "Settings/autoScrollPreview";
+    static constexpr const char* kAutoScrollLive = "Settings/autoScrollLive";
+    static constexpr const char* kAutoScrollLibrary = "Settings/autoScrollLibrary";
     static constexpr const char* kLiveControlsOverDialogs = "Settings/liveControlsOverDialogs";
     static constexpr const char* kUseHeadlessNdi   = "Settings/useHeadlessNdi";
     static constexpr const char* kNdiOnDemand      = "Settings/ndiOnDemand";
@@ -208,6 +214,9 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->outputMode        = m_impl->get(Impl::kOutputMode, m_impl->outputMode).toString();
     m_impl->projectionInAltTab = m_impl->get(Impl::kProjectionInAltTab, m_impl->projectionInAltTab).toBool();
     m_impl->projectionBehindConsole = m_impl->get(Impl::kProjectionBehindConsole, m_impl->projectionBehindConsole).toBool();
+    m_impl->autoScrollPreview = m_impl->get(Impl::kAutoScrollPreview, m_impl->autoScrollPreview).toBool();
+    m_impl->autoScrollLive = m_impl->get(Impl::kAutoScrollLive, m_impl->autoScrollLive).toBool();
+    m_impl->autoScrollLibrary = m_impl->get(Impl::kAutoScrollLibrary, m_impl->autoScrollLibrary).toBool();
     m_impl->liveControlsOverDialogs = m_impl->get(Impl::kLiveControlsOverDialogs, m_impl->liveControlsOverDialogs).toBool();
     m_impl->useHeadlessNdi    = m_impl->get(Impl::kUseHeadlessNdi, m_impl->useHeadlessNdi).toBool();
     m_impl->ndiOnDemand       = m_impl->get(Impl::kNdiOnDemand, m_impl->ndiOnDemand).toBool();
@@ -267,6 +276,9 @@ QString SettingsService::outputResolution() const  { return m_impl->outputResolu
 QString SettingsService::outputMode() const        { return m_impl->outputMode; }
 bool    SettingsService::projectionInAltTab() const { return m_impl->projectionInAltTab; }
 bool    SettingsService::projectionBehindConsole() const { return m_impl->projectionBehindConsole; }
+bool    SettingsService::autoScrollPreview() const { return m_impl->autoScrollPreview; }
+bool    SettingsService::autoScrollLive() const { return m_impl->autoScrollLive; }
+bool    SettingsService::autoScrollLibrary() const { return m_impl->autoScrollLibrary; }
 bool    SettingsService::liveControlsOverDialogs() const { return m_impl->liveControlsOverDialogs; }
 bool    SettingsService::useHeadlessNdi() const    { return m_impl->useHeadlessNdi; }
 bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand; }
@@ -430,6 +442,30 @@ void SettingsService::setProjectionBehindConsole(bool v)
     m_impl->projectionBehindConsole = v;
     m_impl->put(Impl::kProjectionBehindConsole, v);
     emit projectionBehindConsoleChanged();
+}
+
+void SettingsService::setAutoScrollPreview(bool v)
+{
+    if (m_impl->autoScrollPreview == v) return;
+    m_impl->autoScrollPreview = v;
+    m_impl->put(Impl::kAutoScrollPreview, v);
+    emit autoScrollPreviewChanged();
+}
+
+void SettingsService::setAutoScrollLive(bool v)
+{
+    if (m_impl->autoScrollLive == v) return;
+    m_impl->autoScrollLive = v;
+    m_impl->put(Impl::kAutoScrollLive, v);
+    emit autoScrollLiveChanged();
+}
+
+void SettingsService::setAutoScrollLibrary(bool v)
+{
+    if (m_impl->autoScrollLibrary == v) return;
+    m_impl->autoScrollLibrary = v;
+    m_impl->put(Impl::kAutoScrollLibrary, v);
+    emit autoScrollLibraryChanged();
 }
 
 void SettingsService::setLiveControlsOverDialogs(bool v)

@@ -202,6 +202,38 @@ Item {
                     onToggled: SettingsService.clearScheduleOnClose = !SettingsService.clearScheduleOnClose }
             }
 
+            // ── SCROLLING ────────────────────────────────────────────────
+            // Arrow keys scroll each panel to keep the highlight in view.
+            // Off, the list stays put and the highlight can move past the
+            // visible area (SettingsService.autoScroll*).
+            SettingsSectionHeader { title: qsTr("Scrolling") }
+
+            SettingRow {
+                title: qsTr("Follow the arrow keys in the Library")
+                description: qsTr("Scroll the list to keep the highlighted item in view")
+                ToggleSwitch {
+                    value: SettingsService.autoScrollLibrary
+                    onToggled: SettingsService.autoScrollLibrary = !SettingsService.autoScrollLibrary }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            SettingRow {
+                title: qsTr("Follow the arrow keys in Preview")
+                description: qsTr("Scroll the slides to keep the highlighted one in view")
+                ToggleSwitch {
+                    value: SettingsService.autoScrollPreview
+                    onToggled: SettingsService.autoScrollPreview = !SettingsService.autoScrollPreview }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            SettingRow {
+                title: qsTr("Follow the arrow keys in Live")
+                description: qsTr("Scroll the slides to keep the one on screen centred")
+                ToggleSwitch {
+                    value: SettingsService.autoScrollLive
+                    onToggled: SettingsService.autoScrollLive = !SettingsService.autoScrollLive }
+            }
+
             // ── LOCALE ───────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Locale") }
 

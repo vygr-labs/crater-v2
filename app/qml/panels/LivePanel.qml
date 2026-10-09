@@ -35,6 +35,10 @@ Rectangle {
     // index there means exactly what a card index means here.
     readonly property var  liveItem: AppState.liveItem
     readonly property var  pages:    AppState.livePages
+    // True while an arrow or jump key is moving the live page, so the
+    // auto-scroll in onLiveSubIndexChanged can tell keys from clicks.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
     readonly property bool isLive:   AppState.liveIsActive
 
     // Video transport under the monitor whenever the committed live item is a
@@ -250,6 +254,10 @@ Rectangle {
             clip: true
             cacheBuffer: 200
             spacing: Theme.space.sm
+            boundsBehavior: Flickable.StopAtBounds
+            // Wheel scrolls straight to a fixed step and stops at the ends,
+            // with no momentum or overshoot (see DirectWheel).
+            DirectWheel { flickable: pagesList }
 
             // Production-cue card delegate — same anatomy as PreviewPanel's
             // delegate, but channel-recoloured to crimson. Structure
@@ -502,8 +510,15 @@ Rectangle {
             // the Live pane is a control surface. setPage is a no-op when
             // the resolved index already matches, so clamp-at-bounds
             // keypresses don't burn a re-render.
-            function onLiveNavigateUp()   { AppState.stepLivePage(-1) }
-            function onLiveNavigateDown() { AppState.stepLivePage( 1) }
+            function onLiveNavigateUp()   { root._keyMove(function() { AppState.stepLivePage(-1) }) }
+            function onLiveNavigateDown() { root._keyMove(function() { AppState.stepLivePage( 1) }) }
+            // Home / End / Page Up / Page Down. Goes straight to the
+            // projector, like the arrows.
+            function onLiveJump(where) {
+                const t = AppState.pageJumpTarget(root.pages, AppState.liveSubIndex, where)
+                if (t >= 0 && t !== AppState.liveSubIndex)
+                    root._keyMove(function() { AppState.commitLivePage(t) })
+            }
             // ── Ctrl+Arrow scrub ────────────────────────────────────
             // Same clamp as the plain-arrow handlers above, minus the
             // commit: these only move AppState.liveScrubIndex, so the
@@ -533,11 +548,12 @@ Rectangle {
                 const target = AppState.liveScrubIndex
                 AppState.liveScrubIndex = -1
                 if (target >= 0 && target < root.pages.length)
-                    AppState.commitLivePage(target)
+                    root._keyMove(function() { AppState.commitLivePage(target) })
             }
             function onLiveScrubIndexChanged() {
                 // Keep the scrub highlight centered as it walks, matching
                 // what onLiveSubIndexChanged does for the live page.
+                if (!SettingsService.autoScrollLive) return
                 if (pagesList.visible && AppState.liveScrubIndex >= 0
                                       && AppState.liveScrubIndex < root.pages.length) {
                     pagesList.positionViewAtIndex(AppState.liveScrubIndex,
@@ -546,16 +562,18 @@ Rectangle {
             }
 
             function onLiveSubIndexChanged() {
-                // Fires on every liveSubIndex update — click, key,
-                // schedule advance, etc. Centering on click is mostly
-                // harmless: the clicked card was already visible, so
-                // the scroll either no-ops or gently nudges to align,
-                // which feels like "the panel snapping to its focal
-                // point" rather than a jolt.
+                // Fires on every liveSubIndex update: click, key, schedule
+                // advance, etc. Arrow and jump keys centre the live card
+                // (or leave the list alone when Settings > Scrolling turns
+                // that off). Anything else, a click included, scrolls only
+                // as far as needed to show the whole card, and not at all
+                // when it is already in view.
+                if (root._keyNav && !SettingsService.autoScrollLive) return
                 if (pagesList.visible && AppState.liveSubIndex >= 0
                                       && AppState.liveSubIndex < root.pages.length) {
                     pagesList.positionViewAtIndex(AppState.liveSubIndex,
-                                                  ListView.Center)
+                                                  root._keyNav ? ListView.Center
+                                                               : ListView.Contain)
                 }
             }
         }

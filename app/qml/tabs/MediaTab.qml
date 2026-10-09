@@ -38,6 +38,12 @@ import QtQuick.Controls.Basic
 //     videos.
 Item {
     id: root
+    // True while the arrow keys move the highlight, so the auto-scroll can
+    // honour Settings > Scrolling without affecting clicks or typed jumps.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+    readonly property bool _followKeys: !_keyNav || SettingsService.autoScrollLibrary
+
 
     // Right-pane background — same `bgContent` as ScriptureTab / SongsTab
     // so the tab area reads consistently across the library.
@@ -107,6 +113,17 @@ Item {
     }
 
     readonly property int fluidIndex: AppState.libraryFluidIndex.media
+
+    // Keep the current tile fully in view, scrolling only as far as needed.
+    // The views' own tracking is off (highlightFollowsCurrentItem) so that
+    // arrow keys can honour Settings > Scrolling while clicks always do this.
+    onFluidIndexChanged: {
+        if (fluidIndex < 0 || !_followKeys) return
+        if (grid.visible && fluidIndex < grid.count)
+            grid.positionViewAtIndex(fluidIndex, GridView.Contain)
+        if (listView.visible && fluidIndex < listView.count)
+            listView.positionViewAtIndex(fluidIndex, ListView.Contain)
+    }
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -880,6 +897,7 @@ Item {
             visible: AppState.mediaViewMode === "grid" && root.filteredMedia.length > 0
             currentIndex: root.fluidIndex
             model: root.filteredMedia
+            highlightFollowsCurrentItem: false
             cellWidth:  Math.max(80, Math.floor((width - Theme.size.scrollBar) / Math.max(1, AppState.mediaGridColumns)))
             cellHeight: Math.floor(cellWidth * 9.0 / 16.0) + 4
 
@@ -1260,6 +1278,7 @@ Item {
             model: root.filteredMedia
             spacing: 2
             currentIndex: root.fluidIndex
+            highlightFollowsCurrentItem: false
 
             delegate: Item {
                 id: listRow
@@ -1654,7 +1673,7 @@ Item {
                        ? Math.max(1, AppState.mediaGridColumns) : 1
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + step,
                                   root.filteredMedia.length - 1)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryNavigateUp() {
@@ -1663,7 +1682,7 @@ Item {
             const step = AppState.mediaViewMode === "grid"
                        ? Math.max(1, AppState.mediaGridColumns) : 1
             const next = Math.max(root.fluidIndex - step, 0)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryNavigateLeft() {
