@@ -464,6 +464,9 @@ Item {
         spacing: 0
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: root.fluidIndex
+        // Qt's own scroll-to-current, on only while the arrow keys should
+        // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+        highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
 
         onCurrentIndexChanged: {
             if (currentIndex >= 0 && root._followKeys) positionViewAtIndex(currentIndex, ListView.Contain)

@@ -737,6 +737,9 @@ Item {
         spacing: 0
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: root.fluidIndex
+        // Qt's own scroll-to-current, on only while the arrow keys should
+        // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+        highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
 
         // Keep currentIndex visible when fluid focus moves via keyboard.
         onCurrentIndexChanged: {

@@ -518,7 +518,10 @@ Item {
         const idx = indexOf(parsedRef.book, parsedRef.chapter, parsedRef.verse)
         if (idx >= 0) {
             AppState.setLibraryFluid(tabKey, idx)
-            list.positionViewAtIndex(idx, ListView.Contain)
+            // An echo of the arrow keys' own input sync (debounced, so it
+            // lands after the key) honours Settings > Scrolling too.
+            if (!(_inputIsSyncEcho() && !SettingsService.autoScrollLibrary))
+                list.positionViewAtIndex(idx, ListView.Contain)
             if (_inputIsSyncEcho()) refreshPreviewFor(idx)
             else                    pushPreviewFor(idx)
         }
@@ -984,6 +987,9 @@ Item {
     // ── Verse list ──────────────────────────────────────────────────────
     ListView {
         id: list
+        // Qt's own scroll-to-current, on only while the arrow keys should
+        // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
+        highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
         ScrollBar.vertical: AppScrollBar {}
 
         anchors.top: repickBanner.bottom

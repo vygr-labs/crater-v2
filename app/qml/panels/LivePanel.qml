@@ -255,9 +255,6 @@ Rectangle {
             cacheBuffer: 200
             spacing: Theme.space.sm
             boundsBehavior: Flickable.StopAtBounds
-            // Wheel scrolls straight to a fixed step and stops at the ends,
-            // with no momentum or overshoot (see DirectWheel).
-            DirectWheel { flickable: pagesList }
 
             // Production-cue card delegate — same anatomy as PreviewPanel's
             // delegate, but channel-recoloured to crimson. Structure
@@ -491,6 +488,10 @@ Rectangle {
                 }
             }
         }
+
+        // Wheel scrolls straight to a fixed step and stops at the ends,
+        // with no momentum or overshoot (see DirectWheel).
+        DirectWheel { target: pagesList }
 
         // ── Keyboard navigation ─────────────────────────────────────────
         // Mirrors PreviewPanel's Connections block but scrolls with

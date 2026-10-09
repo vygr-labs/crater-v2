@@ -888,6 +888,10 @@ Item {
         // ── Grid view ───────────────────────────────────────────────────
         GridView {
             id: grid
+            // Switching grid / list shows the current item in the view that
+            // appears (only the visible one is positioned as it moves).
+            onVisibleChanged: if (visible && root.fluidIndex >= 0 && root.fluidIndex < count)
+                                  positionViewAtIndex(root.fluidIndex, GridView.Contain)
             ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm
@@ -1268,6 +1272,10 @@ Item {
         // ── List view ───────────────────────────────────────────────────
         ListView {
             id: listView
+            // Switching grid / list shows the current item in the view that
+            // appears (only the visible one is positioned as it moves).
+            onVisibleChanged: if (visible && root.fluidIndex >= 0 && root.fluidIndex < count)
+                                  positionViewAtIndex(root.fluidIndex, ListView.Contain)
             ScrollBar.vertical: AppScrollBar {}
             anchors.fill: parent
             anchors.margins: Theme.space.sm
@@ -1690,7 +1698,7 @@ Item {
             if (AppState.mediaViewMode !== "grid") return
             if (root.filteredMedia.length === 0) return
             const next = Math.max((root.fluidIndex < 0 ? 0 : root.fluidIndex) - 1, 0)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryNavigateRight() {
@@ -1699,7 +1707,7 @@ Item {
             if (root.filteredMedia.length === 0) return
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.filteredMedia.length - 1)
-            AppState.setLibraryFluid(root.tabKey, next)
+            root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
             root.pushPreviewFor(next)
         }
         function onLibraryActivate() {

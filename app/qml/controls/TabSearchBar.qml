@@ -721,6 +721,18 @@ Item {
                     return
                 }
 
+                // Home / End: same story. The input's ShortcutOverride
+                // claims them for its caret, so Main.qml's page-jump
+                // Shortcuts never fire while it holds focus. When Preview
+                // or Live owns the keyboard, jump there instead.
+                if (!(event.modifiers & (Qt.ControlModifier | Qt.ShiftModifier | Qt.AltModifier))
+                    && (event.key === Qt.Key_Home || event.key === Qt.Key_End)
+                    && AppState.consoleShortcutsActive
+                    && AppState.routePageJump(event.key === Qt.Key_Home ? "first" : "last")) {
+                    event.accepted = true
+                    return
+                }
+
                 // Ctrl+A — the field claims it through ShortcutOverride, so
                 // Main.qml's select-all-rows Shortcut never sees it while the
                 // keyboard sits here. It stays the field's own select-all,

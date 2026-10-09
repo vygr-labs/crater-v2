@@ -30,7 +30,12 @@ Rectangle {
     // The header's Select toggle (SelectModeToggle reads these two). On, the
     // rows show their checkboxes and a plain click ticks a row.
     readonly property bool selectMode: AppState.scheduleSelectMode
-    function setSelectMode(on) { AppState.setScheduleSelectMode(on) }
+    // Turning it on is a schedule gesture, so the schedule takes the
+    // keyboard and Escape can step back out.
+    function setSelectMode(on) {
+        AppState.setScheduleSelectMode(on)
+        if (on) AppState.setActiveFocus("schedule")
+    }
 
     // Selected rows in schedule order. Snapshotted by each action so a
     // click during a confirm dialog can't change what it acts on.
@@ -134,6 +139,8 @@ Rectangle {
         target: ScheduleService
         function onCurrentItemsChanged() {
             const n = ScheduleService.currentItems.length
+            // Nothing left to select (cleared, or an empty schedule loaded).
+            if (n === 0) AppState.setScheduleSelectMode(false)
             const sel = AppState.selectedScheduleIndices
             const kept = sel.filter(function(i) { return i >= 0 && i < n })
             if (kept.length !== sel.length) AppState.selectedScheduleIndices = kept
@@ -354,9 +361,6 @@ Rectangle {
             clip: true
             cacheBuffer: 200
             boundsBehavior: Flickable.StopAtBounds
-            // Wheel scrolls straight to a fixed step and stops at the ends,
-            // with no momentum or overshoot (see DirectWheel).
-            DirectWheel { flickable: list }
             // Disable flick-scroll while a row is being dragged so a small
             // mouse jitter doesn't yank the whole list along with the row.
             interactive: list.draggedRow < 0
@@ -674,6 +678,10 @@ Rectangle {
                 Behavior on y { NumberAnimation { duration: Theme.motion.instant } }
             }
         }
+
+        // Wheel scrolls straight to a fixed step and stops at the ends,
+        // with no momentum or overshoot (see DirectWheel).
+        DirectWheel { target: list }
 
         // Bulk-action bar while 2+ rows are selected. Clear drops back to
         // the anchor row alone (the "current" row Preview shows) rather

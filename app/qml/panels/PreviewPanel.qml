@@ -46,6 +46,11 @@ Rectangle {
                    ? ScheduleService.currentItems[AppState.selectedScheduleIndex]
                    : null)
 
+    // True while an arrow or jump key is moving the page, so the
+    // auto-scroll in onPreviewSubIndexChanged can tell keys from clicks.
+    property bool _keyNav: false
+    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
+
     // Canonical-shape items carry `pages` (array of {label, content}).
     //
     // Filter to pages that have *content* to display in the list. Media
@@ -68,11 +73,6 @@ Rectangle {
     // The cards index into THIS list; ThemedMonitor, ProjectionService and
     // every arrow-key step index into the unfiltered item.pages. One dropped
     // slide put every card after it on the wrong slide.
-    // True while an arrow or jump key is moving the page, so the
-    // auto-scroll in onPreviewSubIndexChanged can tell keys from clicks.
-    property bool _keyNav: false
-    function _keyMove(f) { _keyNav = true; try { f() } finally { _keyNav = false } }
-
     readonly property var pages: {
         const raw = selectedItem && selectedItem.pages ? selectedItem.pages : []
         if (selectedItem && selectedItem.kind === "presentation") return raw
@@ -249,9 +249,6 @@ Rectangle {
             cacheBuffer: 200
             spacing: Theme.space.sm
             boundsBehavior: Flickable.StopAtBounds
-            // Wheel scrolls straight to a fixed step and stops at the ends,
-            // with no momentum or overshoot (see DirectWheel).
-            DirectWheel { flickable: pagesList }
 
             // Production-cue card delegate. Three zones:
             //   • indexCol — a full-height 32px left strip carrying the
@@ -499,6 +496,10 @@ Rectangle {
                 }
             }
         }
+
+        // Wheel scrolls straight to a fixed step and stops at the ends,
+        // with no momentum or overshoot (see DirectWheel).
+        DirectWheel { target: pagesList }
 
         // ── Keyboard navigation ─────────────────────────────────────────
         // Driven by Main.qml's window-level Up/Down shortcuts, which fan

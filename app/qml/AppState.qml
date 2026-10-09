@@ -2250,6 +2250,14 @@ QtObject {
     signal previewJump(string where)
     signal liveJump(string where)
 
+    // Sends a jump to whichever of Preview / Live holds focus. False when
+    // neither does, so the caller can leave the key alone.
+    function routePageJump(where) {
+        if (activeFocusPanel === "live")    { liveJump(where);    return true }
+        if (activeFocusPanel === "preview") { previewJump(where); return true }
+        return false
+    }
+
     // The page a jump lands on, or -1 when there is nowhere to go (no
     // pages, or no chorus further on in that direction).
     function pageJumpTarget(pages, from, where) {
@@ -2264,11 +2272,12 @@ QtObject {
     }
 
     // A song page counts as a chorus when its section label starts with
-    // "chorus", "refrain" or "tag" (the operator's own labels; core's
-    // inferKindFromLabel reads them the same way). "Pre-chorus" does not.
+    // "chorus" or "refrain", or is a "Tag" section (the operator's own
+    // labels; core's inferKindFromLabel reads them much the same way).
+    // "Pre-chorus" and "Tagline" do not count.
     function isChorusLabel(label) {
         const l = String(label || "").trim().toLowerCase()
-        return l.startsWith("chorus") || l.startsWith("refrain") || l.startsWith("tag")
+        return l.startsWith("chorus") || l.startsWith("refrain") || l === "tag" || l.startsWith("tag ")
     }
 
     // ── Live scrub (Ctrl+Arrow) ─────────────────────────────────────────
