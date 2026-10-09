@@ -22,6 +22,7 @@
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QTimer>
 #include <QUrl>
 #include <QtQml>
 
@@ -298,8 +299,51 @@ void showNewerDataDialog(const QString& writtenBy)
         QDesktopServices::openUrl(QUrl(crater::HelpLinks().website() + QStringLiteral("downloads/")));
 }
 
+// Sends crater.log through the same service as Settings > Diagnostics, then
+// says whether it went. Startup has no window yet, so this waits here for
+// the upload, giving up after 30 seconds.
+void sendStartupLog(const QString& logPath, const QString& reason)
+{
+    crater::LogReportService reporter(logPath);
+    QEventLoop wait;
+    QObject::connect(&reporter, &crater::LogReportService::statusChanged, &wait, [&] {
+        if (reporter.status() != crater::LogReportService::Sending) wait.quit();
+    });
+    QTimer::singleShot(30000, &wait, &QEventLoop::quit);
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    reporter.sendLogs(QStringLiteral("Crater couldn't start: %1").arg(reason));
+    if (reporter.status() == crater::LogReportService::Sending) wait.exec();
+    QApplication::restoreOverrideCursor();
+
+    QMessageBox box;
+    QPushButton* open = nullptr;
+    if (reporter.status() == crater::LogReportService::Sent) {
+        box.setIcon(QMessageBox::Information);
+        box.setWindowTitle(QCoreApplication::translate("Startup", "Log sent"));
+        box.setText(QCoreApplication::translate(
+            "Startup", "Thank you. Your log was sent to the Crater team."));
+    } else {
+        const QString why = reporter.status() == crater::LogReportService::Failed
+            ? reporter.lastError()
+            : QCoreApplication::translate("Startup", "It took too long to send.");
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(QCoreApplication::translate("Startup", "Log not sent"));
+        box.setText(QCoreApplication::translate("Startup", "Crater couldn't send your log."));
+        box.setInformativeText(QCoreApplication::translate(
+            "Startup", "%1\n\nCheck your internet connection, or attach the log file to an email instead.")
+                .arg(why));
+        open = box.addButton(QCoreApplication::translate("Startup", "Open Log Folder"),
+                             QMessageBox::ActionRole);
+    }
+    box.addButton(QMessageBox::Close);
+    box.exec();
+    if (open && box.clickedButton() == open)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(logPath).absolutePath()));
+}
+
 // Any other startup data failure. It used to quit silently too.
-void showStartupFailureDialog(const QString& logPath)
+void showStartupFailureDialog(const QString& logPath, const QString& reason)
 {
     QMessageBox box;
     box.setIcon(QMessageBox::Critical);
@@ -307,13 +351,18 @@ void showStartupFailureDialog(const QString& logPath)
     box.setText(QCoreApplication::translate(
         "Startup", "Crater couldn't get your data ready, so it has closed."));
     box.setInformativeText(QCoreApplication::translate(
-        "Startup", "The details are in the log file. Send it with a bug report so we can fix the problem.\n\n%1")
+        "Startup", "Send us the log so we can fix the problem. It's also saved here:\n\n%1")
             .arg(QDir::toNativeSeparators(logPath)));
+    QPushButton* send =
+        box.addButton(QCoreApplication::translate("Startup", "Send Log"), QMessageBox::AcceptRole);
     QPushButton* open =
         box.addButton(QCoreApplication::translate("Startup", "Open Log Folder"), QMessageBox::ActionRole);
     box.addButton(QMessageBox::Close);
+    box.setDefaultButton(send);
     box.exec();
-    if (box.clickedButton() == open)
+    if (box.clickedButton() == send)
+        sendStartupLog(logPath, reason);
+    else if (box.clickedButton() == open)
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(logPath).absolutePath()));
 }
 
@@ -442,7 +491,7 @@ int main(int argc, char* argv[])
         return -1;
     } catch (const std::exception& e) {
         qCritical().noquote() << "Migration failed:" << e.what();
-        showStartupFailureDialog(logPath);
+        showStartupFailureDialog(logPath, QString::fromUtf8(e.what()));
         return -1;
     }
     qInfo().noquote() << "[startup] schema migrations done: +"
