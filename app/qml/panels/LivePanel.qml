@@ -708,7 +708,7 @@ Rectangle {
 
             // Mirror the projection's logo overlay at mini-monitor scale —
             // LogoView renders the configured image OR video (or the
-            // "CRATER" fallback) so the operator sees exactly what the
+            // Crater mark fallback) so the operator sees exactly what the
             // audience is seeing. Declared last so it sits above
             // ThemedMonitor when both are active.
             LogoView {
