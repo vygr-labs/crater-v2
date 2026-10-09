@@ -13,6 +13,20 @@
 
 namespace crater {
 
+namespace {
+
+void migrate(QStringView path, QStringView dbName, const QString& label)
+{
+    db::Connection conn(path, db::OpenMode::ReadWriteCreate, label);
+    try {
+        db::Migrator::run(conn, dbName);
+    } catch (const db::NewerSchemaError& e) {
+        throw NewerDataError(e.message(), e.writtenBy());
+    }
+}
+
+}  // namespace
+
 void runAllMigrations()
 {
     // Each DB gets a scoped connection so it closes before services open
@@ -20,24 +34,9 @@ void runAllMigrations()
     // Labels show up in the COMMIT/ROLLBACK trace + the BUSY diagnostic
     // so a migration-time write contention has a distinct identity from
     // the steady-state service connections that open later.
-    {
-        db::Connection conn(db::DbPaths::biblesDbPath(),
-                            db::OpenMode::ReadWriteCreate,
-                            QStringLiteral("Migrator-bibles"));
-        db::Migrator::run(conn, QStringLiteral("bibles"));
-    }
-    {
-        db::Connection conn(db::DbPaths::songsDbPath(),
-                            db::OpenMode::ReadWriteCreate,
-                            QStringLiteral("Migrator-songs"));
-        db::Migrator::run(conn, QStringLiteral("songs"));
-    }
-    {
-        db::Connection conn(db::DbPaths::appDbPath(),
-                            db::OpenMode::ReadWriteCreate,
-                            QStringLiteral("Migrator-app"));
-        db::Migrator::run(conn, QStringLiteral("app"));
-    }
+    migrate(db::DbPaths::biblesDbPath(), u"bibles", QStringLiteral("Migrator-bibles"));
+    migrate(db::DbPaths::songsDbPath(), u"songs", QStringLiteral("Migrator-songs"));
+    migrate(db::DbPaths::appDbPath(), u"app", QStringLiteral("Migrator-app"));
 
     // One shared Bible library. Profiles made before it kept their own
     // bibles.sqlite; fold any translation only a profile has into the shared
