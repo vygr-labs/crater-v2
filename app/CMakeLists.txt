@@ -283,6 +283,7 @@ qt_add_resources(crater "appbrand_svg"
     FILES
         resources/brand/crater.svg
         resources/brand/crater-on-light.svg
+        resources/brand/crater-mark.svg
 )
 qt_add_resources(crater "appbrand_ico"
     PREFIX "/brand"

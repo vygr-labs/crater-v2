@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Crater mark, full-size cut (tutorials/studio/assets/svg/crater-mark.svg).
+  Shown on the projection when the logo is toggled on before a church has
+  picked its own logo file.
+-->
+<svg role="img" aria-label="Crater" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g><path fill="#F4F6F8" d="M6 5H26A4 4 0 0 1 30 9V23A4 4 0 0 1 26 27H25.5A9.5 9.5 0 0 0 6.5 27H6A4 4 0 0 1 2 23V9A4 4 0 0 1 6 5Z"/><path fill="#2FD3E6" d="M10.5 27A5.5 5.5 0 0 1 21.5 27Z"/></g></svg>

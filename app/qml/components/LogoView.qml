@@ -5,8 +5,8 @@ import Crater
 // shows when AppState.showLogo is on and live content should be hidden.
 // Pulls its source from ProjectionService.logoBgPath / logoBgKind and
 // renders it through MediaMonitor so image AND video logos work
-// uniformly. Falls back to a "CRATER" text placeholder when no logo path
-// is configured so toggling logo before picking a file still shows
+// uniformly. Falls back to the Crater mark when no logo path is
+// configured so toggling logo before picking a file still shows
 // something intentional rather than a black square.
 //
 // Shared by:
@@ -33,7 +33,7 @@ Item {
     readonly property bool _hasPath: _path && _path.length > 0
     readonly property bool _isImage: _kind === "image"
     // Safe to show: the picture is decoded, or there is nothing to wait for
-    // (video, or the "CRATER" placeholder).
+    // (video, or the Crater mark placeholder).
     readonly property bool ready: !_hasPath || !_isImage || monitor.imageReady
 
     // Matte black canvas — matches Electron's LogoBackground (`bg: "black"`)
@@ -63,15 +63,20 @@ Item {
 
     // Fallback when no logo path is configured. Sized as a fraction of
     // parent.height so the same component reads correctly at projection
-    // scale (~1080 -> ~130px) and mini-monitor scale (~180 -> ~22px).
-    Text {
+    // scale (~1080 -> ~225px) and mini-monitor scale (~180 -> ~38px).
+    // sourceSize follows the drawn size so the SVG rasterizes sharp at
+    // either scale instead of being scaled up from its 32-unit viewBox.
+    Image {
+        readonly property int _size: Math.max(24, Math.round(parent.height * 0.21))
         anchors.centerIn: parent
         visible: root.active && !root._hasPath
-        text: "CRATER"
-        color: "#ffffff"
-        font.family: Theme.font.family
-        font.pixelSize: Math.max(14, Math.floor(parent.height * 0.12))
-        font.weight: 900
-        font.letterSpacing: Math.max(2, Math.floor(parent.height * 0.012))
+        source: "qrc:/brand/crater-mark.svg"
+        width: _size
+        height: _size
+        sourceSize.width: _size
+        sourceSize.height: _size
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        antialiasing: true
     }
 }
