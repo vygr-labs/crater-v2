@@ -201,6 +201,10 @@ fi
 cp "$BIBLE_DB_PATH" "$LEGACY_DIR/bibles.sqlite"
 done_msg "bibles.sqlite staged to $LEGACY_DIR"
 
+# The GPL travels with the binaries, and so do the third-party notices.
+mkdir -p "$APPDIR/usr/share/doc/crater"
+cp "$QT_ROOT/LICENSE" "$QT_ROOT/THIRD_PARTY_NOTICES.md" "$APPDIR/usr/share/doc/crater/"
+
 # ── Stage Strong's DBs ─────────────────────────────────────────────────────
 step "Staging Strong's databases"
 for entry in "${STRONGS_DBS[@]}"; do
