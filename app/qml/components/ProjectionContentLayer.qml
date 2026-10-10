@@ -8,18 +8,17 @@ import Crater
 // transition.
 //
 // Why a reusable component (rather than inlining the rendering twice in
-// ProjectionScene): the per-output transition controller needs an outgoing
-// snapshot of the previous (item, kind, page) AND the incoming current one,
-// rendered side-by-side, so it can crossfade between them. The cheapest way
-// to express that is two instances of the same component, each holding its
-// own input state. It also keeps audio mute and theme resolution scoped to a
-// single layer rather than racing across two parallel renderers.
+// ProjectionScene): the transition controller needs the outgoing and the
+// incoming content rendered side by side so it can fade between them. It
+// keeps two instances of this component and alternates which one takes the
+// next item, so the one on air is never rewritten mid-fade. It also keeps
+// audio mute and theme resolution scoped to a single layer rather than
+// racing across two parallel renderers.
 //
-// Inputs are imperative state — the scene mutates them when a transition
-// starts. They are NOT bound to ProjectionService here so that promoting
-// "current" to "previous" is just a property copy rather than a binding
-// rewire. The scene owns the lifecycle; this component just renders what
-// it's told.
+// Inputs are imperative state, set by the scene when new content arrives.
+// They are NOT bound to ProjectionService here, so the scene decides which
+// layer shows what. The scene owns the lifecycle; this component just
+// renders what it's told.
 // Root id is `root`, NOT `layer` — every Item has a built-in `layer`
 // attached property of type QQuickItemLayer (Qt's shader-effect opt-in).
 // Using `id: layer` here would silently work for top-level child bindings
@@ -60,13 +59,60 @@ Item {
     // alternative (both layers fighting for audio) clicks.
     property bool   audioEnabled: false
 
-    // Duration of passive (non-transition) opacity fades inside this layer
-    // — specifically the per-text-node clear fade. Driven by the scene's
-    // per-output passive-fade so a "cut" style yields an instant clear and
-    // a long crossfade duration yields a matched clear feel. Default 280
-    // keeps the historical behavior when this layer is used in isolation
-    // (e.g. a future preview tile).
+    // Duration of the Clear fade inside this layer: the text nodes, the
+    // scripture footer and the song credits. The scene passes the output's
+    // Clear transition (0 for Cut). Default 280 keeps the historical
+    // behavior when this layer is used in isolation (e.g. a future preview
+    // tile).
     property int    passiveFadeMs: 280
+
+    // ── Readiness ───────────────────────────────────────────────────────
+    // True once everything this layer shows has something to paint: the
+    // PDF page has rasterized, and every picture and video in the layer
+    // (the live media item and any theme background) has decoded or has its
+    // first frame. The scene polls this before fading the layer in, because
+    // a fade that starts before the media is there ends on black and the
+    // media then pops in, which reads as a jump cut.
+    //
+    // Media components advertise themselves through a `mediaReady`
+    // property, found by walking the visible tree. Hidden subtrees don't
+    // count, so a suppressed or inactive branch can't hold a transition.
+    //
+    // `skip` is a set of video urls (activeUrl) not to wait for: the scene
+    // passes the ones that already timed out once, so a broken background
+    // video costs one wait, not one on every slide.
+    function isReady(skip) {
+        if (!layerKind) return true
+        if (pdfPageImage.visible && pdfPageImage.source.toString() !== ""
+                && pdfPageImage.status === Image.Loading)
+            return false
+        return _walkPending(root, skip || ({}), null)
+    }
+    // The urls of the videos still holding this layer, for the scene to
+    // remember when it gives up waiting.
+    function pendingUrls() {
+        const out = []
+        _walkPending(root, ({}), out)
+        return out
+    }
+    // True when nothing is pending. With `out`, keeps walking and collects
+    // the pending videos' urls instead of stopping at the first.
+    function _walkPending(item, skip, out) {
+        if (!item || item.visible === false) return true
+        let ok = true
+        if (item.mediaReady === false && !(item.activeUrl && skip[item.activeUrl])) {
+            if (!out) return false
+            if (item.activeUrl) out.push(item.activeUrl)
+            ok = false
+        }
+        const kids = item.children
+        for (let i = 0; i < kids.length; ++i)
+            if (!_walkPending(kids[i], skip, out)) {
+                if (!out) return false
+                ok = false
+            }
+        return ok
+    }
 
     // ── Theme resolution ────────────────────────────────────────────────
     // Reads through to AppState.resolveItemTheme so this layer honors the
@@ -330,7 +376,6 @@ Item {
         id: scriptureFooter
         visible: root.layerKind === "scripture"
                  && SettingsService.showScriptureFooter
-                 && !ProjectionService.isClear
                  && text.length > 0
         text: root._footerText
         anchors.horizontalCenter: parent.horizontalCenter
@@ -342,8 +387,10 @@ Item {
         font.family: Theme.font.family
         font.pixelSize: Math.max(12, Math.round(root.height * 0.030))
         font.weight: Theme.font.weightSemiBold
-        opacity: 0.92
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+        // Clear fades it with the text. Switching `visible` instead made it
+        // vanish in one frame while everything around it faded.
+        opacity: ProjectionService.isClear ? 0 : 0.92
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 
     // ── Song credits line (global toggles) ──────────────────────────────
@@ -356,7 +403,6 @@ Item {
         id: songCredits
         visible: root.layerKind === "song"
                  && !root._themeHasCredits
-                 && !ProjectionService.isClear
                  && text.length > 0
         text: root._songCreditsText
         anchors.horizontalCenter: parent.horizontalCenter
@@ -369,7 +415,7 @@ Item {
         styleColor: "#cc000000"
         font.family: Theme.font.family
         font.pixelSize: Math.max(11, Math.round(root.height * 0.024))
-        opacity: 0.85
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+        opacity: ProjectionService.isClear ? 0 : 0.85
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 }

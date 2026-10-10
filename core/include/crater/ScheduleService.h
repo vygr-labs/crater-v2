@@ -1,5 +1,6 @@
 #pragma once
 
+#include "crater/ScheduleItemsModel.h"
 #include "crater/value/SavedSchedule.h"
 
 #include <QList>
@@ -44,6 +45,10 @@ class ScheduleService : public QObject
     Q_OBJECT
 
     Q_PROPERTY(QVariantList currentItems READ currentItems NOTIFY currentItemsChanged)
+    // The same items as a list model that reports each edit as row moves,
+    // inserts and removes. The schedule ListView uses it so a reorder keeps
+    // its scroll position. See ScheduleItemsModel.
+    Q_PROPERTY(QAbstractListModel* itemsModel READ itemsModel CONSTANT)
     Q_PROPERTY(QList<crater::SavedSchedule> savedSchedules READ savedSchedules NOTIFY savedSchedulesChanged)
 
     // Identity of the saved schedule whose contents `currentItems` reflects.
@@ -61,6 +66,7 @@ public:
     ~ScheduleService() override;
 
     QVariantList currentItems() const;
+    QAbstractListModel* itemsModel() const { return m_itemsModel; }
     QList<crater::SavedSchedule> savedSchedules();
     qint64  loadedScheduleId()   const;
     QString loadedScheduleName() const;
@@ -155,6 +161,7 @@ private slots:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    ScheduleItemsModel* m_itemsModel = nullptr;
 
     void setDirty(bool v);
     void setLoaded(qint64 id, const QString& name);

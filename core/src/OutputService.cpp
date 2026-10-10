@@ -39,6 +39,17 @@ int clampedTransitionMs(int ms)
     return ms;
 }
 
+// The content types that can carry their own transition. Order is the
+// order Settings lists them in.
+const QStringList& transitionTypeList()
+{
+    static const QStringList types{
+        QStringLiteral("lyrics"), QStringLiteral("scripture"), QStringLiteral("media"),
+        QStringLiteral("logo"),   QStringLiteral("clear"),
+    };
+    return types;
+}
+
 // Content mode decides which scene a window mounts, so an unrecognised
 // value must not be allowed through: a physical display rendering neither
 // the audience view nor the presenter view is a black screen the operator
@@ -517,6 +528,16 @@ void OutputService::loadOutputsFromSettings()
                     QStringLiteral("crossfade")).toString());
         b.transitionDurationMs = clampedTransitionMs(
             s.value(p + QStringLiteral("transitionDurationMs"), 280).toInt());
+        for (const QString& type : transitionTypeList()) {
+            const QString k = p + QStringLiteral("transitions/") + type + QChar('/');
+            if (!s.contains(k + QStringLiteral("style"))) continue;
+            b.transitions.insert(type, QVariantMap{
+                { QStringLiteral("style"),
+                  normalizedTransitionStyle(s.value(k + QStringLiteral("style")).toString()) },
+                { QStringLiteral("ms"),
+                  clampedTransitionMs(s.value(k + QStringLiteral("ms"), b.transitionDurationMs).toInt()) },
+            });
+        }
         b.enabled              = s.value(p + QStringLiteral("enabled"), false).toBool();
         b.screenIndex          = s.value(p + QStringLiteral("screenIndex"), -1).toInt();
         b.screenName           = s.value(p + QStringLiteral("screenName")).toString();
@@ -552,6 +573,17 @@ void OutputService::persistOutput(const OutputBinding& b)
     m_impl->profileStore->setValue(profile::outputThemesKey(b.id), themesToJson(b.themes));
     s.setValue(p + QStringLiteral("transitionStyle"),      b.transitionStyle);
     s.setValue(p + QStringLiteral("transitionDurationMs"), b.transitionDurationMs);
+    for (const QString& type : transitionTypeList()) {
+        const QString k = p + QStringLiteral("transitions/") + type + QChar('/');
+        const QVariantMap t = b.transitions.value(type).toMap();
+        if (t.isEmpty()) {
+            s.remove(k + QStringLiteral("style"));
+            s.remove(k + QStringLiteral("ms"));
+            continue;
+        }
+        s.setValue(k + QStringLiteral("style"), t.value(QStringLiteral("style")));
+        s.setValue(k + QStringLiteral("ms"),    t.value(QStringLiteral("ms")));
+    }
     s.setValue(p + QStringLiteral("enabled"),              b.enabled);
     s.setValue(p + QStringLiteral("screenIndex"),          b.screenIndex);
     s.setValue(p + QStringLiteral("screenName"),           b.screenName);
@@ -717,6 +749,71 @@ void OutputService::setTransitionDurationMs(const QString& outputId, int ms)
         if (b.id != outputId) continue;
         if (b.transitionDurationMs == v) return;
         b.transitionDurationMs = v;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+QStringList OutputService::transitionTypes() const
+{
+    return transitionTypeList();
+}
+
+QString OutputService::transitionStyleFor(const QString& outputId, const QString& type) const
+{
+    if (!m_impl) return QStringLiteral("crossfade");
+    for (const auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        const QVariantMap t = b.transitions.value(type).toMap();
+        return t.isEmpty() ? b.transitionStyle : t.value(QStringLiteral("style")).toString();
+    }
+    return QStringLiteral("crossfade");
+}
+
+int OutputService::transitionDurationFor(const QString& outputId, const QString& type) const
+{
+    if (!m_impl) return 280;
+    for (const auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        const QVariantMap t = b.transitions.value(type).toMap();
+        return t.isEmpty() ? b.transitionDurationMs : t.value(QStringLiteral("ms")).toInt();
+    }
+    return 280;
+}
+
+// Writing one half of a type's pair fills in the other half from what the
+// type reads today, so the first edit to a type doesn't drop its duration
+// back to some default.
+void OutputService::setTransitionStyleFor(const QString& outputId, const QString& type,
+                                          const QString& style)
+{
+    if (!m_impl || !transitionTypeList().contains(type)) return;
+    const QString st = normalizedTransitionStyle(style);
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        QVariantMap t = b.transitions.value(type).toMap();
+        if (t.isEmpty()) t.insert(QStringLiteral("ms"), b.transitionDurationMs);
+        else if (t.value(QStringLiteral("style")).toString() == st) return;
+        t.insert(QStringLiteral("style"), st);
+        b.transitions.insert(type, t);
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+void OutputService::setTransitionDurationFor(const QString& outputId, const QString& type, int ms)
+{
+    if (!m_impl || !transitionTypeList().contains(type)) return;
+    const int v = clampedTransitionMs(ms);
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        QVariantMap t = b.transitions.value(type).toMap();
+        if (t.isEmpty()) t.insert(QStringLiteral("style"), b.transitionStyle);
+        else if (t.value(QStringLiteral("ms")).toInt() == v) return;
+        t.insert(QStringLiteral("ms"), v);
+        b.transitions.insert(type, t);
         persistOutput(b);
         emit outputsChanged();
         return;

@@ -7,6 +7,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 namespace crater {
 
@@ -109,11 +110,26 @@ public:
 
     // Per-output transition tuning. Setters apply the same normalization
     // (style whitelist, duration clamp 0..1500) that previously lived in
-    // SettingsService.
+    // SettingsService. Settings now edits the per-type values below, so
+    // these are the fallback a type reads until it is set, which keeps
+    // outputs configured before per-type transitions looking the same.
     Q_INVOKABLE QString transitionStyle(const QString& outputId) const;
     Q_INVOKABLE void    setTransitionStyle(const QString& outputId, const QString& style);
     Q_INVOKABLE int     transitionDurationMs(const QString& outputId) const;
     Q_INVOKABLE void    setTransitionDurationMs(const QString& outputId, int ms);
+
+    // The same, per content type: "lyrics", "scripture", "media", "logo" or
+    // "clear". A type that was never set reads the output's own style and
+    // duration above. An unknown type reads those too and ignores writes.
+    // Bind to these with `OutputService.outputs` as a dependency so the
+    // binding re-reads on outputsChanged.
+    Q_INVOKABLE QStringList transitionTypes() const;
+    Q_INVOKABLE QString transitionStyleFor(const QString& outputId, const QString& type) const;
+    Q_INVOKABLE void    setTransitionStyleFor(const QString& outputId, const QString& type,
+                                              const QString& style);
+    Q_INVOKABLE int     transitionDurationFor(const QString& outputId, const QString& type) const;
+    Q_INVOKABLE void    setTransitionDurationFor(const QString& outputId, const QString& type,
+                                                 int ms);
 
     // ── Multi-display: per-output placement and mode ────────────────────
     // Every output that renders a window carries its own display

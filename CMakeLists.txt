@@ -11,7 +11,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 project(Crater
     VERSION 0.7.6
     DESCRIPTION "Professional Scripture Projection Software"
-    HOMEPAGE_URL "https://crater.voyagerlabs.tech"
+    HOMEPAGE_URL "https://getcrater.org"
     LANGUAGES C CXX  # C needed for sqlite3.c amalgamation in crater-core
 )
 

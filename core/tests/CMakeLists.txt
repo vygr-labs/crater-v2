@@ -328,3 +328,18 @@ target_include_directories(test_profiles PRIVATE
 )
 
 add_test(NAME profiles COMMAND test_profiles)
+
+# -- Schedule list model ----------------------------------------------------
+# The schedule ListView keeps its scroll position only if a reorder arrives
+# as a row move. Pins the diff that turns a new list into moves and inserts.
+qt_add_executable(test_schedule_items_model
+    test_schedule_items_model.cpp
+)
+
+target_link_libraries(test_schedule_items_model PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME schedule_items_model COMMAND test_schedule_items_model)

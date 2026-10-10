@@ -64,6 +64,13 @@ Item {
         mediaKind === "image" && !_cropped && loader.item !== null
         && loader.item.status === Image.Ready
 
+    // True once the picture has decoded, or the video has its first frame
+    // (or loading failed, so there is nothing to wait for). The projection
+    // scene waits on this before fading new content in, so the audience
+    // never watches a fade into black and then the media popping in.
+    readonly property bool mediaReady:
+        !_isMedia || (loader.item !== null && loader.item.loaded === true)
+
     readonly property bool _isMedia:
         mediaPath.length > 0 && (mediaKind === "image" || mediaKind === "video")
 
@@ -157,6 +164,7 @@ Item {
     Component {
         id: imageComp
         Image {
+            readonly property bool loaded: status === Image.Ready || status === Image.Error
             source: "file:///" + root.mediaPath
             fillMode: root._imgFill()
             asynchronous: true
@@ -187,6 +195,11 @@ Item {
     Component {
         id: imageCropComp
         Item {
+            // Both decodes: the probe for the size, and the visible image,
+            // which is a separate load because of its clip rect.
+            readonly property bool loaded:
+                (cropProbe.status === Image.Ready || cropProbe.status === Image.Error)
+                && (cropShown.status === Image.Ready || cropShown.status === Image.Error)
             // Natural-size probe: no sourceSize cap, no clip, never painted. Its
             // implicit size IS the source's true pixel dimensions.
             Image {
@@ -197,6 +210,7 @@ Item {
                 visible: false
             }
             Image {
+                id: cropShown
                 anchors.fill: parent
                 source: "file:///" + root.mediaPath
                 fillMode: root._imgFill()
@@ -235,6 +249,26 @@ Item {
             id: vwrap
             anchors.fill: parent
             clip: root._cropped
+
+            // True once a frame from THIS item's player has arrived.
+            // Attaching to a player that is already running pushes its
+            // current frame straight away (MediaPlaybackService::
+            // attachOutput). Keyed on the url, because the Loader keeps this
+            // item when only the path changes and the old video's frames
+            // must not count for the new one.
+            property string _frameUrl: ""
+            readonly property bool loaded: _frameUrl.length > 0
+                                        && _frameUrl === root.activeUrl
+                                        && root.activeUrl === root._videoUrl()
+            Connections {
+                target: vo.videoSink
+                function onVideoFrameChanged() {
+                    // An empty frame (sent on stop or a source change) has
+                    // no size and doesn't count.
+                    if (root.sharedToken >= 0 && vo.videoSink.videoSize.width > 0)
+                        vwrap._frameUrl = root.activeUrl
+                }
+            }
 
             VideoOutput {
                 id: vo

@@ -357,7 +357,7 @@ Rectangle {
             // scroll padding on the last row.
             anchors.bottomMargin: Theme.space.xs
             visible: ScheduleService.currentItems.length > 0
-            model: ScheduleService.currentItems
+            model: ScheduleService.itemsModel
             clip: true
             cacheBuffer: 200
             boundsBehavior: Flickable.StopAtBounds
@@ -379,12 +379,10 @@ Rectangle {
                 return Math.max(0, Math.min(count - 1, draggedRow + delta))
             }
 
-            // Bring a freshly-appended row into view. Without this the
-            // operator adds an item and the schedule jumps to the top: the
-            // model is a QVariantList replaced wholesale on every mutation,
-            // so the ListView regenerates and contentY resets to 0. Contain
-            // scrolls the minimum needed, which for an appended row means
-            // settling on the bottom edge exactly where the new item is.
+            // Bring a freshly-appended row into view, so an item added to a
+            // long schedule doesn't land out of sight. Contain scrolls the
+            // minimum needed, which for an appended row means settling on
+            // the bottom edge exactly where the new item is.
             Connections {
                 target: AppState
                 function onScheduleItemAppended(index) {
@@ -405,19 +403,22 @@ Rectangle {
 
             delegate: ScheduleRow {
                 width: list.width - Theme.size.scrollBar
+                // The row's item, read once: each model.entry read converts
+                // the whole map to a JS object again.
+                readonly property var _entry: model.entry
                 rowIndex: index
-                title:    modelData.title    || ""
-                subtitle: modelData.subtitle || ""
-                kind:     modelData.kind     || ""
+                title:    _entry.title    || ""
+                subtitle: _entry.subtitle || ""
+                kind:     _entry.kind     || ""
                 isLive:   AppState.liveScheduleIndex === index
                 isSelected: AppState.selectedScheduleIndices.indexOf(index) >= 0
                 isPrimarySelected: AppState.selectedScheduleIndex === index
                 hasThemeOverride: {
-                    const t = modelData.themeId
+                    const t = _entry.themeId
                     return (typeof t === "number" && t > 0)
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
-                hasContentOverride: modelData.contentOverride === true
+                hasContentOverride: _entry.contentOverride === true
                 selectionMode: root.selectionMode || root.selectMode
 
                 // Checkbox: toggles this row in or out of the selection
@@ -630,18 +631,16 @@ Rectangle {
                         }
                         return
                     }
+                    // A single row goes through the same remapping, so the
+                    // rows it passes keep their selection and the Live badge
+                    // stays on the live item even when that item is one of
+                    // the rows that shifted.
                     if (target >= 0 && target !== i) {
-                        ScheduleService.moveItem(i, target)
-                        // Carry selection across the move so the primary
-                        // selection still points at the dragged item visually.
-                        if (AppState.selectedScheduleIndex === i) {
-                            AppState.selectScheduleItem(target)
-                        }
-                        // Live pointer too — if we re-order the row that's
-                        // currently Live, the badge needs to follow.
-                        if (AppState.liveScheduleIndex === i) {
-                            AppState.liveScheduleIndex = target
-                        }
+                        let order = []
+                        for (let k = 0; k < list.count; k++) order.push(k)
+                        order.splice(i, 1)
+                        order.splice(target, 0, i)
+                        AppState.applyScheduleOrder(order)
                     }
                 }
             }

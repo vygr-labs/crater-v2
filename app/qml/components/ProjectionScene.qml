@@ -2,37 +2,26 @@ import QtQuick
 import Crater
 
 // Reusable projection scene — the canvas-native render surface shared by
-// ProjectionWindow (audience display) and NdiCanvas (NDI broadcast in dual
-// output mode). Drives a two-layer transition between the previous and
-// current live content, with the style (cut / crossfade / fade-through-
-// black) and duration resolved per output via OutputService.
+// ProjectionWindow (audience display), OutputWindow (extra outputs) and the
+// headless NDI renderer. Drives a two-layer transition between the outgoing
+// and incoming live content, with the style (cut / crossfade / fade-through-
+// black) and duration resolved per output AND per content type (lyrics,
+// scripture, media, logo, clear) via OutputService.
 //
 // outputKind here is an output id from the OutputService registry —
 // "primary", "ndi", "stage", or any dynamically-registered output. Each
-// registered output carries its own transition style + duration on its
+// registered output carries its own transition settings on its
 // OutputBinding, so a fourth output costs zero changes here.
-//   "primary" → output("primary").transitionStyle / .transitionDurationMs
-//   "ndi"     → output("ndi").{...}   (relevant in outputMode==="dual";
-//                in single mode NDI inherits primary's scene wholesale,
-//                so this binding isn't reached)
-//   "stage"   → output("stage").{...} (reserved for v1.1 multi-output)
 //
-// The same component instantiates in both consumer windows; only the
-// outputKind property differs. That keeps the rendering source-of-truth
-// singular even as the two outputs can independently set their own theme
-// pin AND their own transition feel — e.g. operator can have Primary
-// crossfade slowly for the audience and NDI cut instantly for stream
-// production.
-//
-// Why two layers (current + previous) rather than snapshot-and-fade: a
-// snapshot of the outgoing video freezes mid-fade, which looks worse than
-// a hard cut for any item where motion matters. Keeping the outgoing
-// content live (just fading its opacity) lets video → image / image →
-// video / video → video crossfades stay in motion through the transition.
+// Why two layers rather than snapshot-and-fade: a snapshot of the outgoing
+// video freezes mid-fade, which looks worse than a hard cut for any item
+// where motion matters. Keeping the outgoing content live (just fading its
+// opacity) lets video → image / image → video / video → video crossfades
+// stay in motion through the transition.
 //
 // SettingsService.reduceMotion is an accessibility override: when true,
 // every output collapses to "cut" with 0 ms regardless of the per-output
-// pins. Mirrors the standard prefers-reduced-motion semantic.
+// settings. Mirrors the standard prefers-reduced-motion semantic.
 Item {
     id: scene
 
@@ -43,43 +32,49 @@ Item {
     // regardless of how the scene is letterboxed into its host window.
     property alias renderItem: stage
 
-    // ── Per-output transition resolution ────────────────────────────────
-    // Reads style + duration off the OutputBinding identified by
-    // outputKind. _outputsRev forces re-evaluation when any binding in
-    // the registry mutates (theme slots, transitions, additions,
-    // removals). reduceMotion overrides both to "cut" / 0 ms.
-    property int _outputsRev: 0
-    Connections {
-        target: OutputService
-        function onOutputsChanged() { scene._outputsRev++ }
+    // ── Per-output, per-type transition resolution ──────────────────────
+    // Each output keeps a style and duration for each content type:
+    // lyrics, scripture, media, logo and clear (OutputService
+    // transitionStyleFor / transitionDurationFor). Reading
+    // OutputService.outputs makes these re-evaluate on outputsChanged, so a
+    // change in Settings reaches the next transition. Reduce Motion turns
+    // every one of them into a cut.
+    function _styleFor(type) {
+        OutputService.outputs  // dep
+        if (SettingsService.reduceMotion) return "cut"
+        return OutputService.transitionStyleFor(outputKind, type)
     }
-    readonly property string _outStyle: {
-        _outputsRev  // dep
-        return OutputService.transitionStyle(outputKind)
+    function _msFor(type) {
+        OutputService.outputs  // dep
+        if (SettingsService.reduceMotion) return 0
+        return _styleFor(type) === "cut" ? 0 : OutputService.transitionDurationFor(outputKind, type)
     }
-    readonly property int _outMs: {
-        _outputsRev  // dep
-        return OutputService.transitionDurationMs(outputKind)
-    }
-    readonly property string _style: SettingsService.reduceMotion ? "cut" : _outStyle
-    readonly property int    _ms:    SettingsService.reduceMotion ? 0     : _outMs
 
-    // Duration used by passive (non-transition) fades inside the scene —
-    // logo show/hide AND the per-text-node clear fade. "cut" coerces to 0
-    // so picking that style genuinely makes the whole projection feel
-    // instant; any fade style inherits the per-output content duration so
-    // the scene feels coherent end to end.
-    readonly property int _passiveMs: _style === "cut" ? 0 : _ms
+    // Which transition type a content kind uses.
+    function _typeForKind(kind) {
+        switch (kind) {
+            case "song":         return "lyrics"
+            case "scripture":
+            case "strongs":      return "scripture"
+            case "image":
+            case "video":
+            case "pdf":
+            case "presentation": return "media"
+        }
+        return ""
+    }
+
+    // Logo and Clear aren't content swaps, they're fades on top of whatever
+    // is live, so they read their own types straight off the output.
+    readonly property string _logoStyle: _styleFor("logo")
+    readonly property int    _logoMs:    _msFor("logo")
+    readonly property int    _clearMs:   _msFor("clear")
 
     // ── Live state mirrors ──────────────────────────────────────────────
-    // Bound to ProjectionService Q_PROPERTYs; the transition controller
-    // reads these when promoting layers but the layers themselves do NOT
-    // bind to them directly (the scene is the single mediator that copies
-    // values into the current layer with each animation kickoff).
-    readonly property var    _liveItem: ProjectionService.currentItem
-    readonly property string _liveKind: ProjectionService.contentKind
-    readonly property int    _livePage: ProjectionService.pageIndex
-    readonly property rect   _liveCrop: ProjectionService.cropRect
+    // Only the logo and clear flags are mirrored. The transition controller
+    // reads ProjectionService directly inside its handler instead of going
+    // through mirrors, because mirrors bound to the same stateChanged signal
+    // aren't guaranteed to have updated when the handler runs.
     readonly property bool   _showLogo: ProjectionService.showLogo
     readonly property bool   _isClear:  ProjectionService.isClear
 
@@ -108,16 +103,16 @@ Item {
     }
 
     // ── Canvas size ─────────────────────────────────────────────────────
-    // Tracks the CURRENT layer's theme canvas — never the previous one.
-    // If the new item has a different canvas size, the letterbox snaps to
-    // the new size and the outgoing layer renders into it (it'll be
-    // squished/stretched during the brief fade, but it's at opacity → 0
-    // either way so the visual impact is negligible). Tracking the
-    // current layer matches "transitions describe the destination" UX.
+    // Tracks the shown layer's theme canvas. When the new item has a
+    // different canvas size, the letterbox snaps to it as the fade starts
+    // and the outgoing layer renders into it (squished during the brief
+    // fade, but it's fading out either way). Waiting for the fade, rather
+    // than the commit, keeps the old content undistorted while the new one
+    // loads.
     readonly property var _canvas: {
-        if (currentLayer && currentLayer.theme && currentLayer.theme.tokens
-            && currentLayer.theme.tokens.canvas) {
-            return currentLayer.theme.tokens.canvas
+        if (shownLayer && shownLayer.theme && shownLayer.theme.tokens
+            && shownLayer.theme.tokens.canvas) {
+            return shownLayer.theme.tokens.canvas
         }
         return { width: 1920, height: 1080 }
     }
@@ -199,78 +194,191 @@ Item {
     }
 
     function _buildTag(item, kind, page, crop) {
+        return _identityTag(item, kind, page, crop) + "|" + _contentFingerprint(item)
+    }
+    // "Which slide is this", ignoring how it's rendered. The title and the
+    // page text are part of it because a verse picked in the library carries
+    // no verse numbers in its scriptureRef, so _itemIdentity alone gives
+    // every verse of a chapter the same identity.
+    function _identityTag(item, kind, page, crop) {
+        const pages = item && item.pages ? item.pages : []
+        const p = pages.length > 0 ? pages[Math.min(page, pages.length - 1)] : null
         return _itemIdentity(item, kind)
              + "|" + kind
              + "|" + page
              + "|" + crop.x + "," + crop.y + "," + crop.width + "," + crop.height
-             + "|" + _contentFingerprint(item)
+             + "|" + (item ? (item.title || "") : "")
+             + "|" + (p ? (p.content || "") : "")
+    }
+
+    // ── Layers ──────────────────────────────────────────────────────────
+    // Two layers, layerA and layerB, that take turns. New content always
+    // goes into the layer that isn't on air, which then fades in ON TOP of
+    // the one that is. The outgoing layer is never rewritten, so it keeps
+    // painting exactly what the audience was looking at until the fade
+    // covers it. (The scene used to copy the outgoing content into a second
+    // layer, which rebuilt it from scratch at full opacity and could blink
+    // before the fade even started.)
+    //
+    // currentLayer is the layer holding the newest content. shownLayer
+    // (below) is the one the audience is being shown.
+    property bool _aIsCurrent: true
+    readonly property var currentLayer:  _aIsCurrent ? layerA : layerB
+    readonly property var previousLayer: _aIsCurrent ? layerB : layerA
+    // The layer the audience is being shown, which only moves to the new
+    // layer when its fade actually starts. The letterbox and the no-theme
+    // message follow this, so they don't change under the old content
+    // while the new one is still loading.
+    property bool _aIsShown: true
+    readonly property var shownLayer: _aIsShown ? layerA : layerB
+
+    // True from the moment new content is committed until its fade ends,
+    // including the wait for the new layer to load.
+    property bool _transitioning: false
+    // Fixed when a fade starts so a settings change mid-fade can't stretch
+    // or cut short the one already running.
+    property string _runStyle: "crossfade"
+    property int    _runMs: 0
+    property string _lastIdentity: ""
+    property bool   _skipFadeOut: false
+
+    // Audio is not touched here: it moves to the new layer only when the
+    // picture does, in _runTransition, so a video doesn't go quiet while it
+    // is still on screen and the next one isn't heard before it is seen.
+    function _setContent(layer, item, kind, page, crop) {
+        layer.layerItem = item
+        layer.layerKind = kind
+        layer.layerPage = page
+        layer.layerCrop = crop
     }
 
     function _promoteLayers() {
-        const newTag = scene._buildTag(scene._liveItem, scene._liveKind,
-                                       scene._livePage, scene._liveCrop)
-        if (newTag === scene._lastTag) return
-        scene._lastTag = newTag
+        const item = ProjectionService.currentItem
+        const kind = ProjectionService.contentKind
+        const page = ProjectionService.pageIndex
+        const crop = ProjectionService.cropRect
+        const newTag = _buildTag(item, kind, page, crop)
+        if (newTag === _lastTag) return
+        const identity  = _identityTag(item, kind, page, crop)
+        const sameSlide = identity === _lastIdentity
+        _lastTag      = newTag
+        _lastIdentity = identity
 
-        // Stop any in-flight animations so opacities aren't being driven
-        // by a stale animation while a new one starts. If the operator
-        // hits PageDown three times in 200 ms each press cleanly takes
-        // over from the previous fade rather than queueing.
+        // The app re-commits the slide that just went live (a theme sync, a
+        // scripture relayout) moments after the go-live itself. Mid-fade
+        // that is the same destination, so update what is fading in and let
+        // the running fade finish, instead of restarting it as a new one.
+        if (sameSlide && _transitioning) {
+            _setContent(currentLayer, item, kind, page, crop)
+            return
+        }
+
+        // The incoming kind picks the type. Going to nothing uses the type
+        // of what is leaving.
+        const type = _typeForKind(kind) || _typeForKind(currentLayer.layerKind) || "lyrics"
+        let style = _styleFor(type)
+        // The same slide re-rendered (a theme change, a relayout, an edit to
+        // the live song) never fades through black, which would flash the
+        // screen for what is a small change.
+        if (sameSlide && style === "fadeBlack") style = "crossfade"
+        _runStyle = style
+        _runMs    = style === "cut" ? 0 : _msFor(type)
+
         transitionParallel.stop()
         transitionSequence.stop()
 
-        // Snapshot the old "current" content into "previous". This is the
-        // moment that breaks the layer's bindings from the live state —
-        // both layers now hold imperative snapshots; only the scene mutates
-        // them on the next transition.
-        previousLayer.layerItem    = currentLayer.layerItem
-        previousLayer.layerKind    = currentLayer.layerKind
-        previousLayer.layerPage    = currentLayer.layerPage
-        previousLayer.layerCrop    = currentLayer.layerCrop
-        previousLayer.audioEnabled = false
-
-        // Promote new live state into the current layer.
-        currentLayer.layerItem    = scene._liveItem
-        currentLayer.layerKind    = scene._liveKind
-        currentLayer.layerPage    = scene._livePage
-        currentLayer.layerCrop    = scene._liveCrop
-        currentLayer.audioEnabled = true
-
-        // Pick the animation. With cut OR 0 ms duration, hard-set opacities
-        // and skip the animation entirely — that avoids a 1-frame mid-value
-        // flicker that a 0-duration NumberAnimation can produce on some
-        // QRhi backends.
-        if (scene._style === "cut" || scene._ms <= 0) {
-            previousLayer.opacity = 0
-            currentLayer.opacity  = 1
-            scene._releasePrevious()
+        // Mid-transition there are two layers on screen and only two layers,
+        // so one of them has to take the new content. Replace whichever
+        // shows less of the picture: the incoming layer on top contributes
+        // its opacity, the outgoing one underneath what shows through it.
+        // The visible jump is then never more than the smaller share.
+        const inShare  = currentLayer.opacity
+        const outShare = previousLayer.opacity * (1 - currentLayer.opacity)
+        if (_transitioning && inShare < outShare) {
+            // Still mostly the old content: keep it as the outgoing layer
+            // and swap what is fading in. The fade carries on from where it
+            // got to. The old content keeps the sound until then.
+            _setContent(currentLayer, item, kind, page, crop)
+            currentLayer.audioEnabled  = false
+            previousLayer.audioEnabled = true
         } else {
-            // Reset opacities to their start values BEFORE restart() so the
-            // animation interpolates from a known state regardless of where
-            // the previous (interrupted) animation left them.
-            previousLayer.opacity = 1
-            currentLayer.opacity  = 0
-            if (scene._style === "fadeBlack") {
-                transitionSequence.restart()
-            } else {
-                transitionParallel.restart()
+            // Nothing in flight, or the incoming content is already most of
+            // the picture: that becomes the outgoing layer at full opacity.
+            const out = currentLayer
+            const inc = previousLayer
+            out.opacity = 1
+            out.z = 0
+            inc.opacity = 0
+            inc.z = 1
+            inc.audioEnabled = false
+            _setContent(inc, item, kind, page, crop)
+            _aIsCurrent = !_aIsCurrent
+            _aIsShown   = !_aIsCurrent
+        }
+        _transitioning = true
+        // One deadline per wait. A stream of re-commits while media loads
+        // must not keep pushing it back and hold the old content up.
+        if (!readyPoll.running) _readyDeadline = Date.now() + _readyTimeoutMs
+        readyPoll.restart()
+    }
+
+    // ── Waiting for the new layer ───────────────────────────────────────
+    // The fade starts once the incoming layer reports everything loaded, or
+    // after _readyTimeoutMs so a broken file can't hold the screen. Polled
+    // rather than signalled: readiness is spread over every picture and
+    // video in the layer's tree, and a 16 ms poll for a few frames is
+    // cheaper than wiring each one up. Always at least one tick, so text
+    // fitting (done on completion) has settled first.
+    readonly property int _readyTimeoutMs: 600
+    property real _readyDeadline: 0
+    // Videos that never produced a frame within the timeout (a missing file,
+    // a codec the player can't open). Not waited for again this session.
+    property var _stalledUrls: ({})
+    Timer {
+        id: readyPoll
+        interval: 16
+        repeat: true
+        onTriggered: {
+            if (!scene.currentLayer.isReady(scene._stalledUrls)) {
+                if (Date.now() < scene._readyDeadline) return
+                const stalled = scene.currentLayer.pendingUrls()
+                for (let i = 0; i < stalled.length; ++i) scene._stalledUrls[stalled[i]] = true
             }
+            stop()
+            scene._runTransition()
         }
     }
 
-    // Empty the outgoing layer once it has faded out. Until this existed the
-    // previous layer kept its snapshot at opacity 0 until the NEXT
+    function _runTransition() {
+        _aIsShown = _aIsCurrent
+        previousLayer.audioEnabled = false
+        currentLayer.audioEnabled  = true
+        // Interrupted in the black half of a fade through black: the old
+        // content is already gone, so skip straight to fading in.
+        _skipFadeOut = previousLayer.opacity <= 0.001
+        if (_runStyle === "cut" || _runMs <= 0) {
+            currentLayer.opacity = 1
+            _finishTransition()
+            return
+        }
+        if (_runStyle === "fadeBlack") transitionSequence.restart()
+        else                           transitionParallel.restart()
+    }
+
+    // Empty the outgoing layer once it is fully covered. Until this existed
+    // the previous layer kept its content at opacity 0 until the NEXT
     // transition, so a video that went off air kept its MediaPlaybackService
     // subscription and carried on decoding invisibly (and a later go-live of
-    // the same file joined a player that had kept running). Called on a cut
-    // straight away, and on a fade when the animation completes on its own.
-    // An interrupted fade needs nothing: the next promotion overwrites the
-    // previous layer anyway.
-    function _releasePrevious() {
-        previousLayer.layerItem = ({})
-        previousLayer.layerKind = ""
-        previousLayer.layerPage = 0
-        previousLayer.layerCrop = Qt.rect(0, 0, 1, 1)
+    // the same file joined a player that had kept running).
+    function _finishTransition() {
+        const out = previousLayer
+        out.opacity = 0
+        out.audioEnabled = false
+        out.layerItem = ({})
+        out.layerKind = ""
+        out.layerPage = 0
+        out.layerCrop = Qt.rect(0, 0, 1, 1)
+        _transitioning = false
     }
 
     Connections {
@@ -283,48 +391,60 @@ Item {
         // has live content at scene-construction time (e.g. scene re-opens
         // mid-service), the existing item shows immediately — no spurious
         // fade-in from nothing.
-        scene._lastTag = scene._buildTag(scene._liveItem, scene._liveKind,
-                                         scene._livePage, scene._liveCrop)
-        currentLayer.layerItem    = scene._liveItem
-        currentLayer.layerKind    = scene._liveKind
-        currentLayer.layerPage    = scene._livePage
-        currentLayer.layerCrop    = scene._liveCrop
-        currentLayer.audioEnabled = true
-        currentLayer.opacity      = 1
-        previousLayer.opacity     = 0
+        const item = ProjectionService.currentItem
+        const kind = ProjectionService.contentKind
+        const page = ProjectionService.pageIndex
+        const crop = ProjectionService.cropRect
+        _lastTag      = _buildTag(item, kind, page, crop)
+        _lastIdentity = _identityTag(item, kind, page, crop)
+        _setContent(layerA, item, kind, page, crop)
+        layerA.audioEnabled = true
+        layerA.opacity = 1
+        layerA.z = 1
+        layerB.opacity = 0
+        layerB.z = 0
+        _aIsCurrent = true
+        _aIsShown   = true
     }
 
     // ── Animations ──────────────────────────────────────────────────────
-    // Targeted by name (target/property) rather than `on opacity` Behaviors
-    // because the controller needs explicit start/stop control and a single
-    // animation that can be reused across many transitions.
+    // Crossfade: the incoming layer fades in on top while the outgoing one
+    // fades out underneath, on mirrored curves. The incoming rises early
+    // (OutQuad) and the outgoing holds late (InQuad), so halfway through
+    // both are at 75% and the picture stays solid. Fading both on the same
+    // curve, as before, let a quarter of the black window show through
+    // mid-fade, so even two slides on the same background dipped. Fading
+    // the outgoing at all (rather than leaving it at full under the
+    // incoming) stops letterboxed media from popping off at the end.
+    //
+    // The targets are bound to currentLayer / previousLayer, which only
+    // change in _promoteLayers after both animations are stopped.
     ParallelAnimation {
         id: transitionParallel
-        onFinished: scene._releasePrevious()
+        onFinished: scene._finishTransition()
         NumberAnimation {
-            target: previousLayer; property: "opacity"; to: 0
-            duration: scene._ms; easing.type: Easing.InOutCubic
+            target: scene.currentLayer; property: "opacity"; to: 1
+            duration: scene._runMs; easing.type: Easing.OutQuad
         }
         NumberAnimation {
-            target: currentLayer; property: "opacity"; to: 1
-            duration: scene._ms; easing.type: Easing.InOutCubic
+            target: scene.previousLayer; property: "opacity"; to: 0
+            duration: scene._runMs; easing.type: Easing.InQuad
         }
     }
-    // Fade-through-black: outgoing finishes its fade BEFORE incoming
-    // starts. Each phase gets half the total duration so the overall
-    // transition still matches _ms (so the operator's mental model —
-    // "duration is how long the whole thing takes" — holds across styles).
-    // Math.max(1, …) avoids a 0-duration phase when _ms is very small.
+    // Fade through black: the outgoing finishes fading before the incoming
+    // starts, half the duration each, so the whole thing still takes the
+    // set duration.
     SequentialAnimation {
         id: transitionSequence
-        onFinished: scene._releasePrevious()
+        onFinished: scene._finishTransition()
         NumberAnimation {
-            target: previousLayer; property: "opacity"; to: 0
-            duration: Math.max(1, scene._ms / 2); easing.type: Easing.InOutCubic
+            target: scene.previousLayer; property: "opacity"; to: 0
+            duration: scene._skipFadeOut ? 1 : Math.max(1, scene._runMs / 2)
+            easing.type: Easing.InOutCubic
         }
         NumberAnimation {
-            target: currentLayer; property: "opacity"; to: 1
-            duration: Math.max(1, scene._ms / 2); easing.type: Easing.InOutCubic
+            target: scene.currentLayer; property: "opacity"; to: 1
+            duration: Math.max(1, scene._runMs / 2); easing.type: Easing.InOutCubic
         }
     }
 
@@ -362,45 +482,52 @@ Item {
             // content stack as a single unit — preserving the pre-extraction
             // behavior where toggling the logo dimmed everything beneath it,
             // not just the active node graph.
+            //
+            // The logo's own type sets the fade. With fade through black the
+            // content goes out first and the logo comes in after it (and the
+            // other way round when the logo goes off), so whichever side is
+            // fading IN waits out the first half.
             Item {
                 id: contentLayer
                 anchors.fill: parent
                 opacity: scene._showLogo ? 0 : 1
                 Behavior on opacity {
-                    NumberAnimation {
-                        duration: scene._passiveMs
-                        easing.type: Easing.InOutCubic
+                    id: contentLogoFade
+                    SequentialAnimation {
+                        PauseAnimation {
+                            duration: (scene._logoStyle === "fadeBlack" && contentLogoFade.targetValue > 0.5)
+                                      ? scene._logoMs / 2 : 0
+                        }
+                        NumberAnimation {
+                            duration: scene._logoStyle === "fadeBlack" ? scene._logoMs / 2 : scene._logoMs
+                            easing.type: Easing.InOutCubic
+                        }
                     }
                 }
 
-                // Both layers are full-stage; opacity is driven imperatively
-                // by the transition controller. previousLayer renders below
-                // currentLayer in QML z-order (declaration order); for
-                // crossfade that's irrelevant, but for fadeBlack the
-                // order means the previous layer is on top as it fades to
-                // 0 (so the brief black moment is naturally produced by
-                // both being at 0).
+                // Both layers are full stage and swap roles each transition.
+                // z and opacity are set by the transition controller.
                 ProjectionContentLayer {
-                    id: previousLayer
+                    id: layerA
                     anchors.fill: parent
                     outputKind:    scene.outputKind
                     themeRevision: scene._themeRevision
-                    passiveFadeMs: scene._passiveMs
-                    opacity:       0
+                    passiveFadeMs: scene._clearMs
+                    opacity:       1
                 }
                 ProjectionContentLayer {
-                    id: currentLayer
+                    id: layerB
                     anchors.fill: parent
                     outputKind:    scene.outputKind
                     themeRevision: scene._themeRevision
-                    passiveFadeMs: scene._passiveMs
-                    opacity:       1
+                    passiveFadeMs: scene._clearMs
+                    opacity:       0
                 }
             }
 
             // ── No-theme fallback ───────────────────────────────────────
-            // Reads from the CURRENT layer's resolved theme — during a
-            // transition the message describes the destination, not the
+            // Reads from the shown layer's resolved theme — once a fade
+            // starts the message describes the destination, not the
             // outgoing one. Without this, the projection would be silently
             // black when an operator goes live on a song/scripture before
             // setting a default theme for that kind. Mirrors Electron's
@@ -412,10 +539,10 @@ Item {
                 width: parent.width - 80
                 visible: !scene._isClear
                       && !scene._showLogo
-                      && (currentLayer.layerKind === "song" || currentLayer.layerKind === "scripture"
-                          || currentLayer.layerKind === "strongs")
-                      && (!currentLayer.theme || (currentLayer.theme.id || 0) === 0)
-                text: qsTr("Default %1 theme has not been set").arg(currentLayer.layerKind)
+                      && (shownLayer.layerKind === "song" || shownLayer.layerKind === "scripture"
+                          || shownLayer.layerKind === "strongs")
+                      && (!shownLayer.theme || (shownLayer.theme.id || 0) === 0)
+                text: qsTr("Default %1 theme has not been set").arg(shownLayer.layerKind)
                            .toUpperCase()
                 color: "#ffffff"
                 horizontalAlignment: Text.AlignHCenter
@@ -426,9 +553,9 @@ Item {
             }
 
             // ── Logo overlay ────────────────────────────────────────────
-            // Sits above the content stack. Its own opacity fade uses the
-            // scene's passive duration so a cut style makes the logo toggle
-            // instant too. active gates the video decoder; opacity drives
+            // Sits above the content stack. Its fade uses the output's Logo
+            // transition (see contentLayer above for the fade through black
+            // ordering). active gates the video decoder; opacity drives
             // the fade so the decoder doesn't bounce on every fade tick.
             //
             // Logo visibility is independent of isClear — clearing only
@@ -442,9 +569,16 @@ Item {
                 // in, so the audience never sees the black matte first.
                 opacity: (scene._showLogo && logoView.ready) ? 1.0 : 0.0
                 Behavior on opacity {
-                    NumberAnimation {
-                        duration: scene._passiveMs
-                        easing.type: Easing.InOutCubic
+                    id: logoFade
+                    SequentialAnimation {
+                        PauseAnimation {
+                            duration: (scene._logoStyle === "fadeBlack" && logoFade.targetValue > 0.5)
+                                      ? scene._logoMs / 2 : 0
+                        }
+                        NumberAnimation {
+                            duration: scene._logoStyle === "fadeBlack" ? scene._logoMs / 2 : scene._logoMs
+                            easing.type: Easing.InOutCubic
+                        }
                     }
                 }
             }

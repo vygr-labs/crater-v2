@@ -26,8 +26,8 @@ constexpr Playlist kPlaylists[] = {
 };
 
 constexpr const char* kChannel = "https://www.youtube.com/@craterbibleproject";
-constexpr const char* kDocs    = "https://crater.voyagerlabs.tech/";
-constexpr const char* kWebsite = "https://crater.voyagerlabs.tech/";
+constexpr const char* kDocs    = "https://getcrater.org/docs/";
+constexpr const char* kWebsite = "https://getcrater.org/";
 
 }  // namespace
 

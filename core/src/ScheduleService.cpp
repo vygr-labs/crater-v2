@@ -40,6 +40,20 @@ QVariantList toVariantList(const QJsonArray& arr)
 // Media rows snapshot the managed file's absolute path (`mediaPath`) at the
 // time they were added. Repoint them at the current media folder so a data
 // folder restored under another profile keeps playing its pictures and video.
+// Every row gets an id. addItem has always given new rows one, but rows
+// saved before that have none, and the schedule list model tells rows apart
+// by id: without one, reordering those rows looked like edits in place.
+QJsonArray withIds(QJsonArray items)
+{
+    for (qsizetype i = 0; i < items.size(); ++i) {
+        QJsonObject obj = items.at(i).toObject();
+        if (!obj.value(QStringLiteral("id")).toString().isEmpty()) continue;
+        obj.insert(QStringLiteral("id"), QUuid::createUuid().toString(QUuid::WithoutBraces));
+        items[i] = obj;
+    }
+    return items;
+}
+
 QJsonArray relocateMediaPaths(QJsonArray items)
 {
     const QString mediaDir = db::DbPaths::mediaDir();
@@ -123,7 +137,7 @@ struct ScheduleService::Impl
         if (loadCurrent.step()) {
             const QByteArray json = loadCurrent.columnText(0).toUtf8();
             const auto doc = QJsonDocument::fromJson(json);
-            if (doc.isArray()) items = relocateMediaPaths(doc.array());
+            if (doc.isArray()) items = withIds(relocateMediaPaths(doc.array()));
         }
         // Close the cursor. This SELECT is only ever stepped here, so leaving
         // it in the SQLITE_ROW state would hold a read transaction open and
@@ -160,7 +174,10 @@ struct ScheduleService::Impl
 
 ScheduleService::ScheduleService(QObject* parent)
     : QObject(parent)
+    , m_itemsModel(new ScheduleItemsModel(this))
 {
+    connect(this, &ScheduleService::currentItemsChanged, m_itemsModel,
+            [this] { m_itemsModel->sync(currentItems()); });
     try {
         m_impl = std::make_unique<Impl>(db::DbPaths::appDbPath());
 
@@ -169,6 +186,7 @@ ScheduleService::ScheduleService(QObject* parent)
         connect(&m_impl->autoSaveTimer, &QTimer::timeout,
                 this, &ScheduleService::onAutoSaveTick);
         m_impl->autoSaveTimer.start();
+        m_itemsModel->sync(currentItems());
     } catch (const db::Error& e) {
         qCritical().noquote() << "ScheduleService: failed to open DB —" << e.message();
     }
@@ -392,7 +410,7 @@ void ScheduleService::load(qint64 scheduleId)
         const QByteArray json = stmt.columnText(0).toUtf8();
         stmt.reset();   // close cursor before the saveCurrentNow() write below
         const auto doc = QJsonDocument::fromJson(json);
-        m_impl->items = doc.isArray() ? relocateMediaPaths(doc.array()) : QJsonArray{};
+        m_impl->items = doc.isArray() ? withIds(relocateMediaPaths(doc.array())) : QJsonArray{};
 
         // Round-trip to fetch the name. We could thread the name through
         // every load() call site, but the round-trip is sub-ms and keeps
