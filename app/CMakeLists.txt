@@ -70,10 +70,15 @@ qt_add_executable(crater
 # Crater mark show up in File Explorer, on the start-menu shortcut,
 # and on the taskbar before QML loads. Non-Windows platforms ignore
 # this entirely.
+# The .rc is generated from crater.rc.in so its version block carries
+# project()'s version, and its icon path is absolute because the generated
+# file lives in the build tree.
 if(WIN32)
-    target_sources(crater PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.rc
-    )
+    set(CRATER_ICO "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.ico")
+    file(TO_CMAKE_PATH "${CRATER_ICO}" CRATER_ICO)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../packaging/crater.rc.in
+                   ${CMAKE_CURRENT_BINARY_DIR}/crater.rc @ONLY)
+    target_sources(crater PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/crater.rc)
 endif()
 
 # Mark singletons before qt_add_qml_module so the metadata is honored.
@@ -132,6 +137,8 @@ qt_add_qml_module(crater
         qml/controls/SelectionBar.qml
         qml/controls/SelectModeToggle.qml
         qml/controls/CheckRow.qml
+        qml/controls/PanelSplitter.qml
+        qml/controls/CollapsedRail.qml
 
         # ── Theme-rendering components (shared by ProjectionWindow,
         #    ThemesTab tiles, and the theme editor canvas) ─────────────

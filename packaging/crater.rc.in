@@ -1,0 +1,51 @@
+// Crater application icon and version information. Embedded into crater.exe by the Windows resource
+// compiler — visible to File Explorer, Programs & Features (via the .iss's
+// UninstallDisplayIcon={app}\crater.exe directive), Start menu / desktop
+// shortcuts, and the taskbar before the QML engine takes over. The runtime
+// icon for QML windows is set via QApplication::setWindowIcon() in main.cpp
+// using the qrc-bundled copy at qrc:/brand/crater.ico — same source asset,
+// loaded a different way so parity holds across platforms (the .rc only
+// runs through Windows' resource compiler; macOS / Linux pick up the qrc
+// path from setWindowIcon).
+//
+// Resource id `1` (numeric, not the named `IDI_APPLICATION` constant) is
+// intentional: Windows picks the icon resource with the alphabetically-
+// lowest numeric id as the .exe's file-icon. Using `1` keeps us the
+// lowest no matter what any future-linked library tries to add.
+1 ICON "@CRATER_ICO@"
+
+// Version information. Windows reads FileDescription wherever it names the
+// program instead of its window: the firewall's "allow access" prompt, Task
+// Manager, the "Open with" list. Without this block it fell back to the file
+// name, so those all said "crater". Filled in from project() by
+// app/CMakeLists.txt (configure_file), so the version never drifts.
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Voyager Labs"
+            VALUE "FileDescription",  "Crater"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "crater"
+            VALUE "LegalCopyright",   "Voyager Labs"
+            VALUE "OriginalFilename", "crater.exe"
+            VALUE "ProductName",      "Crater"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

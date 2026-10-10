@@ -161,13 +161,12 @@ Rectangle {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+    // Through WindowControls rather than showMaximized() / showNormal(), so
+    // Windows does the maximizing and restore goes back to the size it keeps
+    // (see WindowChrome.h).
     function _toggleMaximize() {
         if (!root._win) return
-        if (root._isMaximized) {
-            root._win.showNormal()
-        } else {
-            root._win.showMaximized()
-        }
+        WindowControls.toggleMaximized(root._win)
     }
 
     function _handleAction(kind) {
@@ -220,17 +219,14 @@ Rectangle {
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
         }
 
-        // Picks the right Lucide glyph for kind + state. The maximize
-        // button shows `copy` (two stacked squares) while the window is
-        // restored and `square` (single outline) while it's maximized —
-        // i.e. the icon previews what the window will look like AFTER
-        // the click: dual-square silhouette for the about-to-spread-out
-        // maximize action, single-square outline for the about-to-
-        // consolidate-down restore action.
+        // Picks the right Lucide glyph for kind + state, following the
+        // Windows caption buttons: a single square (maximize) while the
+        // window is restored, two overlapping squares (`copy`, restore
+        // down) while it is maximized.
         readonly property string _iconName: {
             if (btn.kind === "minimize") return "minus"
             if (btn.kind === "close")    return "x"
-            return btn.isMaximized ? "square" : "copy"
+            return btn.isMaximized ? "copy" : "square"
         }
 
         MouseArea {

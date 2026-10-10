@@ -1,5 +1,6 @@
 #include "WindowChrome.h"
 
+#include <QGuiApplication>
 #include <QQuickWindow>
 
 #ifdef Q_OS_WIN
@@ -14,17 +15,24 @@
 
 #  include <QAbstractNativeEventFilter>
 #  include <QCoreApplication>
+#  include <QRect>
+#  include <QSettings>
+#  include <QTimer>
 
 namespace {
 
-// Watches one HWND and answers the two messages that decide whether Windows
-// draws a frame and how large "maximized" is. Every other message falls
-// through to Qt untouched, and messages for any other window (the projection
-// window, popups, the NDI offscreen surface) are ignored outright.
+// Watches one HWND: answers WM_NCCALCSIZE, which decides whether Windows
+// draws a frame, and notes moves and sizes for restoreWindowPlacement.
+// Every other message falls through to Qt untouched, and messages for any
+// other window (the projection window, popups, the NDI offscreen surface)
+// are ignored outright.
 class ChromeFilter final : public QAbstractNativeEventFilter
 {
 public:
     void watch(HWND hwnd) { m_hwnd = hwnd; }
+    // Restarted on every move and size so the placement is saved once the
+    // window settles (see restoreWindowPlacement). Null until then.
+    void setSaveTimer(QTimer* timer) { m_saveTimer = timer; }
 
     bool nativeEventFilter(const QByteArray& type, void* message, qintptr* result) override
     {
@@ -34,6 +42,11 @@ public:
         if (!msg || msg->hwnd != m_hwnd) return false;
 
         switch (msg->message) {
+        case WM_SIZE:
+        case WM_MOVE:
+            if (m_saveTimer) m_saveTimer->start();
+            return false;
+
         case WM_NCCALCSIZE:
             // wParam TRUE means "given this window rect, tell me the client
             // rect". Returning 0 leaves the proposed rectangle exactly as it
@@ -52,45 +65,51 @@ public:
             }
             return false;
 
-        case WM_GETMINMAXINFO: {
-            // With WS_THICKFRAME on, Windows maximizes to the work area
-            // INFLATED by the resize border it expects to draw. We just told
-            // it there is no border, so that inflation would push the console
-            // a few pixels off every screen edge and under the taskbar.
-            //
-            // Pinning the maximized rect to the monitor work area keeps the
-            // geometry byte-identical to what it was before the frame styles
-            // went on (measured: window rect == work area, zero overshoot),
-            // so this change is invisible in the maximized state it spends
-            // nearly all its time in.
-            //
-            // ptMaxTrackSize is deliberately left alone. Clamping it would
-            // cap the window at the CURRENT monitor's work area, which breaks
-            // Win+Shift+Arrow onto a larger display.
-            HMONITOR mon = MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
-            if (!mon) return false;
-
-            MONITORINFO mi {};
-            mi.cbSize = sizeof(mi);
-            if (!GetMonitorInfoW(mon, &mi)) return false;
-
-            auto* mmi = reinterpret_cast<MINMAXINFO*>(msg->lParam);
-            mmi->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
-            mmi->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
-            mmi->ptMaxSize.x     = mi.rcWork.right - mi.rcWork.left;
-            mmi->ptMaxSize.y     = mi.rcWork.bottom - mi.rcWork.top;
-            *result = 0;
-            return true;
-        }
-
         default:
             return false;
         }
     }
 
 private:
-    HWND m_hwnd = nullptr;
+    HWND    m_hwnd = nullptr;
+    QTimer* m_saveTimer = nullptr;
 };
+
+ChromeFilter* g_filter = nullptr;
+
+constexpr const char* kNormalRect = "Window/normalRect";
+constexpr const char* kMaximized  = "Window/maximized";
+
+// GetWindowPlacement / SetWindowPlacement speak workspace coordinates,
+// which start below or right of a taskbar docked to the top or left of the
+// monitor. This is the shift between those and plain screen coordinates.
+QPoint workspaceOffset(const RECT& r)
+{
+    HMONITOR mon = MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi {};
+    mi.cbSize = sizeof(mi);
+    if (!mon || !GetMonitorInfoW(mon, &mi)) return {};
+    return { int(mi.rcWork.left - mi.rcMonitor.left), int(mi.rcWork.top - mi.rcMonitor.top) };
+}
+
+void savePlacement(HWND hwnd)
+{
+    // Minimized or hidden (closing) says nothing about where the operator
+    // wants the window, so the last good placement stands.
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return;
+    WINDOWPLACEMENT wp {};
+    wp.length = sizeof(wp);
+    if (!GetWindowPlacement(hwnd, &wp)) return;
+
+    const RECT& r = wp.rcNormalPosition;
+    const QPoint off = workspaceOffset(r);
+    const QRect rect(r.left + off.x(), r.top + off.y(), r.right - r.left, r.bottom - r.top);
+    if (rect.width() <= 0 || rect.height() <= 0) return;
+
+    QSettings s;
+    s.setValue(QString::fromLatin1(kNormalRect), rect);
+    s.setValue(QString::fromLatin1(kMaximized), wp.showCmd == SW_SHOWMAXIMIZED);
+}
 
 }  // namespace
 
@@ -107,25 +126,27 @@ void crater::installNativeWindowChrome(QQuickWindow* window)
     // One filter for the app's lifetime. QCoreApplication does not take
     // ownership of a native event filter, so this deliberately leaks a single
     // small object rather than risk a dangling filter during teardown.
-    static ChromeFilter* filter = nullptr;
-    if (!filter) {
-        filter = new ChromeFilter;
-        QCoreApplication::instance()->installNativeEventFilter(filter);
+    if (!g_filter) {
+        g_filter = new ChromeFilter;
+        QCoreApplication::instance()->installNativeEventFilter(g_filter);
     }
-    filter->watch(hwnd);
+    g_filter->watch(hwnd);
 
     // Put the frame styles back:
+    //   WS_CAPTION     — what Windows checks before it animates minimize,
+    //                    maximize and restore. Without it the window jumps.
     //   WS_THICKFRAME  — marks the window resizable. Gates Win+Left/Right.
     //   WS_MAXIMIZEBOX — gates Win+Up and the Win11 snap-layouts flyout.
     //   WS_MINIMIZEBOX — gates Win+Down.
     //   WS_SYSMENU     — restores the taskbar right-click window menu
     //                    (Move / Size / Minimize / Maximize / Close).
-    // WS_CAPTION is intentionally NOT added. Snapping does not need it, and
-    // on a window whose non-client area has been zeroed it can leave a 1px
-    // light line along the top edge in the restored state.
+    // With WS_CAPTION, a maximized window hangs past every screen edge by
+    // the resize border Windows expects to draw (9 px at 125%), the usual
+    // behaviour for captioned windows. Main.qml insets its content by
+    // WindowControls.maximizedInset() to match.
     const LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
     SetWindowLongPtr(hwnd, GWL_STYLE,
-                     style | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX
+                     style | WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZEBOX | WS_MINIMIZEBOX
                          | WS_SYSMENU);
 
     // A style change does not take effect until the frame is recalculated.
@@ -139,4 +160,118 @@ void crater::installNativeWindowChrome(QQuickWindow* window)
 #else
     Q_UNUSED(window)
 #endif
+}
+
+void crater::restoreWindowPlacement(QQuickWindow* window)
+{
+#ifdef Q_OS_WIN
+    // Under the offscreen test platform winId() is not an HWND.
+    if (!window || QGuiApplication::platformName() != QLatin1String("windows")) return;
+    auto hwnd = reinterpret_cast<HWND>(window->winId());
+    if (!hwnd || !g_filter) return;
+
+    QSettings s;
+    const QRect saved = s.value(QString::fromLatin1(kNormalRect)).toRect();
+    const bool maximized = s.value(QString::fromLatin1(kMaximized), true).toBool();
+
+    // The saved rectangle counts only while a connected screen still holds
+    // part of it. Everything here is in physical pixels, the same unit
+    // GetWindowPlacement handed out when it was saved.
+    QRect target;
+    RECT work {};
+    if (saved.isValid()) {
+        const RECT r { saved.left(), saved.top(), saved.right() + 1, saved.bottom() + 1 };
+        if (HMONITOR mon = MonitorFromRect(&r, MONITOR_DEFAULTTONULL)) {
+            MONITORINFO mi {};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(mon, &mi)) {
+                work = mi.rcWork;
+                target = saved;
+            }
+        }
+    }
+    if (target.isNull()) {
+        // First run, or its screen is gone: 80% of the work area of the
+        // screen the console opened on, centred, and never smaller than the
+        // console's minimum size.
+        HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi {};
+        mi.cbSize = sizeof(mi);
+        if (!mon || !GetMonitorInfoW(mon, &mi)) return;
+        work = mi.rcWork;
+        const qreal dpr = window->devicePixelRatio();
+        const int ww = work.right - work.left, wh = work.bottom - work.top;
+        const int w = qMax(int(ww * 0.8), int(window->minimumWidth() * dpr));
+        const int h = qMax(int(wh * 0.8), int(window->minimumHeight() * dpr));
+        target = QRect(work.left + (ww - w) / 2, work.top + (wh - h) / 2, w, h);
+    }
+
+    // Keep it inside that screen's work area: shrink it if the screen got
+    // smaller since, then slide it fully on screen.
+    const QRect area(work.left, work.top, work.right - work.left, work.bottom - work.top);
+    target.setWidth(qMin(target.width(), area.width()));
+    target.setHeight(qMin(target.height(), area.height()));
+    target.moveLeft(qBound(area.left(), target.left(), area.right() + 1 - target.width()));
+    target.moveTop(qBound(area.top(), target.top(), area.bottom() + 1 - target.height()));
+
+    WINDOWPLACEMENT wp {};
+    wp.length = sizeof(wp);
+    if (!GetWindowPlacement(hwnd, &wp)) return;
+    RECT r { target.left(), target.top(), target.right() + 1, target.bottom() + 1 };
+    const QPoint off = workspaceOffset(r);
+    OffsetRect(&r, -off.x(), -off.y());
+    wp.rcNormalPosition = r;
+    wp.showCmd = maximized ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+    wp.flags = 0;
+    SetWindowPlacement(hwnd, &wp);
+
+    // Save from here on, half a second after the last move or size, so a
+    // drag writes once rather than on every step.
+    auto* timer = new QTimer(window);
+    timer->setSingleShot(true);
+    timer->setInterval(500);
+    QObject::connect(timer, &QTimer::timeout, window, [hwnd] { savePlacement(hwnd); });
+    g_filter->setSaveTimer(timer);
+#else
+    Q_UNUSED(window)
+#endif
+}
+
+void crater::WindowControls::toggleMaximized(QWindow* window)
+{
+    if (!window) return;
+    const bool qtMaximized = window->visibility() == QWindow::Maximized;
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QLatin1String("windows")) {
+        auto hwnd = reinterpret_cast<HWND>(window->winId());
+        if (IsZoomed(hwnd)) {
+            ShowWindow(hwnd, SW_RESTORE);
+            return;
+        }
+        if (!qtMaximized) {
+            ShowWindow(hwnd, SW_MAXIMIZE);
+            return;
+        }
+        // Maximized by Qt's own stretch, because restoreWindowPlacement did
+        // not get to swap it for a real maximize. Only Qt can undo that.
+    }
+#endif
+    if (qtMaximized) window->showNormal();
+    else             window->showMaximized();
+}
+
+qreal crater::WindowControls::maximizedInset(QWindow* window) const
+{
+#ifdef Q_OS_WIN
+    if (window && QGuiApplication::platformName() == QLatin1String("windows")) {
+        auto hwnd = reinterpret_cast<HWND>(window->winId());
+        const UINT dpi = GetDpiForWindow(hwnd);
+        const int px = GetSystemMetricsForDpi(SM_CXFRAME, dpi)
+                     + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+        return px / window->devicePixelRatio();
+    }
+#else
+    Q_UNUSED(window)
+#endif
+    return 0;
 }

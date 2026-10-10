@@ -114,6 +114,7 @@ struct SettingsService::Impl
     QString ndiPixelFormat   = QStringLiteral("bgra");
     QString ndiResolution    = QStringLiteral("native");
     bool    ndiHideMedia     = false;
+    bool    ndiStartOnLaunch = false;
     // KJV is the translation that ships with every install, so it's the safe
     // default. Stored uppercase to match BibleService::translations() codes.
     QString defaultScriptureVersion = QStringLiteral("KJV");
@@ -146,6 +147,13 @@ struct SettingsService::Impl
     // Per-type global-search actions. Seeded with gsDefaults() then overlaid
     // with any persisted overrides at construction, so it's always complete.
     QVariantMap globalSearchActions;
+    QVariantMap consoleLayout;
+
+    void putConsoleLayout()
+    {
+        const QJsonObject obj = QJsonObject::fromVariantMap(consoleLayout);
+        put(kConsoleLayout, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
+    }
 
     // "Settings/" prefix groups every key under this service so the
     // QSettings tree stays self-documenting: anything outside this prefix
@@ -173,6 +181,7 @@ struct SettingsService::Impl
     static constexpr const char* kNdiPixelFormat   = "Settings/ndiPixelFormat";
     static constexpr const char* kNdiResolution    = "Settings/ndiResolution";
     static constexpr const char* kNdiHideMedia     = "Settings/ndiHideMedia";
+    static constexpr const char* kNdiStartOnLaunch = "Settings/ndiStartOnLaunch";
     static constexpr const char* kDefaultScriptureVersion = "Settings/defaultScriptureVersion";
     static constexpr const char* kShowVerseNums  = "Settings/showVerseNumbers";
     static constexpr const char* kHighlightVerse = "Settings/highlightCurrentVerse";
@@ -195,6 +204,7 @@ struct SettingsService::Impl
     static constexpr const char* kHighlightStrongsMatches   = "Settings/highlightStrongsMatches";
     static constexpr const char* kLanguage         = "Settings/language";
     static constexpr const char* kGlobalSearchActions = "Settings/globalSearchActions";
+    static constexpr const char* kConsoleLayout    = "Settings/consoleLayout";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -223,6 +233,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->ndiPixelFormat    = m_impl->get(Impl::kNdiPixelFormat, m_impl->ndiPixelFormat).toString();
     m_impl->ndiResolution     = m_impl->get(Impl::kNdiResolution, m_impl->ndiResolution).toString();
     m_impl->ndiHideMedia      = m_impl->get(Impl::kNdiHideMedia, m_impl->ndiHideMedia).toBool();
+    m_impl->ndiStartOnLaunch  = m_impl->get(Impl::kNdiStartOnLaunch, m_impl->ndiStartOnLaunch).toBool();
     m_impl->defaultScriptureVersion = m_impl->get(Impl::kDefaultScriptureVersion, m_impl->defaultScriptureVersion).toString();
     m_impl->showVerseNums    = m_impl->get(Impl::kShowVerseNums, m_impl->showVerseNums).toBool();
     m_impl->highlightVerse   = m_impl->get(Impl::kHighlightVerse, m_impl->highlightVerse).toBool();
@@ -262,6 +273,15 @@ SettingsService::SettingsService(QObject* parent)
             }
         }
     }
+
+    // Console layout: numbers and bools only, same rule as the setter.
+    {
+        const QString raw = m_impl->get(Impl::kConsoleLayout).toString();
+        const QJsonObject obj = QJsonDocument::fromJson(raw.toUtf8()).object();
+        for (auto it = obj.constBegin(); it != obj.constEnd(); ++it)
+            if (it.value().isDouble() || it.value().isBool())
+                m_impl->consoleLayout.insert(it.key(), it.value().toVariant());
+    }
 }
 
 SettingsService::~SettingsService() = default;
@@ -285,6 +305,7 @@ bool    SettingsService::ndiOnDemand() const       { return m_impl->ndiOnDemand;
 QString SettingsService::ndiPixelFormat() const    { return m_impl->ndiPixelFormat; }
 QString SettingsService::ndiResolution() const     { return m_impl->ndiResolution; }
 bool    SettingsService::ndiHideMedia() const      { return m_impl->ndiHideMedia; }
+bool    SettingsService::ndiStartOnLaunch() const  { return m_impl->ndiStartOnLaunch; }
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
@@ -526,6 +547,14 @@ void SettingsService::setNdiHideMedia(bool v)
     emit ndiHideMediaChanged();
 }
 
+void SettingsService::setNdiStartOnLaunch(bool v)
+{
+    if (m_impl->ndiStartOnLaunch == v) return;
+    m_impl->ndiStartOnLaunch = v;
+    m_impl->put(Impl::kNdiStartOnLaunch, v);
+    emit ndiStartOnLaunchChanged();
+}
+
 void SettingsService::setDefaultScriptureVersion(const QString& code)
 {
     if (m_impl->defaultScriptureVersion == code) return;
@@ -727,6 +756,33 @@ void SettingsService::setGlobalSearchAction(const QString& type, const QString& 
     const QJsonObject obj = QJsonObject::fromVariantMap(m_impl->globalSearchActions);
     m_impl->put(Impl::kGlobalSearchActions, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
     emit globalSearchActionsChanged();
+}
+
+QVariantMap SettingsService::consoleLayout() const { return m_impl->consoleLayout; }
+
+void SettingsService::setConsoleLayoutValue(const QString& key, const QVariant& value)
+{
+    if (key.isEmpty()) return;
+    const auto type = value.typeId();
+    const bool keep = type == QMetaType::Bool || type == QMetaType::Int
+                   || type == QMetaType::Double || type == QMetaType::LongLong;
+    if (keep) {
+        if (m_impl->consoleLayout.value(key) == value) return;
+        m_impl->consoleLayout.insert(key, value);
+    } else {
+        if (!m_impl->consoleLayout.contains(key)) return;
+        m_impl->consoleLayout.remove(key);
+    }
+    m_impl->putConsoleLayout();
+    emit consoleLayoutChanged();
+}
+
+void SettingsService::resetConsoleLayout()
+{
+    if (m_impl->consoleLayout.isEmpty()) return;
+    m_impl->consoleLayout.clear();
+    m_impl->putConsoleLayout();
+    emit consoleLayoutChanged();
 }
 
 }  // namespace crater

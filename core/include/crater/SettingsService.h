@@ -152,6 +152,12 @@ private:
     // renderer hosts its own ProjectionScene, so the QML binding
     // re-renders on the very next tick.
     Q_PROPERTY(bool    ndiHideMedia       READ ndiHideMedia       WRITE setNdiHideMedia       NOTIFY ndiHideMediaChanged)
+    // Start the NDI broadcast when Crater opens, so receivers like OBS or
+    // vMix can find the source before the service rather than only once
+    // someone remembers to switch it on. Off by default: nothing goes out
+    // on the network until the operator asks for it. The top bar NDI
+    // button still turns it off and on for the rest of the session.
+    Q_PROPERTY(bool    ndiStartOnLaunch   READ ndiStartOnLaunch   WRITE setNdiStartOnLaunch   NOTIFY ndiStartOnLaunchChanged)
     // Translation code (e.g. "KJV") preselected when Scripture opens. Stored
     // in the same uppercase form BibleService::translations() reports and the
     // scripture sidebar displays; AppState lowercases it to seed
@@ -227,6 +233,15 @@ private:
     // so each change is validated and only touches one type.
     Q_PROPERTY(QVariantMap globalSearchActions READ globalSearchActions NOTIFY globalSearchActionsChanged)
 
+    // The operator console's panel layout: sizes the operator dragged,
+    // panels they hid, and how the panels are arranged. Holds only what was
+    // changed; Main.qml supplies the default for every key that is absent,
+    // so an empty map is the stock layout and a reset is just clearing it.
+    // Global, not per profile: it describes this computer's screen. Stored
+    // as one JSON object under Settings/consoleLayout. Writes go through
+    // setConsoleLayoutValue() / resetConsoleLayout().
+    Q_PROPERTY(QVariantMap consoleLayout READ consoleLayout NOTIFY consoleLayoutChanged)
+
     // ── Library search presentation ──────────────────────────────────────
     // How the library tabs present FTS search results. All default ON so the
     // out-of-box experience is unchanged; operators who find the highlight or
@@ -280,6 +295,7 @@ public:
     QString ndiPixelFormat() const;
     QString ndiResolution() const;
     bool    ndiHideMedia() const;
+    bool    ndiStartOnLaunch() const;
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    highlightCurrentVerse() const;
@@ -329,6 +345,7 @@ public:
     void setNdiPixelFormat(const QString& v);
     void setNdiResolution(const QString& v);
     void setNdiHideMedia(bool v);
+    void setNdiStartOnLaunch(bool v);
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setHighlightCurrentVerse(bool v);
@@ -357,6 +374,13 @@ public:
     // globalSearchActionsChanged only when the mapping actually changes.
     Q_INVOKABLE void setGlobalSearchAction(const QString& type, const QString& action);
 
+    QVariantMap consoleLayout() const;
+    // Set one layout key. A number or bool is stored; anything else
+    // (null / undefined from QML) removes the key so its default applies.
+    Q_INVOKABLE void setConsoleLayoutValue(const QString& key, const QVariant& value);
+    // Back to the stock layout.
+    Q_INVOKABLE void resetConsoleLayout();
+
 signals:
     void themeModeChanged();
     void fontSizeChanged();
@@ -380,6 +404,7 @@ signals:
     void ndiPixelFormatChanged();
     void ndiResolutionChanged();
     void ndiHideMediaChanged();
+    void ndiStartOnLaunchChanged();
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void highlightCurrentVerseChanged();
@@ -402,6 +427,7 @@ signals:
     void highlightStrongsMatchesChanged();
     void languageChanged();
     void globalSearchActionsChanged();
+    void consoleLayoutChanged();
 
 private:
     struct Impl;

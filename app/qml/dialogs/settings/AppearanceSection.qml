@@ -171,6 +171,62 @@ Item {
                 }
             }
 
+            // ── LAYOUT ───────────────────────────────────────────────────
+            // The console's panel layout (SettingsService.consoleLayout,
+            // applied in Main.qml). Sizes are set by dragging the lines
+            // between panels. A key left unset takes its stock value, so
+            // writing null is how a row goes back to the default.
+            SettingsSectionHeader { title: qsTr("Layout") }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.space.sm
+                Layout.bottomMargin: Theme.space.xs
+                text: qsTr("Drag the lines between panels to resize them. Double-click a line to put it back.")
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                wrapMode: Text.WordWrap
+            }
+
+            Repeater {
+                model: [
+                    { key: "scheduleHidden", show: true,  title: qsTr("Show the schedule") },
+                    { key: "previewHidden",  show: true,  title: qsTr("Show Preview") },
+                    { key: "sidebarHidden",  show: true,  title: qsTr("Show the library sidebar") },
+                    { key: "liveFirst",      show: false, title: qsTr("Live to the left of Preview") },
+                    { key: "scheduleRight",  show: false, title: qsTr("Schedule on the right") }
+                ]
+                delegate: ColumnLayout {
+                    required property var modelData
+                    required property int index
+                    readonly property bool stored: SettingsService.consoleLayout[modelData.key] === true
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Rectangle { visible: index > 0; Layout.fillWidth: true; Layout.preferredHeight: 1
+                                color: Theme.color.borderSubtle }
+                    SettingRow {
+                        title: modelData.title
+                        ToggleSwitch {
+                            value: modelData.show ? !stored : stored
+                            onToggled: SettingsService.setConsoleLayoutValue(modelData.key, stored ? null : true)
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            SettingRow {
+                title: qsTr("Reset layout")
+                description: qsTr("Put every panel back where it started, at its original size")
+                GhostButton {
+                    text: qsTr("Reset")
+                    enabled: Object.keys(SettingsService.consoleLayout).length > 0
+                    onClicked: SettingsService.resetConsoleLayout()
+                }
+            }
+
             // ── PREFERENCES ──────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Preferences") }
 
