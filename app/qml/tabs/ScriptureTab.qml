@@ -517,6 +517,15 @@ Item {
         if (!parsedRef) return
         const idx = indexOf(parsedRef.book, parsedRef.chapter, parsedRef.verse)
         if (idx >= 0) {
+            // Typing a reference outside the current multi-selection starts
+            // over, otherwise _activeIndices() would join the new verse onto
+            // the old set. Arrow keys echo back through here too, so leave
+            // the set alone for those.
+            const sel = AppState.librarySelectedIndices[tabKey] || []
+            if (!_inputIsSyncEcho() && sel.length > 0 && sel.indexOf(idx) < 0) {
+                _rangeFromInput = false
+                AppState.clearLibrarySelected(tabKey)
+            }
             AppState.setLibraryFluid(tabKey, idx)
             // An echo of the arrow keys' own input sync (debounced, so it
             // lands after the key) honours Settings > Scrolling too.
