@@ -18,9 +18,10 @@ ApplicationWindow {
     minimumWidth: 1080
     minimumHeight: 680
     visible: true
-    // Open maximized on first show. `width`/`height` above become the
-    // restore-down size when the user un-maximizes, so the 1440x900
-    // design target is preserved as the windowed fallback.
+    // Open maximized on first show. On Windows, main.cpp then hands the
+    // window its real restore size and reopens it the way it was left
+    // (WindowChrome.h, restoreWindowPlacement). `width`/`height` above are
+    // only the restore size on the other platforms.
     visibility: Window.Maximized
     title: qsTr("Crater")
     color: Theme.color.canvas
@@ -32,14 +33,13 @@ ApplicationWindow {
     // delegate to the OS — no manual WM behavior reimplementation needed.
     flags: Qt.Window | Qt.FramelessWindowHint
 
-    // Frameless maximized windows on Windows extend ~8 px past the screen
-    // bounds (Win expects an invisible resize border the WM normally
-    // draws). Apply an equal margin to the content wrapper when maximized
-    // so the operator sees crisp pixels at the screen edges instead of
-    // chrome that runs off-screen. macOS / Linux don't exhibit the
-    // overshoot, so the margin collapses to 0 elsewhere.
-    readonly property int _maxFix:
-        (Qt.platform.os === "windows" && visibility === Window.Maximized) ? 8 : 0
+    // Maximized on Windows, the console hangs past every screen edge by the
+    // resize border Windows expects to draw (WindowChrome.cpp keeps the
+    // caption style so maximize and restore animate). Inset the content by
+    // exactly that much so nothing runs off screen. It depends on the
+    // screen's scaling, hence `screen` in the binding. 0 elsewhere.
+    readonly property real _maxFix:
+        (visibility === Window.Maximized && screen) ? WindowControls.maximizedInset(root) : 0
 
     // The operator console (top bar / main area / footer) is hidden when a
     // full-screen workspace is open. The workspace Loader below this region
@@ -256,30 +256,87 @@ ApplicationWindow {
         anchors.rightMargin:  root._maxFix
         anchors.bottomMargin: root._maxFix
 
-        // Top row split ratio. A future Workspace system will let users
-        // drag a horizontal grip to adjust this; today it's a static
-        // constant matching the existing visual design.
-        readonly property real topRowRatio: 0.58
-
-        // Panel widths are proportional, but the two LIST panels have a
-        // real useful maximum: past ~420px a schedule row is mostly empty
-        // space to the right of its title, and past ~320px the sidebar is
-        // a column of short labels in a wide gutter. Those pixels are worth
-        // far more to Preview and Live, which render actual output and can
-        // always use more area.
+        // ── Panel layout ─────────────────────────────────────────────────
+        // Operators can drag the lines between panels, hide the schedule,
+        // the preview or the library sidebar, put Live to the left of
+        // Preview and move the schedule to the right edge. What they changed
+        // lives in SettingsService.consoleLayout. A key that is absent there
+        // takes the stock value below, so an empty map is the stock layout
+        // and Settings > Appearance > Reset layout just clears it.
         //
-        // Below ~1400px wide the clamps never bind, so every layout at
-        // 1080p and under is pixel-identical to before this change.
-        readonly property real scheduleWidth: Math.min(width * 0.30, 420)
-        readonly property real sidebarWidth:  Math.min(width * 0.24, 320)
+        // While a line is being dragged its value sits in _drag and only
+        // goes to SettingsService on release, so a drag writes once.
+        property var _drag: ({})
+        function _val(key, fallback) {
+            if (_drag[key] !== undefined) return _drag[key]
+            const v = SettingsService.consoleLayout[key]
+            return v === undefined ? fallback : v
+        }
+        function _setDrag(values) {
+            _drag = Object.assign({}, _drag, values)
+        }
+        // A key set to undefined drops the dragged value and keeps what was
+        // stored, which is how collapsing a panel leaves its width alone.
+        function _commitDrag() {
+            for (const k in _drag) {
+                const v = _drag[k]
+                if (v === undefined) continue
+                // Hidden flags are stored only when set, sizes rounded.
+                SettingsService.setConsoleLayoutValue(k,
+                    v === false ? null : (typeof v === "number" ? Math.round(v * 1000) / 1000 : v))
+            }
+            _drag = ({})
+        }
+        function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
-        // Live takes its share of what the schedule LEFT rather than of the
-        // whole row — 0.36 / (0.36 + 0.34) — so the freed width is split
-        // between the two monitors in their existing proportion instead of
-        // Preview quietly absorbing all of it. At any width where the
-        // schedule clamp is inactive this evaluates to exactly 0.36 * width.
-        readonly property real liveWidth:
-            (width - scheduleWidth) * (0.36 / 0.70)
+        // Smallest useful size of each panel. Together they still fit the
+        // window's 1080 x 680 minimum with every panel shown.
+        readonly property int _rail:       16
+        readonly property int _minSchedule: 220
+        readonly property int _minPreview:  240
+        readonly property int _minLive:     280
+        readonly property int _minSidebar:  160
+        readonly property int _minContent:  420
+        readonly property int _minTop:      220
+        readonly property int _minBottom:   200
+
+        readonly property bool scheduleShown: !_val("scheduleHidden", false)
+        readonly property bool previewShown:  !_val("previewHidden", false)
+        readonly property bool sidebarShown:  !_val("sidebarHidden", false)
+        readonly property bool scheduleRight: _val("scheduleRight", false)
+        readonly property bool liveFirst:     _val("liveFirst", false)
+
+        // The two LIST panels have a real useful maximum by default: past
+        // ~420px a schedule row is mostly empty space to the right of its
+        // title, and past ~320px the sidebar is a column of short labels in
+        // a wide gutter. Those pixels are worth more to Preview and Live.
+        // A width the operator dragged to is kept as is.
+        readonly property real scheduleWidth: scheduleShown
+            ? _clamp(_val("scheduleWidth", Math.min(width * 0.30, 420)), _minSchedule,
+                     width - _minLive - (previewShown ? _minPreview : _rail))
+            : _rail
+        readonly property real sidebarWidth: sidebarShown
+            ? _clamp(_val("sidebarWidth", Math.min(width * 0.24, 320)), _minSidebar, width - _minContent)
+            : _rail
+
+        // Live's share of what the schedule leaves. The stock 0.36 / 0.70
+        // keeps the two monitors in their original proportion.
+        readonly property real monitorsWidth: width - scheduleWidth
+        readonly property real liveWidth: previewShown
+            ? _clamp(monitorsWidth * _val("liveShare", 0.36 / 0.70), _minLive, monitorsWidth - _minPreview)
+            : monitorsWidth - _rail
+        readonly property real previewWidth: monitorsWidth - liveWidth
+
+        readonly property real scheduleX: scheduleRight ? width - scheduleWidth : 0
+        readonly property real monitorsX: scheduleRight ? 0 : scheduleWidth
+        readonly property real previewX:  liveFirst ? monitorsX + liveWidth : monitorsX
+        readonly property real liveX:     liveFirst ? monitorsX : monitorsX + previewWidth
+
+        readonly property real topRowHeight:
+            _clamp(height * _val("topRowRatio", 0.58), _minTop, height - _minBottom)
+
+        // Size of the panel being dragged, taken when the drag began.
+        property real _dragStart: 0
 
         // ── Top row: Schedule | Preview | Live ───────────────────────────
         Item {
@@ -288,30 +345,102 @@ ApplicationWindow {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: parent.height * mainArea.topRowRatio
+            height: mainArea.topRowHeight
 
             SchedulePanel {
                 id: schedulePane
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
+                visible: mainArea.scheduleShown
+                x: mainArea.scheduleX
                 width: mainArea.scheduleWidth
+                height: parent.height
             }
 
             PreviewPanel {
                 id: previewPane
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.left: schedulePane.right
-                anchors.right: livePane.left
+                visible: mainArea.previewShown
+                x: mainArea.previewX
+                width: mainArea.previewWidth
+                height: parent.height
             }
 
             LivePanel {
                 id: livePane
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.right: parent.right
+                x: mainArea.liveX
                 width: mainArea.liveWidth
+                height: parent.height
+            }
+
+            CollapsedRail {
+                visible: !mainArea.scheduleShown
+                x: mainArea.scheduleX
+                width: mainArea._rail
+                height: parent.height
+                label: qsTr("Show schedule")
+                chevron: mainArea.scheduleRight ? "chevron-left" : "chevron-right"
+                onClicked: SettingsService.setConsoleLayoutValue("scheduleHidden", null)
+            }
+
+            CollapsedRail {
+                visible: !mainArea.previewShown
+                x: mainArea.previewX
+                width: mainArea._rail
+                height: parent.height
+                label: qsTr("Show preview")
+                chevron: mainArea.liveFirst ? "chevron-left" : "chevron-right"
+                onClicked: SettingsService.setConsoleLayoutValue("previewHidden", null)
+            }
+
+            // Hairlines where two panels meet. Each panel draws its own
+            // right edge, which is enough in the stock order but not once
+            // the panels are rearranged.
+            Repeater {
+                model: [mainArea.scheduleRight ? mainArea.scheduleX : mainArea.scheduleWidth,
+                        mainArea.monitorsX + (mainArea.liveFirst ? mainArea.liveWidth : mainArea.previewWidth)]
+                delegate: Rectangle {
+                    required property real modelData
+                    x: modelData - 1
+                    width: 1
+                    height: topRow.height
+                    z: 40
+                    color: Theme.color.borderSubtle
+                }
+            }
+
+            // Schedule edge. Dragging it under half the schedule's minimum
+            // hides the schedule. The rail brings it back.
+            PanelSplitter {
+                visible: mainArea.scheduleShown || dragging
+                frame: mainArea
+                x: (mainArea.scheduleRight ? mainArea.scheduleX : mainArea.scheduleWidth) - leftOverlap
+                height: parent.height
+                onPressed: mainArea._dragStart = mainArea.scheduleWidth
+                onMoved: function(delta) {
+                    const w = mainArea._dragStart + (mainArea.scheduleRight ? -delta : delta)
+                    if (w < mainArea._minSchedule / 2) mainArea._setDrag({ scheduleHidden: true, scheduleWidth: undefined })
+                    else mainArea._setDrag({ scheduleHidden: false, scheduleWidth: w })
+                }
+                onReleased: mainArea._commitDrag()
+                onReset: SettingsService.setConsoleLayoutValue("scheduleWidth", null)
+            }
+
+            // Edge between Preview and Live. Dragging Preview under half its
+            // minimum hides it.
+            PanelSplitter {
+                visible: mainArea.previewShown || dragging
+                frame: mainArea
+                x: mainArea.monitorsX
+                   + (mainArea.liveFirst ? mainArea.liveWidth : mainArea.previewWidth) - leftOverlap
+                height: parent.height
+                onPressed: mainArea._dragStart = mainArea.liveWidth
+                onMoved: function(delta) {
+                    const live = mainArea._dragStart + (mainArea.liveFirst ? delta : -delta)
+                    if (mainArea.monitorsWidth - live < mainArea._minPreview / 2)
+                        mainArea._setDrag({ previewHidden: true, liveShare: undefined })
+                    else
+                        mainArea._setDrag({ previewHidden: false, liveShare: live / mainArea.monitorsWidth })
+                }
+                onReleased: mainArea._commitDrag()
+                onReset: SettingsService.setConsoleLayoutValue("liveShare", null)
             }
         }
 
@@ -323,6 +452,21 @@ ApplicationWindow {
             anchors.right: parent.right
             height: 1
             color: Theme.color.borderSubtle
+        }
+
+        // Edge between the top row and the library.
+        PanelSplitter {
+            vertical: false
+            frame: mainArea
+            anchors.left: parent.left
+            anchors.right: parent.right
+            y: topRow.height - leftOverlap
+            onPressed: mainArea._dragStart = topRow.height
+            onMoved: function(delta) {
+                mainArea._setDrag({ topRowRatio: (mainArea._dragStart + delta) / mainArea.height })
+            }
+            onReleased: mainArea._commitDrag()
+            onReset: SettingsService.setConsoleLayoutValue("topRowRatio", null)
         }
 
         // ── Bottom row: tab bar + (sidebar | content) ────────────────────
@@ -342,18 +486,46 @@ ApplicationWindow {
 
             LibrarySidebar {
                 id: librarySidebar
+                visible: mainArea.sidebarShown
                 anchors.top: tabBar.bottom
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 width: mainArea.sidebarWidth
             }
 
+            CollapsedRail {
+                visible: !mainArea.sidebarShown
+                anchors.top: tabBar.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                width: mainArea._rail
+                label: qsTr("Show library sidebar")
+                onClicked: SettingsService.setConsoleLayoutValue("sidebarHidden", null)
+            }
+
             LibraryContent {
                 id: libraryContent
                 anchors.top: tabBar.bottom
                 anchors.bottom: parent.bottom
-                anchors.left: librarySidebar.right
+                anchors.left: parent.left
+                anchors.leftMargin: mainArea.sidebarWidth
                 anchors.right: parent.right
+            }
+
+            PanelSplitter {
+                visible: mainArea.sidebarShown || dragging
+                frame: mainArea
+                anchors.top: tabBar.bottom
+                anchors.bottom: parent.bottom
+                x: mainArea.sidebarWidth - leftOverlap
+                onPressed: mainArea._dragStart = mainArea.sidebarWidth
+                onMoved: function(delta) {
+                    const w = mainArea._dragStart + delta
+                    if (w < mainArea._minSidebar / 2) mainArea._setDrag({ sidebarHidden: true, sidebarWidth: undefined })
+                    else mainArea._setDrag({ sidebarHidden: false, sidebarWidth: w })
+                }
+                onReleased: mainArea._commitDrag()
+                onReset: SettingsService.setConsoleLayoutValue("sidebarWidth", null)
             }
         }
     }

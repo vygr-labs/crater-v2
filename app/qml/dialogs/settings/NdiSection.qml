@@ -177,6 +177,21 @@ Item {
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
+            // Read once at launch (main.cpp). The switch above and the top
+            // bar NDI button still turn it off and on for the session.
+            SettingRow {
+                title: qsTr("Start NDI when Crater opens")
+                description: qsTr("The source is ready for OBS or vMix before the service starts")
+                dimmed: !NdiService.available
+                ToggleSwitch {
+                    value: SettingsService.ndiStartOnLaunch
+                    enabled: NdiService.available
+                    opacity: NdiService.available ? 1.0 : 0.45
+                    onToggled: SettingsService.ndiStartOnLaunch = !SettingsService.ndiStartOnLaunch
+                }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
             SettingRow {
                 title: qsTr("Stream name")
                 Rectangle {

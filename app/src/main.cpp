@@ -19,6 +19,7 @@
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QTimer>
 #include <QtQml>
 
 #include <memory>
@@ -600,6 +601,9 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "SettingsService",    &settingsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProfileService",     &profileService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "NdiService",         &ndiService);
+    // Title bar maximize / restore (WindowChrome.h).
+    crater::WindowControls windowControls;
+    qmlRegisterSingletonInstance("Crater", 1, 0, "WindowControls",     &windowControls);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
@@ -715,6 +719,7 @@ int main(int argc, char* argv[])
         if (auto* consoleWindow =
                 qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
             crater::installNativeWindowChrome(consoleWindow);
+            crater::restoreWindowPlacement(consoleWindow);
         }
     }
 
@@ -732,6 +737,15 @@ int main(int argc, char* argv[])
     ndiService.setRenderer(&ndiRenderer);
     qInfo().noquote() << "[startup] NDI renderer ready, entering event loop: +"
                       << startupClock.elapsed() << "ms";
+
+    // Start NDI with Crater (Settings > NDI > "Start NDI when Crater opens")
+    // so OBS or vMix can find the source before the service starts. Queued
+    // to the first event-loop pass so the console paints first, and placed
+    // after setRenderer so the headless path is available. A failure only
+    // updates NdiService.diagnostic, which Settings > NDI shows. Nothing
+    // pops up at startup.
+    if (settingsService.ndiStartOnLaunch() && ndiService.available())
+        QTimer::singleShot(0, &ndiService, [&ndiService] { ndiService.start(); });
 
     // Arm the once-a-day update check. Returns immediately when auto-check
     // is off or the last one was recent; when it is due, it only starts a
