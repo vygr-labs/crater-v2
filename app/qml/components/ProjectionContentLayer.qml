@@ -8,18 +8,17 @@ import Crater
 // transition.
 //
 // Why a reusable component (rather than inlining the rendering twice in
-// ProjectionScene): the per-output transition controller needs an outgoing
-// snapshot of the previous (item, kind, page) AND the incoming current one,
-// rendered side-by-side, so it can crossfade between them. The cheapest way
-// to express that is two instances of the same component, each holding its
-// own input state. It also keeps audio mute and theme resolution scoped to a
-// single layer rather than racing across two parallel renderers.
+// ProjectionScene): the transition controller needs the outgoing and the
+// incoming content rendered side by side so it can fade between them. It
+// keeps two instances of this component and alternates which one takes the
+// next item, so the one on air is never rewritten mid-fade. It also keeps
+// audio mute and theme resolution scoped to a single layer rather than
+// racing across two parallel renderers.
 //
-// Inputs are imperative state — the scene mutates them when a transition
-// starts. They are NOT bound to ProjectionService here so that promoting
-// "current" to "previous" is just a property copy rather than a binding
-// rewire. The scene owns the lifecycle; this component just renders what
-// it's told.
+// Inputs are imperative state, set by the scene when new content arrives.
+// They are NOT bound to ProjectionService here, so the scene decides which
+// layer shows what. The scene owns the lifecycle; this component just
+// renders what it's told.
 // Root id is `root`, NOT `layer` — every Item has a built-in `layer`
 // attached property of type QQuickItemLayer (Qt's shader-effect opt-in).
 // Using `id: layer` here would silently work for top-level child bindings
@@ -60,12 +59,11 @@ Item {
     // alternative (both layers fighting for audio) clicks.
     property bool   audioEnabled: false
 
-    // Duration of passive (non-transition) opacity fades inside this layer
-    // — specifically the per-text-node clear fade. Driven by the scene's
-    // per-output passive-fade so a "cut" style yields an instant clear and
-    // a long crossfade duration yields a matched clear feel. Default 280
-    // keeps the historical behavior when this layer is used in isolation
-    // (e.g. a future preview tile).
+    // Duration of the Clear fade inside this layer: the text nodes, the
+    // scripture footer and the song credits. The scene passes the output's
+    // Clear transition (0 for Cut). Default 280 keeps the historical
+    // behavior when this layer is used in isolation (e.g. a future preview
+    // tile).
     property int    passiveFadeMs: 280
 
     // ── Readiness ───────────────────────────────────────────────────────
@@ -79,20 +77,41 @@ Item {
     // Media components advertise themselves through a `mediaReady`
     // property, found by walking the visible tree. Hidden subtrees don't
     // count, so a suppressed or inactive branch can't hold a transition.
-    function isReady() {
+    //
+    // `skip` is a set of video urls (activeUrl) not to wait for: the scene
+    // passes the ones that already timed out once, so a broken background
+    // video costs one wait, not one on every slide.
+    function isReady(skip) {
         if (!layerKind) return true
         if (pdfPageImage.visible && pdfPageImage.source.toString() !== ""
                 && pdfPageImage.status === Image.Loading)
             return false
-        return _treeReady(root)
+        return _walkPending(root, skip || ({}), null)
     }
-    function _treeReady(item) {
+    // The urls of the videos still holding this layer, for the scene to
+    // remember when it gives up waiting.
+    function pendingUrls() {
+        const out = []
+        _walkPending(root, ({}), out)
+        return out
+    }
+    // True when nothing is pending. With `out`, keeps walking and collects
+    // the pending videos' urls instead of stopping at the first.
+    function _walkPending(item, skip, out) {
         if (!item || item.visible === false) return true
-        if (item.mediaReady === false) return false
+        let ok = true
+        if (item.mediaReady === false && !(item.activeUrl && skip[item.activeUrl])) {
+            if (!out) return false
+            if (item.activeUrl) out.push(item.activeUrl)
+            ok = false
+        }
         const kids = item.children
         for (let i = 0; i < kids.length; ++i)
-            if (!_treeReady(kids[i])) return false
-        return true
+            if (!_walkPending(kids[i], skip, out)) {
+                if (!out) return false
+                ok = false
+            }
+        return ok
     }
 
     // ── Theme resolution ────────────────────────────────────────────────
@@ -268,16 +287,9 @@ Item {
     // sub-region for image + video, per-item loop + force-mute). Sits inside
     // the layer at canvas-native size — when the scene scales the stage Item
     // this scales with it.
-    // Clear shows the background only. For a picture, video or PDF the
-    // media IS the content, so it fades out with the text instead of
-    // staying up, which made Clear look broken on media.
-    readonly property real _clearOpacity: ProjectionService.isClear ? 0 : 1
-
     MediaMonitor {
         id: mediaItemMonitor
         anchors.fill: parent
-        opacity: root._clearOpacity
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
         visible: root._isMediaItem && !root._mediaSuppressed
                  && (root.layerKind === "image" || root.layerKind === "video")
         mediaKind: visible ? root.layerKind : ""
@@ -308,8 +320,6 @@ Item {
     Image {
         id: pdfPageImage
         anchors.fill: parent
-        opacity: root._clearOpacity
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
         visible: root._isMediaItem && root.layerKind === "pdf"
         asynchronous: true
         cache: true

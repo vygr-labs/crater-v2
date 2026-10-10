@@ -55,6 +55,12 @@ Item {
         return out
     }
     property string _transitionOutput: "primary"
+    // An output removed (or switched to the stage view) while it is picked
+    // would leave every row reading defaults and every edit going nowhere.
+    on_TransitionOutputsChanged: {
+        if (!_transitionOutputs.some(function(o) { return o.value === _transitionOutput }))
+            _transitionOutput = "primary"
+    }
 
     readonly property var _transitionTypes: {
         const all = [

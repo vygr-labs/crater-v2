@@ -110,7 +110,9 @@ public:
 
     // Per-output transition tuning. Setters apply the same normalization
     // (style whitelist, duration clamp 0..1500) that previously lived in
-    // SettingsService.
+    // SettingsService. Settings now edits the per-type values below, so
+    // these are the fallback a type reads until it is set, which keeps
+    // outputs configured before per-type transitions looking the same.
     Q_INVOKABLE QString transitionStyle(const QString& outputId) const;
     Q_INVOKABLE void    setTransitionStyle(const QString& outputId, const QString& style);
     Q_INVOKABLE int     transitionDurationMs(const QString& outputId) const;

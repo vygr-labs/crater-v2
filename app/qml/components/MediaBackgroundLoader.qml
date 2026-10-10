@@ -191,10 +191,21 @@ Item {
             fillMode: VideoOutput.PreserveAspectCrop
             opacity: root.bgOpacity
 
-            property bool loaded: false
+            // Same url keying as MediaMonitor's video: this item survives a
+            // change of background, and the old video's frames must not
+            // count for the new one.
+            property string _frameUrl: ""
+            readonly property bool loaded: _frameUrl.length > 0
+                                        && _frameUrl === root.activeUrl
+                                        && root.activeUrl === "file:///" + root._path
             Connections {
                 target: vo.videoSink
-                function onVideoFrameChanged() { vo.loaded = true }
+                function onVideoFrameChanged() {
+                    // An empty frame (sent on stop or a source change) has
+                    // no size and doesn't count.
+                    if (root.sharedToken >= 0 && vo.videoSink.videoSize.width > 0)
+                        vo._frameUrl = root.activeUrl
+                }
             }
 
             Connections {

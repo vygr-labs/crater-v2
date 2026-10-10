@@ -103,16 +103,16 @@ Item {
     }
 
     // ── Canvas size ─────────────────────────────────────────────────────
-    // Tracks the CURRENT layer's theme canvas — never the previous one.
-    // If the new item has a different canvas size, the letterbox snaps to
-    // the new size and the outgoing layer renders into it (it'll be
-    // squished/stretched during the brief fade, but it's at opacity → 0
-    // either way so the visual impact is negligible). Tracking the
-    // current layer matches "transitions describe the destination" UX.
+    // Tracks the shown layer's theme canvas. When the new item has a
+    // different canvas size, the letterbox snaps to it as the fade starts
+    // and the outgoing layer renders into it (squished during the brief
+    // fade, but it's fading out either way). Waiting for the fade, rather
+    // than the commit, keeps the old content undistorted while the new one
+    // loads.
     readonly property var _canvas: {
-        if (currentLayer && currentLayer.theme && currentLayer.theme.tokens
-            && currentLayer.theme.tokens.canvas) {
-            return currentLayer.theme.tokens.canvas
+        if (shownLayer && shownLayer.theme && shownLayer.theme.tokens
+            && shownLayer.theme.tokens.canvas) {
+            return shownLayer.theme.tokens.canvas
         }
         return { width: 1920, height: 1080 }
     }
@@ -220,11 +220,17 @@ Item {
     // layer, which rebuilt it from scratch at full opacity and could blink
     // before the fade even started.)
     //
-    // currentLayer is the layer holding the newest content, which is what
-    // the canvas size and the no-theme message describe.
+    // currentLayer is the layer holding the newest content. shownLayer
+    // (below) is the one the audience is being shown.
     property bool _aIsCurrent: true
     readonly property var currentLayer:  _aIsCurrent ? layerA : layerB
     readonly property var previousLayer: _aIsCurrent ? layerB : layerA
+    // The layer the audience is being shown, which only moves to the new
+    // layer when its fade actually starts. The letterbox and the no-theme
+    // message follow this, so they don't change under the old content
+    // while the new one is still loading.
+    property bool _aIsShown: true
+    readonly property var shownLayer: _aIsShown ? layerA : layerB
 
     // True from the moment new content is committed until its fade ends,
     // including the wait for the new layer to load.
@@ -234,13 +240,16 @@ Item {
     property string _runStyle: "crossfade"
     property int    _runMs: 0
     property string _lastIdentity: ""
+    property bool   _skipFadeOut: false
 
+    // Audio is not touched here: it moves to the new layer only when the
+    // picture does, in _runTransition, so a video doesn't go quiet while it
+    // is still on screen and the next one isn't heard before it is seen.
     function _setContent(layer, item, kind, page, crop) {
-        layer.layerItem    = item
-        layer.layerKind    = kind
-        layer.layerPage    = page
-        layer.layerCrop    = crop
-        layer.audioEnabled = true
+        layer.layerItem = item
+        layer.layerKind = kind
+        layer.layerPage = page
+        layer.layerCrop = crop
     }
 
     function _promoteLayers() {
@@ -278,28 +287,38 @@ Item {
         transitionParallel.stop()
         transitionSequence.stop()
 
-        if (_transitioning && currentLayer.opacity < 0.5) {
-            // Mostly still showing the old content: keep it as the outgoing
-            // layer and just swap what is fading in. The fade carries on
-            // from where it got to.
+        // Mid-transition there are two layers on screen and only two layers,
+        // so one of them has to take the new content. Replace whichever
+        // shows less of the picture: the incoming layer on top contributes
+        // its opacity, the outgoing one underneath what shows through it.
+        // The visible jump is then never more than the smaller share.
+        const inShare  = currentLayer.opacity
+        const outShare = previousLayer.opacity * (1 - currentLayer.opacity)
+        if (_transitioning && inShare < outShare) {
+            // Still mostly the old content: keep it as the outgoing layer
+            // and swap what is fading in. The fade carries on from where it
+            // got to. The old content keeps the sound until then.
             _setContent(currentLayer, item, kind, page, crop)
+            currentLayer.audioEnabled  = false
+            previousLayer.audioEnabled = true
         } else {
-            // Nothing in flight, or the incoming content is already mostly
-            // on screen: that becomes the outgoing layer. Snapping it to
-            // full opacity is a jump of at most half a fade, where the old
-            // controller snapped the whole way.
+            // Nothing in flight, or the incoming content is already most of
+            // the picture: that becomes the outgoing layer at full opacity.
             const out = currentLayer
             const inc = previousLayer
             out.opacity = 1
             out.z = 0
-            out.audioEnabled = false
             inc.opacity = 0
             inc.z = 1
+            inc.audioEnabled = false
             _setContent(inc, item, kind, page, crop)
             _aIsCurrent = !_aIsCurrent
+            _aIsShown   = !_aIsCurrent
         }
         _transitioning = true
-        _readyDeadline = Date.now() + _readyTimeoutMs
+        // One deadline per wait. A stream of re-commits while media loads
+        // must not keep pushing it back and hold the old content up.
+        if (!readyPoll.running) _readyDeadline = Date.now() + _readyTimeoutMs
         readyPoll.restart()
     }
 
@@ -312,18 +331,31 @@ Item {
     // fitting (done on completion) has settled first.
     readonly property int _readyTimeoutMs: 600
     property real _readyDeadline: 0
+    // Videos that never produced a frame within the timeout (a missing file,
+    // a codec the player can't open). Not waited for again this session.
+    property var _stalledUrls: ({})
     Timer {
         id: readyPoll
         interval: 16
         repeat: true
         onTriggered: {
-            if (!scene.currentLayer.isReady() && Date.now() < scene._readyDeadline) return
+            if (!scene.currentLayer.isReady(scene._stalledUrls)) {
+                if (Date.now() < scene._readyDeadline) return
+                const stalled = scene.currentLayer.pendingUrls()
+                for (let i = 0; i < stalled.length; ++i) scene._stalledUrls[stalled[i]] = true
+            }
             stop()
             scene._runTransition()
         }
     }
 
     function _runTransition() {
+        _aIsShown = _aIsCurrent
+        previousLayer.audioEnabled = false
+        currentLayer.audioEnabled  = true
+        // Interrupted in the black half of a fade through black: the old
+        // content is already gone, so skip straight to fading in.
+        _skipFadeOut = previousLayer.opacity <= 0.001
         if (_runStyle === "cut" || _runMs <= 0) {
             currentLayer.opacity = 1
             _finishTransition()
@@ -366,11 +398,13 @@ Item {
         _lastTag      = _buildTag(item, kind, page, crop)
         _lastIdentity = _identityTag(item, kind, page, crop)
         _setContent(layerA, item, kind, page, crop)
+        layerA.audioEnabled = true
         layerA.opacity = 1
         layerA.z = 1
         layerB.opacity = 0
         layerB.z = 0
         _aIsCurrent = true
+        _aIsShown   = true
     }
 
     // ── Animations ──────────────────────────────────────────────────────
@@ -405,7 +439,8 @@ Item {
         onFinished: scene._finishTransition()
         NumberAnimation {
             target: scene.previousLayer; property: "opacity"; to: 0
-            duration: Math.max(1, scene._runMs / 2); easing.type: Easing.InOutCubic
+            duration: scene._skipFadeOut ? 1 : Math.max(1, scene._runMs / 2)
+            easing.type: Easing.InOutCubic
         }
         NumberAnimation {
             target: scene.currentLayer; property: "opacity"; to: 1
@@ -491,8 +526,8 @@ Item {
             }
 
             // ── No-theme fallback ───────────────────────────────────────
-            // Reads from the CURRENT layer's resolved theme — during a
-            // transition the message describes the destination, not the
+            // Reads from the shown layer's resolved theme — once a fade
+            // starts the message describes the destination, not the
             // outgoing one. Without this, the projection would be silently
             // black when an operator goes live on a song/scripture before
             // setting a default theme for that kind. Mirrors Electron's
@@ -504,10 +539,10 @@ Item {
                 width: parent.width - 80
                 visible: !scene._isClear
                       && !scene._showLogo
-                      && (currentLayer.layerKind === "song" || currentLayer.layerKind === "scripture"
-                          || currentLayer.layerKind === "strongs")
-                      && (!currentLayer.theme || (currentLayer.theme.id || 0) === 0)
-                text: qsTr("Default %1 theme has not been set").arg(currentLayer.layerKind)
+                      && (shownLayer.layerKind === "song" || shownLayer.layerKind === "scripture"
+                          || shownLayer.layerKind === "strongs")
+                      && (!shownLayer.theme || (shownLayer.theme.id || 0) === 0)
+                text: qsTr("Default %1 theme has not been set").arg(shownLayer.layerKind)
                            .toUpperCase()
                 color: "#ffffff"
                 horizontalAlignment: Text.AlignHCenter
@@ -518,9 +553,9 @@ Item {
             }
 
             // ── Logo overlay ────────────────────────────────────────────
-            // Sits above the content stack. Its own opacity fade uses the
-            // scene's passive duration so a cut style makes the logo toggle
-            // instant too. active gates the video decoder; opacity drives
+            // Sits above the content stack. Its fade uses the output's Logo
+            // transition (see contentLayer above for the fade through black
+            // ordering). active gates the video decoder; opacity drives
             // the fade so the decoder doesn't bounce on every fade tick.
             //
             // Logo visibility is independent of isClear — clearing only
