@@ -49,6 +49,21 @@ void ScheduleItemsModel::sync(const QVariantList& items)
 {
     const QStringList keys = keysFor(items);
 
+    // Nothing in common (a saved schedule loaded, the schedule cleared):
+    // that is a new list, not an edit, so reset. The view then starts at the
+    // top with every row at once, instead of animating each old row out and
+    // each new one in.
+    const QSet<QString> had(m_keys.cbegin(), m_keys.cend());
+    bool shared = false;
+    for (const QString& k : keys) if (had.contains(k)) { shared = true; break; }
+    if (!shared) {
+        beginResetModel();
+        m_keys  = keys;
+        m_items = items;
+        endResetModel();
+        return;
+    }
+
     // Rows that are gone, bottom up so the indices above stay valid.
     const QSet<QString> wanted(keys.cbegin(), keys.cend());
     for (int i = int(m_keys.size()) - 1; i >= 0; --i) {

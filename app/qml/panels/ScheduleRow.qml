@@ -158,7 +158,7 @@ Item {
                 // dragged, OR currently selected — so the handle visually
                 // ranks alongside the other "active row" cues.
                 opacity: handleMa.containsMouse || root.isDragging
-                       || ma.containsMouse        || root.isSelected
+                       || rowHover.hovered         || root.isSelected
                          ? 1.0 : 0.6
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.instant } }
             }

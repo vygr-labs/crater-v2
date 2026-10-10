@@ -107,6 +107,22 @@ private slots:
         QCOMPARE(removed.count(), 1);
     }
 
+    // A list with nothing in common is a load, not an edit: one reset, so
+    // the view opens at the top with every row at once.
+    void unrelatedListResets()
+    {
+        ScheduleItemsModel model;
+        model.sync(items({ "a", "b", "c" }));
+        QSignalSpy reset(&model, &QAbstractItemModel::modelReset);
+        QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+        QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+
+        model.sync(items({ "x", "y" }));
+        QCOMPARE(rows(model), items({ "x", "y" }));
+        QCOMPARE(reset.count(), 1);
+        QCOMPARE(removed.count() + inserted.count(), 0);
+    }
+
     void duplicateAndMissingIds()
     {
         ScheduleItemsModel model;
