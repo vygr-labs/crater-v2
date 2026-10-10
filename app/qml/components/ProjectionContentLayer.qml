@@ -68,6 +68,33 @@ Item {
     // (e.g. a future preview tile).
     property int    passiveFadeMs: 280
 
+    // ── Readiness ───────────────────────────────────────────────────────
+    // True once everything this layer shows has something to paint: the
+    // PDF page has rasterized, and every picture and video in the layer
+    // (the live media item and any theme background) has decoded or has its
+    // first frame. The scene polls this before fading the layer in, because
+    // a fade that starts before the media is there ends on black and the
+    // media then pops in, which reads as a jump cut.
+    //
+    // Media components advertise themselves through a `mediaReady`
+    // property, found by walking the visible tree. Hidden subtrees don't
+    // count, so a suppressed or inactive branch can't hold a transition.
+    function isReady() {
+        if (!layerKind) return true
+        if (pdfPageImage.visible && pdfPageImage.source.toString() !== ""
+                && pdfPageImage.status === Image.Loading)
+            return false
+        return _treeReady(root)
+    }
+    function _treeReady(item) {
+        if (!item || item.visible === false) return true
+        if (item.mediaReady === false) return false
+        const kids = item.children
+        for (let i = 0; i < kids.length; ++i)
+            if (!_treeReady(kids[i])) return false
+        return true
+    }
+
     // ── Theme resolution ────────────────────────────────────────────────
     // Reads through to AppState.resolveItemTheme so this layer honors the
     // outputKind-pinned theme. Depends on themeRevision so external
@@ -241,9 +268,16 @@ Item {
     // sub-region for image + video, per-item loop + force-mute). Sits inside
     // the layer at canvas-native size — when the scene scales the stage Item
     // this scales with it.
+    // Clear shows the background only. For a picture, video or PDF the
+    // media IS the content, so it fades out with the text instead of
+    // staying up, which made Clear look broken on media.
+    readonly property real _clearOpacity: ProjectionService.isClear ? 0 : 1
+
     MediaMonitor {
         id: mediaItemMonitor
         anchors.fill: parent
+        opacity: root._clearOpacity
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
         visible: root._isMediaItem && !root._mediaSuppressed
                  && (root.layerKind === "image" || root.layerKind === "video")
         mediaKind: visible ? root.layerKind : ""
@@ -274,6 +308,8 @@ Item {
     Image {
         id: pdfPageImage
         anchors.fill: parent
+        opacity: root._clearOpacity
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
         visible: root._isMediaItem && root.layerKind === "pdf"
         asynchronous: true
         cache: true
@@ -330,7 +366,6 @@ Item {
         id: scriptureFooter
         visible: root.layerKind === "scripture"
                  && SettingsService.showScriptureFooter
-                 && !ProjectionService.isClear
                  && text.length > 0
         text: root._footerText
         anchors.horizontalCenter: parent.horizontalCenter
@@ -342,8 +377,10 @@ Item {
         font.family: Theme.font.family
         font.pixelSize: Math.max(12, Math.round(root.height * 0.030))
         font.weight: Theme.font.weightSemiBold
-        opacity: 0.92
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+        // Clear fades it with the text. Switching `visible` instead made it
+        // vanish in one frame while everything around it faded.
+        opacity: ProjectionService.isClear ? 0 : 0.92
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 
     // ── Song credits line (global toggles) ──────────────────────────────
@@ -356,7 +393,6 @@ Item {
         id: songCredits
         visible: root.layerKind === "song"
                  && !root._themeHasCredits
-                 && !ProjectionService.isClear
                  && text.length > 0
         text: root._songCreditsText
         anchors.horizontalCenter: parent.horizontalCenter
@@ -369,7 +405,7 @@ Item {
         styleColor: "#cc000000"
         font.family: Theme.font.family
         font.pixelSize: Math.max(11, Math.round(root.height * 0.024))
-        opacity: 0.85
-        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs } }
+        opacity: ProjectionService.isClear ? 0 : 0.85
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 }

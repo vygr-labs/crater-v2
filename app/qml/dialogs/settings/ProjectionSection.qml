@@ -36,6 +36,79 @@ Item {
 
     readonly property int _screenCount: OutputService.screens.length
 
+    // ── Transition helpers ──────────────────────────────────────────────
+    // Outputs that render the audience view and so run transitions: the
+    // projector, NDI (its headless scene reads the "ndi" entry in either
+    // output mode), and any extra output mirroring the audience. Stage
+    // monitors show the presenter view, which has no transitions.
+    readonly property var _transitionOutputs: {
+        const list = OutputService.outputs
+        let out = []
+        for (let i = 0; i < list.length; i++) {
+            const b = list[i]
+            if (b.id !== "primary" && b.role !== "ndi" && b.contentMode !== "mirror") continue
+            const label = b.id === "primary" ? qsTr("Projector")
+                        : b.role === "ndi"   ? qsTr("NDI")
+                        : (b.displayName || b.id)
+            out.push({ label: label, value: b.id })
+        }
+        return out
+    }
+    property string _transitionOutput: "primary"
+
+    readonly property var _transitionTypes: {
+        const all = [
+            { label: qsTr("Cut"),                value: "cut" },
+            { label: qsTr("Crossfade"),          value: "crossfade" },
+            { label: qsTr("Fade through black"), value: "fadeBlack" },
+        ]
+        const fade = [
+            { label: qsTr("Cut"),  value: "cut" },
+            { label: qsTr("Fade"), value: "crossfade" },
+        ]
+        return [
+            { type: "lyrics",    label: qsTr("Lyrics"),
+              description: qsTr("Moving between song slides and songs"), styles: all },
+            { type: "scripture", label: qsTr("Scripture"),
+              description: qsTr("Moving between verses and passages"), styles: all },
+            { type: "media",     label: qsTr("Media"),
+              description: qsTr("Pictures, videos and presentations"), styles: all },
+            { type: "logo",      label: qsTr("Logo"),
+              description: qsTr("Showing and hiding the logo"), styles: all },
+            { type: "clear",     label: qsTr("Clear"),
+              description: qsTr("Clearing the screen and bringing content back"), styles: fade },
+        ]
+    }
+
+    // Combobox shows its value as-is, so the pickers below hold labels and
+    // these map them to and from the stored values.
+    function _labelOf(opts, v) {
+        for (let i = 0; i < opts.length; i++) if (opts[i].value === v) return opts[i].label
+        return opts.length > 0 ? opts[0].label : ""
+    }
+    function _valueOf(opts, label) {
+        for (let i = 0; i < opts.length; i++) if (opts[i].label === label) return opts[i].value
+        return ""
+    }
+    function _labels(opts) { return opts.map(function(o) { return o.label }) }
+
+    readonly property var _durationOptions: [
+        { label: qsTr("Instant"),             value: "0" },
+        { label: qsTr("Fast (150 ms)"),       value: "150" },
+        { label: qsTr("Normal (280 ms)"),     value: "280" },
+        { label: qsTr("Slow (500 ms)"),       value: "500" },
+        { label: qsTr("Very slow (1000 ms)"), value: "1000" },
+    ]
+    // Snap a stored duration onto the nearest preset at or above it, so a
+    // value set some other way still shows a choice.
+    function _durationPreset(ms) {
+        if (ms <= 0)   return "0"
+        if (ms <= 150) return "150"
+        if (ms <= 280) return "280"
+        if (ms <= 500) return "500"
+        return "1000"
+    }
+
     function _screenLabel(i) {
         const list = OutputService.screens
         if (i < 0 || i >= list.length) return qsTr("Not assigned")
@@ -180,137 +253,102 @@ Item {
             }
 
             // ── TRANSITIONS ──────────────────────────────────────────────
-            // Per-output transition between live items + between pages of the
-            // same item. Style and duration are independently settable for
-            // Primary and (in dual output mode) NDI — matching the per-output
-            // theme pin pattern. SettingsService.reduceMotion remains the
-            // global override; when on, every output collapses to "cut"
-            // regardless of these picks.
+            // One style and duration per content type, per output. Every
+            // picker's value reads OutputService.outputs first so it re-reads
+            // on outputsChanged. Before that dependency the pickers bound to
+            // plain function calls and kept showing the old choice after a
+            // pick, which made the setting look broken.
             SettingsSectionHeader { title: qsTr("Transitions") }
 
-            // ── Primary output: style ────────────────────────────────────
-            SettingRow {
-                title: qsTr("Primary output style")
-                description: qsTr("How the audience screen moves between items")
-                Combobox {
-                    width: 220
-                    searchable: false
-                    options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
-                    // Map canonical token → display label. Anything unknown
-                    // collapses to Crossfade so the picker never shows
-                    // empty after a registry hand-edit.
-                    value: {
-                        switch (OutputService.transitionStyle("primary")) {
-                            case "cut":       return qsTr("Cut")
-                            case "fadeBlack": return qsTr("Fade through black")
-                            default:          return qsTr("Crossfade")
-                        }
-                    }
-                    onValueSelected: function(v) {
-                        if (v === qsTr("Cut"))                  OutputService.setTransitionStyle("primary", "cut")
-                        else if (v === qsTr("Fade through black")) OutputService.setTransitionStyle("primary", "fadeBlack")
-                        else                                    OutputService.setTransitionStyle("primary", "crossfade")
-                    }
-                }
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            // ── Primary output: duration ─────────────────────────────────
-            // Named presets rather than a numeric input: operators pick
-            // "feel" not arithmetic, and the SettingsService setter clamps
-            // to 0..1500 so any future hand-edit can't escape sanity.
-            SettingRow {
-                title: qsTr("Primary output duration")
-                description: qsTr("How long each transition takes")
-                Combobox {
-                    width: 220
-                    searchable: false
-                    options: [qsTr("Instant"),
-                              qsTr("Fast (150 ms)"),
-                              qsTr("Normal (280 ms)"),
-                              qsTr("Slow (500 ms)"),
-                              qsTr("Very slow (1000 ms)")]
-                    value: {
-                        const ms = OutputService.transitionDurationMs("primary")
-                        if (ms <= 0)    return qsTr("Instant")
-                        if (ms <= 150)  return qsTr("Fast (150 ms)")
-                        if (ms <= 280)  return qsTr("Normal (280 ms)")
-                        if (ms <= 500)  return qsTr("Slow (500 ms)")
-                        return qsTr("Very slow (1000 ms)")
-                    }
-                    onValueSelected: function(v) {
-                        if (v === qsTr("Instant"))                 OutputService.setTransitionDurationMs("primary", 0)
-                        else if (v === qsTr("Fast (150 ms)"))      OutputService.setTransitionDurationMs("primary", 150)
-                        else if (v === qsTr("Normal (280 ms)"))    OutputService.setTransitionDurationMs("primary", 280)
-                        else if (v === qsTr("Slow (500 ms)"))      OutputService.setTransitionDurationMs("primary", 500)
-                        else                                       OutputService.setTransitionDurationMs("primary", 1000)
-                    }
-                }
-            }
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
-
-            // ── NDI output: style (visible only in dual output mode) ────
-            // Single mode means NDI grabs frames from the projection
-            // window's scene — there is no separate NDI scene to apply a
-            // distinct transition to, so the controls would be lying. Hide
-            // entirely in single mode; the QtQuick.Layouts column collapses
-            // the hidden Items automatically.
-            SettingRow {
-                visible: SettingsService.outputMode === "dual"
-                title: qsTr("NDI output style")
-                description: qsTr("Independent transition for the NDI broadcast")
-                Combobox {
-                    width: 220
-                    searchable: false
-                    options: [qsTr("Cut"), qsTr("Crossfade"), qsTr("Fade through black")]
-                    value: {
-                        switch (OutputService.transitionStyle("ndi")) {
-                            case "cut":       return qsTr("Cut")
-                            case "fadeBlack": return qsTr("Fade through black")
-                            default:          return qsTr("Crossfade")
-                        }
-                    }
-                    onValueSelected: function(v) {
-                        if (v === qsTr("Cut"))                  OutputService.setTransitionStyle("ndi", "cut")
-                        else if (v === qsTr("Fade through black")) OutputService.setTransitionStyle("ndi", "fadeBlack")
-                        else                                    OutputService.setTransitionStyle("ndi", "crossfade")
-                    }
-                }
-            }
+            // Reduce Motion (Appearance) turns every transition into a cut.
+            // Say so here, where the operator is wondering why their pick
+            // isn't showing.
             Rectangle {
+                visible: SettingsService.reduceMotion
                 Layout.fillWidth: true
-                Layout.preferredHeight: 1
-                color: Theme.color.borderSubtle
-                visible: SettingsService.outputMode === "dual"
+                Layout.preferredHeight: reduceMotionText.implicitHeight + 2 * Theme.space.sm
+                color: Theme.color.brandSubtle
+                border.color: Theme.color.brand
+                border.width: 1
+                Text {
+                    id: reduceMotionText
+                    anchors.fill: parent
+                    anchors.margins: Theme.space.sm
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                    text: qsTr("Reduce motion is on in Appearance, so every transition is a cut until you turn it off.")
+                    color: Theme.color.textPrimary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
             }
 
-            // ── NDI output: duration (visible only in dual output mode) ─
             SettingRow {
-                visible: SettingsService.outputMode === "dual"
-                title: qsTr("NDI output duration")
-                description: qsTr("How long the NDI transition takes")
+                visible: root._transitionOutputs.length > 1
+                title: qsTr("Output")
+                description: qsTr("Each output keeps its own transitions")
                 Combobox {
                     width: 220
                     searchable: false
-                    options: [qsTr("Instant"),
-                              qsTr("Fast (150 ms)"),
-                              qsTr("Normal (280 ms)"),
-                              qsTr("Slow (500 ms)"),
-                              qsTr("Very slow (1000 ms)")]
-                    value: {
-                        const ms = OutputService.transitionDurationMs("ndi")
-                        if (ms <= 0)    return qsTr("Instant")
-                        if (ms <= 150)  return qsTr("Fast (150 ms)")
-                        if (ms <= 280)  return qsTr("Normal (280 ms)")
-                        if (ms <= 500)  return qsTr("Slow (500 ms)")
-                        return qsTr("Very slow (1000 ms)")
-                    }
+                    options: root._labels(root._transitionOutputs)
+                    value: root._labelOf(root._transitionOutputs, root._transitionOutput)
                     onValueSelected: function(v) {
-                        if (v === qsTr("Instant"))                 OutputService.setTransitionDurationMs("ndi", 0)
-                        else if (v === qsTr("Fast (150 ms)"))      OutputService.setTransitionDurationMs("ndi", 150)
-                        else if (v === qsTr("Normal (280 ms)"))    OutputService.setTransitionDurationMs("ndi", 280)
-                        else if (v === qsTr("Slow (500 ms)"))      OutputService.setTransitionDurationMs("ndi", 500)
-                        else                                       OutputService.setTransitionDurationMs("ndi", 1000)
+                        root._transitionOutput = root._valueOf(root._transitionOutputs, v)
+                    }
+                }
+            }
+
+            Repeater {
+                model: root._transitionTypes
+                delegate: ColumnLayout {
+                    id: typeRow
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+                    SettingRow {
+                        title: typeRow.modelData.label
+                        description: typeRow.modelData.description
+                        Combobox {
+                            width: 170
+                            searchable: false
+                            options: root._labels(typeRow.modelData.styles)
+                            value: {
+                                OutputService.outputs  // dep
+                                const s = OutputService.transitionStyleFor(root._transitionOutput,
+                                                                           typeRow.modelData.type)
+                                // Clear only offers Cut and Fade.
+                                return root._labelOf(typeRow.modelData.styles,
+                                    (typeRow.modelData.type === "clear" && s === "fadeBlack") ? "crossfade" : s)
+                            }
+                            onValueSelected: function(v) {
+                                OutputService.setTransitionStyleFor(root._transitionOutput, typeRow.modelData.type,
+                                                                    root._valueOf(typeRow.modelData.styles, v))
+                            }
+                        }
+                        Combobox {
+                            width: 170
+                            searchable: false
+                            options: root._labels(root._durationOptions)
+                            enabled: {
+                                OutputService.outputs  // dep
+                                return OutputService.transitionStyleFor(root._transitionOutput,
+                                                                        typeRow.modelData.type) !== "cut"
+                            }
+                            opacity: enabled ? 1 : 0.5
+                            value: {
+                                OutputService.outputs  // dep
+                                return root._labelOf(root._durationOptions, root._durationPreset(
+                                    OutputService.transitionDurationFor(root._transitionOutput,
+                                                                        typeRow.modelData.type)))
+                            }
+                            onValueSelected: function(v) {
+                                OutputService.setTransitionDurationFor(root._transitionOutput, typeRow.modelData.type,
+                                                                       parseInt(root._valueOf(root._durationOptions, v)))
+                            }
+                        }
                     }
                 }
             }

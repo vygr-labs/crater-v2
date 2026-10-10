@@ -58,6 +58,12 @@ Item {
     property int    sharedToken: -1
     property string activeUrl:   ""
 
+    // Same contract as MediaMonitor.mediaReady: the projection scene holds a
+    // fade until every background in the incoming slide has something to
+    // show.
+    readonly property bool mediaReady:
+        !bgLoader.active || (bgLoader.item !== null && bgLoader.item.loaded === true)
+
     // Single function (no intra-QML-object helper call). The earlier
     // split into _videoUrl() + _refreshToken() hit a Qt quirk: when
     // Qt.callLater dispatches the deferred call, the inner JS body
@@ -99,6 +105,7 @@ Item {
     }
 
     Loader {
+        id: bgLoader
         anchors.fill: parent
         active: root._path.length > 0
         // For videos, the choice between live-decode and poster pivots on
@@ -112,6 +119,7 @@ Item {
     Component {
         id: imageComp
         Image {
+            readonly property bool loaded: status === Image.Ready || status === Image.Error
             source: Qt.resolvedUrl("file:///" + root._path)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
@@ -144,6 +152,9 @@ Item {
     Component {
         id: posterComp
         Item {
+            // A poster is a thumbnail that may not exist yet. Never hold a
+            // transition for it.
+            readonly property bool loaded: true
             opacity: root.bgOpacity
             // Stable dark ground so a missing/in-flight thumb reads as a
             // deliberate placeholder rather than a transparent hole that
@@ -179,6 +190,12 @@ Item {
             anchors.fill: parent
             fillMode: VideoOutput.PreserveAspectCrop
             opacity: root.bgOpacity
+
+            property bool loaded: false
+            Connections {
+                target: vo.videoSink
+                function onVideoFrameChanged() { vo.loaded = true }
+            }
 
             Connections {
                 target: root

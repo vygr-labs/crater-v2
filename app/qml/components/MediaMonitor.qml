@@ -64,6 +64,13 @@ Item {
         mediaKind === "image" && !_cropped && loader.item !== null
         && loader.item.status === Image.Ready
 
+    // True once the picture has decoded, or the video has its first frame
+    // (or loading failed, so there is nothing to wait for). The projection
+    // scene waits on this before fading new content in, so the audience
+    // never watches a fade into black and then the media popping in.
+    readonly property bool mediaReady:
+        !_isMedia || (loader.item !== null && loader.item.loaded === true)
+
     readonly property bool _isMedia:
         mediaPath.length > 0 && (mediaKind === "image" || mediaKind === "video")
 
@@ -157,6 +164,7 @@ Item {
     Component {
         id: imageComp
         Image {
+            readonly property bool loaded: status === Image.Ready || status === Image.Error
             source: "file:///" + root.mediaPath
             fillMode: root._imgFill()
             asynchronous: true
@@ -187,6 +195,8 @@ Item {
     Component {
         id: imageCropComp
         Item {
+            readonly property bool loaded: cropProbe.status === Image.Ready
+                                        || cropProbe.status === Image.Error
             // Natural-size probe: no sourceSize cap, no clip, never painted. Its
             // implicit size IS the source's true pixel dimensions.
             Image {
@@ -235,6 +245,15 @@ Item {
             id: vwrap
             anchors.fill: parent
             clip: root._cropped
+
+            // Set by the first frame the sink receives. Attaching to a
+            // player that is already running pushes its current frame
+            // straight away (MediaPlaybackService::attachOutput).
+            property bool loaded: false
+            Connections {
+                target: vo.videoSink
+                function onVideoFrameChanged() { vwrap.loaded = true }
+            }
 
             VideoOutput {
                 id: vo

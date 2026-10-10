@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantMap>
 #include <QtQmlIntegration>
 
 namespace crater {
@@ -73,6 +74,7 @@ struct OutputBinding
     Q_PROPERTY(OutputThemeSlots themes              MEMBER themes)
     Q_PROPERTY(QString          transitionStyle     MEMBER transitionStyle)
     Q_PROPERTY(int              transitionDurationMs MEMBER transitionDurationMs)
+    Q_PROPERTY(QVariantMap      transitions         MEMBER transitions)
     Q_PROPERTY(bool             enabled             MEMBER enabled)
     Q_PROPERTY(int              screenIndex         MEMBER screenIndex)
     Q_PROPERTY(QString          screenName          MEMBER screenName)
@@ -85,6 +87,12 @@ public:
     OutputThemeSlots themes;
     QString          transitionStyle      = QStringLiteral("crossfade");
     int              transitionDurationMs = 280;
+    // Per content type overrides of the two fields above, keyed by type
+    // ("lyrics", "scripture", "media", "logo", "clear"), each a map with
+    // "style" and "ms". A type with no entry uses the output's own style
+    // and duration, which is how outputs saved before these existed carry
+    // on looking the same.
+    QVariantMap      transitions;
     bool             enabled              = false;
     int              screenIndex          = -1;
     QString          screenName;
