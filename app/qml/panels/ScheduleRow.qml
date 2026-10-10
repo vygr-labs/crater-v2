@@ -102,10 +102,21 @@ Item {
                  : root.isSelected
                    ? (root._paneFocused ? Qt.rgba(14/255, 37/255, 40/255, 0.55)
                                         : Qt.rgba(39/255, 39/255, 42/255, 0.55))
-                 : ma.containsMouse       ? Theme.color.rowHoverBrand
+                 : rowHover.hovered       ? Theme.color.rowHoverBrand
                                           : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.motion.instant } }
         }
+
+        // Hover also tints selected rows. The row just clicked is always
+        // selected, so without this the pointer never got any feedback.
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.color.rowHoverBrand
+            visible: root.isSelected && rowHover.hovered && !root.isDragging
+        }
+
+        // Covers the drag handle too, which the click area leaves out.
+        HoverHandler { id: rowHover }
 
         // 3px brand-colored left edge for any member of the selection set.
         // When the schedule pane is unfocused, the rail mutes to a neutral
