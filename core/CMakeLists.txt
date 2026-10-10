@@ -47,6 +47,7 @@ add_library(crater-core STATIC
     src/CollectionService.cpp
     src/PresentationService.cpp
     src/ScheduleService.cpp
+    src/ScheduleItemsModel.cpp
     src/ThemeService.cpp
     src/ThemeTokens.cpp
     src/ThemePrompt.cpp
@@ -69,6 +70,7 @@ add_library(crater-core STATIC
     include/crater/CollectionService.h
     include/crater/PresentationService.h
     include/crater/ScheduleService.h
+    include/crater/ScheduleItemsModel.h
     include/crater/ThemeService.h
     include/crater/MediaService.h
     include/crater/FontService.h

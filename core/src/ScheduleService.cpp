@@ -160,7 +160,10 @@ struct ScheduleService::Impl
 
 ScheduleService::ScheduleService(QObject* parent)
     : QObject(parent)
+    , m_itemsModel(new ScheduleItemsModel(this))
 {
+    connect(this, &ScheduleService::currentItemsChanged, m_itemsModel,
+            [this] { m_itemsModel->sync(currentItems()); });
     try {
         m_impl = std::make_unique<Impl>(db::DbPaths::appDbPath());
 
@@ -169,6 +172,7 @@ ScheduleService::ScheduleService(QObject* parent)
         connect(&m_impl->autoSaveTimer, &QTimer::timeout,
                 this, &ScheduleService::onAutoSaveTick);
         m_impl->autoSaveTimer.start();
+        m_itemsModel->sync(currentItems());
     } catch (const db::Error& e) {
         qCritical().noquote() << "ScheduleService: failed to open DB —" << e.message();
     }

@@ -357,7 +357,7 @@ Rectangle {
             // scroll padding on the last row.
             anchors.bottomMargin: Theme.space.xs
             visible: ScheduleService.currentItems.length > 0
-            model: ScheduleService.currentItems
+            model: ScheduleService.itemsModel
             clip: true
             cacheBuffer: 200
             boundsBehavior: Flickable.StopAtBounds
@@ -379,12 +379,10 @@ Rectangle {
                 return Math.max(0, Math.min(count - 1, draggedRow + delta))
             }
 
-            // Bring a freshly-appended row into view. Without this the
-            // operator adds an item and the schedule jumps to the top: the
-            // model is a QVariantList replaced wholesale on every mutation,
-            // so the ListView regenerates and contentY resets to 0. Contain
-            // scrolls the minimum needed, which for an appended row means
-            // settling on the bottom edge exactly where the new item is.
+            // Bring a freshly-appended row into view, so an item added to a
+            // long schedule doesn't land out of sight. Contain scrolls the
+            // minimum needed, which for an appended row means settling on
+            // the bottom edge exactly where the new item is.
             Connections {
                 target: AppState
                 function onScheduleItemAppended(index) {
@@ -406,18 +404,18 @@ Rectangle {
             delegate: ScheduleRow {
                 width: list.width - Theme.size.scrollBar
                 rowIndex: index
-                title:    modelData.title    || ""
-                subtitle: modelData.subtitle || ""
-                kind:     modelData.kind     || ""
+                title:    model.entry.title    || ""
+                subtitle: model.entry.subtitle || ""
+                kind:     model.entry.kind     || ""
                 isLive:   AppState.liveScheduleIndex === index
                 isSelected: AppState.selectedScheduleIndices.indexOf(index) >= 0
                 isPrimarySelected: AppState.selectedScheduleIndex === index
                 hasThemeOverride: {
-                    const t = modelData.themeId
+                    const t = model.entry.themeId
                     return (typeof t === "number" && t > 0)
                         || (typeof t === "string" && parseInt(t) > 0)
                 }
-                hasContentOverride: modelData.contentOverride === true
+                hasContentOverride: model.entry.contentOverride === true
                 selectionMode: root.selectionMode || root.selectMode
 
                 // Checkbox: toggles this row in or out of the selection
