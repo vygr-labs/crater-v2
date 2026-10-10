@@ -98,3 +98,15 @@ the high-level state; the detailed remaining-work punch-list lives in
 | Multi-output (stage / dynamic)     | `app/qml/OutputWindow.qml`                   | Done — one fullscreen window per assigned output |
 | Remote control server              | `electron/src/backend/remote/`               | v1.1 — preview UI only (view-only BrowserCast works) |
 | Auto-update                        | `app/src/UpdateService.cpp`                  | Done — in-app check, download, SHA-256 verify, install on request |
+
+## License
+
+Crater is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See [`LICENSE`](LICENSE).
+
+Copyright (C) 2024-2026 Eyetu Kingsley.
+
+Third-party components and their licenses are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

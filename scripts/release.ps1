@@ -265,6 +265,8 @@ Write-Step "Staging to $AppStage"
 if (Test-Path $AppStage) { Remove-Item -Recurse -Force $AppStage }
 New-Item -ItemType Directory -Force -Path $AppStage | Out-Null
 Copy-Item $ExePath $AppStage
+# The GPL travels with the binaries, and so do the third-party notices.
+Copy-Item (Join-Path $QtRoot 'LICENSE'), (Join-Path $QtRoot 'THIRD_PARTY_NOTICES.md') $AppStage
 
 # ── windeployqt ────────────────────────────────────────────────────────────
 # --qmldir lets windeployqt's import-scanner read our QML and ship only the

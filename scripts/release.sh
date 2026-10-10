@@ -270,6 +270,9 @@ mkdir -p "$LEGACY_DIR"
 cp "$BIBLE_DB_PATH" "$LEGACY_DIR/bibles.sqlite"
 done_msg "bibles.sqlite staged to $LEGACY_DIR"
 
+# The GPL travels with the binaries, and so do the third-party notices.
+cp "$QT_ROOT/LICENSE" "$QT_ROOT/THIRD_PARTY_NOTICES.md" "$APP_BUNDLE/Contents/Resources/"
+
 # ── Stage Strong's DBs ─────────────────────────────────────────────────────
 # Same walk-up target as the Bible DB above, into the same legacy/ dir. The
 # loop keeps the two files (dictionary + KJV-with-Strong's) DRY.
