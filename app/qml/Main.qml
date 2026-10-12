@@ -1009,6 +1009,22 @@ ApplicationWindow {
         onActivated: AppState.modalSaveTap()
     }
 
+    // Ctrl+PgUp / Ctrl+PgDn = previous / next live slide from anywhere,
+    // including over an open dialog (the song editor mid-service). Every
+    // other live key is console-only, and a dialog's text fields own the
+    // plain arrows and PgUp / PgDn. Nothing else binds these two, so no
+    // dialog can make them ambiguous; keep it that way.
+    Shortcut {
+        sequence: "Ctrl+PgUp"
+        enabled: AppState.liveIsActive
+        onActivated: AppState.stepLivePage(-1)
+    }
+    Shortcut {
+        sequence: "Ctrl+PgDown"
+        enabled: AppState.liveIsActive
+        onActivated: AppState.stepLivePage(1)
+    }
+
     // F1 = the keyboard shortcut reference (ShortcutsDialog). Toggles, and
     // only opens over nothing: there is one modal slot, so opening it over
     // an editor would throw the editor's unsaved edits away.
@@ -1019,7 +1035,8 @@ ApplicationWindow {
     }
 
     // Ctrl+A: select every row of whichever list owns the keyboard (the
-    // active library tab or the schedule). Only reaches here when no text
+    // active library tab or the schedule; the Songs tab selects its search
+    // text instead, see AppState.searchSelectAll). Only reaches here when no text
     // field has focus: a focused TextInput claims Ctrl+A for its own
     // select-all through ShortcutOverride, so typing never loses it. The
     // library search box forwards Ctrl+A only to the schedule, when that

@@ -143,8 +143,9 @@ ModalShell {
     // preview reflects the live editor state.
     readonly property var _previewItem: {
         const pages = []
-        for (let i = 0; i < _sections.length; i++) {
-            const sec = _sections[i] || {}
+        const sections = AppState.splitTaggedSections(_sections)
+        for (let i = 0; i < sections.length; i++) {
+            const sec = sections[i] || {}
             pages.push({
                 label:   sec.label || "",
                 content: (sec.lines && sec.lines.length > 0) ? sec.lines.join("\n") : ""
@@ -385,6 +386,13 @@ ModalShell {
         }
         // Make sure raw-mode edits are reflected in _sections before persisting.
         if (_viewMode === "raw") _commitRawText(_rawText)
+        // A [Tag] line typed inside a section becomes its own section here,
+        // so it is stored as a label and never projected as a lyric.
+        const split = AppState.splitTaggedSections(_sections)
+        if (JSON.stringify(split) !== JSON.stringify(_sections)) {
+            _sections = split
+            if (_currentSection >= split.length) _currentSection = split.length - 1
+        }
 
         _isSaving = true
         _saveError = ""

@@ -11,6 +11,24 @@ Item {
     readonly property string tabKey: "strongs"
     property string viewMode: "dictionary"   // "dictionary" | "reader"
 
+    // The two views share one search box but read it differently (a word
+    // or number vs a chapter reference), so each keeps its own text. Before,
+    // the Reader's "Genesis 2" carried into the Dictionary and matched
+    // nothing in either language.
+    property string _shownMode: "dictionary"
+    property var _searchByView: ({})
+    onViewModeChanged: {
+        _searchByView[_shownMode] = AppState.searchText.strongs || ""
+        _shownMode = viewMode
+        AppState.setSearch(tabKey, _searchByView[viewMode] || "")
+    }
+
+    // Greek / Hebrew in the sidebar only scope the Dictionary. Picking one
+    // while reading opens the Dictionary in that language instead of
+    // silently doing nothing.
+    readonly property string language: AppState.activeLibraryGroup.strongs || ""
+    onLanguageChanged: if (viewMode === "reader") viewMode = "dictionary"
+
     Rectangle {
         anchors.fill: parent
         color: Theme.color.bgContent
@@ -77,8 +95,12 @@ Item {
             anchors.centerIn: parent
             text: {
                 var c = contentLoader.item ? contentLoader.item.count : 0
-                if (root.viewMode === "dictionary")
-                    return c + " " + (c === 1 ? qsTr("entry") : qsTr("entries"))
+                if (root.viewMode === "dictionary") {
+                    const n = c + " " + (c === 1 ? qsTr("entry") : qsTr("entries"))
+                    return root.language === "hebrew" ? qsTr("Hebrew") + " · " + n
+                         : root.language === "greek"  ? qsTr("Greek")  + " · " + n
+                         : n
+                }
                 return c + " " + qsTr("verses")
             }
             color: Theme.color.textTertiary

@@ -154,10 +154,7 @@ $VcRedistUrl  = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
 # once from a fixed GitHub Release asset on this same repo and cache it under
 # packaging/ — the workflow's actions/cache step keys on the file path, so
 # subsequent CI runs skip the download entirely.
-# The local sibling path (../electron/...) is checked first as a courtesy to
-# the dev workflow on machines that still have the electron repo cloned.
 $BibleDbPath        = Join-Path $PackagingDir 'bibles.sqlite'
-$BibleDbLocalSource = Join-Path $QtRoot '..\electron\src\assets\default\databases\bibles.sqlite'
 $BibleDbUrl         = 'https://github.com/vygr-labs/crater-v2/releases/download/data-v2/bibles.sqlite'
 $BibleDbSha256      = '004c641e918631be24ba46bd952873d2eb2decde4ef64771e6d795125690ca68'
 
@@ -294,21 +291,13 @@ Write-Step 'Staging Bible database'
 # Resolution order:
 #   1. packaging/bibles.sqlite  -- the canonical CI-friendly location, cached
 #      between workflow runs by actions/cache (same pattern as vc_redist).
-#   2. ../electron/.../bibles.sqlite -- legacy dev-box layout where the
-#      Electron tree sits as a sibling of the Qt tree. Promotes it into
-#      packaging/ so subsequent runs don't depend on that layout.
-#   3. Download from the data-v2 GitHub Release asset and verify SHA-256.
-# All three converge on $BibleDbPath; staging copies from there.
+#   2. Download from the data-v2 GitHub Release asset and verify SHA-256.
+# There is deliberately no electron-tree fallback for this file: that copy
+# carries copyrighted translations the shipped build must not include.
 if (-not (Test-Path $BibleDbPath)) {
-    if (Test-Path $BibleDbLocalSource) {
-        Write-Step "Importing bibles.sqlite from sibling electron tree"
-        New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
-        Copy-Item $BibleDbLocalSource $BibleDbPath
-    } else {
-        Write-Step "Downloading bibles.sqlite from $BibleDbUrl"
-        New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
-        Invoke-WebRequest -Uri $BibleDbUrl -OutFile $BibleDbPath -UseBasicParsing
-    }
+    Write-Step "Downloading bibles.sqlite from $BibleDbUrl"
+    New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
+    Invoke-WebRequest -Uri $BibleDbUrl -OutFile $BibleDbPath -UseBasicParsing
 }
 $actualSha = (Get-FileHash $BibleDbPath -Algorithm SHA256).Hash.ToLower()
 if ($actualSha -ne $BibleDbSha256) {

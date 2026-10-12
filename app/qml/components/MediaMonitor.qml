@@ -169,6 +169,11 @@ Item {
             fillMode: root._imgFill()
             asynchronous: true
             cache: true
+            // Keep the last picture up while a new source or size decodes.
+            // A projector layer reuses this Image when a new picture arrives
+            // mid-fade, and the stage can resize at fade start; without it
+            // either one blanks the frame to black until the decode lands.
+            retainWhileLoading: true
             // DPR-aware texture cap. On a standard 280×158 mini-monitor
             // this decodes to ~280×158 pixels, not the 4K native of the
             // source — ~9× less memory + scanout work on Hi-DPI laptops

@@ -124,6 +124,9 @@ Item {
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
+            // Keep the last picture up while a new source or size decodes,
+            // so a reused projector layer never blanks to black mid-fade.
+            retainWhileLoading: true
             opacity: root.bgOpacity
             // DPR-aware texture cap — keeps a 4K source from decoding to
             // its full native size when the container box is much smaller

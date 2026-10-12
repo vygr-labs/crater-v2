@@ -52,7 +52,8 @@ ModalShell {
             { keys: ["Home", "End"],                   label: qsTr("First or last slide in the focused panel") },
             { keys: ["PgUp", "PgDn"],                  label: qsTr("Previous or next chorus or tag in the focused panel") },
             { keys: ["Enter"],                     label: qsTr("Send the Preview slide live") },
-            { keys: ["Ctrl+Up", "Ctrl+Down"],          label: qsTr("Live: pick a slide, release Ctrl to send it") }
+            { keys: ["Ctrl+Up", "Ctrl+Down"],          label: qsTr("Live: pick a slide, release Ctrl to send it") },
+            { keys: ["Ctrl+PgUp", "Ctrl+PgDn"],        label: qsTr("Live: previous or next slide, even with a dialog open") }
         ] },
         { title: qsTr("Schedule"), rows: [
             { keys: ["Ctrl+S"],                    label: qsTr("Save the schedule, naming it the first time") },

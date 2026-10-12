@@ -70,11 +70,9 @@ APP_STAGE_DIR="$DIST_ROOT/Crater"           # the staging directory
 APP_BUNDLE="$APP_STAGE_DIR/crater.app"
 PACKAGING_DIR="$QT_ROOT/packaging"
 
-# Bible DB: same fixed Release asset as the Windows driver. The local sibling
-# path is checked first as a courtesy to dev machines that still have the
-# electron repo cloned.
+# Bible DB: same fixed Release asset as the Windows driver. There is no
+# electron-tree fallback: that copy carries copyrighted translations.
 BIBLE_DB_PATH="$PACKAGING_DIR/bibles.sqlite"
-BIBLE_DB_LOCAL_SOURCE="$QT_ROOT/../electron/src/assets/default/databases/bibles.sqlite"
 BIBLE_DB_URL='https://github.com/vygr-labs/crater-v2/releases/download/data-v2/bibles.sqlite'
 BIBLE_DB_SHA256='004c641e918631be24ba46bd952873d2eb2decde4ef64771e6d795125690ca68'
 
@@ -248,15 +246,9 @@ fi
 # Contents/Resources/.
 step 'Staging Bible database'
 if [[ ! -f "$BIBLE_DB_PATH" ]]; then
-    if [[ -f "$BIBLE_DB_LOCAL_SOURCE" ]]; then
-        step "Importing bibles.sqlite from sibling electron tree"
-        mkdir -p "$PACKAGING_DIR"
-        cp "$BIBLE_DB_LOCAL_SOURCE" "$BIBLE_DB_PATH"
-    else
-        step "Downloading bibles.sqlite from $BIBLE_DB_URL"
-        mkdir -p "$PACKAGING_DIR"
-        curl -fSL --retry 3 -o "$BIBLE_DB_PATH" "$BIBLE_DB_URL"
-    fi
+    step "Downloading bibles.sqlite from $BIBLE_DB_URL"
+    mkdir -p "$PACKAGING_DIR"
+    curl -fSL --retry 3 -o "$BIBLE_DB_PATH" "$BIBLE_DB_URL"
 fi
 # shasum -a 256 is the macOS-native equivalent of sha256sum.
 ACTUAL_SHA=$(shasum -a 256 "$BIBLE_DB_PATH" | awk '{print $1}')

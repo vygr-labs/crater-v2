@@ -324,12 +324,17 @@ Item {
 
     // ── Waiting for the new layer ───────────────────────────────────────
     // The fade starts once the incoming layer reports everything loaded, or
-    // after _readyTimeoutMs so a broken file can't hold the screen. Polled
+    // after _readyTimeoutMs so a broken file can't hold the screen. Pictures
+    // get longer, up to _imageTimeoutMs: a decode always ends (ready or
+    // error), and a big photo on a slow machine can take more than 600 ms.
+    // Giving up early faded the old content out over a layer that was still
+    // empty, so the audience saw black until the picture popped in. Polled
     // rather than signalled: readiness is spread over every picture and
     // video in the layer's tree, and a 16 ms poll for a few frames is
     // cheaper than wiring each one up. Always at least one tick, so text
     // fitting (done on completion) has settled first.
     readonly property int _readyTimeoutMs: 600
+    readonly property int _imageTimeoutMs: 4000
     property real _readyDeadline: 0
     // Videos that never produced a frame within the timeout (a missing file,
     // a codec the player can't open). Not waited for again this session.
@@ -340,8 +345,13 @@ Item {
         repeat: true
         onTriggered: {
             if (!scene.currentLayer.isReady(scene._stalledUrls)) {
-                if (Date.now() < scene._readyDeadline) return
+                const now = Date.now()
+                if (now < scene._readyDeadline) return
                 const stalled = scene.currentLayer.pendingUrls()
+                // Only pictures left (videos are the ones with urls).
+                if (stalled.length === 0 && now < scene._readyDeadline
+                        - scene._readyTimeoutMs + scene._imageTimeoutMs)
+                    return
                 for (let i = 0; i < stalled.length; ++i) scene._stalledUrls[stalled[i]] = true
             }
             stop()

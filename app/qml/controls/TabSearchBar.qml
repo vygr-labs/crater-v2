@@ -419,6 +419,10 @@ Item {
         function onActiveTabChanged() {
             Qt.callLater(function() { inputField.forceActiveFocus() })
         }
+        function onSearchSelectAll() {
+            inputField.forceActiveFocus()
+            inputField.selectAll()
+        }
     }
     Component.onCompleted: {
         Qt.callLater(function() { inputField.forceActiveFocus() })

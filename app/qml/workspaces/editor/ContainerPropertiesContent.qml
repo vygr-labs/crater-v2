@@ -48,6 +48,12 @@ Column {
     // data still edits cleanly.
     readonly property bool _isGradient:
         !!(node && node.data && node.data.fill && node.data.fill.type === "gradient")
+    // No fill: an empty backgroundColor, which NodeRenderer already draws as
+    // transparent. fill.type "none" marks the choice explicitly so a container
+    // whose colour was cleared some other way still reads as None.
+    readonly property bool _isNoFill: !_isGradient && !!node
+        && ((node.data && node.data.fill && node.data.fill.type === "none")
+            || !(node.style && node.style.backgroundColor))
     readonly property string _gradStyle: {
         const g = node && node.data && node.data.fill && node.data.fill.gradient
         return (g && g.style) || "mesh"
@@ -166,23 +172,35 @@ Column {
             spacing: 6
 
             // Fill type — Solid uses the color picker; Gradient swaps in the
-            // animated GradientFill and reveals its controls below. The first
-            // switch to Gradient seeds a default mesh; switching back to Solid
-            // keeps the gradient spec so re-selecting restores it.
+            // animated GradientFill and reveals its controls below; None clears
+            // the fill so the container is see-through. The first switch to
+            // Gradient seeds a default mesh; leaving a mode keeps its spec
+            // (the gradient, and the solid colour in fill.color) so
+            // re-selecting it restores what was there.
             SegmentedControl {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 28
                 options: [
+                    { value: "none",     label: qsTr("None")     },
                     { value: "solid",    label: qsTr("Solid")    },
                     { value: "gradient", label: qsTr("Gradient") }
                 ]
-                current: root._isGradient ? "gradient" : "solid"
+                current: root._isGradient ? "gradient" : root._isNoFill ? "none" : "solid"
                 onChanged: function(v) {
                     const fill = (node.data && node.data.fill) || ({})
-                    if (v === "gradient") {
+                    const color = (node.style && node.style.backgroundColor) || ""
+                    if (v === "none") {
+                        root._liveStyle("backgroundColor", "")
+                        root._setData("fill", { type: "none", gradient: fill.gradient || null,
+                                                color: color || fill.color || "" })
+                    } else if (v === "solid" && !color) {
+                        root._liveStyle("backgroundColor", fill.color || "#1f1f24")
+                        root._setData("fill", { type: "solid", gradient: fill.gradient || null })
+                    } else if (v === "gradient") {
                         root._setData("fill", {
                             type: "gradient",
+                            color: fill.color || "",
                             gradient: fill.gradient || {
                                 style: "mesh",
                                 colors: ["#1e3a8a", "#7c3aed", "#db2777"],
@@ -200,7 +218,7 @@ Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 height: 32
-                visible: !root._isGradient
+                visible: !root._isGradient && !root._isNoFill
                 label: qsTr("Fill")
                 value: (node && node.style && node.style.backgroundColor) || "#000000"
                 // Live during the drag, one undo step on close (see the

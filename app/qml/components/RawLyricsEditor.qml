@@ -64,10 +64,14 @@ Rectangle {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i]
             const trimmed = line.trim()
-            const labelMatch = trimmed.match(/^\[(.*)\]$/)
-            if (labelMatch) {
-                current = { label: labelMatch[1], lines: [] }
+            // Same tag test as everywhere else (AppState.lyricTagOf): a
+            // formatted tag, or one with text after it, still opens a
+            // section instead of landing on screen as a lyric line.
+            const tag = AppState.lyricTagOf(line)
+            if (tag) {
+                current = { label: tag.label, lines: [] }
                 out.push(current)
+                if (tag.rest) current.lines.push(tag.rest)
             } else if (trimmed.length > 0) {
                 if (!current) {
                     current = { label: "", lines: [] }
@@ -102,7 +106,7 @@ Rectangle {
         let inSection = false
         for (let i = 0; i < lines.length; i++) {
             const trimmed = lines[i].trim()
-            if (/^\[(.*)\]$/.test(trimmed)) {
+            if (/^\[[^\[\]]*\]/.test(trimmed)) {
                 idx++
                 inSection = true
             } else if (trimmed.length > 0) {

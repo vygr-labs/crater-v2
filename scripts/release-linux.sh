@@ -64,7 +64,6 @@ TOOLS_DIR="$BUILD_DIR/linuxdeploy"
 
 # Bible DB: same fixed Release asset, same SHA-256 as the other drivers.
 BIBLE_DB_PATH="$PACKAGING_DIR/bibles.sqlite"
-BIBLE_DB_LOCAL_SOURCE="$QT_ROOT/../electron/src/assets/default/databases/bibles.sqlite"
 BIBLE_DB_URL='https://github.com/vygr-labs/crater-v2/releases/download/data-v2/bibles.sqlite'
 BIBLE_DB_SHA256='004c641e918631be24ba46bd952873d2eb2decde4ef64771e6d795125690ca68'
 
@@ -184,13 +183,8 @@ mkdir -p "$LEGACY_DIR"
 step 'Staging Bible database'
 if [[ ! -f "$BIBLE_DB_PATH" ]]; then
     mkdir -p "$PACKAGING_DIR"
-    if [[ -f "$BIBLE_DB_LOCAL_SOURCE" ]]; then
-        step "Importing bibles.sqlite from sibling electron tree"
-        cp "$BIBLE_DB_LOCAL_SOURCE" "$BIBLE_DB_PATH"
-    else
-        step "Downloading bibles.sqlite from $BIBLE_DB_URL"
-        curl -fSL --retry 3 -o "$BIBLE_DB_PATH" "$BIBLE_DB_URL"
-    fi
+    step "Downloading bibles.sqlite from $BIBLE_DB_URL"
+    curl -fSL --retry 3 -o "$BIBLE_DB_PATH" "$BIBLE_DB_URL"
 fi
 ACTUAL_SHA=$(sha256_of "$BIBLE_DB_PATH")
 if [[ "$ACTUAL_SHA" != "$BIBLE_DB_SHA256" ]]; then
