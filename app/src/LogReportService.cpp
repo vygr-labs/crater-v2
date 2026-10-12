@@ -23,8 +23,9 @@ namespace {
 // trivial drive-by spam target — so shipping it inside the binary is
 // acceptable. If it is ever abused, rotate it here AND in the Vercel
 // project's CRATER_LOG_TOKEN env var (the two must match) and ship an update.
+// The www host directly: the bare domain answers with a 307 to it.
 const QString kEndpoint =
-    QStringLiteral("https://voyagerlabs.tech/api/crater-logs");
+    QStringLiteral("https://www.voyagerlabs.tech/api/crater-logs");
 const QString kToken =
     QStringLiteral("OOvPA0wW07wyeMmy66oOX_AYUL4xL0qg");
 
@@ -33,6 +34,31 @@ const QString kToken =
 // activity; capping it keeps the request small and well under both the
 // endpoint's limit and Vercel's request-body cap.
 constexpr qint64 kMaxTailBytes = 2 * 1024 * 1024;
+
+// The JSON body /api/crater-logs expects, one file named crater.log.
+QByteArray reportBody(const QByteArray& logData, const QString& note)
+{
+    QJsonObject file;
+    file[QStringLiteral("name")]       = QStringLiteral("crater.log");
+    file[QStringLiteral("contentB64")] =
+        QString::fromLatin1(logData.toBase64());
+
+    QJsonObject body;
+    body[QStringLiteral("token")]   = kToken;
+    body[QStringLiteral("version")] = QCoreApplication::applicationVersion();
+    body[QStringLiteral("os")]      = QSysInfo::prettyProductName();
+    body[QStringLiteral("note")]    = note.trimmed();
+    body[QStringLiteral("files")]   = QJsonArray{ file };
+    return QJsonDocument(body).toJson(QJsonDocument::Compact);
+}
+
+QNetworkRequest reportRequest()
+{
+    QNetworkRequest req{ QUrl(kEndpoint) };
+    req.setHeader(QNetworkRequest::ContentTypeHeader,
+                  QStringLiteral("application/json"));
+    return req;
+}
 
 }  // namespace
 
@@ -82,29 +108,11 @@ void LogReportService::sendLogs(const QString& note)
         return;
     }
 
-    // ── Build the JSON payload /api/crater-logs expects ──────────────────
-    QJsonObject file;
-    file[QStringLiteral("name")]       = QStringLiteral("crater.log");
-    file[QStringLiteral("contentB64")] =
-        QString::fromLatin1(logData.toBase64());
-
-    QJsonObject body;
-    body[QStringLiteral("token")]   = kToken;
-    body[QStringLiteral("version")] = QCoreApplication::applicationVersion();
-    body[QStringLiteral("os")]      = QSysInfo::prettyProductName();
-    body[QStringLiteral("note")]    = note.trimmed();
-    body[QStringLiteral("files")]   = QJsonArray{ file };
-
     // ── POST it ──────────────────────────────────────────────────────────
     if (!m_net) m_net = new QNetworkAccessManager(this);
 
-    QNetworkRequest req{ QUrl(kEndpoint) };
-    req.setHeader(QNetworkRequest::ContentTypeHeader,
-                  QStringLiteral("application/json"));
-
     setStatus(Sending);
-    QNetworkReply* reply =
-        m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QNetworkReply* reply = m_net->post(reportRequest(), reportBody(logData, note));
 
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
@@ -122,6 +130,20 @@ void LogReportService::sendLogs(const QString& note)
         if (msg.isEmpty())
             msg = reply->errorString();
         setStatus(Failed, msg);
+    });
+}
+
+void LogReportService::sendInBackground(const QByteArray& logData, const QString& note,
+                                        std::function<void(bool)> done)
+{
+    auto* net = new QNetworkAccessManager(QCoreApplication::instance());
+    QNetworkReply* reply = net->post(reportRequest(), reportBody(logData, note));
+    QObject::connect(reply, &QNetworkReply::finished, net,
+                     [net, reply, done = std::move(done)]() {
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        net->deleteLater();
+        if (done) done(ok);
     });
 }
 

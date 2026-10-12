@@ -11,6 +11,8 @@ qt_add_executable(crater
     src/LogReportService.cpp
     src/LogReportService.h
     # First-launch splash while the one-time Bible import runs.
+    src/StartupGuard.cpp
+    src/StartupGuard.h
     src/StartupSplash.cpp
     src/StartupSplash.h
     # In-app updates — checks GitHub releases, verifies a SHA-256, and hands

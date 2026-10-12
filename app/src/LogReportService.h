@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QString>
 
+#include <functional>
+
 QT_BEGIN_NAMESPACE
 class QNetworkAccessManager;
 QT_END_NAMESPACE
@@ -54,6 +56,13 @@ public:
     // endpoint. `note` is optional free text the user can attach. Returns
     // immediately; the outcome arrives asynchronously via statusChanged().
     Q_INVOKABLE void sendLogs(const QString& note);
+
+    // Sends `logData` as the report's crater.log in the background and calls
+    // `done(accepted)` when the endpoint answers. For startup (StartupGuard),
+    // where nothing should wait on the network: the endpoint can take
+    // several seconds to answer.
+    static void sendInBackground(const QByteArray& logData, const QString& note,
+                                 std::function<void(bool)> done);
 
 signals:
     void statusChanged();

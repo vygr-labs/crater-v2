@@ -186,6 +186,11 @@ private:
     // this costs ~13 MB per installed translation. With it off the few most
     // recently used translations stay cached. See BibleService::setPreloadAll.
     Q_PROPERTY(bool    preloadTranslations READ preloadTranslations WRITE setPreloadTranslations NOTIFY preloadTranslationsChanged)
+    // Send a report when a launch fails before the console appears (the
+    // startup guard, app/src/StartupGuard.h). On by default; Settings >
+    // Diagnostics turns it off. Machine-wide, since a failed launch happens
+    // before any profile is open.
+    Q_PROPERTY(bool    reportStartupFailures READ reportStartupFailures WRITE setReportStartupFailures NOTIFY reportStartupFailuresChanged)
     // This profile's view of the shared Bible library (DbPaths::biblesDbPath).
     // translationOrder: codes in the order this profile lists them; any not
     // listed follow in the library's order. hiddenTranslations: codes this
@@ -303,6 +308,7 @@ public:
     bool    showStrongsTab() const;
     QString scriptureInputMode() const;
     bool    preloadTranslations() const;
+    bool    reportStartupFailures() const;
     QStringList translationOrder() const;
     QStringList hiddenTranslations() const;
     bool    showSongAuthor() const;
@@ -353,6 +359,7 @@ public:
     void setShowStrongsTab(bool v);
     void setScriptureInputMode(const QString& mode);
     void setPreloadTranslations(bool v);
+    void setReportStartupFailures(bool v);
     void setTranslationOrder(const QStringList& codes);
     void setHiddenTranslations(const QStringList& codes);
     void setShowSongAuthor(bool v);
@@ -412,6 +419,7 @@ signals:
     void showStrongsTabChanged();
     void scriptureInputModeChanged();
     void preloadTranslationsChanged();
+    void reportStartupFailuresChanged();
     void translationOrderChanged();
     void hiddenTranslationsChanged();
     void showSongAuthorChanged();
