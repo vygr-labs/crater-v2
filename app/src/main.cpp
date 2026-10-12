@@ -6,11 +6,13 @@
 #include <QFile>
 
 #include <cstdio>
+#include <cstdlib>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QIcon>
+#include <QMessageBox>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QQmlEngine>
@@ -46,6 +48,7 @@
 #include "PdfPageImageProvider.h"
 #include "ProjectionLayering.h"
 #include "RichTextHelper.h"
+#include "StartupGuard.h"
 #include "StartupSplash.h"
 #include "TranslationService.h"
 #include "WindowChrome.h"
@@ -98,6 +101,14 @@ void messageHandler(QtMsgType type, const QMessageLogContext& /*ctx*/, const QSt
         QTextStream ts(g_logFile);
         ts << line << "\n";
         g_logFile->flush();
+    }
+
+    // Errors also go to the startup trace, which outlives a launch that dies
+    // and is what gets reported (see StartupGuard.h).
+    if (type == QtCriticalMsg || type == QtFatalMsg) {
+        const QByteArray m = msg.left(400).toUtf8();
+        if (type == QtFatalMsg) crater::startup::markFatal(m.constData());
+        else                    crater::startup::mark(("critical: " + m).constData());
     }
 
     if (type == QtFatalMsg) {
@@ -230,22 +241,6 @@ void registerBodyFont()
     qInfo().noquote() << "Funnel Sans registered as:" << families.join(", ");
 }
 
-// Where the pre-Qt bootstrap trace goes. Windows keeps the relative path it
-// has always used, so the file lands in the working directory. A Linux
-// desktop launch starts in $HOME and a macOS one in the read-only /, so
-// there it goes to the temp dir instead of littering the operator's home
-// folder or silently failing.
-QByteArray bootstrapLogPath()
-{
-#ifdef Q_OS_WIN
-    return QByteArrayLiteral("crater-bootstrap.log");
-#else
-    QByteArray dir = qgetenv("TMPDIR");
-    if (dir.isEmpty()) dir = QByteArrayLiteral("/tmp");
-    return dir + QByteArrayLiteral("/crater-bootstrap.log");
-#endif
-}
-
 // Profile switch relaunch (ARCHITECTURE.md §12). ProfileService asks for a
 // restart; we quit the event loop and start the new process from a Qt post
 // routine, which runs in ~QApplication, after every service on main()'s
@@ -273,17 +268,13 @@ int main(int argc, char* argv[])
     QElapsedTimer startupClock;
     startupClock.start();
 
-    // Early bootstrap trace — writes to a fixed file (see bootstrapLogPath)
-    // BEFORE any Qt code runs. If the main log is empty but this file
-    // exists, the exe loaded fine and the crash is inside Qt initialization.
-    // If even this file doesn't appear, the binary failed to load (most
-    // often a missing DLL on Windows — check QtWidgets.dll deployment).
-    const QByteArray bootLog = bootstrapLogPath();
-    if (FILE* boot = std::fopen(bootLog.constData(), "w")) {
-        std::fprintf(boot, "main() entered (argc=%d)\n", argc);
-        std::fflush(boot);
-        std::fclose(boot);
-    }
+    // Startup trace (StartupGuard.h) BEFORE any Qt code runs, so a launch
+    // that dies anywhere leaves a trail, and the graphics fallback is chosen
+    // before Qt reads its environment. If even this trace doesn't appear,
+    // the binary failed to load (most often a missing DLL).
+    crater::startup::begin(argc);
+    // Errors from here on reach the trace; initLogging() adds the log file.
+    qInstallMessageHandler(messageHandler);
 
     QApplication::setOrganizationName(QStringLiteral("Voyager Labs"));
     QApplication::setOrganizationDomain(QStringLiteral("voyagerlabs.tech"));
@@ -326,17 +317,16 @@ int main(int argc, char* argv[])
     // in lockstep at build time by both pointing at qt/packaging/crater.ico.
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/brand/crater.ico")));
 
-    // Second bootstrap marker — confirms QApplication constructed without
-    // dying. Anything past this point logs to the normal log file via
-    // qInstallMessageHandler in initLogging().
-    if (FILE* boot = std::fopen(bootLog.constData(), "a")) {
-        std::fprintf(boot, "QApplication constructed\n");
-        std::fclose(boot);
-    }
+    crater::startup::mark("QApplication constructed");
 
     const QString logPath = initLogging();
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";
     qInfo().noquote() << "Log file:" << logPath;
+    qInfo().noquote() << "Graphics level:" << crater::startup::graphicsLevel()
+                      << "(0 hardware, 1 Direct3D software, 2 Qt Quick software)";
+    // The last launch died before the console appeared: send what it left.
+    // Only then; a healthy launch never reports anything.
+    crater::startup::reportPreviousFailure(logPath);
 
     // ─── Startup cost breakdown ─────────────────────────────────────────
     // The pre-main() figure is the OS loader cost — see loaderMsBeforeMain().
@@ -384,8 +374,14 @@ int main(int argc, char* argv[])
         crater::runAllMigrations();
     } catch (const std::exception& e) {
         qCritical().noquote() << "Migration failed:" << e.what();
+        crater::startup::markExit("database setup failed");
+        QMessageBox::critical(nullptr, QObject::tr("Crater can't start"),
+            QObject::tr("Crater could not set up its database:\n\n%1\n\n"
+                        "A report will be sent to the Crater team the next time Crater opens.")
+                .arg(QString::fromLocal8Bit(e.what())));
         return -1;
     }
+    crater::startup::mark("migrations done");
     qInfo().noquote() << "[startup] schema migrations done: +"
                       << startupClock.elapsed() << "ms";
 
@@ -425,6 +421,8 @@ int main(int argc, char* argv[])
                           "repo is reachable from the working directory.";
         }
     }
+
+    crater::startup::mark("data import checked");
 
     // ─── Stage 3: construct services ────────────────────────────────────
     // Order matters lightly: ThemeService and ScheduleService both touch
@@ -679,6 +677,10 @@ int main(int argc, char* argv[])
         &app,
         []() {
             qCritical() << "QML object creation failed — see warnings above. Exiting.";
+            crater::startup::markExit("QML object creation failed");
+            QMessageBox::critical(nullptr, QObject::tr("Crater can't start"),
+                QObject::tr("Crater could not load its main window.\n\n"
+                            "A report will be sent to the Crater team the next time Crater opens."));
             QCoreApplication::exit(-1);
         },
         Qt::QueuedConnection);
@@ -704,7 +706,9 @@ int main(int argc, char* argv[])
                             new crater::PdfPageImageProvider(&mediaService));
 
     qInfo() << "Loading QML from module Crater / Main";
+    crater::startup::mark("qml loading");
     engine.loadFromModule("Crater", "Main");
+    crater::startup::mark("qml loaded");
     qInfo().noquote() << "[startup] QML loaded, main window realized: +"
                       << startupClock.elapsed() << "ms";
     if (splash) splash->close();
@@ -720,6 +724,43 @@ int main(int argc, char* argv[])
                 qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
             crater::installNativeWindowChrome(consoleWindow);
             crater::restoreWindowPlacement(consoleWindow);
+
+            // The first painted frame is what "this launch worked" means to
+            // the startup guard.
+            QObject::connect(consoleWindow, &QQuickWindow::frameSwapped, consoleWindow,
+                             [] { crater::startup::markReady(); },
+                             static_cast<Qt::ConnectionType>(Qt::DirectConnection
+                                                             | Qt::SingleShotConnection));
+
+            // The graphics backend could not start on this PC (an old GPU, a
+            // broken driver, a remote session). Unhandled, Qt aborts without
+            // a word and Crater simply never appears. Instead, record it and
+            // start again one rung down the graphics ladder, which
+            // StartupGuard picks from this launch's trace. The ladder ends at
+            // Qt Quick's software renderer, so this can't loop.
+            QObject::connect(consoleWindow, &QQuickWindow::sceneGraphError, &app,
+                             [](QQuickWindow::SceneGraphError, const QString& message) {
+                qCritical().noquote() << "Scene graph error:" << message;
+                crater::startup::markFatal(
+                    ("scene graph: " + message.left(300)).toUtf8().constData());
+                if (crater::startup::graphicsLevel() < 2) {
+                    crater::startup::markExit("restarting with simpler graphics");
+                    QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                                            QCoreApplication::arguments().mid(1));
+                    // Gone at once, like the crash path in StartupGuard: a
+                    // normal quit would run the aboutToQuit hooks, and
+                    // "Clear schedule when Crater closes" would empty the
+                    // schedule just because the graphics needed a retry.
+                    std::_Exit(1);
+                } else {
+                    crater::startup::markExit("graphics unavailable");
+                    QMessageBox::critical(nullptr, QObject::tr("Crater can't start"),
+                        QObject::tr("Crater could not start its display on this computer:\n\n%1\n\n"
+                                    "A report will be sent to the Crater team the next time Crater opens.")
+                            .arg(message));
+                }
+                QCoreApplication::exit(1);
+            }, Qt::QueuedConnection);
         }
     }
 
@@ -753,5 +794,6 @@ int main(int argc, char* argv[])
     // competes with migrations or the first QML load (docs/auto-update.md).
     updateService.armStartupCheck();
 
+    crater::startup::mark("event loop");
     return app.exec();
 }

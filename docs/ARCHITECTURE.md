@@ -495,7 +495,12 @@ format's complexity *out* of the runtime hot path.
   (§5.4) is not an exception to this: it is an unauthenticated GET of a
   public release feed, sending no identifier and no library contents, and
   it can be switched off in Settings. `LogReportService` is the other
-  outbound path, and it moves nothing without an explicit button press.
+  outbound path, and it moves nothing without an explicit button press,
+  with one exception: when a launch dies before the console appears, the
+  next launch sends that launch's startup trace and the tail of crater.log
+  (app/src/StartupGuard.h). A failed start leaves the operator nothing to
+  press, and it is the failure we otherwise never hear about. A launch that
+  works never sends anything, and Settings > Diagnostics turns it off.
 
 ---
 

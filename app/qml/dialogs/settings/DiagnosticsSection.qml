@@ -2,9 +2,10 @@ import QtQuick
 import QtQuick.Layouts
 
 // Diagnostics — lets the operator hand the developers a log file when
-// something goes wrong. User-initiated only: nothing leaves the machine
-// without the explicit button press below (ARCHITECTURE.md §10). Wired to
-// LogReportService.
+// something goes wrong. The log upload is user-initiated: nothing leaves the
+// machine without the explicit button press below. The one automatic report,
+// sent only after a launch that failed before the console appeared, has its
+// own switch at the bottom (ARCHITECTURE.md §11). Wired to LogReportService.
 Item {
     id: root
 
@@ -123,6 +124,17 @@ Item {
                 color: Theme.color.textTertiary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
+            }
+
+            SettingsSectionHeader { title: qsTr("Startup problems") }
+
+            SettingRow {
+                title: qsTr("Report when Crater fails to start")
+                description: qsTr("If Crater closes before its window appears, the next launch sends the startup record and recent log to the Crater team. Nothing is sent when Crater starts normally.")
+                ToggleSwitch {
+                    value: SettingsService.reportStartupFailures
+                    onToggled: SettingsService.reportStartupFailures = !SettingsService.reportStartupFailures
+                }
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }

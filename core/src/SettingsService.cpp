@@ -124,6 +124,7 @@ struct SettingsService::Impl
     bool    showStrongs      = true;
     QString scriptureInputMode = QStringLiteral("crater");
     bool    preloadTranslations = false;
+    bool    reportStartupFailures = true;
     QStringList translationOrder;     // empty: the library's own order
     QStringList hiddenTranslations;   // empty: show everything
     bool    showSongAuthor   = false;
@@ -189,6 +190,9 @@ struct SettingsService::Impl
     static constexpr const char* kShowStrongs    = "Settings/showStrongsTab";
     static constexpr const char* kScriptureInputMode = "Settings/scriptureInputMode";
     static constexpr const char* kPreloadTranslations = "Settings/preloadTranslations";
+    // Read before any service exists by StartupGuard, straight from QSettings
+    // under this same name; keep the two in step.
+    static constexpr const char* kReportStartupFailures = "Settings/reportStartupFailures";
     static constexpr const char* kTranslationOrder    = "Settings/translationOrder";
     static constexpr const char* kHiddenTranslations  = "Settings/hiddenTranslations";
     static constexpr const char* kShowSongAuth   = "Settings/showSongAuthor";
@@ -243,6 +247,7 @@ SettingsService::SettingsService(QObject* parent)
     if (m_impl->scriptureInputMode != QStringLiteral("controlled"))
         m_impl->scriptureInputMode = QStringLiteral("crater");
     m_impl->preloadTranslations = m_impl->get(Impl::kPreloadTranslations, m_impl->preloadTranslations).toBool();
+    m_impl->reportStartupFailures = m_impl->get(Impl::kReportStartupFailures, m_impl->reportStartupFailures).toBool();
     m_impl->translationOrder    = m_impl->get(Impl::kTranslationOrder, QStringList()).toStringList();
     m_impl->hiddenTranslations  = m_impl->get(Impl::kHiddenTranslations, QStringList()).toStringList();
     m_impl->showSongAuthor = m_impl->get(Impl::kShowSongAuth, m_impl->showSongAuthor).toBool();
@@ -313,6 +318,7 @@ bool    SettingsService::showScriptureFooter() const { return m_impl->showScript
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 QString SettingsService::scriptureInputMode() const { return m_impl->scriptureInputMode; }
 bool    SettingsService::preloadTranslations() const { return m_impl->preloadTranslations; }
+bool    SettingsService::reportStartupFailures() const { return m_impl->reportStartupFailures; }
 QStringList SettingsService::translationOrder() const   { return m_impl->translationOrder; }
 QStringList SettingsService::hiddenTranslations() const { return m_impl->hiddenTranslations; }
 bool    SettingsService::showSongAuthor() const    { return m_impl->showSongAuthor; }
@@ -628,6 +634,14 @@ void SettingsService::setPreloadTranslations(bool v)
     m_impl->preloadTranslations = v;
     m_impl->put(Impl::kPreloadTranslations, v);
     emit preloadTranslationsChanged();
+}
+
+void SettingsService::setReportStartupFailures(bool v)
+{
+    if (m_impl->reportStartupFailures == v) return;
+    m_impl->reportStartupFailures = v;
+    m_impl->put(Impl::kReportStartupFailures, v);
+    emit reportStartupFailuresChanged();
 }
 
 void SettingsService::setShowSongAuthor(bool v)
