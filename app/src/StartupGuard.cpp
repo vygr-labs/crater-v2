@@ -46,6 +46,12 @@ bool g_prevFailed = false;
 int  g_level = 0;
 bool g_ready = false;
 bool g_windowStage = false;   // past "qml loading": the window is coming up
+// Graphics restarts already made in this chain, handed to the restarted
+// process through the environment. The ladder normally comes from the trace
+// file, but if that folder can't be written every launch would look like the
+// first and a crash would restart at level 0 forever. This can't be lost.
+int  g_retry = 0;
+constexpr const char* kRetryEnv = "CRATER_STARTUP_RETRY";
 
 // Software rendering (level 2) is the floor; there is nothing below it.
 constexpr int kMaxLevel = 2;
@@ -148,8 +154,11 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info)
                   rec ? rec->ExceptionAddress : nullptr);
     append(buf);
 
-    if (g_windowStage && !g_ready && g_level < kMaxLevel) {
+    if (g_windowStage && !g_ready && g_level < kMaxLevel && g_retry < kMaxLevel) {
         append("exit: restarting with simpler graphics");
+        char next[8];
+        std::snprintf(next, sizeof next, "%d", g_retry + 1);
+        SetEnvironmentVariableA(kRetryEnv, next);
         wchar_t exe[MAX_PATH] = {};
         // CreateProcessW may write to the command line, so pass a copy.
         static wchar_t cmd[8192];
@@ -205,6 +214,12 @@ void begin(int argc)
 #endif
         if (next > g_level) g_level = next;
     }
+    // A restart after a graphics failure is at least one rung down per
+    // restart, whatever the trace says. Cleared so nothing this process
+    // starts later (a profile switch) inherits it.
+    g_retry = qEnvironmentVariableIntValue(kRetryEnv);
+    qunsetenv(kRetryEnv);
+    if (g_retry > g_level) g_level = g_retry;
     if (g_level < 0) g_level = 0;
     if (g_level > kMaxLevel) g_level = kMaxLevel;
     if (diedOnWindow) std::ofstream(g_levelFile, std::ios::trunc) << g_level << "\n";
@@ -258,6 +273,16 @@ void markReady()
 int graphicsLevel()
 {
     return g_level;
+}
+
+bool mayRestartForGraphics()
+{
+    return g_level < kMaxLevel && g_retry < kMaxLevel;
+}
+
+void prepareGraphicsRestart()
+{
+    qputenv(kRetryEnv, QByteArray::number(g_retry + 1));
 }
 
 void reportPreviousFailure(const QString& logPath)

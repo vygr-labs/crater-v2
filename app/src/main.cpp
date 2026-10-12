@@ -743,8 +743,9 @@ int main(int argc, char* argv[])
                 qCritical().noquote() << "Scene graph error:" << message;
                 crater::startup::markFatal(
                     ("scene graph: " + message.left(300)).toUtf8().constData());
-                if (crater::startup::graphicsLevel() < 2) {
+                if (crater::startup::mayRestartForGraphics()) {
                     crater::startup::markExit("restarting with simpler graphics");
+                    crater::startup::prepareGraphicsRestart();
                     QProcess::startDetached(QCoreApplication::applicationFilePath(),
                                             QCoreApplication::arguments().mid(1));
                     // Gone at once, like the crash path in StartupGuard: a

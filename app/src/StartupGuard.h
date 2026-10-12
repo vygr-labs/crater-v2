@@ -58,4 +58,12 @@ void reportPreviousFailure(const QString& logPath);
 // The graphics level this launch uses: 0 hardware, 1 WARP, 2 software.
 int graphicsLevel();
 
+// Whether a graphics failure may restart Crater one rung down. False on the
+// last rung, or once this chain of restarts has used up the ladder.
+bool mayRestartForGraphics();
+
+// Call just before starting the replacement process, so it knows it is a
+// graphics restart even if the trace folder can't be written.
+void prepareGraphicsRestart();
+
 }  // namespace crater::startup
