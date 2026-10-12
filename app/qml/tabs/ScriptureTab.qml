@@ -266,6 +266,22 @@ Item {
 
     // Track focused coordinates so a translation switch can re-position.
     property var _focusedCoord: null
+    onFluidIndexChanged: {
+        const v = currentVerses[fluidIndex]
+        if (v) _focusedCoord = { book: v.book, chapter: v.chapter, verse: v.verse }
+    }
+
+    // The verse itself, else the closest one before it in the same chapter.
+    // Translations disagree on which verses exist (Luke 17:36 is missing
+    // from WEB, paraphrases fold verses into paragraphs), and a miss used to
+    // send the operator to the top of the Bible.
+    function _nearestVerse(book, chapter, verse) {
+        const want = (typeof verse === "string") ? parseInt(verse) : verse
+        let idx = findBestVerseMatch(currentVerses, book, chapter, want)
+        for (let v = (isNaN(want) ? 0 : want) - 1; idx < 0 && v >= 1; --v)
+            idx = findBestVerseMatch(currentVerses, book, chapter, v)
+        return idx
+    }
 
     // Pending operations queued during a translation switch. The translation
     // change is async (currentVerses re-resolves once activeLibraryGroup
@@ -577,8 +593,7 @@ Item {
 
         // Drain pending push-live (translation dblclick).
         if (_pendingPushLiveCoord) {
-            const liveIdx = findBestVerseMatch(currentVerses,
-                _pendingPushLiveCoord.book,
+            const liveIdx = _nearestVerse(_pendingPushLiveCoord.book,
                 _pendingPushLiveCoord.chapter,
                 _pendingPushLiveCoord.verse)
             _pendingPushLiveCoord = null
@@ -595,14 +610,13 @@ Item {
         // the coordinates should be resolved against.
         let idx = -1
         if (_pendingRetargetCoord) {
-            idx = findBestVerseMatch(currentVerses,
-                _pendingRetargetCoord.book,
-                _pendingRetargetCoord.chapter,
-                _pendingRetargetCoord.verse)
+            idx = _nearestVerse(_pendingRetargetCoord.book,
+                                _pendingRetargetCoord.chapter,
+                                _pendingRetargetCoord.verse)
             _pendingRetargetCoord = null
-            // Verse simply isn't in this translation (different splits, or a
-            // canon that doesn't carry it) — the top of the list is honest,
-            // a carried-over row number is not.
+            // Not even the chapter is in this translation (a canon that
+            // doesn't carry the book) — the top of the list is honest, a
+            // carried-over row number is not.
             if (idx < 0) idx = 0
         }
         // No retarget pending: same corpus, so the row number still means
@@ -682,8 +696,7 @@ Item {
             if (!root._focusedCoord) return
 
             if (wantCode === root.activeTranslation) {
-                const idx = root.findBestVerseMatch(root.currentVerses,
-                    root._focusedCoord.book,
+                const idx = root._nearestVerse(root._focusedCoord.book,
                     root._focusedCoord.chapter,
                     root._focusedCoord.verse)
                 if (idx >= 0) root.pushLiveFor(idx)
@@ -1031,7 +1044,13 @@ Item {
         onCurrentIndexChanged: {
             const v = root.currentVerses[currentIndex]
             if (v) {
-                root._focusedCoord = { book: v.book, chapter: v.chapter, verse: v.verse }
+                // Only a currentIndex that agrees with fluidIndex is the
+                // operator's verse. The model-swap reset to row 0 above is
+                // not, and recording it made a translation switch (and the
+                // translation double-click, which reads this) land on
+                // Genesis 1:1.
+                if (currentIndex === root.fluidIndex)
+                    root._focusedCoord = { book: v.book, chapter: v.chapter, verse: v.verse }
                 if (root._followKeys) positionViewAtIndex(currentIndex, ListView.Contain)
             }
         }
@@ -1504,6 +1523,18 @@ Item {
         }
         function onLibraryActivate() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            // Enter right after the last keystroke lands inside the 120 ms
+            // debounce, while fluidIndex still points at the PREVIOUS parse:
+            // "jn 3 16" + Enter put John 3:1 on screen. Settle the typed text
+            // first; onParsedRefChanged moves fluidIndex synchronously.
+            if (queryDebounce.running) {
+                queryDebounce.stop()
+                root._debouncedQuery = root.queryText
+            }
+            // A reference that doesn't resolve (a typo, a verse this
+            // translation lacks) must not send whatever was there before.
+            if (root.mode === "reference" && root._parserQuery.length > 0 && !root.parsedRef)
+                return
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
         }
         function onLibraryAddToSchedule() {

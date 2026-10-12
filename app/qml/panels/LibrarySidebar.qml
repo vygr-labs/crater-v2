@@ -225,6 +225,17 @@ Rectangle {
         ], { menuWidth: 200 })
     }
 
+    // `groups` is rebuilt on every group click (it reads the active group),
+    // and a new array makes the version grid's Repeater destroy and recreate
+    // every card. That cost a translation switch its speed and could swap the
+    // card out between the two clicks of a double-click. The grid takes a
+    // copy that only changes when the cards themselves do.
+    property var _stableGroups: []
+    onGroupsChanged: {
+        if (JSON.stringify(groups) !== JSON.stringify(_stableGroups)) _stableGroups = groups
+    }
+    Component.onCompleted: _stableGroups = groups
+
     readonly property var groups: {
         switch (currentTabKey) {
             case "songs": {
@@ -415,7 +426,7 @@ Rectangle {
                     id: versionRepeater
                     // Emptied for non-scripture tabs so no cards are built
                     // while the accordion is the visible layout.
-                    model: groupContent.isScripture ? root.groups : []
+                    model: groupContent.isScripture ? root._stableGroups : []
                     delegate: VersionCard {
                         required property var modelData
                         required property int index

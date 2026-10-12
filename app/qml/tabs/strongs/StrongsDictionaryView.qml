@@ -98,6 +98,30 @@ Item {
         if (item) AppState.pushLibraryLive(item)
     }
 
+    // A bare Strong's number names its language ("H430" is Hebrew), so the
+    // sidebar follows it. Switching language with the other language's
+    // number in the box clears the box, or the switch shows the same single
+    // entry and looks like it did nothing.
+    readonly property var _numberQuery: {
+        const m = /^\s*([HGhg])\d+\s*$/.exec(debouncedQuery)
+        return m ? (m[1].toUpperCase() === "H" ? "hebrew" : "greek") : ""
+    }
+    on_NumberQueryChanged: {
+        if (_numberQuery !== "" && _numberQuery !== language)
+            AppState.setLibraryGroup("strongs", _numberQuery)
+    }
+    onLanguageChanged: {
+        if (_numberQuery !== "" && _numberQuery !== language) {
+            queryDebounce.stop()
+            AppState.setSearch("strongs", "")
+            root.debouncedQuery = ""
+        }
+        // A new list: start at its top rather than at the old row number.
+        selIndex = results.length > 0 ? 0 : -1
+        list.positionViewAtBeginning()
+        if (selIndex >= 0) refreshPreviewFor(0)
+    }
+
     onResultsChanged: {
         if (results.length === 0) { selIndex = -1; return }
         var idx = (selIndex >= 0 && selIndex < results.length) ? selIndex : 0

@@ -152,16 +152,17 @@ QtObject {
     // a dock row index means exactly what a LivePanel card index means. They
     // used to be LivePanel's own properties.
     //
-    // liveItem has two sources. When the library pushed straight to live
-    // (no schedule row involved), ProjectionService.currentItem holds the
-    // canonical item. Otherwise it is the schedule row at liveScheduleIndex.
-    readonly property var liveItem:
-        libraryLiveActive
-            ? ProjectionService.currentItem
-            : (liveScheduleIndex >= 0
-               && liveScheduleIndex < ScheduleService.currentItems.length
-                   ? ScheduleService.currentItems[liveScheduleIndex]
-                   : null)
+    // liveItem is what the audience sees: ProjectionService's go-live
+    // snapshot, whether the library or a schedule row sent it. It used to
+    // read the schedule row at liveScheduleIndex, so a song edit (which
+    // rewrites every row quoting that song) showed up in the live cards and
+    // the next click put it on the projector. An edit now reaches live only
+    // when the operator sends it again from Preview.
+    readonly property var liveItem: {
+        if (!libraryLiveActive && liveScheduleIndex < 0) return null
+        const it = ProjectionService.currentItem
+        return it && it.kind ? it : null
+    }
 
     // Pages that have content to show. Media items (image/video) carry one
     // empty placeholder page, which is dropped here; ThemedMonitor reads
@@ -232,11 +233,63 @@ QtObject {
     // Show CCLI number toggles. Each part is independently suppressible, joined
     // by " · " for any surviving pairs. Empty when both toggles are off —
     // ProjectionWindow renders an empty subtitle cleanly.
+    // A lyric line that is a section tag: "[Chorus]", a bold or coloured
+    // "[Chorus]", or a tag with text after it ("[Chorus] x2", "[Verse 1]
+    // Amazing grace"). Returns { label, rest } or null. Read through the
+    // line's plain text, since a formatted tag line is stored with its marks
+    // and never matched the old exact "[...]" test.
+    function lyricTagOf(line) {
+        const plain = LyricsService.flattenLine(String(line || "")).trim()
+        const m = /^\[([^\[\]]*)\]\s*(.*)$/.exec(plain)
+        return m ? { label: m[1].trim(), rest: m[2] } : null
+    }
+
+    // Split sections at any tag line left inside their lyrics, so the tag
+    // labels a section instead of showing on screen as a line of the song.
+    // The section editor never parsed tags, so a "[Chorus]" typed or pasted
+    // into a multi-line section was saved as lyrics. Text after a tag stays
+    // as the new section's first line. A tag with nothing under it (a
+    // "[Repeat]" cue) is dropped rather than becoming a blank slide.
+    // Sections are { label, lines, ... }; other fields (kind) carry over to
+    // the part before the first tag.
+    function splitTaggedSections(sections) {
+        let out = []
+        const isBlank = function(s) {
+            return s.lines.every(function(l) { return String(l).trim() === "" })
+        }
+        for (let i = 0; i < (sections || []).length; i++) {
+            const sec = sections[i] || {}
+            const lines = sec.lines || []
+            let cur = Object.assign({}, sec, { lines: [] })
+            let fromTag = false
+            for (let j = 0; j < lines.length; j++) {
+                const tag = lyricTagOf(lines[j])
+                if (!tag) { cur.lines.push(lines[j]); continue }
+                // Nothing above the tag (it opens the section): the tag
+                // names this section rather than starting an empty one.
+                if (isBlank(cur)) {
+                    if (tag.label) cur.label = tag.label
+                    cur.lines = []
+                } else {
+                    out.push(cur)
+                    cur = { label: tag.label, kind: "other", lines: [] }
+                    fromTag = true
+                }
+                if (tag.rest) cur.lines.push(tag.rest)
+            }
+            if (fromTag && isBlank(cur)) continue
+            if (cur.lines.length === 0) cur.lines = [""]
+            out.push(cur)
+        }
+        return out
+    }
+
     function buildSongItem(song) {
         if (!song || !song.id) return null
         let pages = []
-        for (let i = 0; i < song.sections.length; i++) {
-            const sec = song.sections[i]
+        const sections = splitTaggedSections(song.sections)
+        for (let i = 0; i < sections.length; i++) {
+            const sec = sections[i]
             pages.push({
                 label:   sec.label || "",
                 content: (sec.lines && sec.lines.length > 0) ? sec.lines.join("\n") : ""
@@ -407,12 +460,31 @@ QtObject {
         // activeIndex >= 0 dims every other verse with {color=gray}; dimming
         // is colour-only so glyph metrics, and therefore the auto-fit size,
         // stay identical across the per-verse pages.
+        //
+        // Paraphrases like The Message are written in paragraphs, and the
+        // importer stores a paragraph under every verse number it covers,
+        // so a passage repeated the same paragraph once per verse. Runs of
+        // identical text print once, numbered as a span ("27-29.").
+        let runs = []
+        for (let j = 0; j < usable.length; j++) {
+            const v = usable[j]
+            const prev = runs.length > 0 ? runs[runs.length - 1] : null
+            if (prev && prev.text === v.text && prev.book === v.book
+                    && prev.chapter === v.chapter) {
+                prev.end = v.verse
+                prev.members.push(j)
+            } else {
+                runs.push({ text: v.text, book: v.book, chapter: v.chapter,
+                            start: v.verse, end: v.verse, members: [j] })
+            }
+        }
         const composePassage = function(activeIndex) {
-            return usable.map(function(v, j) {
-                const num  = "{color=verse}**" + v.verse + ".**{/color} "
-                const body = (activeIndex < 0 || j === activeIndex)
-                    ? v.text
-                    : "{color=gray}" + v.text + "{/color}"
+            return runs.map(function(r) {
+                const span = String(r.start) === String(r.end) ? r.start : r.start + "-" + r.end
+                const num  = "{color=verse}**" + span + ".**{/color} "
+                const body = (activeIndex < 0 || r.members.indexOf(activeIndex) >= 0)
+                    ? r.text
+                    : "{color=gray}" + r.text + "{/color}"
                 return num + body
             }).join("  ")
         }
@@ -756,30 +828,17 @@ QtObject {
                                item.themeId || 0, flat])
     }
 
-    // Live-pane commit — "the audience sees this page now".
-    //
-    // A bare ProjectionService.setPage() re-uses whatever was snapshotted at
-    // the last go-live. That snapshot is deliberate (ProjectionService.h: an
-    // in-progress edit must not leak to the audience), but it stranded the
-    // operator after a song edit: Preview showed the new lyrics, the projector
-    // kept the old ones, and clicking the same verse changed nothing because
-    // the page index had not moved. The only way out was to step to another
-    // verse and back.
-    //
-    // Clicking or arrowing onto a live card IS an explicit commit, so re-read
-    // the song first and re-stage when its content actually changed. Anything
-    // else — media, scripture, an unedited song — falls through to the cheap
-    // setPage() path, so live behaviour is otherwise untouched.
+    // Live-pane commit — "the audience sees this page now". Pages of the
+    // go-live snapshot only: an edited song stays on its old lyrics until the
+    // operator sends the new version from Preview (see liveItem).
     function commitLivePage(i) {
         liveSubIndex = i
-        const restaged = _songContentMerged(ProjectionService.currentItem)
-        if (restaged) _projectItemLive(restaged, i)
-        else          ProjectionService.setPage(i)
+        ProjectionService.setPage(i)
     }
 
     // One step through the live item's pages, clamped at both ends. Shared
     // by LivePanel's Up / Down and the live dock's prev / next, so both
-    // commit through commitLivePage (edited-song restage included).
+    // commit through commitLivePage.
     function stepLivePage(delta) {
         const n = livePages.length
         if (n === 0) return
@@ -799,9 +858,9 @@ QtObject {
     //
     // It reacts to the ROW's theme changing since go-live, recorded in
     // _liveRowTheme by goLive(), not to the row and the screen differing.
-    // Those can differ legitimately: commitLivePage's restage adopts a
-    // song's own theme when the row has none, and comparing against the
-    // screen would strip that again on the next unrelated schedule edit.
+    // Those can differ legitimately: a song's own theme is adopted when the
+    // row has none, and comparing against the screen would strip that again
+    // on the next unrelated schedule edit.
     property var _liveRowTheme: ({ id: "", themeId: 0 })
 
     function syncLiveTheme() {
@@ -2160,6 +2219,13 @@ QtObject {
     // tab gets librarySelectAll() because only the tab knows what is
     // currently visible. Returns false when nothing took it.
     signal librarySelectAll()
+    // Ctrl+A in the Songs tab selects the search text, never the songs.
+    // Typing there is forwarded into the search box while the keyboard can
+    // still sit on the list, so the operator reads Ctrl+A as "select what I
+    // typed"; ticking the whole library instead left the next Delete or
+    // drag acting on every song. Rows are still ticked by click or the
+    // select toggle.
+    signal searchSelectAll()
 
     function requestSelectAll() {
         if (activeFocusPanel === "schedule") {
@@ -2167,6 +2233,10 @@ QtObject {
             return true
         }
         if (activeFocusPanel !== "library") return false
+        if (tabKeys[activeTab] === "songs") {
+            searchSelectAll()
+            return true
+        }
         if (multiSelectTabs.indexOf(tabKeys[activeTab]) < 0) return false
         librarySelectAll()
         return true
