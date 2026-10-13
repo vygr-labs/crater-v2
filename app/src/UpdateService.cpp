@@ -58,7 +58,12 @@ const QString kChecksumsName = QStringLiteral("SHA256SUMS.txt");
 // exact number matters.
 constexpr qint64 kMaxDownloadBytes  = 512LL * 1024 * 1024;
 constexpr qint64 kMaxChecksumBytes  = 64 * 1024;
-constexpr qint64 kCheckIntervalSecs = 24 * 60 * 60;
+// Every launch checks, except within this long of the last check. Many
+// churches open Crater once a week, so a once-a-day rule left them a week
+// behind a fix. The gap only absorbs quick relaunches (a profile switch, a
+// graphics-fallback restart, closing and reopening) and keeps several PCs on
+// one connection clear of GitHub's 60-an-hour limit for anonymous requests.
+constexpr qint64 kMinCheckGapSecs = 10 * 60;
 constexpr int    kRequestTimeoutMs  = 30 * 1000;
 
 // Long enough to be clear of the DB migrations, font registration and first
@@ -166,7 +171,7 @@ void UpdateService::armStartupCheck()
     // suppress every future check on that machine.
     if (m_lastChecked.isValid()) {
         const qint64 age = m_lastChecked.secsTo(QDateTime::currentDateTimeUtc());
-        if (age >= 0 && age < kCheckIntervalSecs) return;
+        if (age >= 0 && age < kMinCheckGapSecs) return;
     }
 
     QTimer::singleShot(kStartupDelayMs, this, [this] { runCheck(false); });

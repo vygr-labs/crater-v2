@@ -20,8 +20,10 @@ than one that never runs at all.
 
 The rest follows from the same rule:
 
-- The only ambient behaviour is a version check, at most once a day, about
-  twenty seconds after launch so it is clear of startup I/O.
+- The only ambient behaviour is a version check on each launch, about
+  twenty seconds in so it is clear of startup I/O, skipped when the last
+  check was under ten minutes ago. It used to be at most once a day, but
+  many churches open Crater once a week, which left them a week behind.
 - A background check that fails is silent. Being offline is the resting
   state of a lot of church A/V machines, and a red banner every Sunday
   morning trains the operator to ignore the one that matters. Only an
@@ -236,7 +238,7 @@ and `OutputService`, under an `Update/` prefix:
 
 | Key | Meaning |
 |---|---|
-| `Update/autoCheck` | Check once a day after launch. Default true. |
+| `Update/autoCheck` | Check on each launch (not within 10 minutes of the last check). Default true. |
 | `Update/lastChecked` | UTC timestamp of the last attempt, successful or not. |
 | `Update/skippedVersion` | The version the operator turned down. |
 
