@@ -17,6 +17,15 @@
 #ifndef VcRedist
   #define VcRedist "vc_redist.x64.exe"
 #endif
+; The bundled redist's own version (e.g. 14.51.36247.0), read at compile time,
+; is what VCRedistNeedsInstall compares the installed runtime against.
+#define VcRedistMajor 0
+#define VcRedistMinor 0
+#define VcRedistRev 0
+#define VcRedistBuild 0
+#expr GetVersionComponents(VcRedist, VcRedistMajor, VcRedistMinor, VcRedistRev, VcRedistBuild)
+; The registry's Bld is the third part of the file version.
+#define VcRedistBld VcRedistRev
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
@@ -96,14 +105,28 @@ end;
 
 function VCRedistNeedsInstall(): Boolean;
 var
-  version: Cardinal;
+  major, minor, bld: Cardinal;
+  key: String;
 begin
-  // VC++ 2015-2022 share a single redistributable. Major version is recorded
-  // under HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64\Major.
-  // 14 means VS2015+ already present; the redist installer itself is idempotent
-  // either way, but skipping the call shaves a few seconds off the install.
-  if RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Major', version) then
-    Result := version < 14
-  else
+  // Every VC++ runtime since 2015 is version 14.x and records itself under
+  // this key. This used to skip the redist whenever ANY 14.x was present,
+  // so a PC holding a 2019-2023 runtime kept it, and Crater (built with a
+  // newer toolset) crashed in msvcp140.dll before showing a window. Crater
+  // now ships its runtime beside crater.exe, which is what it actually
+  // loads; this keeps the system copy current too. Install when the
+  // installed runtime is older than the one bundled with this installer.
+  key := 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+  if not (RegQueryDWordValue(HKLM, key, 'Major', major)
+          and RegQueryDWordValue(HKLM, key, 'Minor', minor)
+          and RegQueryDWordValue(HKLM, key, 'Bld', bld)) then
+  begin
     Result := True;
+    exit;
+  end;
+  if major <> {#VcRedistMajor} then
+    Result := major < {#VcRedistMajor}
+  else if minor <> {#VcRedistMinor} then
+    Result := minor < {#VcRedistMinor}
+  else
+    Result := bld < {#VcRedistBld};
 end;

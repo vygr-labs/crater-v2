@@ -86,7 +86,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packaging/vc_redist.x64.exe
-          key: vc-redist-x64-v17-${{ runner.os }}
+          # vc14 = the aka.ms/vc14 permalink (newest v14 runtime). The old
+          # v17 key pinned the VS 2022 redist; release.ps1 also refetches a
+          # cached copy older than the runtime it bundles.
+          key: vc-redist-x64-vc14-${{ runner.os }}
 
       - name: Cache bibles.sqlite
         uses: actions/cache@v4
