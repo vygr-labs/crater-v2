@@ -147,7 +147,10 @@ $AppStage     = Join-Path $DistRoot 'Crater'
 $PackagingDir = Join-Path $QtRoot 'packaging'
 $IssFile      = Join-Path $PackagingDir 'crater.iss'
 $VcRedistPath = Join-Path $PackagingDir 'vc_redist.x64.exe'
-$VcRedistUrl  = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+# Microsoft's permalink for the newest VC++ v14 runtime. The old
+# aka.ms/vs/17 link stops at the VS 2022 runtime (14.44), older than the
+# toolset the runners now build with.
+$VcRedistUrl  = 'https://aka.ms/vc14/vc_redist.x64.exe'
 
 # Bible database: 74 MB SQLite blob too large to commit to git, too important
 # to omit (an installer without scripture data is a non-product). We fetch it
@@ -280,6 +283,41 @@ $QmlDir = Join-Path $QtRoot 'app\qml'
     (Join-Path $AppStage 'crater.exe')
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed (exit $LASTEXITCODE)" }
 
+# ── VC++ runtime, app-local ────────────────────────────────────────────────
+# crater.exe and every Qt / FFmpeg DLL link the VC++ runtime (msvcp140.dll
+# and friends). A PC with an older runtime already installed, common on
+# Windows 10 where other apps put a 2019-2023 one in System32, crashed Crater
+# inside msvcp140.dll before its first window: binaries built with a newer
+# toolset (VS 2022 17.10+ and later) need at least that toolset's runtime.
+# The installer skipped the redist whenever any v14 runtime was present, and
+# the ZIP never had one. Shipping the runtime beside crater.exe settles it
+# for both: Windows loads these before System32's (they are not KnownDLLs).
+# They come from the same toolset that built crater.exe, which Microsoft
+# allows redistributing app-locally.
+Write-Step 'Staging the VC++ runtime beside crater.exe'
+if (-not $env:VCToolsRedistDir -or -not (Test-Path $env:VCToolsRedistDir)) {
+    throw 'VCToolsRedistDir is not set. Run from an MSVC developer environment (CI: ilammy/msvc-dev-cmd; locally: dev-shell.ps1).'
+}
+$CrtDir = Get-ChildItem (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' |
+    Sort-Object Name -Descending | Select-Object -First 1
+if (-not $CrtDir) { throw "No Microsoft.VC*.CRT folder under $env:VCToolsRedistDir\x64" }
+Copy-Item (Join-Path $CrtDir.FullName '*.dll') $AppStage -Force
+
+# Never ship a runtime older than the linker that built crater.exe: that is
+# the exact mismatch this step exists to prevent.
+function Get-LinkerVersion([string]$Path) {
+    $line = & dumpbin /headers $Path | Select-String 'linker version' | Select-Object -First 1
+    if (-not $line) { throw "dumpbin could not read $Path" }
+    [version](($line.ToString().Trim() -split ' ')[0])
+}
+$exeLinker = Get-LinkerVersion (Join-Path $AppStage 'crater.exe')
+$crt = (Get-Item (Join-Path $AppStage 'msvcp140.dll')).VersionInfo
+$crtVersion = [version]"$($crt.FileMajorPart).$($crt.FileMinorPart)"
+if ($crtVersion -lt $exeLinker) {
+    throw "Bundled msvcp140.dll is $crtVersion but crater.exe was linked with $exeLinker."
+}
+Write-Done "VC++ runtime $($crt.FileVersion) staged from $($CrtDir.FullName) (crater.exe linker $exeLinker)"
+
 # ── Stage data files ───────────────────────────────────────────────────────
 # The Bible database is NOT embedded in crater.exe (77 MB, too large for a
 # Qt resource; see ElectronDataImporter.h). The app's first-run importer
@@ -338,6 +376,15 @@ Write-Done "Strong's databases staged to $LegacyStage"
 
 # ── VC++ redist ────────────────────────────────────────────────────────────
 if (-not $SkipInstaller) {
+    # A cached redist older than the runtime bundled above is stale (the CI
+    # cache kept the VS 2022 one long after the runners moved on).
+    if (Test-Path $VcRedistPath) {
+        $cached = (Get-Item $VcRedistPath).VersionInfo
+        if ([version]"$($cached.FileMajorPart).$($cached.FileMinorPart)" -lt $crtVersion) {
+            Write-Step "Cached vc_redist.x64.exe is $($cached.FileVersion), older than the bundled runtime; refetching"
+            Remove-Item $VcRedistPath -Force
+        }
+    }
     if (-not (Test-Path $VcRedistPath)) {
         Write-Step "Downloading vc_redist.x64.exe from $VcRedistUrl"
         New-Item -ItemType Directory -Force -Path $PackagingDir | Out-Null
