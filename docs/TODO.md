@@ -264,7 +264,7 @@ nowhere to be.
 
 ### Auto-update
 - [x] **DONE — shipped, see `docs/auto-update.md`.** `UpdateService`
-      (`app/src/`) checks GitHub's `/releases/latest` at most once a day,
+      (`app/src/`) checks GitHub's `/releases/latest` on each launch,
       downloads the platform installer, verifies its SHA-256 against the
       release's `SHA256SUMS.txt` (or the asset's API digest) and refuses to
       install anything it cannot verify. Settings > Updates is the whole

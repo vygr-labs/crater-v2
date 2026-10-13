@@ -77,7 +77,8 @@ class UpdateService : public QObject
     // UI stays quiet until the NEXT release supersedes it.
     Q_PROPERTY(QString skippedVersion   READ skippedVersion   NOTIFY skippedVersionChanged)
 
-    // Check automatically, at most once a day, a short delay after launch.
+    // Check automatically on every launch, a short delay after it, unless the
+    // last check was minutes ago.
     // Owned here rather than in SettingsService because it is the updater's
     // own policy knob and nothing else reads it; the Settings dialog binds
     // straight to this property the same way it binds to

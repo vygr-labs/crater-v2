@@ -789,8 +789,8 @@ int main(int argc, char* argv[])
     if (settingsService.ndiStartOnLaunch() && ndiService.available())
         QTimer::singleShot(0, &ndiService, [&ndiService] { ndiService.start(); });
 
-    // Arm the once-a-day update check. Returns immediately when auto-check
-    // is off or the last one was recent; when it is due, it only starts a
+    // Arm the launch-time update check. Returns immediately when auto-check
+    // is off or the last one was minutes ago; when it is due, it only starts a
     // timer — the request itself fires well after startup so it never
     // competes with migrations or the first QML load (docs/auto-update.md).
     updateService.armStartupCheck();

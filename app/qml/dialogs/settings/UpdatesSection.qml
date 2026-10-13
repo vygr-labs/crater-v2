@@ -339,7 +339,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Check for updates automatically")
-                description: qsTr("Looks once a day, shortly after Crater opens. Nothing downloads or installs on its own.")
+                description: qsTr("Looks each time Crater opens, shortly after it starts. Nothing downloads or installs on its own.")
 
                 ToggleSwitch {
                     id: autoToggle

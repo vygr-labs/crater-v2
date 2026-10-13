@@ -491,7 +491,7 @@ format's complexity *out* of the runtime hot path.
 - **No web view embedded for any UI.** Defeats the entire reason we left
   Electron.
 - **No telemetry of any kind without explicit opt-in.** Churches don't
-  need their service-prep behavior phoning home. The daily update check
+  need their service-prep behavior phoning home. The launch-time update check
   (§5.4) is not an exception to this: it is an unauthenticated GET of a
   public release feed, sending no identifier and no library contents, and
   it can be switched off in Settings. `LogReportService` is the other
