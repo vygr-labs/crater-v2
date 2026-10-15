@@ -68,6 +68,7 @@ Item {
                     font.pixelSize: Theme.font.smallSize
                     wrapMode: TextEdit.Wrap
                     selectByMouse: true
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
             }
 

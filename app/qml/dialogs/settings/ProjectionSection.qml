@@ -551,6 +551,7 @@ Item {
                                 font.weight: Theme.font.weightMedium
                                 selectByMouse: true
                                 onEditingFinished: OutputService.setDisplayName(outRow._id, text)
+                                HoverHandler { cursorShape: Qt.IBeamCursor }
                             }
                             Text {
                                 width: parent.width

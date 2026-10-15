@@ -473,6 +473,7 @@ ModalShell {
                         event.accepted = true
                     }
                 }
+                HoverHandler { cursorShape: Qt.IBeamCursor }
             }
 
             Rectangle {

@@ -221,6 +221,7 @@ ModalShell {
                         selectByMouse: true
                         wrapMode: TextEdit.Wrap
                         onTextChanged: root._brief = text
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
                 Text {
@@ -360,6 +361,7 @@ ModalShell {
                     selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     onTextChanged: checkDebounce.restart()
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
             }
 

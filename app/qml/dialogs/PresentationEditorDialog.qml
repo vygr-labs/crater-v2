@@ -441,6 +441,7 @@ ModalShell {
                     font.pixelSize: Theme.font.bodySize + 3
                     font.weight: Theme.font.weightSemiBold
                 }
+                HoverHandler { cursorShape: Qt.IBeamCursor }
             }
 
             Item {
@@ -786,6 +787,7 @@ ModalShell {
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.bodySize
                     }
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
             }
 
@@ -821,6 +823,7 @@ ModalShell {
                         font.family: Theme.font.family
                         font.pixelSize: Theme.font.bodySize
                     }
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
             }
 
@@ -928,6 +931,7 @@ ModalShell {
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
                         }
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
             }
@@ -971,6 +975,7 @@ ModalShell {
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
                         }
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
             }
@@ -1016,6 +1021,7 @@ ModalShell {
                             font.family: Theme.font.family
                             font.pixelSize: Theme.font.bodySize
                         }
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
             }

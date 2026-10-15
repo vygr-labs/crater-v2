@@ -365,6 +365,7 @@ Rectangle {
                         return root._hsvaToHex(root.hue, root.sat, root.val, root.alpha)
                     })
                 }
+                HoverHandler { cursorShape: Qt.IBeamCursor }
             }
         }
 

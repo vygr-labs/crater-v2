@@ -252,6 +252,7 @@ Item {
                         root.valueSelected(v)
                     }
                 }
+                HoverHandler { cursorShape: Qt.IBeamCursor }
             }
         }
 

@@ -345,6 +345,7 @@ Item {
                                     font.family: Theme.font.family
                                     font.pixelSize: Theme.font.bodySize
                                 }
+                                HoverHandler { cursorShape: Qt.IBeamCursor }
                             }
                         }
 

@@ -207,6 +207,7 @@ Rectangle {
                 font.pixelSize: Theme.font.bodySize
                 wrapMode: Text.WordWrap
             }
+            HoverHandler { cursorShape: Qt.IBeamCursor }
         }
     }
 }

@@ -611,6 +611,7 @@ ModalShell {
                         font.pixelSize: Theme.font.bodySize + 4
                         font.weight: Theme.font.weightSemiBold
                     }
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
 
                 // Theme combobox — inline on the right of the title row.
