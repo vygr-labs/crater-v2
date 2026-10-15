@@ -31,8 +31,15 @@ namespace crater {
 // --profile=<id> (what a switch restarts with) uses that profile and skips
 // the ask-at-startup picker.
 //
-// Long operations (create by duplicating, delete, export, import) run on a
-// worker thread, one at a time. `busy`, `progress` and `progressText` track
+// Resetting. Any profile, the Default one included, can be reset to a
+// fresh-install state: its songs, themes, media, presentations, schedules
+// and per-profile preferences go, and it opens again with the built-in
+// themes. The shared Bible library, the profile list, logs and machine-wide
+// settings stay. The profile in use has its databases open, so its reset is
+// recorded and done by activate() on the restart it asks for.
+//
+// Long operations (create by duplicating, delete, reset, export, import) run
+// on a worker thread, one at a time. `busy`, `progress` and `progressText` track
 // the running one and operationFinished reports how it went.
 class ProfileService : public QObject
 {
@@ -87,6 +94,12 @@ public:
     // Async; reports through operationFinished("delete", ...).
     Q_INVOKABLE bool deleteProfile(QString id);
 
+    // Wipe a profile back to a fresh install, keeping its name. The UI
+    // confirms first. For a profile not in use it runs now, async, and
+    // reports through operationFinished("reset", ...). For the profile in use
+    // it is recorded and Crater restarts (restartRequested) to do it.
+    Q_INVOKABLE bool resetProfile(QString id);
+
     // Remember `id` as the profile to open and ask for a restart into it.
     Q_INVOKABLE bool switchTo(QString id);
 
@@ -125,7 +138,7 @@ signals:
     void askAtStartupChanged();
     void busyChanged();
     void progressChanged();
-    // operation: "create" | "delete" | "export" | "import".
+    // operation: "create" | "delete" | "reset" | "export" | "import".
     // details: id / name of a new profile, added / skipped counts per part,
     // warnings (QStringList), and for imports `asNewProfile`.
     void operationFinished(QString operation, bool ok, QString message, QVariantMap details);
@@ -135,6 +148,10 @@ signals:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+
+    // Carry out resets recorded for profiles that were in use (or cut short
+    // by a crash). Runs from activate(), before any database is opened.
+    void finishPendingResets();
 
     void setBusy(bool on);
     void setProgress(qreal fraction, const QString& text);

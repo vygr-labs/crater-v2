@@ -6,11 +6,12 @@ import QtQuick.Layouts
 // action maps to one ProfileService call; this file only decides what to
 // show and when to ask first.
 //
-// Naming, renaming and deleting happen inline in this pane rather than in
-// the shared naming / confirm modals. There is one modal slot, so opening
-// either would close Settings, and the result of an async create or delete
-// would land on a pane that no longer exists. Switching does use the shared
-// confirm modal: it restarts Crater, so losing the Settings pane is moot.
+// Naming, renaming, deleting and resetting another profile happen inline in
+// this pane rather than in the shared naming / confirm modals. There is one
+// modal slot, so opening either would close Settings, and the result of an
+// async create, delete or reset would land on a pane that no longer exists.
+// Switching, and resetting the profile in use, do use the shared confirm
+// modal: both restart Crater, so losing the Settings pane is moot.
 Item {
     id: root
 
@@ -24,6 +25,7 @@ Item {
     property bool   _statusIsError: false
 
     property string _deleteId: ""
+    property string _resetId: ""
 
     function _setStatus(text, isError) {
         root._status = text || ""
@@ -86,6 +88,26 @@ Item {
         deleteConfirm.openConfirm()
     }
 
+    // Resetting the profile in use restarts Crater, like a switch, so it asks
+    // through the shared modal. Any other profile resets in place.
+    function _confirmReset(id, name, isCurrent) {
+        const body = qsTr("This deletes every song, theme, picture, video, presentation and schedule in %1, along with its display preferences, and starts it fresh with the built-in themes. Bibles and other profiles are not touched. It can't be undone, so export the profile first if you might want anything back.").arg(name)
+        if (isCurrent) {
+            AppState.openModal("confirm", {
+                title:       qsTr("Reset %1?").arg(name),
+                body:        body + " " + qsTr("Crater will close and reopen to finish, and anything on the projection screen goes dark until it is back."),
+                confirmText: qsTr("Reset and restart"),
+                destructive: true,
+                onConfirm:   function() { ProfileService.resetProfile(id) }
+            })
+            return
+        }
+        root._resetId = id
+        resetConfirm.title = qsTr("Reset %1?").arg(name)
+        resetConfirm.body = body
+        resetConfirm.openConfirm()
+    }
+
     function _startImport() {
         const path = FileDialogService.chooseOpenFile(qsTr("Import profile"),
                                                       [qsTr("Crater Profile (*.craterprofile)")])
@@ -108,6 +130,9 @@ Item {
             } else if (operation === "delete") {
                 root._setStatus(ok ? qsTr("Deleted %1.").arg(name)
                                    : qsTr("Could not delete the profile. %1").arg(message), !ok)
+            } else if (operation === "reset") {
+                root._setStatus(ok ? qsTr("Reset %1. It starts fresh the next time you switch to it.").arg(name)
+                                   : qsTr("Could not reset the profile. %1").arg(message), !ok)
             }
         }
     }
@@ -223,6 +248,17 @@ Item {
                             enabled: !ProfileService.busy
                             onClicked: root._startEdit("rename", row.modelData.id,
                                                        row.modelData.name, row.modelData.name)
+                        }
+                        // Every profile can be reset, Default and the one in
+                        // use included. It is how Default starts over, since
+                        // it can't be deleted.
+                        IconButton {
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "rotate-ccw"
+                            tooltip: qsTr("Reset")
+                            enabled: !ProfileService.busy
+                            onClicked: root._confirmReset(row.modelData.id, row.modelData.name,
+                                                          row._current)
                         }
                         IconButton {
                             anchors.verticalCenter: parent.verticalCenter
@@ -471,5 +507,17 @@ Item {
             root._deleteId = ""
         }
         onCancelled: root._deleteId = ""
+    }
+
+    ConfirmationOverlay {
+        id: resetConfirm
+        anchors.fill: parent
+        confirmLabel: qsTr("Reset profile")
+        onConfirmed: {
+            if (!ProfileService.resetProfile(root._resetId))
+                root._setStatus(ProfileService.lastError(), true)
+            root._resetId = ""
+        }
+        onCancelled: root._resetId = ""
     }
 }

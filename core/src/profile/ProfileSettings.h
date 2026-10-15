@@ -37,7 +37,9 @@ bool isPerProfileSettingKey(QStringView key);
 // The per-profile output key suffix: "Outputs/<id>/themes".
 QString outputThemesKey(const QString& outputId);
 
-// The machine-wide store (registry on Windows).
+// The machine-wide store (registry on Windows). Under QStandardPaths test
+// mode it is an INI file in the test AppDataLocation instead, so a unit test
+// can never read or rewrite the operator's real Crater settings.
 std::unique_ptr<QSettings> openGlobalSettings();
 
 // The per-profile store of the profile rooted at `root`. For the Default
@@ -60,5 +62,11 @@ int writeProfilePreferences(const QString& root, const QVariantMap& values);
 // profile root to another. Used when duplicating a profile, where theme ids
 // stay valid because the database is copied whole.
 void copyProfileSettings(const QString& fromRoot, const QString& toRoot);
+
+// Remove every per-profile value, output theme pins included, from the
+// profile at `root`, so it reads the built-in defaults again. Used by a
+// profile reset. For the Default profile this touches only the per-profile
+// keys in the machine-wide store and leaves every global setting alone.
+void clearProfileSettings(const QString& root);
 
 }  // namespace crater::profile

@@ -366,3 +366,26 @@ target_include_directories(test_easyworship_2009 PRIVATE
 )
 
 add_test(NAME easyworship_2009 COMMAND test_easyworship_2009)
+
+# -- Profile reset -- ProfileService::resetProfile ---------------------------
+# Default can't be deleted (its folder is the app root), so reset is how it
+# starts over. Pins what a reset removes and what it must never touch: the
+# other profiles, profiles.json, the shared Bibles, logs and global settings.
+qt_add_executable(test_profile_reset
+    test_profile_reset.cpp
+)
+
+target_link_libraries(test_profile_reset PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# Seeds and checks rows through the db/ wrappers and reads ProfileSettings,
+# both private to crater-core.
+target_include_directories(test_profile_reset PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME profile_reset COMMAND test_profile_reset)
