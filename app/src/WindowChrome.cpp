@@ -260,6 +260,11 @@ void crater::WindowControls::toggleMaximized(QWindow* window)
     else             window->showMaximized();
 }
 
+void crater::WindowControls::minimize(QWindow* window)
+{
+    if (window) window->setWindowStates(window->windowStates() | Qt::WindowMinimized);
+}
+
 qreal crater::WindowControls::maximizedInset(QWindow* window) const
 {
 #ifdef Q_OS_WIN

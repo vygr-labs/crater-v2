@@ -31,6 +31,9 @@
 // QApplication exists and from the fatal-message and crash handlers.
 namespace crater::startup {
 
+// The per-user folder the trace lives in. Usable before begin().
+QString stateDirectory();
+
 // Call first thing in main(). Rotates the previous trace, starts this one,
 // picks the graphics level (setting the matching environment variables) and,
 // on Windows, installs a handler that records a crash in the trace.

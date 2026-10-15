@@ -48,6 +48,7 @@
 #include "PdfPageImageProvider.h"
 #include "ProjectionLayering.h"
 #include "RichTextHelper.h"
+#include "SingleInstance.h"
 #include "StartupGuard.h"
 #include "StartupSplash.h"
 #include "TranslationService.h"
@@ -268,6 +269,11 @@ int main(int argc, char* argv[])
     QElapsedTimer startupClock;
     startupClock.start();
 
+    // One Crater per user (SingleInstance.h). Before the startup trace, so
+    // a launch that only hands over to the running Crater leaves the
+    // running one's trace alone.
+    if (!crater::instance::claim(argc, argv)) return 0;
+
     // Startup trace (StartupGuard.h) BEFORE any Qt code runs, so a launch
     // that dies anywhere leaves a trail, and the graphics fallback is chosen
     // before Qt reads its environment. If even this trace doesn't appear,
@@ -318,6 +324,7 @@ int main(int argc, char* argv[])
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/brand/crater.ico")));
 
     crater::startup::mark("QApplication constructed");
+    crater::instance::listen();
 
     const QString logPath = initLogging();
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";
@@ -723,6 +730,7 @@ int main(int argc, char* argv[])
         if (auto* consoleWindow =
                 qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
             crater::installNativeWindowChrome(consoleWindow);
+            crater::instance::setConsole(consoleWindow);
             crater::restoreWindowPlacement(consoleWindow);
 
             // The first painted frame is what "this launch worked" means to

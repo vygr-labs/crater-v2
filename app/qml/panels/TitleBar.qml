@@ -172,7 +172,7 @@ Rectangle {
     function _handleAction(kind) {
         if (!root._win) return
         switch (kind) {
-            case "minimize": root._win.showMinimized(); break
+            case "minimize": WindowControls.minimize(root._win); break
             case "maximize": root._toggleMaximize();    break
             case "close":    root._win.close();         break
         }

@@ -180,6 +180,15 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info)
 
 }  // namespace
 
+QString stateDirectory()
+{
+#ifdef Q_OS_WIN
+    return QString::fromStdWString(baseDir().wstring());
+#else
+    return QFile::decodeName(baseDir().string().c_str());
+#endif
+}
+
 void begin(int argc)
 {
     g_dir = baseDir();
