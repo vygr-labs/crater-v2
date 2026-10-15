@@ -7,11 +7,13 @@
 
 namespace crater {
 
-// Imports a song library from an EasyWorship 6 / 7 installation.
+// Imports a song library from an EasyWorship 2009, 6 or 7 installation.
 //
 // EasyWorship 6/7 keep songs across two SQLite files — Songs.db (the `song`
 // table: title / author / copyright / ccli_no) and SongWords.db (the `word`
-// table: lyrics as RTF). This importer reads both, converts each RTF lyric
+// table: lyrics as RTF). EasyWorship 2007/2009 keep them in a Paradox table,
+// Songs.DB, with the RTF lyrics in its memo file Songs.MB (import/
+// ParadoxTable.h). This importer reads either, converts each RTF lyric
 // blob to plain text (crater::rtf), splits it into labeled sections, and
 // writes songs + song_sections + the songs_fts index straight into the app's
 // songs.sqlite — one transaction, on a worker thread.
@@ -34,7 +36,7 @@ public:
     ~EasyWorshipImporter() override;
 
     // Probe the chosen files: confirm they are an EasyWorship Songs.db +
-    // SongWords.db pair, count importable songs, and count how many collide
+    // SongWords.db pair, or a 2009 Songs.DB, count importable songs, and count how many collide
     // (title + author, case-insensitive) with songs already in the library.
     // `dbFiles` is the raw multi-select result — order does not matter, each
     // file is identified by its table schema. Result via analyzed() or

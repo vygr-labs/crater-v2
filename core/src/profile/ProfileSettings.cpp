@@ -6,6 +6,7 @@
 #include <QMetaType>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStandardPaths>
 
 namespace crater::profile {
 
@@ -128,6 +129,11 @@ QString outputThemesKey(const QString& outputId)
 
 std::unique_ptr<QSettings> openGlobalSettings()
 {
+    if (QStandardPaths::isTestModeEnabled()) {
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return std::make_unique<QSettings>(QDir(dir).filePath(QStringLiteral("global-settings.ini")),
+                                           QSettings::IniFormat);
+    }
     // Same organisation + application names every service already uses, so
     // this is the one registry hive (Windows) / config file (elsewhere).
     return std::make_unique<QSettings>(QStringLiteral("Voyager Labs"), QStringLiteral("Crater"));
@@ -190,6 +196,18 @@ void copyProfileSettings(const QString& fromRoot, const QString& toRoot)
         if (from->contains(k)) to->setValue(k, from->value(k));
     }
     to->sync();
+}
+
+void clearProfileSettings(const QString& root)
+{
+    const auto store = openProfileSettingsAt(root);
+    for (const KeySpec& s : specs()) store->remove(QString::fromLatin1(s.key));
+    // Theme pins name themes in the profile's own database, which a reset
+    // replaces, so they go too. The output list itself is machine-wide.
+    const auto global = openGlobalSettings();
+    const QStringList ids = global->value(QStringLiteral("Outputs/ids")).toStringList();
+    for (const QString& id : ids) store->remove(outputThemesKey(id));
+    store->sync();
 }
 
 }  // namespace crater::profile

@@ -199,4 +199,12 @@ QString toPlainText(const QString& rtf)
     return out;
 }
 
+QString fromCp1252(QByteArrayView bytes)
+{
+    QString out;
+    out.reserve(bytes.size());
+    for (const char c : bytes) out.append(decodeCp1252(quint8(c)));
+    return out;
+}
+
 }  // namespace crater::rtf

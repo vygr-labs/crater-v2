@@ -5,6 +5,7 @@
 #include "db/Error.h"
 #include "db/Statement.h"
 #include "db/Transaction.h"
+#include "import/ParadoxTable.h"
 #include "import/Rtf.h"
 
 #include <QDateTime>
@@ -56,8 +57,8 @@ QSet<QString> ewSongColumns(db::Connection& c)
 std::optional<EwPair> identifyFiles(const QStringList& files, QString& err)
 {
     if (files.size() != 2) {
-        err = QStringLiteral("Select exactly two files — your EasyWorship "
-                             "Songs.db and SongWords.db.");
+        err = QStringLiteral("Select your EasyWorship Songs.db and SongWords.db "
+                             "together, or Songs.DB on its own for EasyWorship 2009.");
         return std::nullopt;
     }
 
@@ -82,6 +83,121 @@ std::optional<EwPair> identifyFiles(const QStringList& files, QString& err)
         return std::nullopt;
     }
     return pair;
+}
+
+// ── Reading a library ────────────────────────────────────────────────────────
+
+// One song as EasyWorship stored it, whichever version wrote it.
+struct SourceSong
+{
+    QString title;
+    QString author;
+    QString copyright;
+    QString ccli;
+    QString rtf;   // lyrics, left empty when the caller only needs titles
+};
+
+const QString kNotEasyWorship =
+    QStringLiteral("This does not look like an EasyWorship song database.");
+
+// EasyWorship 6/7: the `song` table in Songs.db, lyrics in SongWords.db.
+std::optional<QList<SourceSong>> loadSqliteLibrary(const EwPair& pair, bool withWords,
+                                                    QString& err)
+{
+    db::Connection songsDb(pair.songsPath, db::OpenMode::ReadOnly);
+    const QSet<QString> cols = ewSongColumns(songsDb);
+    if (!cols.contains(QStringLiteral("title"))) {
+        err = kNotEasyWorship;
+        return std::nullopt;
+    }
+
+    // Absent columns become NULL placeholders so the column indices read
+    // below stay fixed regardless of the EasyWorship version.
+    const auto col = [&](const char* name) {
+        const QString n = QString::fromLatin1(name);
+        return cols.contains(n) ? n : QStringLiteral("NULL");
+    };
+    auto sel = songsDb.prepare(QStringLiteral("SELECT rowid, title, %1, %2, %3 FROM song")
+                                   .arg(col("author"), col("copyright"), col("ccli_no")));
+
+    std::optional<db::Connection> wordsDb;
+    std::optional<db::Statement>  wordSel;
+    if (withWords) {
+        wordsDb.emplace(pair.wordsPath, db::OpenMode::ReadOnly);
+        wordSel.emplace(wordsDb->prepare(
+            QStringLiteral("SELECT words FROM word WHERE song_id = ?")));
+    }
+
+    QList<SourceSong> songs;
+    while (sel.step()) {
+        SourceSong s;
+        s.title     = sel.columnText(1);
+        s.author    = sel.columnIsNull(2) ? QString() : sel.columnText(2);
+        s.copyright = sel.columnIsNull(3) ? QString() : sel.columnText(3);
+        s.ccli      = sel.columnIsNull(4) ? QString() : sel.columnText(4);
+        if (wordSel) {
+            wordSel->reset();
+            wordSel->bind(1, sel.columnInt64(0));
+            if (wordSel->step()) s.rtf = wordSel->columnText(0);
+        }
+        songs.append(s);
+    }
+    return songs;
+}
+
+// EasyWorship 2007/2009: one Paradox table, Songs.DB, with the lyrics in the
+// Songs.MB memo file beside it. Those versions have no SongWords.db, which is
+// also why moving a 2009 library into EasyWorship 7 can leave lyrics behind.
+std::optional<QList<SourceSong>> loadParadoxLibrary(const QString& dbPath, bool withWords,
+                                                     QString& err)
+{
+    auto table = paradox::Table::open(dbPath, &err);
+    if (!table) return std::nullopt;
+
+    const int title = table->fieldIndex(QStringLiteral("Title"));
+    const int words = table->fieldIndex(QStringLiteral("Words"));
+    if (title < 0 || words < 0) {
+        err = kNotEasyWorship;
+        return std::nullopt;
+    }
+    const int author    = table->fieldIndex(QStringLiteral("Author"));
+    const int copyright = table->fieldIndex(QStringLiteral("Copyright"));
+    const int admin     = table->fieldIndex(QStringLiteral("Administrator"));
+    const int number    = table->fieldIndex(QStringLiteral("Song Number"));
+
+    QList<SourceSong> songs;
+    songs.reserve(table->recordCount());
+    for (int r = 0; r < table->recordCount(); ++r) {
+        SourceSong s;
+        s.title     = table->text(r, title);
+        s.author    = table->text(r, author);
+        s.copyright = table->text(r, copyright);
+        s.ccli      = table->text(r, number);
+        // Crater has no administrator field, so it rides along in copyright.
+        const QString administrator = table->text(r, admin);
+        if (!administrator.isEmpty()) {
+            const QString line = QStringLiteral("Administered by %1").arg(administrator);
+            s.copyright = s.copyright.isEmpty() ? line : s.copyright + QLatin1Char(' ') + line;
+        }
+        if (withWords) s.rtf = rtf::fromCp1252(table->memo(r, words));
+        songs.append(s);
+    }
+    return songs;
+}
+
+// Reads whichever library the operator picked: Songs.DB from EasyWorship 2009
+// (with or without Songs.MB also selected), or the Songs.db + SongWords.db
+// pair from EasyWorship 6/7. Each file is identified by its contents.
+std::optional<QList<SourceSong>> loadLibrary(const QStringList& files, bool withWords,
+                                             QString& err)
+{
+    for (const QString& f : files)
+        if (paradox::Table::looksLikeTable(f))
+            return loadParadoxLibrary(f, withWords, err);
+
+    const auto pair = identifyFiles(files, err);
+    if (!pair) return std::nullopt;
+    return loadSqliteLibrary(*pair, withWords, err);
 }
 
 // ── Duplicate detection ──────────────────────────────────────────────────────
@@ -223,36 +339,22 @@ void EasyWorshipImporter::analyze(QStringList dbFiles)
     m_task = QtConcurrent::run([this, dbFiles]() {
         try {
             QString err;
-            const auto pair = identifyFiles(dbFiles, err);
-            if (!pair) {
+            const auto songs = loadLibrary(dbFiles, false, err);
+            if (!songs) {
                 emit failed(err);
                 return;
             }
 
-            db::Connection songsDb(pair->songsPath, db::OpenMode::ReadOnly);
-            const QSet<QString> cols = ewSongColumns(songsDb);
-            if (!cols.contains(QStringLiteral("title"))) {
-                emit failed(QStringLiteral("This does not look like an "
-                                           "EasyWorship song database."));
-                return;
-            }
-            const bool hasAuthor = cols.contains(QStringLiteral("author"));
-
             db::Connection lib(db::DbPaths::songsDbPath(), db::OpenMode::ReadOnly);
             const QSet<QString> existing = loadExistingKeys(lib);
 
-            auto sel = songsDb.prepare(hasAuthor
-                ? QStringLiteral("SELECT title, COALESCE(author, '') FROM song")
-                : QStringLiteral("SELECT title, '' FROM song"));
-
             int total      = 0;
             int duplicates = 0;
-            while (sel.step()) {
-                const QString title = sel.columnText(0).simplified();
+            for (const SourceSong& s : *songs) {
+                const QString title = s.title.simplified();
                 if (title.isEmpty()) continue;
-                const QString author = sel.columnText(1).simplified();
                 ++total;
-                if (existing.contains(dupKey(title, author))) ++duplicates;
+                if (existing.contains(dupKey(title, s.author.simplified()))) ++duplicates;
             }
             emit analyzed(total, duplicates);
         } catch (const db::Error& e) {
@@ -268,44 +370,15 @@ void EasyWorshipImporter::run(QStringList dbFiles, bool skipDuplicates)
 {
     m_task = QtConcurrent::run([this, dbFiles, skipDuplicates]() {
         try {
+            emit progress(0, QStringLiteral("Opening EasyWorship databases..."));
+
             QString err;
-            const auto pair = identifyFiles(dbFiles, err);
-            if (!pair) {
+            const auto songs = loadLibrary(dbFiles, true, err);
+            if (!songs) {
                 emit failed(err);
                 return;
             }
-
-            emit progress(0, QStringLiteral("Opening EasyWorship databases..."));
-
-            db::Connection songsDb(pair->songsPath, db::OpenMode::ReadOnly);
-            db::Connection wordsDb(pair->wordsPath, db::OpenMode::ReadOnly);
-
-            const QSet<QString> cols = ewSongColumns(songsDb);
-            if (!cols.contains(QStringLiteral("title"))) {
-                emit failed(QStringLiteral("This does not look like an "
-                                           "EasyWorship song database."));
-                return;
-            }
-            const bool hasAuthor    = cols.contains(QStringLiteral("author"));
-            const bool hasCopyright = cols.contains(QStringLiteral("copyright"));
-            const bool hasCcli      = cols.contains(QStringLiteral("ccli_no"));
-
-            // Absent columns become NULL placeholders so the column indices
-            // read below stay fixed regardless of the EasyWorship version.
-            QString songSql = QStringLiteral("SELECT rowid, title, ");
-            songSql += hasAuthor    ? QStringLiteral("author")    : QStringLiteral("NULL");
-            songSql += QStringLiteral(", ");
-            songSql += hasCopyright ? QStringLiteral("copyright") : QStringLiteral("NULL");
-            songSql += QStringLiteral(", ");
-            songSql += hasCcli      ? QStringLiteral("ccli_no")   : QStringLiteral("NULL");
-            songSql += QStringLiteral(" FROM song");
-
-            int total = 0;
-            {
-                auto countStmt = songsDb.prepare(
-                    QStringLiteral("SELECT COUNT(*) FROM song"));
-                if (countStmt.step()) total = countStmt.columnInt(0);
-            }
+            const int total = int(songs->size());
 
             db::Connection target(db::DbPaths::songsDbPath());
             const QSet<QString> existing =
@@ -315,9 +388,6 @@ void EasyWorshipImporter::run(QStringList dbFiles, bool skipDuplicates)
             // ~100x slower under WAL. A throw here rolls the whole import back.
             db::Transaction tx(target);
 
-            auto songSel = songsDb.prepare(songSql);
-            auto wordSel = wordsDb.prepare(
-                QStringLiteral("SELECT words FROM word WHERE song_id = ?"));
             auto insSong = target.prepare(QStringLiteral(
                 "INSERT INTO songs (title, author, copyright, ccli, theme_id, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?)"));
@@ -343,15 +413,11 @@ void EasyWorshipImporter::run(QStringList dbFiles, bool skipDuplicates)
             int skipped   = 0;
             int lastPct   = -1;
 
-            while (songSel.step()) {
-                const qint64  ewId  = songSel.columnInt64(0);
-                const QString title = songSel.columnText(1).simplified();
-                const QString author = songSel.columnIsNull(2)
-                    ? QString() : songSel.columnText(2).simplified();
-                const QString copyright = songSel.columnIsNull(3)
-                    ? QString() : songSel.columnText(3).trimmed();
-                const QString ccli = songSel.columnIsNull(4)
-                    ? QString() : songSel.columnText(4).trimmed();
+            for (const SourceSong& src : *songs) {
+                const QString title     = src.title.simplified();
+                const QString author    = src.author.simplified();
+                const QString copyright = src.copyright.trimmed();
+                const QString ccli      = src.ccli.trimmed();
 
                 ++processed;
 
@@ -359,12 +425,7 @@ void EasyWorshipImporter::run(QStringList dbFiles, bool skipDuplicates)
                     if (skipDuplicates && existing.contains(dupKey(title, author))) {
                         ++skipped;
                     } else {
-                        // Pull and decode the RTF lyric blob.
-                        wordSel.reset();
-                        wordSel.bind(1, ewId);
-                        QString rtf;
-                        if (wordSel.step()) rtf = wordSel.columnText(0);
-                        const QString plain = crater::rtf::toPlainText(rtf);
+                        const QString plain = crater::rtf::toPlainText(src.rtf);
                         const QList<ParsedSection> sections = splitSections(plain);
 
                         // Song metadata row.

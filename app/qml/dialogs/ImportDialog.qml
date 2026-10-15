@@ -62,10 +62,11 @@ ModalShell {
 
     function pickFiles() {
         // Opens where the last EasyWorship import came from, or the first
-        // time, in EasyWorship 6/7's default Data folder (the path shown in
-        // the hint above). The picker skips either one if it's missing.
+        // time, in EasyWorship's default Data folder (the path shown in the
+        // hint above). 2009, 6 and 7 all use it. The picker skips either one
+        // if it's missing.
         var files = FileDialogService.chooseOpenFiles(
-            qsTr("Select EasyWorship Songs.db and SongWords.db"),
+            qsTr("Select your EasyWorship song files"),
             [qsTr("EasyWorship database (*.db)"), qsTr("All files (*)")],
             "easyWorshipImport",
             "C:/Users/Public/Documents/Softouch/EasyWorship/Default/Databases/Data")
@@ -121,7 +122,7 @@ ModalShell {
                 }
                 Text {
                     width: parent.width
-                    text: qsTr("Crater imports song libraries from EasyWorship 6 and 7. Those versions keep songs in a Data folder as two files. Choose both Songs.db and SongWords.db to continue.")
+                    text: qsTr("Crater imports song libraries from EasyWorship 2009, 6 and 7. From EasyWorship 6 or 7, choose both Songs.db and SongWords.db. From EasyWorship 2009, choose Songs.DB.")
                     color: Theme.color.textSecondary
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize
@@ -163,6 +164,15 @@ ModalShell {
                             font.family: Theme.font.monoFamily
                             font.pixelSize: Theme.font.smallSize
                             wrapMode: Text.WrapAnywhere
+                            lineHeight: 1.4
+                        }
+                        Text {
+                            width: parent.width
+                            text: qsTr("If your EasyWorship profile has its own name, the folder has that name instead of Default.")
+                            color: Theme.color.textTertiary
+                            font.family: Theme.font.family
+                            font.pixelSize: Theme.font.smallSize
+                            wrapMode: Text.WordWrap
                             lineHeight: 1.4
                         }
                         Text {

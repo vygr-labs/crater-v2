@@ -2,6 +2,7 @@
 
 #include "db/DbPaths.h"
 #include "profile/ProfileArchive.h"
+#include "profile/ProfileSettings.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -16,6 +17,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
+#include <QThreadPool>
 #include <QUrl>
 #include <QUuid>
 #include <QtConcurrent>
@@ -37,6 +39,12 @@ const QString kIncompleteMarker = QStringLiteral(".incomplete");
 // Per-profile identity file, so the registry can be rebuilt from the
 // folders if profiles.json is ever lost or damaged.
 const QString kProfileInfoFile = QStringLiteral("profile.json");
+
+// Marker a profile root carries while a reset is due. Written before any
+// file moves and removed only once they all have, so a reset cut short by a
+// crash or power cut is finished by the next startup instead of leaving half
+// a profile.
+const QString kResetMarker = QStringLiteral(".reset-pending");
 
 const QString kStagingDirName = QStringLiteral(".staging");
 const QString kTrashPrefix    = QStringLiteral(".trash-");
@@ -83,6 +91,72 @@ bool writeMarker(const QString& root)
     if (!marker.open(QIODevice::WriteOnly)) return false;
     marker.write("creating\n");
     return true;
+}
+
+// Whether `name`, directly inside a profile root, is that profile's own data
+// and goes in a reset. Listed positively: the Default profile's root is the
+// app root, which also holds the other profiles, profiles.json, the shared
+// Bible library and logs, and none of those may ever be touched.
+bool isResetEntry(const QString& name, bool defaultRoot)
+{
+    static const QStringList dirs{
+        QStringLiteral("media"), QStringLiteral("fonts"), QStringLiteral("schedules"),
+        QStringLiteral("thumbnails"), QStringLiteral(".import-staging"),
+    };
+    if (dirs.contains(name)) return true;
+    for (const QString& db : { QStringLiteral("app.sqlite"), QStringLiteral("songs.sqlite") }) {
+        if (name == db || name == db + QStringLiteral("-wal") || name == db + QStringLiteral("-shm")
+            || name == db + QStringLiteral("-journal")
+            || name.startsWith(db + QStringLiteral(".backup-")))
+            return true;
+    }
+    // Other profiles keep their preferences in their own folder. Default's
+    // live in the machine-wide store and are cleared key by key instead.
+    return !defaultRoot && name == QStringLiteral("settings.ini");
+}
+
+// Move a profile's own data out of `root` into a fresh trash folder inside
+// profiles/ (same volume, so every move is a rename) and clear its
+// preferences. Returns the trash folder, or an empty string and `error`. On
+// failure everything already moved goes back, so the profile is left whole.
+QString moveProfileDataAside(const QString& id, const QString& root, QString* error)
+{
+    const bool defaultRoot = QDir::cleanPath(QDir(root).absolutePath())
+                          == QDir::cleanPath(QDir(db::DbPaths::appRootDir()).absolutePath());
+    const QString trash = QDir(db::DbPaths::profilesDir()).filePath(
+        kTrashPrefix + QStringLiteral("reset-") + id + QLatin1Char('-')
+        + QUuid::createUuid().toString(QUuid::Id128).left(8));
+    if (!QDir().mkpath(trash)) {
+        if (error) *error = QStringLiteral("Could not prepare the reset.");
+        return {};
+    }
+
+    QStringList moved;
+    const QDir dir(root);
+    for (const QString& name : dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System
+                                             | QDir::NoDotAndDotDot)) {
+        if (!isResetEntry(name, defaultRoot)) continue;
+        if (!QDir().rename(dir.filePath(name), QDir(trash).filePath(name))) {
+            for (const QString& back : moved)
+                QDir().rename(QDir(trash).filePath(back), dir.filePath(back));
+            QDir(trash).removeRecursively();
+            if (error) *error = QStringLiteral("Some of the profile's files are in use. Close anything using them and try again.");
+            return {};
+        }
+        moved.append(name);
+    }
+    profile::clearProfileSettings(root);
+    return trash;
+}
+
+void removeInBackground(const QString& trash)
+{
+    if (trash.isEmpty()) return;
+    QThreadPool::globalInstance()->start([trash] {
+        if (!QDir(trash).removeRecursively())
+            qWarning().noquote() << "ProfileService: some files in" << trash
+                                 << "could not be removed yet; they go at next startup";
+    });
 }
 
 QString cleanName(const QString& raw)
@@ -271,6 +345,7 @@ ProfileService::~ProfileService() = default;
 void ProfileService::activate(const QStringList& arguments)
 {
     Impl::sweep();
+    finishPendingResets();
 
     QString wanted;
     for (const QString& a : arguments) {
@@ -527,6 +602,83 @@ bool ProfileService::deleteProfile(QString id)
                                             { QStringLiteral("name"), name } });
     });
     return true;
+}
+
+bool ProfileService::resetProfile(QString id)
+{
+    m_impl->lastError.clear();
+    if (m_impl->busy) { m_impl->lastError = QStringLiteral("Another profile task is still running."); return false; }
+    const Impl::Entry* e = m_impl->find(id);
+    if (!e) { m_impl->lastError = QStringLiteral("That profile no longer exists."); return false; }
+    const QString name = e->name;
+    const QString root = Impl::rootFor(id);
+    if (id != kDefaultId && !isDeletableProfileDir(root)) {
+        m_impl->lastError = QStringLiteral("That profile's folder is not where Crater expects it.");
+        return false;
+    }
+
+    // The marker goes down first: whatever happens next, the reset is
+    // either finished now or finished at the next startup.
+    QFile marker(QDir(root).filePath(kResetMarker));
+    if (!marker.open(QIODevice::WriteOnly) || marker.write("reset\n") < 0) {
+        m_impl->lastError = QStringLiteral("Could not start the reset.");
+        return false;
+    }
+    marker.close();
+
+    if (id == m_impl->currentId) {
+        // Its databases are open in this process. activate() does the reset
+        // on the way back up, before anything opens them.
+        emit restartRequested(id);
+        return true;
+    }
+
+    setBusy(true);
+    setProgress(0, QStringLiteral("Resetting profile"));
+    QtConcurrent::run([id, root]() -> WorkResult {
+        WorkResult r;
+        QString err;
+        const QString trash = moveProfileDataAside(id, root, &err);
+        if (trash.isEmpty()) {
+            QFile::remove(QDir(root).filePath(kResetMarker));
+            r.error = err;
+            return r;
+        }
+        QFile::remove(QDir(root).filePath(kResetMarker));
+        // Fresh databases now, so the profile opens like a new one.
+        r.ok = profile::initProfileRoot(root, &err);
+        r.error = err;
+        if (!QDir(trash).removeRecursively())
+            qWarning().noquote() << "ProfileService: some files in" << trash
+                                 << "could not be removed yet; they go at next startup";
+        return r;
+    }).then(this, [this, id, name](WorkResult r) {
+        setBusy(false);
+        emit operationFinished(QStringLiteral("reset"), r.ok, r.error,
+                               QVariantMap{ { QStringLiteral("id"), id },
+                                            { QStringLiteral("name"), name } });
+    });
+    return true;
+}
+
+void ProfileService::finishPendingResets()
+{
+    for (const Impl::Entry& e : m_impl->entries) {
+        const QString root = Impl::rootFor(e.id);
+        const QString marker = QDir(root).filePath(kResetMarker);
+        if (!QFile::exists(marker)) continue;
+        if (e.id != kDefaultId && !isDeletableProfileDir(root)) continue;
+        QString err;
+        const QString trash = moveProfileDataAside(e.id, root, &err);
+        if (trash.isEmpty()) {
+            // Left marked: the next startup tries again.
+            qWarning().noquote() << "ProfileService: could not reset" << e.name << ":" << err;
+            continue;
+        }
+        QFile::remove(marker);
+        qInfo().noquote() << "ProfileService: reset profile" << e.id << "(" << e.name << ")";
+        removeInBackground(trash);
+    }
 }
 
 bool ProfileService::switchTo(QString id)
