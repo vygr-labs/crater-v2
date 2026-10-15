@@ -176,7 +176,8 @@ Rectangle {
     }
 
     // ── Mock content (preview / editor canvas) ────────────────────────
-    readonly property string mockScriptureRef:  "John 3:16"
+    // Same as live output, translation included (AppState.previewScriptureRef).
+    readonly property string mockScriptureRef:  AppState.previewScriptureRef
     readonly property string mockScriptureText: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."
     readonly property string mockLyric:         "Amazing grace, how sweet the sound\nThat saved a wretch like me"
     readonly property string mockSlideTitle:    "The God Who Pursues"
