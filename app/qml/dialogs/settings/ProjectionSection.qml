@@ -718,9 +718,11 @@ Item {
             // ── DEFAULTS ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Defaults") }
 
+            // Only sets the logo's state at launch (Main.qml). After that the
+            // Logo button and Ctrl+L own it, so the copy says exactly that.
             SettingRow {
-                title: qsTr("Show logo by default")
-                description: qsTr("Display logo when output is otherwise blank")
+                title: qsTr("Show logo when Crater opens")
+                description: qsTr("Start with the logo on. The Logo button turns it on and off after that.")
                 ToggleSwitch {
                     value: SettingsService.showLogoByDefault
                     onToggled: SettingsService.showLogoByDefault = !SettingsService.showLogoByDefault }
