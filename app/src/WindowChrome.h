@@ -65,6 +65,11 @@ class WindowControls : public QObject
 public:
     using QObject::QObject;
     Q_INVOKABLE void toggleMaximized(QWindow* window);
+    // Minimizes and keeps "maximized" underneath, so the taskbar (or a
+    // second launch, see SingleInstance.h) brings back a maximized console
+    // maximized. QWindow::showMinimized() replaces the state outright, and
+    // on Windows Qt then clears the restore-to-maximized flag.
+    Q_INVOKABLE void minimize(QWindow* window);
     // How far, in logical pixels, a maximized console hangs past each screen
     // edge (see installNativeWindowChrome). 0 off Windows.
     Q_INVOKABLE qreal maximizedInset(QWindow* window) const;

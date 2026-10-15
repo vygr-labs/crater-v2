@@ -10,6 +10,8 @@ qt_add_executable(crater
     src/FileDialogService.h
     src/LogReportService.cpp
     src/LogReportService.h
+    src/SingleInstance.cpp
+    src/SingleInstance.h
     # First-launch splash while the one-time Bible import runs.
     src/StartupGuard.cpp
     src/StartupGuard.h
