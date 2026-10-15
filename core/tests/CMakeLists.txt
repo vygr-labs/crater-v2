@@ -389,3 +389,19 @@ target_include_directories(test_profile_reset PRIVATE
 )
 
 add_test(NAME profile_reset COMMAND test_profile_reset)
+
+# -- Schedule unsaved dot -- issue #70 ---------------------------------------
+# The dot follows isDirty through its change signal alone, like QML does. The
+# auto-save tick once cleared the flag silently and left the dot stuck on.
+qt_add_executable(test_schedule_dirty
+    test_schedule_dirty.cpp
+)
+
+target_link_libraries(test_schedule_dirty PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME schedule_dirty COMMAND test_schedule_dirty)
