@@ -12,9 +12,11 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
 #include <QObject>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QString>
 #include <QTemporaryDir>
@@ -368,6 +370,170 @@ private slots:
         QVERIFY(newFile.open(QIODevice::ReadOnly));
         const QByteArray newBytes = newFile.readAll();
         QCOMPARE(newBytes, originalBytes);
+    }
+
+    // The export dialog uses exportThemeAsync so a video background no
+    // longer freezes the window (issue #85). It has to produce the same
+    // bundle as the synchronous export, report progress up to 100% along
+    // the way, and leave the service idle afterwards.
+    void testAsyncExportProgressAndRoundTrip()
+    {
+        resetState();
+        crater::runAllMigrations();
+        MediaService media;
+        FontService  fonts;
+        ThemeService ts;
+        ts.setMediaService(&media);
+        ts.setFontService(&fonts);
+
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+
+        // Several MB, so hashing and copying each take more than one chunk
+        // and progress moves in steps rather than jumping to the end.
+        QByteArray originalBytes = fakeVideo("async-export");
+        originalBytes.append(QByteArray(5 * 1024 * 1024, 'v'));
+        const QString stagePath = tmp.filePath(QStringLiteral("clip.mp4"));
+        {
+            QFile f(stagePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(originalBytes);
+        }
+        const qint64 mediaId = media.importPathSync(stagePath);
+        QVERIFY2(mediaId > 0, qPrintable(media.lastImportError()));
+        const qint64 themeId = ts.create(QStringLiteral("scripture"),
+                                         QStringLiteral("Async Export"),
+                                         makeTokensWithMediaId(mediaId));
+        QVERIFY(themeId > 0);
+
+        const QString bundlePath = tmp.filePath(QStringLiteral("async.craterheme"));
+        QSignalSpy finished(&ts, &ThemeService::exportFinished);
+        QSignalSpy busy(&ts, &ThemeService::exportBusyChanged);
+        QList<qreal> seen;
+        connect(&ts, &ThemeService::exportProgressChanged, this,
+                [&] { seen.append(ts.exportProgress()); });
+
+        QVERIFY2(ts.exportThemeAsync(themeId, bundlePath, {}), qPrintable(ts.lastExportError()));
+        QVERIFY(ts.exportBusy());
+        QVERIFY(!ts.exportThemeAsync(themeId, bundlePath, {}));   // one at a time
+
+        QVERIFY(finished.wait(20000));
+        const QList<QVariant> result = finished.first();
+        QVERIFY2(result.at(0).toBool(), qPrintable(result.at(2).toString()));
+        QCOMPARE(result.at(1).toBool(), false);
+        QCOMPARE(result.at(3).toString(), bundlePath);
+        QVERIFY(!ts.exportBusy());
+        QCOMPARE(busy.size(), 2);
+        QCOMPARE(ts.exportProgress(), qreal(1));
+
+        // Progress went up in more than one step and never backwards.
+        QVERIFY2(seen.size() >= 3, qPrintable(QString::number(seen.size())));
+        for (int i = 1; i < seen.size(); ++i)
+            QVERIFY(seen.at(i) >= seen.at(i - 1));
+
+        // The bundle imports back with the video byte for byte.
+        ts.destroy(themeId);
+        const ThemeImportReport report = ts.importThemeFile(bundlePath);
+        QCOMPARE(report.errorMessage, QString());
+        QVERIFY(report.themeId > 0);
+        const crater::MediaItem mi = media.byId(firstMediaIdIn(ts.theme(report.themeId).tokens));
+        QVERIFY(mi.id > 0);
+        QCOMPARE(mi.type, QStringLiteral("video"));
+        QFile copy(mi.path);
+        QVERIFY(copy.open(QIODevice::ReadOnly));
+        QCOMPARE(copy.readAll(), originalBytes);
+    }
+
+    // Cancelling a background export stops it and leaves no file behind,
+    // not even a partial one.
+    void testAsyncExportCancel()
+    {
+        resetState();
+        crater::runAllMigrations();
+        MediaService media;
+        FontService  fonts;
+        ThemeService ts;
+        ts.setMediaService(&media);
+        ts.setFontService(&fonts);
+
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QByteArray bytes = fakeVideo("cancel-me");
+        bytes.append(QByteArray(48 * 1024 * 1024, 'c'));
+        const QString stagePath = tmp.filePath(QStringLiteral("long.mp4"));
+        {
+            QFile f(stagePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(bytes);
+        }
+        const qint64 mediaId = media.importPathSync(stagePath);
+        QVERIFY(mediaId > 0);
+        const qint64 themeId = ts.create(QStringLiteral("scripture"),
+                                         QStringLiteral("Cancelled Export"),
+                                         makeTokensWithMediaId(mediaId));
+        QVERIFY(themeId > 0);
+
+        const QString bundlePath = tmp.filePath(QStringLiteral("cancelled.craterheme"));
+        QSignalSpy finished(&ts, &ThemeService::exportFinished);
+        QVERIFY(ts.exportThemeAsync(themeId, bundlePath, {}));
+        ts.cancelExport();
+
+        QVERIFY(finished.wait(20000));
+        QCOMPARE(finished.first().at(0).toBool(), false);
+        QCOMPARE(finished.first().at(1).toBool(), true);
+        QVERIFY(!ts.exportBusy());
+        QVERIFY(!QFile::exists(bundlePath));
+        // Nothing staged beside it either.
+        QCOMPARE(QDir(tmp.path()).entryList({ QStringLiteral("cancelled*") }, QDir::Files).size(), 0);
+
+        // The service is free for the next export.
+        QVERIFY(ts.exportThemeAsync(themeId, bundlePath, {}));
+        finished.clear();
+        QVERIFY(finished.wait(30000));
+        QVERIFY(finished.first().at(0).toBool());
+        QVERIFY(QFile::exists(bundlePath));
+    }
+
+    // Quitting mid-export: the service is destroyed while the worker runs.
+    // The destructor stops the worker and waits for it, so teardown is
+    // quick, no half-written file is left, and the finish handler never
+    // runs on a dead service.
+    void testAsyncExportShutdown()
+    {
+        resetState();
+        crater::runAllMigrations();
+        MediaService media;
+        FontService  fonts;
+
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        QByteArray bytes = fakeVideo("quit-mid-export");
+        bytes.append(QByteArray(48 * 1024 * 1024, 'q'));
+        const QString stagePath = tmp.filePath(QStringLiteral("quit.mp4"));
+        {
+            QFile f(stagePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(bytes);
+        }
+        const qint64 mediaId = media.importPathSync(stagePath);
+        QVERIFY(mediaId > 0);
+
+        const QString bundlePath = tmp.filePath(QStringLiteral("quit.craterheme"));
+        QElapsedTimer clock;
+        {
+            ThemeService ts;
+            ts.setMediaService(&media);
+            ts.setFontService(&fonts);
+            const qint64 themeId = ts.create(QStringLiteral("scripture"),
+                                             QStringLiteral("Quit Export"),
+                                             makeTokensWithMediaId(mediaId));
+            QVERIFY(themeId > 0);
+            QVERIFY(ts.exportThemeAsync(themeId, bundlePath, {}));
+            clock.start();
+        }
+        QVERIFY2(clock.elapsed() < 10000, qPrintable(QString::number(clock.elapsed())));
+        QCoreApplication::processEvents();   // the dropped continuation must not fire
+        QVERIFY(!QFile::exists(bundlePath));
     }
 
     // The video counterpart of testBundleRoundTrip: the feature has to

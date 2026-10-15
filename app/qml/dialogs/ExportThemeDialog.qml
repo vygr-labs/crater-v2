@@ -58,6 +58,46 @@ ModalShell {
         return Object.keys(root._excluded)
     }
 
+    // The export runs in the background (ThemeService.exportThemeAsync). A
+    // theme with a video background can take a while, so the dialog stays
+    // open with a progress bar instead of the window freezing.
+    property bool _running: false
+
+    function _export() {
+        const path = FileDialogService.chooseSaveFile(
+            qsTr("Export Theme"),
+            root._themeName + ".craterheme",
+            [qsTr("Crater Theme (*.craterheme)")])
+        if (!path || path.length === 0) return
+        if (ThemeService.exportThemeAsync(root._themeId, path, root._excludedList())) {
+            root._running = true
+        } else {
+            AppState.lastThemeExportError = ThemeService.lastExportError() || qsTr("Export failed")
+            AppState.closeModal()
+        }
+    }
+
+    // Closing mid-export would leave no way to see whether the file got
+    // written, so the backdrop, Escape and X wait until it is done. Cancel
+    // export stops it instead.
+    function requestClose() {
+        if (root._running) return
+        AppState.closeModal()
+    }
+
+    Connections {
+        target: ThemeService
+        function onExportFinished(ok, cancelled, error, filePath) {
+            if (!root._running) return
+            root._running = false
+            // Errors go to ThemesTab, which owns the banner. A cancel is the
+            // operator's own choice and needs no message.
+            if (!ok && !cancelled)
+                AppState.lastThemeExportError = error || qsTr("Export failed")
+            AppState.closeModal()
+        }
+    }
+
     // ── Content ─────────────────────────────────────────────────────────
     Item {
         anchors.fill: parent
@@ -272,6 +312,8 @@ ModalShell {
                         MouseArea {
                             id: rowMa
                             anchors.fill: parent
+                            // The font list is fixed once the export starts.
+                            enabled: !root._running
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root._toggleFont(modelData.family)
@@ -340,6 +382,39 @@ ModalShell {
             }
         }
 
+        // ── Progress, while the export runs ────────────────────────────
+        Column {
+            visible: root._running
+            anchors.left: parent.left
+            anchors.right: actions.left
+            anchors.rightMargin: Theme.space.lg
+            anchors.verticalCenter: actions.verticalCenter
+            spacing: Theme.space.xs
+
+            Text {
+                width: parent.width
+                text: ThemeService.exportProgressText.length > 0
+                      ? ThemeService.exportProgressText : qsTr("Exporting...")
+                color: Theme.color.textSecondary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
+                elide: Text.ElideRight
+            }
+            Rectangle {
+                width: parent.width
+                height: 4
+                radius: Theme.radius.pill
+                color: Theme.color.borderSubtle
+                Rectangle {
+                    height: parent.height
+                    radius: parent.radius
+                    color: Theme.color.brand
+                    width: parent.width * ThemeService.exportProgress
+                    Behavior on width { NumberAnimation { duration: Theme.motion.instant } }
+                }
+            }
+        }
+
         // ── Action row ──────────────────────────────────────────────────
         Row {
             id: actions
@@ -348,32 +423,18 @@ ModalShell {
             spacing: Theme.space.sm
 
             GhostButton {
-                text: qsTr("Cancel")
-                onClicked: AppState.closeModal()
+                text: root._running ? qsTr("Cancel export") : qsTr("Cancel")
+                onClicked: {
+                    if (root._running) ThemeService.cancelExport()
+                    else AppState.closeModal()
+                }
             }
             PrimaryButton {
                 variant: "brand"
                 text: qsTr("Export…")
                 iconName: "download"
-                onClicked: {
-                    const path = FileDialogService.chooseSaveFile(
-                        qsTr("Export Theme"),
-                        root._themeName + ".craterheme",
-                        [qsTr("Crater Theme (*.craterheme)")])
-                    if (!path || path.length === 0) return
-
-                    const ok = ThemeService.exportTheme(
-                        root._themeId, path, root._excludedList())
-                    AppState.closeModal()
-                    if (!ok) {
-                        // Bubble the error back via ThemesTab — it owns the
-                        // banner surface. We stash the message on AppState so
-                        // the tab can pick it up on next focus.
-                        AppState.lastThemeExportError =
-                            ThemeService.lastExportError()
-                                || qsTr("Export failed")
-                    }
-                }
+                enabled: !root._running && !ThemeService.exportBusy
+                onClicked: root._export()
             }
         }
     }
