@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArrayView>
 #include <QString>
 
 // crater::rtf — minimal RTF-to-plain-text extraction.
@@ -31,5 +32,9 @@ namespace crater::rtf {
 // Input that is not RTF at all (no "\rtf" marker) is returned trimmed but
 // otherwise unchanged, so callers may treat it as plain text.
 QString toPlainText(const QString& rtf);
+
+// Decode bytes written in Windows-1252, the code page EasyWorship uses for its
+// RTF and for the text fields of its 2009 song table.
+QString fromCp1252(QByteArrayView bytes);
 
 }  // namespace crater::rtf

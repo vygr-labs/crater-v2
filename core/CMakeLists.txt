@@ -32,6 +32,7 @@ add_library(crater-core STATIC
 
     # EasyWorship song-library import — RTF lyric extraction + the importer.
     src/import/Rtf.cpp
+    src/import/ParadoxTable.cpp
     src/import/EasyWorshipImporter.cpp
 
     # Public bootstrap entry point — runs migrations on all DBs.

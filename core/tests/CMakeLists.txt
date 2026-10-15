@@ -343,3 +343,26 @@ target_link_libraries(test_schedule_items_model PRIVATE
 )
 
 add_test(NAME schedule_items_model COMMAND test_schedule_items_model)
+
+# -- EasyWorship 2009 import ---------------------------------------------------
+# 2007/2009 libraries are Paradox tables, not SQLite. Builds a small Songs.DB
+# and Songs.MB byte by byte and imports them, so the format is pinned without
+# shipping anyone's song library.
+qt_add_executable(test_easyworship_2009
+    test_easyworship_2009.cpp
+)
+
+target_link_libraries(test_easyworship_2009 PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+# Reads the table through import/ParadoxTable.h and checks rows through the
+# db/ wrappers, both private to crater-core.
+target_include_directories(test_easyworship_2009 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME easyworship_2009 COMMAND test_easyworship_2009)
