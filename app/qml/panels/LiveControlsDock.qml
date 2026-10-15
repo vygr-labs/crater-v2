@@ -35,8 +35,10 @@ Item {
 
     readonly property int  _margin:   AppState.liveDockMargin
     // Keep clear of the custom title bar (TitleBar.qml, 32px) so the
-    // window's minimise / maximise / close buttons stay reachable.
-    readonly property int  _top:      32 + _margin
+    // window's minimise / maximise / close buttons stay reachable, and of
+    // the top bar under it (TopBar.qml) so the panel never sits over the
+    // Logo, Clear and Go Live buttons it stands in for.
+    readonly property int  _top:      32 + Theme.size.topBarHeight + _margin
     readonly property bool _collapsed: AppState.liveDockCollapsed
     readonly property bool _floating:  AppState.liveDockFloating
     readonly property bool _onLive:    AppState.liveDockTab === "live"
