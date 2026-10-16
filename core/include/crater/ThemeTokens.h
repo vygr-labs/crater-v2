@@ -109,6 +109,43 @@ QVariantList layoutNodes(const QVariantMap& tokens,
                          const QString&     layoutId,
                          qint64             slideMediaId = 0);
 
+// ── Dynamic background ─────────────────────────────────────────────────
+//
+// The operator can put any picture or video behind a theme without editing
+// it: for the rest of the service, or for one schedule item. It lands in the
+// theme's DYNAMIC BACKGROUND container(s), which only swap their media id.
+// Everything the designer set on that container (size, position, opacity,
+// media opacity, corners, rotation) applies to whatever the operator picks.
+//
+// Which containers are dynamic, per layout:
+//   1. every container with data.dynamicBackground == true, if any is
+//      marked, otherwise
+//   2. the BASE BACKGROUND: the lowest-z container covering the whole
+//      canvas (x,y <= 0.5 and width,height >= 99.5, earliest on a tie),
+//      unless it says data.dynamicBackground == false.
+// A picture box (data.linkage "presentationImage") is never dynamic.
+//
+// Rule 2 is what makes the feature work on every theme already in an
+// install, none of which carries a mark. Marking any container takes over
+// from it, and an explicit false on the base opts the theme out.
+
+// The base background by shape alone, or -1 when the layout has none.
+int backgroundNodeIndex(const QVariantList& nodes);
+
+// Indices of the dynamic background containers, per the rules above.
+QList<int> dynamicBackgroundIndices(const QVariantList& nodes);
+
+// Paint `mediaId` through the dynamic containers. A layout with no mark and
+// no base gets a plain full-canvas container slipped under everything, and
+// an opted-out layout comes back untouched. `force` (save into theme)
+// ignores the opt-out and writes through the base. A non-positive id is a
+// no-op.
+QVariantList applyBackground(QVariantList nodes, qint64 mediaId, bool force = false);
+
+// applyBackground over every layout of a theme (v3), or over its single
+// node list (v2), with force on. This is "save into theme".
+QVariantMap withBackground(QVariantMap tokens, qint64 mediaId);
+
 // True when the theme actually defines a layout with this exact id, as
 // opposed to resolveLayout() having fallen back. The slide editor uses it
 // to mark a slide whose design is not available under the current theme,

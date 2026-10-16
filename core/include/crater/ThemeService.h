@@ -96,6 +96,15 @@ public:
     // renders.
     Q_INVOKABLE QVariantMap layoutSlots(QVariantMap tokens, QString layoutId);
 
+    // Dynamic background (crater::tokens::applyBackground). Render surfaces
+    // pass the resolved layout nodes through this with the operator's
+    // background media id. withBackground is "save into theme", and
+    // dynamicBackgroundIds tells the theme editor which containers will
+    // take the operator's background.
+    Q_INVOKABLE QVariantList applyBackground(QVariantList nodes, qint64 mediaId);
+    Q_INVOKABLE QStringList  dynamicBackgroundIds(QVariantList nodes);
+    Q_INVOKABLE QVariantMap  withBackground(QVariantMap tokens, qint64 mediaId);
+
     // True only when the theme really defines this layout id, as opposed to
     // layoutNodes() having fallen back. Lets the editor flag a slide whose
     // design is missing from the current theme instead of showing the

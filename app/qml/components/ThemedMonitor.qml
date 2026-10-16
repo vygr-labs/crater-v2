@@ -32,6 +32,10 @@ Item {
     // source. PreviewPanel's mini-monitor hides entirely for croppable
     // media, so this defaults to identity for everyone else.
     property rect cropRect: Qt.rect(0, 0, 1, 1)
+    // Dynamic background media id. -1 (default) resolves it the way the
+    // next go-live would (AppState.backgroundFor). The live monitors pass
+    // AppState.liveBackgroundStamp, which is what the audience has now.
+    property int backgroundMediaId: -1
 
     // ── Derived state ───────────────────────────────────────────────────
     readonly property bool _hasItem: !!item
@@ -76,8 +80,15 @@ Item {
     // Resolved per PAGE, exactly as ProjectionContentLayer does it — the
     // mini-monitor's whole job is to show what the audience output will
     // show, so it must pick the same design for the same slide.
-    readonly property var _nodes: ThemeService.layoutNodes(
-        _tokens, root._slideLayout, root._slideMediaId)
+    // Scalars again, for the same reason as _itemThemeId.
+    readonly property int _itemBackgroundId:
+        _hasItem && typeof item.backgroundMediaId === "number" ? item.backgroundMediaId : 0
+    readonly property int _backgroundId: backgroundMediaId >= 0
+        ? backgroundMediaId
+        : AppState.backgroundFor({ kind: root._kind, backgroundMediaId: root._itemBackgroundId })
+    readonly property var _nodes: ThemeService.applyBackground(
+        ThemeService.layoutNodes(_tokens, root._slideLayout, root._slideMediaId),
+        root._backgroundId)
 
     // ── Linkage resolution (theme placeholder -> real item content) ─────
     readonly property string _pageText: {

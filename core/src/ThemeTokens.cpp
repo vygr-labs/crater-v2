@@ -1,6 +1,7 @@
 #include "crater/ThemeTokens.h"
 
 #include <QSet>
+#include <utility>
 
 namespace crater::tokens {
 
@@ -113,6 +114,131 @@ QVariantList layoutNodes(const QVariantMap& tokens,
         nodes[i] = node;
     }
     return nodes;
+}
+
+int backgroundNodeIndex(const QVariantList& nodes)
+{
+    int    best  = -1;
+    double bestZ = 0;
+    for (int i = 0; i < nodes.size(); ++i) {
+        const QVariantMap node = nodes[i].toMap();
+        if (node.value(QStringLiteral("kind")).toString() != QLatin1String("container"))
+            continue;
+        const QVariantMap data = node.value(QStringLiteral("data")).toMap();
+        if (data.value(QStringLiteral("linkage")).toString()
+            == QLatin1String("presentationImage"))
+            continue;
+        const QVariantMap st = node.value(QStringLiteral("style")).toMap();
+        const bool full = st.value(QStringLiteral("x")).toDouble()      <= 0.5
+                       && st.value(QStringLiteral("y")).toDouble()      <= 0.5
+                       && st.value(QStringLiteral("width")).toDouble()  >= 99.5
+                       && st.value(QStringLiteral("height")).toDouble() >= 99.5;
+        if (!full) continue;
+        const double z = st.value(QStringLiteral("z")).toDouble();
+        if (best < 0 || z < bestZ) { best = i; bestZ = z; }
+    }
+    return best;
+}
+
+namespace {
+
+bool isPictureBox(const QVariantMap& node)
+{
+    return node.value(QStringLiteral("data")).toMap()
+               .value(QStringLiteral("linkage")).toString()
+           == QLatin1String("presentationImage");
+}
+
+QVariant dynamicFlag(const QVariantMap& node)
+{
+    return node.value(QStringLiteral("data")).toMap()
+               .value(QStringLiteral("dynamicBackground"));
+}
+
+void setMedia(QVariantList& nodes, int i, qint64 mediaId)
+{
+    QVariantMap node = nodes[i].toMap();
+    QVariantMap data = node.value(QStringLiteral("data")).toMap();
+    data[QStringLiteral("mediaId")] = mediaId;
+    node[QStringLiteral("data")]    = data;
+    nodes[i] = node;
+}
+
+}  // namespace
+
+QList<int> dynamicBackgroundIndices(const QVariantList& nodes)
+{
+    QList<int> marked;
+    for (int i = 0; i < nodes.size(); ++i) {
+        const QVariantMap node = nodes[i].toMap();
+        if (node.value(QStringLiteral("kind")).toString() != QLatin1String("container")
+            || isPictureBox(node))
+            continue;
+        const QVariant flag = dynamicFlag(node);
+        if (flag.isValid() && flag.toBool()) marked << i;
+    }
+    if (!marked.isEmpty()) return marked;
+
+    const int base = backgroundNodeIndex(nodes);
+    if (base < 0) return {};
+    const QVariant flag = dynamicFlag(nodes[base].toMap());
+    if (flag.isValid() && !flag.toBool()) return {};
+    return { base };
+}
+
+QVariantList applyBackground(QVariantList nodes, qint64 mediaId, bool force)
+{
+    if (mediaId <= 0) return nodes;
+
+    const QList<int> dyn = dynamicBackgroundIndices(nodes);
+    if (!dyn.isEmpty()) {
+        for (int i : dyn) setMedia(nodes, i, mediaId);
+        return nodes;
+    }
+
+    const int base = backgroundNodeIndex(nodes);
+    if (base >= 0) {
+        // The base opted out. Only an explicit save writes through it.
+        if (force) setMedia(nodes, base, mediaId);
+        return nodes;
+    }
+
+    // Nothing to paint into: slide a plain container in under everything.
+    double minZ = 0;
+    for (const QVariant& v : std::as_const(nodes)) {
+        const double z = v.toMap().value(QStringLiteral("style")).toMap()
+                              .value(QStringLiteral("z")).toDouble();
+        minZ = qMin(minZ, z);
+    }
+    nodes.prepend(QVariantMap{
+        { QStringLiteral("id"),    QStringLiteral("serviceBackground") },
+        { QStringLiteral("kind"),  QStringLiteral("container") },
+        { QStringLiteral("style"), QVariantMap{
+              { QStringLiteral("x"), 0 }, { QStringLiteral("y"), 0 },
+              { QStringLiteral("width"), 100 }, { QStringLiteral("height"), 100 },
+              { QStringLiteral("z"), minZ - 1 } } },
+        { QStringLiteral("data"),  QVariantMap{ { QStringLiteral("mediaId"), mediaId } } },
+    });
+    return nodes;
+}
+
+QVariantMap withBackground(QVariantMap tokens, qint64 mediaId)
+{
+    if (mediaId <= 0) return tokens;
+    if (tokens.contains(QStringLiteral("layouts"))) {
+        QVariantList layouts = tokens.value(QStringLiteral("layouts")).toList();
+        for (QVariant& v : layouts) {
+            QVariantMap l = v.toMap();
+            l[QStringLiteral("nodes")] =
+                applyBackground(l.value(QStringLiteral("nodes")).toList(), mediaId, true);
+            v = l;
+        }
+        tokens[QStringLiteral("layouts")] = layouts;
+    } else {
+        tokens[QStringLiteral("nodes")] =
+            applyBackground(tokens.value(QStringLiteral("nodes")).toList(), mediaId, true);
+    }
+    return tokens;
 }
 
 bool hasLayout(const QVariantMap& tokens, const QString& layoutId)
