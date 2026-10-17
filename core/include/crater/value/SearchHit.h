@@ -17,6 +17,7 @@ struct SearchHit
     Q_PROPERTY(QString book            MEMBER book)
     Q_PROPERTY(int     chapter         MEMBER chapter)
     Q_PROPERTY(int     verse           MEMBER verse)
+    Q_PROPERTY(int     verseEnd        MEMBER verseEnd)
     Q_PROPERTY(QString text            MEMBER text)
     Q_PROPERTY(QString reference       READ reference CONSTANT)
 
@@ -26,11 +27,16 @@ public:
     QString book;
     int     chapter = 0;
     int     verse   = 0;
+    // Last verse when this row is a paragraph stored under several
+    // verses (The Message, CEV), else 0. See BibleService.
+    int     verseEnd = 0;
     QString text;
 
     QString reference() const
     {
-        return QStringLiteral("%1 %2:%3").arg(book).arg(chapter).arg(verse);
+        const QString span = verseEnd > verse ? QStringLiteral("%1-%2").arg(verse).arg(verseEnd)
+                                              : QString::number(verse);
+        return QStringLiteral("%1 %2:%3").arg(book).arg(chapter).arg(span);
     }
 };
 

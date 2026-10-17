@@ -116,11 +116,14 @@ Item {
     function _chapterVerseCount(code, bookName, chapter) {
         const key = code + "/" + bookName + "/" + chapter
         if (_verseCountCache[key] !== undefined) return _verseCountCache[key]
+        // The last verse number, not the row count: a paragraph translation
+        // (The Message) holds several verses in one row.
         const verses = BibleService.chapter(code, bookName, chapter)
+        const count = verses.length > 0 ? Number(AppState.lastVerse(verses[verses.length - 1])) : 0
         let copy = Object.assign({}, _verseCountCache)
-        copy[key] = verses.length
+        copy[key] = count
         _verseCountCache = copy
-        return verses.length
+        return count
     }
 
     function _findBookByPrefix(code, prefix) {
@@ -384,8 +387,10 @@ Item {
     readonly property string interpretedText: {
         const v = parsedRef
         if (!v) return ""
+        // A verse inside a paragraph (The Message) reads as the paragraph.
         const r = BibleService.parseReferenceRange(_splitQuery.query)
-        const end = (r && r.valid && r.verseEnd > v.verse) ? "-" + r.verseEnd : ""
+        const last = Math.max(Number(AppState.lastVerse(v)), (r && r.valid) ? r.verseEnd : 0)
+        const end = last > v.verse ? "-" + last : ""
         const code = _splitQuery.code ? " (" + _splitQuery.code + ")" : ""
         return v.book + " " + v.chapter + ":" + v.verse + end + code
     }

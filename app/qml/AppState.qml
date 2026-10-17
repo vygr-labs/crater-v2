@@ -437,8 +437,13 @@ QtObject {
     // Settings > Scripture > Highlight current verse is on (baked here, so a
     // settings change applies to the next passage projected).
     function buildScriptureItem(verses, fallbackCode) {
-        const usable = (verses || []).filter(function(v) {
-            return v && v.text && v.text.length > 0
+        // A paragraph row is returned for each verse it covers (BibleService
+        // .verse), so a passage looked up verse by verse holds it several
+        // times in a row. Keep one.
+        const usable = (verses || []).filter(function(v, i, all) {
+            if (!v || !v.text || v.text.length === 0) return false
+            const p = i > 0 ? all[i - 1] : null
+            return !(p && p.book === v.book && p.chapter === v.chapter && p.verse === v.verse)
         })
         if (usable.length === 0) return null
 
@@ -446,7 +451,7 @@ QtObject {
         const code  = first.translationCode || fallbackCode || ""
 
         if (usable.length === 1) {
-            const ref = first.book + " " + first.chapter + ":" + first.verse
+            const ref = first.book + " " + first.chapter + ":" + verseSpan(first)
             return {
                 kind:     "scripture",
                 title:    ref + " (" + code + ")",
@@ -461,7 +466,7 @@ QtObject {
                     book:            first.book,
                     chapter:         first.chapter,
                     verseStart:      first.verse,
-                    verseEnd:        first.verse
+                    verseEnd:        lastVerse(first)
                 }
             }
         }
@@ -475,21 +480,20 @@ QtObject {
         // is colour-only so glyph metrics, and therefore the auto-fit size,
         // stay identical across the per-verse pages.
         //
-        // Paraphrases like The Message are written in paragraphs, and the
-        // importer stores a paragraph under every verse number it covers,
-        // so a passage repeated the same paragraph once per verse. Runs of
-        // identical text print once, numbered as a span ("27-29.").
+        // A paragraph row (The Message) prints once, numbered as its span
+        // ("27-29."). Runs of identical text still merge, for verse lists
+        // saved before rows carried their span.
         let runs = []
         for (let j = 0; j < usable.length; j++) {
             const v = usable[j]
             const prev = runs.length > 0 ? runs[runs.length - 1] : null
             if (prev && prev.text === v.text && prev.book === v.book
                     && prev.chapter === v.chapter) {
-                prev.end = v.verse
+                prev.end = lastVerse(v)
                 prev.members.push(j)
             } else {
                 runs.push({ text: v.text, book: v.book, chapter: v.chapter,
-                            start: v.verse, end: v.verse, members: [j] })
+                            start: v.verse, end: lastVerse(v), members: [j] })
             }
         }
         const composePassage = function(activeIndex) {
@@ -506,7 +510,7 @@ QtObject {
         let pages
         if (SettingsService.highlightCurrentVerse) {
             pages = usable.map(function(v, i) {
-                return { label:   v.book + " " + v.chapter + ":" + v.verse,
+                return { label:   v.book + " " + v.chapter + ":" + verseSpan(v),
                          content: composePassage(i) }
             })
         } else {
@@ -531,12 +535,27 @@ QtObject {
                 book:            first.book,
                 chapter:         first.chapter,
                 verseStart:      first.verse,
-                verseEnd:        last.verse,
+                verseEnd:        lastVerse(last),
                 verses:          usable.map(function(v) {
                     return { book: v.book, chapter: v.chapter, verse: v.verse }
                 })
             }
         }
+    }
+
+    // Last verse a row covers. A paragraph row (The Message) spans
+    // verse..verseEnd; other rows, and the plain {book, chapter, verse}
+    // objects saved in schedule items, cover just `verse`.
+    function lastVerse(v) {
+        const start = parseInt(String(v.verse), 10)
+        const end   = parseInt(String(v.verseEnd), 10)
+        return (!isNaN(end) && end > start) ? end : v.verse
+    }
+
+    // "16" or "16-18": the verse part of a row's reference.
+    function verseSpan(v) {
+        const end = lastVerse(v)
+        return String(end) === String(v.verse) ? String(v.verse) : v.verse + "-" + end
     }
 
     // Slide text under Settings > Scripture > Show verse numbers. The numbers
@@ -572,7 +591,7 @@ QtObject {
         const body = usable.map(function(v) { return v.text }).join(" ")
         let ref = scriptureRangeTitle(usable)
         if (ref.length === 0 && first.book)
-            ref = first.book + " " + first.chapter + ":" + first.verse
+            ref = first.book + " " + first.chapter + ":" + verseSpan(first)
         const attribution = (code && code.length > 0) ? ref + " (" + code + ")" : ref
         return "\"" + body + "\"\n\n- " + attribution
     }
@@ -591,7 +610,10 @@ QtObject {
                 current = { book: v.book, chapter: v.chapter, verses: [] }
                 groups.push(current)
             }
-            current.verses.push(n)
+            // A paragraph row counts as every verse it covers.
+            const end = parseInt(String(lastVerse(v)), 10)
+            for (let k = n; k <= end; ++k)
+                if (current.verses.indexOf(k) < 0) current.verses.push(k)
         }
         if (groups.length === 0) return ""
         return groups.map(function(g) {
@@ -657,6 +679,7 @@ QtObject {
             const v = BibleService.verse(code, r.book, r.chapter, n)
             if (!v || !v.text || v.text.length === 0) break
             verses.push(v)
+            n = Math.max(n, lastVerse(v))   // past the rest of a paragraph row
         }
         return buildScriptureItem(verses, code)
     }

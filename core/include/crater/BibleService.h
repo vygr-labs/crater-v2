@@ -61,18 +61,23 @@ public:
     Q_INVOKABLE QList<crater::Book> books(QString translationCode);
 
     // Single-verse lookup. Returns an empty Verse (text.isEmpty()) on miss.
+    // A verse inside a paragraph (The Message stores one paragraph under
+    // every verse it covers) returns that paragraph's row, whose `verse` is
+    // the first verse it covers and `verseEnd` the last.
     Q_INVOKABLE crater::Verse verse(QString translationCode,
                                     QString bookName,
                                     int     chapter,
                                     int     verseNumber);
 
-    // All verses in a chapter, in order. Empty list on miss.
+    // All verses in a chapter, in order, one row per paragraph where verses
+    // share their text (see verse()). Empty list on miss.
     Q_INVOKABLE QList<crater::Verse> chapter(QString translationCode,
                                              QString bookName,
                                              int     chapter);
 
     // Every verse for a translation, sorted by canonical book order then
-    // (chapter, verse). KJV-scale call returns ~31k rows in one indexed scan.
+    // (chapter, verse), one row per paragraph where verses share their text
+    // (see verse()). KJV-scale call returns ~31k rows in one indexed scan.
     // ListView consumes the returned QList directly; only visible delegates
     // are instantiated so memory is bounded by row count, not list length.
     //
