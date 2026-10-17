@@ -72,6 +72,13 @@ Item {
         _debouncedQuery = queryText
     }
 
+    // A mode flip (Ctrl+F) swaps in the text the other mode remembered.
+    // Read it now, not after the typing debounce: for those 120 ms the
+    // reference list sat on the row number carried over from the hit list,
+    // which is near Genesis 1:1, before jumping to the verse, and search
+    // mode ran the reference as a phrase search.
+    onModeChanged: _settleQuery()
+
     // A reference that doesn't resolve (a typo, a verse this translation
     // lacks) must not act on whatever verse was there before.
     function _typedReferenceUnresolved() {
