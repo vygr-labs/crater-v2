@@ -3,6 +3,7 @@
 #include "crater/value/Theme.h"
 #include "crater/value/ThemeImportReport.h"
 
+#include <QFuture>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -10,6 +11,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include <atomic>
 #include <memory>
 
 namespace crater {
@@ -27,6 +29,11 @@ class ThemeService : public QObject
     Q_OBJECT
 
     Q_PROPERTY(QList<crater::Theme> allThemes READ allThemes NOTIFY allThemesChanged)
+    // A background export (exportThemeAsync) in progress, and how far along
+    // it is: 0..1 plus a short stage label for the dialog.
+    Q_PROPERTY(bool    exportBusy         READ exportBusy         NOTIFY exportBusyChanged)
+    Q_PROPERTY(qreal   exportProgress     READ exportProgress     NOTIFY exportProgressChanged)
+    Q_PROPERTY(QString exportProgressText READ exportProgressText NOTIFY exportProgressChanged)
 
 public:
     explicit ThemeService(QObject* parent = nullptr);
@@ -163,6 +170,25 @@ public:
                                  QString      filePath,
                                  QStringList  excludedFontFamilies = {});
 
+    // The same export on a worker thread, for the export dialog: a theme
+    // with a video background can take a while to package, and on the UI
+    // thread the window froze until it finished. Paths are resolved before
+    // the worker starts, so it never touches another service. Returns false
+    // (see lastExportError) when it could not start. Progress through
+    // exportBusy / exportProgress / exportProgressText, the result through
+    // exportFinished. One export at a time.
+    Q_INVOKABLE bool exportThemeAsync(qint64      id,
+                                      QString     filePath,
+                                      QStringList excludedFontFamilies = {});
+
+    // Stops a running exportThemeAsync. The partly written file is
+    // discarded and exportFinished reports cancelled.
+    Q_INVOKABLE void cancelExport();
+
+    bool    exportBusy() const;
+    qreal   exportProgress() const;
+    QString exportProgressText() const;
+
     Q_INVOKABLE QString lastExportError() const;
 
     // ── Import (ARCHITECTURE.md §10) ────────────────────────────────────
@@ -211,6 +237,11 @@ signals:
     // don't touch the themes table — overloading allThemesChanged would
     // force every tile to recompute on unrelated edits.
     void defaultsChanged();
+    void exportBusyChanged();
+    void exportProgressChanged();
+    // `error` is empty on success. A cancelled export reports ok = false,
+    // cancelled = true.
+    void exportFinished(bool ok, bool cancelled, QString error, QString filePath);
 
 private:
     struct Impl;
@@ -219,6 +250,11 @@ private:
     QString m_lastExportError;
     MediaService* m_media = nullptr;
     FontService*  m_fonts = nullptr;
+    bool          m_exportBusy = false;
+    qreal         m_exportProgress = 0;
+    QString       m_exportProgressText;
+    std::shared_ptr<std::atomic<bool>> m_exportCancel;
+    QFuture<void> m_exportTask;
     void invalidateCache();
 };
 

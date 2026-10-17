@@ -24,10 +24,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QUuid>
+#include <QtConcurrent>
 
 #include <cmath>
 #include <optional>
@@ -677,7 +679,13 @@ ThemeService::ThemeService(QObject* parent)
     }
 }
 
-ThemeService::~ThemeService() = default;
+ThemeService::~ThemeService()
+{
+    // A background export only reads files and writes its own zip, but it
+    // must not outlive the process teardown half way: stop it and wait.
+    if (m_exportCancel) m_exportCancel->store(true);
+    if (m_exportTask.isValid()) m_exportTask.waitForFinished();
+}
 
 void ThemeService::invalidateCache()
 {
@@ -1212,173 +1220,339 @@ QVariantMap ThemeService::resolveExportPlan(qint64 id)
     return plan;
 }
 
+namespace {
+
+// One file a theme export bundles: a media item or a font.
+struct ExportAsset
+{
+    QString path;
+    qint64  mediaId = 0;   // media only
+    QString type;          // media only: image / video / pdf
+    QString family;        // fonts only
+};
+
+// Everything a theme export needs, resolved on the thread that owns the
+// services. writeThemeBundle() reads only this and the files it names, so it
+// can run on a worker thread.
+struct ThemeExportJob
+{
+    qint64             themeId = 0;
+    QString            name;
+    QString            kind;
+    QVariantMap        tokens;
+    QList<ExportAsset> media;
+    QList<ExportAsset> fonts;
+};
+
+// fraction 0..1 across the whole export. Return false to cancel.
+using ExportProgressFn = std::function<bool(double fraction, const QString& stage)>;
+
+std::optional<ThemeExportJob> prepareThemeExport(const Theme&        t,
+                                                 MediaService*       media,
+                                                 FontService*        fonts,
+                                                 const QStringList&  excludedFontFamilies,
+                                                 QString*            error)
+{
+    ThemeExportJob job;
+    job.themeId = t.id;
+    job.name    = t.name;
+    job.kind    = t.kind;
+    job.tokens  = t.tokens;
+
+    const QSet<qint64> mediaIds = collectMediaIds(t.tokens);
+    if (!media && !mediaIds.isEmpty()) {
+        *error = QStringLiteral("Theme references media but MediaService is not wired");
+        return std::nullopt;
+    }
+    for (qint64 mid : mediaIds) {
+        const MediaItem item = media->byId(mid);
+        // Stale reference: skipped. The token rewriter leaves the original
+        // mediaId in place and the importer nulls it out on miss (§10.4).
+        if (item.id == 0) continue;
+        job.media.append(ExportAsset{ item.path, mid, item.type, {} });
+    }
+
+    if (fonts) {
+        const QSet<QString> excluded(excludedFontFamilies.begin(), excludedFontFamilies.end());
+        for (const QString& fam : collectFontFamilies(t.tokens)) {
+            if (excluded.contains(fam)) continue;
+            const QString src = fonts->filePathForFamily(fam);
+            if (src.isEmpty()) continue;   // system-only, not bundleable
+            job.fonts.append(ExportAsset{ src, 0, {}, fam });
+        }
+    }
+    return job;
+}
+
+// SHA-256 of a file, read in chunks so a large video never sits in memory.
+// `onBytes` hears each chunk's size and may return false to stop.
+std::optional<QString> hashFile(const QString& path, QString* reason,
+                                const std::function<bool(qint64)>& onBytes, bool* stopped)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) {
+        *reason = f.errorString();
+        return std::nullopt;
+    }
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    constexpr qint64 kChunk = 1 << 20;
+    while (!f.atEnd()) {
+        const QByteArray buf = f.read(kChunk);
+        if (f.error() != QFileDevice::NoError) {
+            *reason = f.errorString();
+            return std::nullopt;
+        }
+        hash.addData(buf);
+        if (!onBytes(buf.size())) {
+            *stopped = true;
+            return std::nullopt;
+        }
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+// Writes the .craterheme v2 bundle for `job` to `filePath`. Each file is
+// read twice: once to hash it (the bundle is content-addressed) and once
+// to copy it in, streamed both times. Progress counts both passes. The zip
+// is staged and only renamed into place on success, so a failure or a
+// cancel leaves no file behind.
+bool writeThemeBundle(const ThemeExportJob&   job,
+                      const QString&          filePath,
+                      const ExportProgressFn& progress,
+                      QString*                error,
+                      bool*                   cancelled)
+{
+    *cancelled = false;
+    const auto stop = [&] {
+        *cancelled = true;
+        *error = QStringLiteral("Export cancelled");
+        return false;
+    };
+
+    qint64 total = 0;
+    for (const ExportAsset& a : job.media) total += QFileInfo(a.path).size();
+    for (const ExportAsset& a : job.fonts) total += QFileInfo(a.path).size();
+    const double units = double(qMax<qint64>(1, 2 * total));
+    qint64 done = 0;
+    const auto report = [&](qint64 extra, const QString& stage) {
+        return !progress || progress(qMin(1.0, double(done + extra) / units), stage);
+    };
+    if (!report(0, QStringLiteral("Preparing"))) return stop();
+
+    // Hash every file. Identical files (the same picture used twice) ship
+    // once.
+    struct Packed { QString hash; QString path; QString entry; };
+    QHash<qint64, QString>  mediaIdToHash;
+    QHash<QString, QString> fontFamilyToHash;
+    QList<Packed>           packed;
+    QSet<QString>           seen;
+    QJsonArray              mediaManifest;
+    QJsonArray              fontManifest;
+
+    const auto hashAsset = [&](const ExportAsset& a, const QString& stage) -> std::optional<QString> {
+        QString reason;
+        bool stopped = false;
+        auto h = hashFile(a.path, &reason, [&](qint64 n) {
+            done += n;
+            return report(0, stage);
+        }, &stopped);
+        if (stopped) return std::nullopt;
+        if (!h) {
+            qWarning().noquote() << "exportTheme: skipping" << a.path << "-" << reason;
+            return QString();
+        }
+        return h;
+    };
+
+    for (const ExportAsset& a : job.media) {
+        const auto h = hashAsset(a, QStringLiteral("Reading media"));
+        if (!h) return stop();
+        if (h->isEmpty()) continue;
+        mediaIdToHash.insert(a.mediaId, *h);
+        if (seen.contains(*h)) continue;
+        seen.insert(*h);
+        const QString ext = QFileInfo(a.path).suffix().toLower();
+        packed.append(Packed{ *h, a.path, ext.isEmpty() ? QStringLiteral("media/%1").arg(*h)
+                                                        : QStringLiteral("media/%1.%2").arg(*h, ext) });
+        QJsonObject m;
+        m[QStringLiteral("hash")]             = *h;
+        m[QStringLiteral("originalFilename")] = QFileInfo(a.path).fileName();
+        m[QStringLiteral("bytes")]            = QFileInfo(a.path).size();
+        m[QStringLiteral("originalMediaId")]  = a.mediaId;
+        m[QStringLiteral("type")]             = a.type;
+        mediaManifest.append(m);
+    }
+    for (const ExportAsset& a : job.fonts) {
+        const auto h = hashAsset(a, QStringLiteral("Reading fonts"));
+        if (!h) return stop();
+        if (h->isEmpty()) continue;
+        fontFamilyToHash.insert(a.family, *h);
+        if (seen.contains(*h)) continue;
+        seen.insert(*h);
+        // FontService only ever stores .ttf or .otf, so the suffix is kept.
+        const QString ext = QFileInfo(a.path).suffix().toLower();
+        packed.append(Packed{ *h, a.path, ext.isEmpty() ? QStringLiteral("fonts/%1").arg(*h)
+                                                        : QStringLiteral("fonts/%1.%2").arg(*h, ext) });
+        QJsonObject f;
+        f[QStringLiteral("hash")]   = *h;
+        f[QStringLiteral("family")] = a.family;
+        f[QStringLiteral("bytes")]  = QFileInfo(a.path).size();
+        fontManifest.append(f);
+    }
+
+    // theme.json with media ids and font families swapped for hashes.
+    const QVariantMap rewritten = rewriteTokensForExport(job.tokens, mediaIdToHash, fontFamilyToHash);
+    const QByteArray themeJson = QJsonDocument(QJsonObject::fromVariantMap(rewritten))
+                                     .toJson(QJsonDocument::Indented);
+
+    QJsonObject manifest;
+    manifest[QStringLiteral("kind")]          = QStringLiteral("craterheme");
+    manifest[QStringLiteral("formatVersion")] = kBundleFormatVersion;
+    manifest[QStringLiteral("themeKind")]     = job.kind;
+    manifest[QStringLiteral("name")]          = job.name;
+    manifest[QStringLiteral("exportedAt")]    = QDateTime::currentMSecsSinceEpoch();
+    manifest[QStringLiteral("appVersion")]    = versionString();
+    manifest[QStringLiteral("media")]         = mediaManifest;
+    manifest[QStringLiteral("fonts")]         = fontManifest;
+    const QByteArray manifestJson = QJsonDocument(manifest).toJson(QJsonDocument::Indented);
+
+    // Write the zip (atomic via QSaveFile inside ZipWriter).
+    bundle::ZipWriter zip(filePath);
+    if (!zip.isOpen()) {
+        *error = zip.errorString();
+        return false;
+    }
+    if (!zip.addEntry(QStringLiteral("manifest.json"), manifestJson)
+        || !zip.addEntry(QStringLiteral("theme.json"), themeJson)) {
+        *error = zip.errorString();
+        return false;
+    }
+    for (const Packed& p : packed) {
+        bool userStop = false;
+        const bool ok = zip.addFile(p.entry, p.path, [&](qint64 copied) {
+            if (report(copied, QStringLiteral("Writing the theme file"))) return true;
+            userStop = true;
+            return false;
+        });
+        if (userStop) return stop();
+        if (!ok) {
+            *error = zip.errorString();
+            return false;
+        }
+        done += QFileInfo(p.path).size();
+    }
+    if (!zip.commit()) {
+        *error = zip.errorString();
+        return false;
+    }
+    report(0, QStringLiteral("Done"));
+
+    qInfo().noquote() << "ThemeService: exported theme" << job.themeId << "("
+                      << job.name << ") to" << filePath
+                      << "- bundled" << mediaManifest.size() << "media,"
+                      << fontManifest.size() << "fonts";
+    return true;
+}
+
+}  // namespace
+
 bool ThemeService::exportTheme(qint64       id,
                                QString      filePath,
                                QStringList  excludedFontFamilies)
 {
     m_lastExportError.clear();
-
     const Theme t = theme(id);
     if (t.id == 0) {
         m_lastExportError = QStringLiteral("No theme with id %1").arg(id);
         return false;
     }
+    const auto job = prepareThemeExport(t, m_media, m_fonts, excludedFontFamilies, &m_lastExportError);
+    if (!job) return false;
+    bool cancelled = false;
+    return writeThemeBundle(*job, filePath, {}, &m_lastExportError, &cancelled);
+}
 
-    // ── Resolve media files referenced by the theme ─────────────────────
-    QHash<qint64, QString> mediaIdToHash;   // for token rewrite
-    QHash<QString, QByteArray> mediaBytes;  // hash -> bytes (dedup'd)
-    QJsonArray mediaManifest;
-
-    if (!m_media && !collectMediaIds(t.tokens).isEmpty()) {
-        m_lastExportError = QStringLiteral(
-            "Theme references media but MediaService is not wired");
+bool ThemeService::exportThemeAsync(qint64      id,
+                                    QString     filePath,
+                                    QStringList excludedFontFamilies)
+{
+    m_lastExportError.clear();
+    if (m_exportBusy) {
+        m_lastExportError = QStringLiteral("Another theme export is still running.");
         return false;
     }
-
-    for (qint64 mid : collectMediaIds(t.tokens)) {
-        const MediaItem item = m_media->byId(mid);
-        if (item.id == 0) {
-            // Stale reference — silently skip. The token rewriter leaves
-            // the original mediaId in place; the importer will null it
-            // out on miss (matches §10.4's best-effort posture).
-            continue;
-        }
-        QString reason;
-        auto bytes = readWholeFile(item.path, &reason);
-        if (!bytes) {
-            qWarning().noquote() << "exportTheme: skipping media id" << mid
-                                 << "—" << reason;
-            continue;
-        }
-        const QString hash = sha256Hex(*bytes);
-        mediaIdToHash.insert(mid, hash);
-        // Dedup: same image referenced twice ships once.
-        if (!mediaBytes.contains(hash)) {
-            mediaBytes.insert(hash, *bytes);
-            QJsonObject mEntry;
-            mEntry[QStringLiteral("hash")]            = hash;
-            mEntry[QStringLiteral("originalFilename")] = QFileInfo(item.path).fileName();
-            mEntry[QStringLiteral("bytes")]            = qint64(bytes->size());
-            mEntry[QStringLiteral("originalMediaId")] = mid;
-            mEntry[QStringLiteral("type")]             = item.type;
-            mediaManifest.append(mEntry);
-        }
-    }
-
-    // ── Resolve fonts (respecting the exclusion list) ───────────────────
-    QSet<QString> excluded;
-    for (const QString& f : excludedFontFamilies) excluded.insert(f);
-
-    QHash<QString, QString>   fontFamilyToHash;  // for token rewrite
-    QHash<QString, QByteArray> fontBytes;        // hash -> bytes
-    QJsonArray fontManifest;
-
-    if (m_fonts) {
-        for (const QString& fam : collectFontFamilies(t.tokens)) {
-            if (excluded.contains(fam)) continue;
-            const QString src = m_fonts->filePathForFamily(fam);
-            if (src.isEmpty()) continue;   // system-only; not bundleable
-            QString reason;
-            auto bytes = readWholeFile(src, &reason);
-            if (!bytes) {
-                qWarning().noquote() << "exportTheme: skipping font" << fam
-                                     << "—" << reason;
-                continue;
-            }
-            const QString hash = sha256Hex(*bytes);
-            fontFamilyToHash.insert(fam, hash);
-            if (!fontBytes.contains(hash)) {
-                fontBytes.insert(hash, *bytes);
-                QJsonObject fEntry;
-                fEntry[QStringLiteral("hash")]   = hash;
-                fEntry[QStringLiteral("family")] = fam;
-                fEntry[QStringLiteral("bytes")]  = qint64(bytes->size());
-                fontManifest.append(fEntry);
-            }
-        }
-    }
-
-    // ── Build the rewritten theme.json + manifest.json ─────────────────
-    const QVariantMap rewritten = rewriteTokensForExport(
-        t.tokens, mediaIdToHash, fontFamilyToHash);
-
-    const QByteArray themeJson = QJsonDocument(
-        QJsonObject::fromVariantMap(rewritten)).toJson(QJsonDocument::Indented);
-
-    QJsonObject manifest;
-    manifest[QStringLiteral("kind")]          = QStringLiteral("craterheme");
-    manifest[QStringLiteral("formatVersion")] = kBundleFormatVersion;
-    manifest[QStringLiteral("themeKind")]     = t.kind;
-    manifest[QStringLiteral("name")]          = t.name;
-    manifest[QStringLiteral("exportedAt")]    = QDateTime::currentMSecsSinceEpoch();
-    manifest[QStringLiteral("appVersion")]    = versionString();
-    manifest[QStringLiteral("media")]         = mediaManifest;
-    manifest[QStringLiteral("fonts")]         = fontManifest;
-    const QByteArray manifestJson =
-        QJsonDocument(manifest).toJson(QJsonDocument::Indented);
-
-    // ── Write zip (atomic via QSaveFile inside ZipWriter) ───────────────
-    bundle::ZipWriter zip(filePath);
-    if (!zip.isOpen()) {
-        m_lastExportError = zip.errorString();
+    const Theme t = theme(id);
+    if (t.id == 0) {
+        m_lastExportError = QStringLiteral("No theme with id %1").arg(id);
         return false;
     }
-    const auto fail = [&](QString why) {
-        m_lastExportError = std::move(why);
-        return false;
+    // Resolve paths here, on the thread that owns MediaService and
+    // FontService. The worker only reads plain data and files.
+    const auto job = prepareThemeExport(t, m_media, m_fonts, excludedFontFamilies, &m_lastExportError);
+    if (!job) return false;
+
+    m_exportCancel = std::make_shared<std::atomic<bool>>(false);
+    m_exportBusy = true;
+    m_exportProgress = 0;
+    m_exportProgressText = QStringLiteral("Preparing");
+    emit exportBusyChanged();
+    emit exportProgressChanged();
+
+    // Progress reaches the service through queued calls, at most once per
+    // half percent or stage change, so a large video does not flood the
+    // event loop.
+    struct Throttle { int step = -1; QString stage; };
+    auto throttle = std::make_shared<Throttle>();
+    auto cancel = m_exportCancel;
+    QPointer<ThemeService> self(this);
+    const ExportProgressFn progress = [self, throttle, cancel](double f, const QString& stage) {
+        if (cancel->load()) return false;
+        const int step = int(f * 200);
+        if (step != throttle->step || stage != throttle->stage) {
+            throttle->step = step;
+            throttle->stage = stage;
+            QMetaObject::invokeMethod(self.data(), [self, f, stage] {
+                if (!self || !self->m_exportBusy) return;
+                self->m_exportProgress = f;
+                self->m_exportProgressText = stage;
+                emit self->exportProgressChanged();
+            }, Qt::QueuedConnection);
+        }
+        return true;
     };
-    if (!zip.addEntry(QStringLiteral("manifest.json"), manifestJson))
-        return fail(zip.errorString());
-    if (!zip.addEntry(QStringLiteral("theme.json"), themeJson))
-        return fail(zip.errorString());
 
-    for (auto it = mediaBytes.constBegin(); it != mediaBytes.constEnd(); ++it) {
-        const QString hash = it.key();
-        // Look up the manifest entry to recover the original extension.
-        QString ext;
-        for (const QJsonValue& v : mediaManifest) {
-            const QJsonObject o = v.toObject();
-            if (o.value(QStringLiteral("hash")).toString() == hash) {
-                ext = QFileInfo(o.value(QStringLiteral("originalFilename"))
-                                   .toString()).suffix();
-                break;
-            }
+    struct Result { bool ok = false; bool cancelled = false; QString error; };
+    m_exportTask = QtConcurrent::run([job = *job, filePath, progress]() {
+        Result r;
+        try {
+            r.ok = writeThemeBundle(job, filePath, progress, &r.error, &r.cancelled);
+        } catch (const std::exception& e) {
+            qWarning() << "ThemeService::exportThemeAsync:" << e.what();
+            r.error = QStringLiteral("Could not write the theme file");
         }
-        const QString name = ext.isEmpty()
-            ? QStringLiteral("media/%1").arg(hash)
-            : QStringLiteral("media/%1.%2").arg(hash, ext.toLower());
-        if (!zip.addEntry(name, it.value()))
-            return fail(zip.errorString());
-    }
-    for (auto it = fontBytes.constBegin(); it != fontBytes.constEnd(); ++it) {
-        // We always wrote .ttf or .otf into AppData/fonts; reuse that
-        // extension. (FontService sniffed the magic bytes at import time.)
-        QString ext;
-        for (const QJsonValue& v : fontManifest) {
-            const QJsonObject o = v.toObject();
-            if (o.value(QStringLiteral("hash")).toString() == it.key()) {
-                const QString fam = o.value(QStringLiteral("family")).toString();
-                const QString path = m_fonts ? m_fonts->filePathForFamily(fam) : QString();
-                ext = QFileInfo(path).suffix();
-                break;
-            }
+        return r;
+    }).then(this, [this, filePath](Result r) {
+        m_lastExportError = r.ok ? QString() : r.error;
+        m_exportBusy = false;
+        if (r.ok) {
+            m_exportProgress = 1;
+            m_exportProgressText = QStringLiteral("Done");
         }
-        const QString name = ext.isEmpty()
-            ? QStringLiteral("fonts/%1").arg(it.key())
-            : QStringLiteral("fonts/%1.%2").arg(it.key(), ext.toLower());
-        if (!zip.addEntry(name, it.value()))
-            return fail(zip.errorString());
-    }
-
-    if (!zip.commit())
-        return fail(zip.errorString());
-
-    qInfo().noquote() << "ThemeService: exported theme" << t.id << "("
-                      << t.name << ") to" << filePath
-                      << "— bundled" << mediaManifest.size() << "media,"
-                      << fontManifest.size() << "fonts";
+        emit exportProgressChanged();
+        emit exportBusyChanged();
+        emit exportFinished(r.ok, r.cancelled, r.ok ? QString() : r.error, filePath);
+    });
     return true;
 }
+
+void ThemeService::cancelExport()
+{
+    if (m_exportBusy && m_exportCancel) m_exportCancel->store(true);
+}
+
+bool    ThemeService::exportBusy() const         { return m_exportBusy; }
+qreal   ThemeService::exportProgress() const     { return m_exportProgress; }
+QString ThemeService::exportProgressText() const { return m_exportProgressText; }
 
 ThemeImportReport ThemeService::importThemeFile(QString filePath)
 {
