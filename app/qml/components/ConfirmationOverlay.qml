@@ -28,6 +28,9 @@ Rectangle {
 
     function openConfirm() { visible = true }
     function close()       { visible = false }
+    // The buttons close BEFORE they emit. A handler often tears down the
+    // dialog that owns this overlay (discard, delete), and closing after
+    // the emit then ran on a destroyed object: "close is not a function".
 
     MouseArea {
         anchors.fill: parent
@@ -112,7 +115,7 @@ Rectangle {
                 spacing: Theme.space.sm
                 GhostButton {
                     text: root.cancelLabel
-                    onClicked: { root.cancelled(); root.close() }
+                    onClicked: { root.close(); root.cancelled() }
                 }
                 // Destructive variant — semantically correct for "discard /
                 // delete / remove" actions, and brand-aligned via the
@@ -121,7 +124,7 @@ Rectangle {
                 PrimaryButton {
                     variant: "destructive"
                     text: root.confirmLabel
-                    onClicked: { root.confirmed(); root.close() }
+                    onClicked: { root.close(); root.confirmed() }
                 }
             }
         }
