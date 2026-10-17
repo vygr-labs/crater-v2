@@ -9,8 +9,9 @@ import QtQuick
 // authoritative indicator and add visual noise in a dense schedule.
 //
 // Emits clicked(button, modifiers), doubleClicked, rightClicked(x, y), and
-// drag lifecycle signals (dragStarted / dragMoved / dragReleased). The host
-// panel keeps the drag state and triggers ScheduleService.moveItem on release.
+// drag lifecycle signals (dragStarted / dragMoved / dragReleased /
+// dragCanceled). The host panel keeps the drag state and triggers
+// ScheduleService.moveItem on release.
 Item {
     id: root
 
@@ -64,6 +65,9 @@ Item {
     signal dragStarted(int rowIndex)
     signal dragMoved(int rowIndex, real offsetY)
     signal dragReleased(int rowIndex, real offsetY)
+    // The drag ended without a drop (the press was cancelled, or the row
+    // was removed). The panel clears its drag state and moves nothing.
+    signal dragCanceled(int rowIndex)
 
     implicitHeight: Theme.size.scheduleRowHeight
     implicitWidth: 400
@@ -73,6 +77,10 @@ Item {
     // alone wouldn't work — ListView stacks delegates inside contentItem,
     // and a child's z only reorders within its own delegate subtree.
     z: isDragging ? 100 : 0
+
+    // A row removed mid-drag never sees its release. Tell the panel the drag
+    // is over, with no move, or the list stays frozen with the line up.
+    Component.onDestruction: if (isDragging) dragCanceled(rowIndex)
 
     // ── Row body ────────────────────────────────────────────────────────
     // Flat container — translates by dragOffsetY during a drag.
@@ -189,9 +197,13 @@ Item {
                     root.dragOffsetY = 0
                     root.dragReleased(root.rowIndex, finalOffset)
                 }
+                // The panel has to hear about it too, or it keeps the row as
+                // dragging: the list stays frozen and the drop line stays up.
                 onCanceled: {
+                    if (!root.isDragging) return
                     root.isDragging = false
                     root.dragOffsetY = 0
+                    root.dragCanceled(root.rowIndex)
                 }
             }
         }
@@ -299,13 +311,28 @@ Item {
         // would slot in here if we ever want per-row drop affordance.
 
         // ── Click area (everything to the right of the drag handle) ──────
+        // Double-click then drag (press a second time and hold, the way
+        // Explorer starts a drag) moves the row like the handle does. The
+        // second press only arms it. Moving past the system drag distance
+        // picks the row up, and releasing without moving is the ordinary
+        // double-click.
         MouseArea {
             id: ma
             anchors.fill: parent
             anchors.leftMargin: handle.width
             hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
+            cursorShape: root.isDragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            // Keeps the list from taking the second press as a flick.
+            preventStealing: _armed
+
+            property bool _armed: false
+            property real _pressY: 0
+
+            // In the delegate's coordinates. The body this area sits in
+            // moves with the drag, so its own coordinates would too.
+            function _rowY(mouse) { return ma.mapToItem(root, mouse.x, mouse.y).y }
+
             onClicked: function(mouse) {
                 if (mouse.button === Qt.RightButton) {
                     root.rightClicked(mouse.x, mouse.y)
@@ -313,7 +340,42 @@ Item {
                     root.clicked(mouse.button, mouse.modifiers)
                 }
             }
-            onDoubleClicked: root.doubleClicked()
+            onDoubleClicked: function(mouse) {
+                if (mouse.button !== Qt.LeftButton) return
+                _armed = true
+                _pressY = _rowY(mouse)
+            }
+            onPositionChanged: function(mouse) {
+                if (!_armed) return
+                const dy = _rowY(mouse) - _pressY
+                if (!root.isDragging) {
+                    if (Math.abs(dy) < Qt.styleHints.startDragDistance) return
+                    root.isDragging = true
+                    root.dragStarted(root.rowIndex)
+                }
+                root.dragOffsetY = dy
+                root.dragMoved(root.rowIndex, dy)
+            }
+            onReleased: {
+                if (!_armed) return
+                _armed = false
+                if (root.isDragging) {
+                    const finalOffset = root.dragOffsetY
+                    root.isDragging = false
+                    root.dragOffsetY = 0
+                    root.dragReleased(root.rowIndex, finalOffset)
+                } else {
+                    root.doubleClicked()
+                }
+            }
+            onCanceled: {
+                _armed = false
+                if (!root.isDragging) return
+                // Put the row back where it was, with no move.
+                root.isDragging = false
+                root.dragOffsetY = 0
+                root.dragCanceled(root.rowIndex)
+            }
         }
     }
 }

@@ -9,10 +9,11 @@ import QtQuick.Controls.Basic
 //      unsaved changes, plus a kebab menu for clear / close-loaded actions.
 //   2) Multi-select via Ctrl/Shift+click; the selected set drives multi-delete
 //      and is rendered with checks + a softer border on non-primary members.
-//   3) Drag-to-reorder via the per-row handle; the panel tracks the dragged
-//      row's offset and projects a brand-colored insertion line at the drop
-//      target. moveItem is called on release; ListView's `displaced`
-//      transition then animates the rows to their final positions.
+//   3) Drag-to-reorder via the per-row handle, or double-click then drag
+//      anywhere on the row; the panel tracks the dragged row's offset and
+//      projects a brand-colored insertion line at the drop target. moveItem
+//      is called on release; ListView's `displaced` transition then animates
+//      the rows to their final positions.
 Rectangle {
     id: root
 
@@ -607,6 +608,10 @@ Rectangle {
                 }
                 onDragMoved: function(i, off) {
                     list.draggedOffsetY = off
+                }
+                onDragCanceled: function(i) {
+                    list.draggedRow = -1
+                    list.draggedOffsetY = 0
                 }
                 onDragReleased: function(i, off) {
                     const target = list.dropTargetIndex()
