@@ -29,6 +29,7 @@
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
+#define BrandFont "FunnelSans-VariableFont_wght.ttf"
 
 [Setup]
 AppId={{4D6E3F0E-9C2C-4F88-9C04-7A2B0A4A3B5E}}
@@ -69,6 +70,11 @@ RestartApplications=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[LangOptions]
+; Funnel Sans, loaded for this process only by [Code] below.
+DialogFontName=Funnel Sans
+WelcomeFontName=Funnel Sans
+
 [Messages]
 ; Shorter than the stock wording. Setup closes a running Crater itself
 ; (CloseApplications), so the advice to close other programs is dropped.
@@ -84,6 +90,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; The app's font, for Setup's and Uninstall's own text (see [Code]). Setup
+; extracts it to {tmp}. The copy in {app} is for the uninstaller, which
+; cannot extract anything.
+Source: "..\app\resources\fonts\{#BrandFont}"; Flags: dontcopy
+Source: "..\app\resources\fonts\{#BrandFont}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
 ; VC++ runtime bootstrap. Exit code 1638 means a newer version is already
@@ -115,6 +126,63 @@ Name: "{group}\Uninstall Crater"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Crater";     Filename: "{app}\crater.exe"; Tasks: desktopicon
 
 [Code]
+// Setup and Uninstall set their text in Funnel Sans, the app's font
+// (DialogFontName in [LangOptions]). It is loaded for this process only
+// (FR_PRIVATE), so nothing is installed into Windows, and unloaded at the
+// end so the temp copy can be deleted. If it fails to load, Windows uses
+// its nearest face instead.
+const
+  FR_PRIVATE = $10;
+
+function AddFontResourceEx(FileName: String; Flags: Cardinal; Reserved: Cardinal): Integer;
+  external 'AddFontResourceExW@gdi32.dll stdcall';
+function RemoveFontResourceEx(FileName: String; Flags: Cardinal; Reserved: Cardinal): Integer;
+  external 'RemoveFontResourceExW@gdi32.dll stdcall';
+
+var
+  BrandFontPath: String;
+
+procedure LoadBrandFont(Path: String);
+begin
+  if AddFontResourceEx(Path, FR_PRIVATE, 0) > 0 then
+    BrandFontPath := Path;
+end;
+
+procedure UnloadBrandFont();
+begin
+  if BrandFontPath <> '' then
+    RemoveFontResourceEx(BrandFontPath, FR_PRIVATE, 0);
+  BrandFontPath := '';
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  ExtractTemporaryFile('{#BrandFont}');
+  LoadBrandFont(ExpandConstant('{tmp}\{#BrandFont}'));
+  Result := True;
+end;
+
+procedure DeinitializeSetup();
+begin
+  UnloadBrandFont();
+end;
+
+// From a temp copy, so the installed file is free to be deleted.
+function InitializeUninstall(): Boolean;
+var
+  Copy: String;
+begin
+  Copy := ExpandConstant('{tmp}\{#BrandFont}');
+  if FileCopy(ExpandConstant('{app}\{#BrandFont}'), Copy, False) then
+    LoadBrandFont(Copy);
+  Result := True;
+end;
+
+procedure DeinitializeUninstall();
+begin
+  UnloadBrandFont();
+end;
+
 function LaunchRequested(): Boolean;
 begin
   // True only when the caller passed /LAUNCH=1. In-app updates set it; a
