@@ -189,9 +189,14 @@ Item {
                     root.dragOffsetY = 0
                     root.dragReleased(root.rowIndex, finalOffset)
                 }
+                // The panel has to hear about it too, or it keeps the row as
+                // dragging: the list stays frozen and the drop line stays up.
                 onCanceled: {
+                    if (!root.isDragging) return
                     root.isDragging = false
                     root.dragOffsetY = 0
+                    root.dragMoved(root.rowIndex, 0)
+                    root.dragReleased(root.rowIndex, 0)
                 }
             }
         }
