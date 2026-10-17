@@ -43,6 +43,8 @@ DefaultDirName={autopf}\Crater
 DefaultGroupName=Crater
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\crater.exe
+; Setup.exe, its windows and the uninstaller carry the Crater icon.
+SetupIconFile=crater.ico
 UninstallDisplayName=Crater {#AppVersion}
 OutputDir={#OutputDir}
 OutputBaseFilename=Crater-Setup-{#AppVersion}
@@ -50,13 +52,31 @@ Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-WizardStyle=modern
+; Dark, like the app, in Setup and Uninstall alike. Needs Inno Setup 6.6
+; or later. The wizard images are drawn from the startup splash: the logo's
+; cyan disc rising from the bottom on the console's dark surface. One file
+; per display scale, 100% to 250%, so Setup picks a sharp one.
+WizardStyle=modern dark
+; The console's panel surface, so the pages match the images.
+WizardBackColor=#18181b
+DisableWelcomePage=no
+WizardImageFile=installer\wizard-100.png,installer\wizard-125.png,installer\wizard-150.png,installer\wizard-175.png,installer\wizard-200.png,installer\wizard-225.png,installer\wizard-250.png
+WizardSmallImageFile=installer\wizard-small-100.png,installer\wizard-small-125.png,installer\wizard-small-150.png,installer\wizard-small-175.png,installer\wizard-small-200.png,installer\wizard-small-225.png,installer\wizard-small-250.png
 PrivilegesRequired=admin
 CloseApplications=yes
 RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+; Shorter than the stock wording. Setup closes a running Crater itself
+; (CloseApplications), so the advice to close other programs is dropped.
+WelcomeLabel1=Welcome to Crater
+WelcomeLabel2=This installs [name/ver] on your computer.
+FinishedHeadingLabel=Crater is installed
+FinishedLabel=[name/ver] is ready. You can open it from the Start menu.
+FinishedLabelNoIcons=[name/ver] is ready.
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
