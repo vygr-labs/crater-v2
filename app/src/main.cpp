@@ -731,6 +731,7 @@ int main(int argc, char* argv[])
                 qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst())) {
             crater::installNativeWindowChrome(consoleWindow);
             crater::instance::setConsole(consoleWindow);
+            fileDialogService.setOwner(consoleWindow);
             crater::restoreWindowPlacement(consoleWindow);
 
             // The first painted frame is what "this launch worked" means to

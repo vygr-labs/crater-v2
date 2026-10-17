@@ -79,6 +79,24 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
                     broadcastFrame(*it.value(), f);
                 });
 
+        // What the player went through, for when a looping background
+        // stops on someone's machine: did it reach the end without looping,
+        // stall in the decoder, or fail.
+        QMediaPlayer* player = e->player;
+        connect(player, &QMediaPlayer::mediaStatusChanged, this,
+                [player, urlCopy](QMediaPlayer::MediaStatus status) {
+                    if (status == QMediaPlayer::EndOfMedia || status == QMediaPlayer::StalledMedia
+                        || status == QMediaPlayer::InvalidMedia)
+                        qInfo().noquote() << "MediaPlayback:" << QUrl(urlCopy).fileName()
+                                          << "status" << status << "loops" << player->loops()
+                                          << "at" << player->position() << "of" << player->duration();
+                });
+        connect(player, &QMediaPlayer::errorOccurred, this,
+                [urlCopy](QMediaPlayer::Error, const QString& message) {
+                    qWarning().noquote() << "MediaPlayback:" << QUrl(urlCopy).fileName()
+                                         << "error:" << message;
+                });
+
         e->player->setSource(QUrl(sourceUrl));
         e->player->play();
 
@@ -110,6 +128,7 @@ void MediaPlaybackService::applyLoop(Entry& e, bool loop)
     if (e.loop == loop) return;
     e.loop = loop;
     e.player->setLoops(loop ? QMediaPlayer::Infinite : 1);
+    qInfo().noquote() << "MediaPlayback:" << QUrl(e.url).fileName() << "loop" << (loop ? "on" : "off");
     emit loopChanged(e.url);
 }
 

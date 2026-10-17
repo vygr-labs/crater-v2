@@ -1,8 +1,12 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
+
+class QFileDialog;
+class QWindow;
 
 namespace crater {
 
@@ -30,6 +34,9 @@ class FileDialogService : public QObject
 
 public:
     explicit FileDialogService(QObject* parent = nullptr);
+
+    // The console window. Every picker opens owned by it, see run().
+    void setOwner(QWindow* owner);
 
     // Returns the selected file path, or an empty string if the user
     // cancelled. `nameFilters` is a list of Qt-style filter entries
@@ -73,6 +80,13 @@ public:
     Q_INVOKABLE bool pathExists(QString path) const;
 
 private:
+    // Shows `dialog` owned by the console and waits for it. False when
+    // cancelled, or when another picker is already open.
+    bool run(QFileDialog& dialog, const char* kind);
+
+    QPointer<QWindow> m_owner;
+    bool              m_open = false;
+
     // The folder to open in: remembered, then fallback, then `standard`.
     static QString startDir(const QString& rememberKey, const QString& fallbackDir,
                             const QString& standard);
