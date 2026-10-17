@@ -757,17 +757,17 @@ int main(int argc, char* argv[])
                              },
                              static_cast<Qt::ConnectionType>(Qt::DirectConnection
                                                              | Qt::SingleShotConnection));
-            // The splash goes when the console is actually drawn, not when
-            // its QML is loaded: between the two the window is on the
+            // The splash fades out when the console is actually drawn, not
+            // when its QML is loaded: between the two the window is on the
             // taskbar with nothing on screen. Queued, since frameSwapped
             // comes from the render thread.
             QObject::connect(consoleWindow, &QQuickWindow::frameSwapped, splash.get(),
-                             &QWidget::close,
+                             &crater::StartupSplash::fadeOut,
                              static_cast<Qt::ConnectionType>(Qt::QueuedConnection
                                                              | Qt::SingleShotConnection));
             // A console that opens minimized draws nothing, so don't leave
             // the splash on top of everything waiting for a frame.
-            QTimer::singleShot(15000, splash.get(), &QWidget::close);
+            QTimer::singleShot(15000, splash.get(), &crater::StartupSplash::fadeOut);
 
             // The graphics backend could not start on this PC (an old GPU, a
             // broken driver, a remote session). Unhandled, Qt aborts without

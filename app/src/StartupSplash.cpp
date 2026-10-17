@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPropertyAnimation>
 #include <QScreen>
 
 #include <cmath>
@@ -77,6 +78,20 @@ void StartupSplash::setOpening()
     m_tick.stop();
     m_line = tr("Opening Crater");
     update();
+}
+
+void StartupSplash::fadeOut()
+{
+    if (!isVisible() || m_fading) return;
+    m_fading = true;
+    m_tick.stop();
+    auto* fade = new QPropertyAnimation(this, "windowOpacity", this);
+    fade->setDuration(150);
+    fade->setStartValue(1.0);
+    fade->setEndValue(0.0);
+    fade->setEasingCurve(QEasingCurve::OutCubic);
+    connect(fade, &QPropertyAnimation::finished, this, &QWidget::close);
+    fade->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void StartupSplash::paintEvent(QPaintEvent*)

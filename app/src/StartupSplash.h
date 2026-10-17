@@ -31,6 +31,10 @@ public slots:
     void setProgress(int percent, const QString& stage);
     // After the import, while services are built and the window loads.
     void setOpening();
+    // Fades out and closes, once the console is on screen. The event loop is
+    // running by then, so the fade can play. Error paths call close() to go
+    // at once.
+    void fadeOut();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -39,6 +43,7 @@ private:
     void centerOnScreen();
 
     bool    m_firstRun = false;
+    bool    m_fading = false;
     int     m_percent = 0;
     QString m_line;
     // The search-index phase reports no progress of its own and can be the
