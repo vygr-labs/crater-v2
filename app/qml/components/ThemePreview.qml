@@ -34,7 +34,7 @@ Item {
 
     // Mock content for the live linkage values. Same mock strings shared by
     // every text node so the preview is deterministic per theme.
-    readonly property string mockScriptureRef:  "John 3:16"
+    readonly property string mockScriptureRef:  AppState.previewScriptureRef
     readonly property string mockScriptureText: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."
     readonly property string mockLyric:         "Amazing grace, how sweet the sound\nThat saved a wretch like me"
     // Short heading, longer body -- a presentation tile has to show the

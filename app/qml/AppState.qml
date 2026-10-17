@@ -409,6 +409,20 @@ QtObject {
     }
 
     // ─── Scripture items ────────────────────────────────────────────────
+    // The sample reference theme previews show (the Themes tab cards and the
+    // theme editor canvas). Built by buildScriptureItem from one verse in the
+    // active translation, so a preview reads exactly like the projector,
+    // "John 3:16 (KJV)", and follows the sidebar when the translation
+    // changes. A reference layer sized from the preview then fits the real
+    // text.
+    readonly property string previewScriptureRef: {
+        const code = (activeLibraryGroup.scripture || "").toUpperCase()
+        if (code.length === 0) return "John 3:16"
+        const item = buildScriptureItem([{ book: "John", chapter: 3, verse: 16,
+                                           text: "-", translationCode: code }], code)
+        return item ? item.title : "John 3:16"
+    }
+
     // Canonical verse(s) → schedule-item builder. Moved here from
     // ScriptureTab (which now delegates) for the same reason buildSongItem
     // lives here: the live dock's scripture switch has to project a passage
