@@ -2497,7 +2497,8 @@ QtObject {
     // sight. Watching for "the count went up" would also fire on loading a
     // saved schedule, which should open at the top, hence an explicit signal
     // rather than a heuristic. ScheduleService::addItem always appends, so
-    // the index is always the new last row.
+    // the index is the new last row, except after a library drop, which
+    // sends the row it inserted (dropLibraryDragAt).
     signal scheduleItemAppended(int index)
 
     // Convenience for the "Add to Schedule" right-click action — adds the
@@ -2535,6 +2536,61 @@ QtObject {
         selectScheduleItem(ScheduleService.currentItems.length - 1)
         scheduleItemAppended(ScheduleService.currentItems.length - 1)
         return ScheduleService.currentItems.length - 1
+    }
+
+    // ─── Library drag to the schedule ────────────────────────────────────
+    // Double-click then drag on a library row (ScheduleDragSource) carries
+    // it to the schedule. The row's MouseArea keeps the mouse for the whole
+    // drag and reports the pointer here in window coordinates. Main shows a
+    // label under the pointer, and SchedulePanel shows where the item would
+    // land and calls dropLibraryDragAt on release.
+    property bool   libraryDragActive: false
+    property string libraryDragLabel: ""
+    property real   libraryDragX: 0
+    property real   libraryDragY: 0
+    property var    _libraryDragAdd: null
+
+    signal libraryDragReleased()
+
+    function beginLibraryDrag(label, add) {
+        _libraryDragAdd = add
+        libraryDragLabel = label
+        libraryDragActive = true
+    }
+    function moveLibraryDrag(x, y) {
+        libraryDragX = x
+        libraryDragY = y
+    }
+    function endLibraryDrag(x, y) {
+        moveLibraryDrag(x, y)
+        libraryDragReleased()
+        cancelLibraryDrag()
+    }
+    function cancelLibraryDrag() {
+        libraryDragActive = false
+        libraryDragLabel = ""
+        _libraryDragAdd = null
+    }
+
+    // Adds the dragged item through its tab's own Add to Schedule, so it is
+    // built, selected and (during a Change passage) replaced exactly as the
+    // menu action would, then moves the rows that added to `index`.
+    function dropLibraryDragAt(index) {
+        const add = _libraryDragAdd
+        if (typeof add !== "function") return
+        const before = ScheduleService.currentItems.length
+        add()
+        const after = ScheduleService.currentItems.length
+        // Nothing appended (no item, or a Change passage replaced its row),
+        // or dropped below the last row, where the append already put it.
+        if (after <= before || index >= before) return
+        let order = []
+        for (let k = 0; k < index; k++) order.push(k)
+        for (let k = before; k < after; k++) order.push(k)
+        for (let k = index; k < before; k++) order.push(k)
+        applyScheduleOrder(order)
+        // The append scrolled to the bottom. Bring the dropped row back.
+        scheduleItemAppended(index + after - before - 1)
     }
 
     // ─── Global search (command palette, Ctrl+K) ─────────────────────────

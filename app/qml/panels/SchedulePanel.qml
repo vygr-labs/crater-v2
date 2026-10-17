@@ -321,6 +321,29 @@ Rectangle {
         }
     }
 
+    // ── Library drag target ─────────────────────────────────────────────
+    // Where a library item dragged over the list would land (AppState
+    // "Library drag to the schedule"), or -1 while the pointer is elsewhere.
+    // The upper half of a row inserts above it, the lower half below.
+    readonly property int libraryDropIndex: {
+        if (!AppState.libraryDragActive) return -1
+        const p = list.mapFromItem(null, AppState.libraryDragX, AppState.libraryDragY)
+        if (p.x < 0 || p.y < 0 || p.x > list.width || p.y > list.height) return -1
+        const n = ScheduleService.currentItems.length
+        if (n === 0) return 0
+        const rowH = Theme.size.scheduleRowHeight
+        return Math.max(0, Math.min(n, Math.round((p.y + list.contentY) / rowH)))
+    }
+
+    Connections {
+        target: AppState
+        function onLibraryDragReleased() {
+            const at = root.libraryDropIndex
+            // Keyboard focus stays in the library, as with Add to Schedule.
+            if (at >= 0) AppState.dropLibraryDragAt(at)
+        }
+    }
+
     // ── Body: empty state OR list ───────────────────────────────────────
     Item {
         id: body
@@ -328,6 +351,17 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
+
+        // An empty schedule has no rows to draw a line between, so the
+        // whole drop area lights up instead.
+        Rectangle {
+            anchors.fill: parent
+            z: 10
+            visible: root.libraryDropIndex >= 0 && ScheduleService.currentItems.length === 0
+            color: "transparent"
+            border.color: Qt.lighter(Theme.color.brand, 1.6)
+            border.width: 2
+        }
 
         EmptyState {
             anchors.fill: parent
@@ -675,6 +709,18 @@ Rectangle {
                 }
 
                 Behavior on y { NumberAnimation { duration: Theme.motion.instant } }
+            }
+
+            // Where a library drag would land: the same line, between rows.
+            Rectangle {
+                parent: list.contentItem
+                visible: root.libraryDropIndex >= 0 && list.count > 0
+                x: 0
+                width: list.width - Theme.size.scrollBar
+                height: 2
+                z: 1000
+                color: Qt.lighter(Theme.color.brand, 1.6)
+                y: Math.max(0, root.libraryDropIndex * Theme.size.scheduleRowHeight - height / 2)
             }
         }
 

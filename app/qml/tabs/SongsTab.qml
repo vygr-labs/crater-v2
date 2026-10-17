@@ -1064,10 +1064,26 @@ Item {
                     if (_bulk) AppState.setActiveFocus("library")
                     else       _focus()
                 }
-                onDoubleClicked: {
-                    AppState.setLibraryFluid(root.tabKey, index)
-                    AppState.setActiveFocus("library")
-                    root.pushLiveFor(index)
+                // Double-click then drag carries the song to the schedule.
+                preventStealing: toSchedule.armed
+                onDoubleClicked: function(mouse) { toSchedule.doubleClicked(mouse) }
+                onPositionChanged: function(mouse) { toSchedule.moved(mouse) }
+                onReleased: function(mouse) { toSchedule.released(mouse) }
+                onCanceled: toSchedule.canceled()
+
+                ScheduleDragSource {
+                    id: toSchedule
+                    area: rowMa
+                    payload: function() {
+                        const i = index
+                        return { label: modelData.title,
+                                 add: function() { root.addToScheduleFor(i) } }
+                    }
+                    onActivated: {
+                        AppState.setLibraryFluid(root.tabKey, index)
+                        AppState.setActiveFocus("library")
+                        root.pushLiveFor(index)
+                    }
                 }
             }
         }

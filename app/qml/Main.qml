@@ -576,6 +576,36 @@ ApplicationWindow {
         z: 10002
     }
 
+    // What a library drag to the schedule is carrying, under the pointer
+    // (AppState "Library drag to the schedule").
+    Rectangle {
+        readonly property point _at: parent.mapFromItem(null, AppState.libraryDragX,
+                                                        AppState.libraryDragY)
+        visible: AppState.libraryDragActive
+        z: 10003
+        x: _at.x + 14
+        y: _at.y + 12
+        width: Math.min(280, dragLabel.implicitWidth + Theme.space.md * 2)
+        height: 28
+        radius: Theme.radius.md
+        color: Theme.color.raised
+        border.color: Theme.color.borderStrong
+        border.width: 1
+
+        Text {
+            id: dragLabel
+            anchors.fill: parent
+            anchors.leftMargin: Theme.space.md
+            anchors.rightMargin: Theme.space.md
+            verticalAlignment: Text.AlignVCenter
+            text: AppState.libraryDragLabel
+            color: Theme.color.textPrimary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
+            elide: Text.ElideRight
+        }
+    }
+
     // ── Edge resize zones ───────────────────────────────────────────────
     // 6 px-wide strips at each edge plus 8 px-square corner zones, hung
     // directly off the ApplicationWindow root so they ride the actual
