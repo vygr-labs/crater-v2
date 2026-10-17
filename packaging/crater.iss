@@ -29,6 +29,7 @@
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
+#define BrandFont "FunnelSans-VariableFont_wght.ttf"
 
 [Setup]
 AppId={{4D6E3F0E-9C2C-4F88-9C04-7A2B0A4A3B5E}}
@@ -43,6 +44,8 @@ DefaultDirName={autopf}\Crater
 DefaultGroupName=Crater
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\crater.exe
+; Setup.exe, its windows and the uninstaller carry the Crater icon.
+SetupIconFile=crater.ico
 UninstallDisplayName=Crater {#AppVersion}
 OutputDir={#OutputDir}
 OutputBaseFilename=Crater-Setup-{#AppVersion}
@@ -50,7 +53,16 @@ Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-WizardStyle=modern
+; Dark, like the app, in Setup and Uninstall alike. Needs Inno Setup 6.6
+; or later. The wizard images use the splash's motif: the logo's cyan disc
+; with rings around it, drawn whole on the wizard's background colour. One
+; file per display scale, 100% to 250%, so Setup picks a sharp one.
+WizardStyle=modern dark
+; The console's panel surface, so the pages match the images.
+WizardBackColor=#18181b
+DisableWelcomePage=no
+WizardImageFile=installer\wizard-100.png,installer\wizard-125.png,installer\wizard-150.png,installer\wizard-175.png,installer\wizard-200.png,installer\wizard-225.png,installer\wizard-250.png
+WizardSmallImageFile=installer\wizard-small-100.png,installer\wizard-small-125.png,installer\wizard-small-150.png,installer\wizard-small-175.png,installer\wizard-small-200.png,installer\wizard-small-225.png,installer\wizard-small-250.png
 PrivilegesRequired=admin
 CloseApplications=yes
 RestartApplications=no
@@ -58,12 +70,31 @@ RestartApplications=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[LangOptions]
+; Funnel Sans, loaded for this process only by [Code] below.
+DialogFontName=Funnel Sans
+WelcomeFontName=Funnel Sans
+
+[Messages]
+; Shorter than the stock wording. Setup closes a running Crater itself
+; (CloseApplications), so the advice to close other programs is dropped.
+WelcomeLabel1=Welcome to Crater
+WelcomeLabel2=This installs [name/ver] on your computer.
+FinishedHeadingLabel=Crater is installed
+FinishedLabel=[name/ver] is ready. You can open it from the Start menu.
+FinishedLabelNoIcons=[name/ver] is ready.
+
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Files]
 Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; The app's font, for Setup's and Uninstall's own text (see [Code]). Setup
+; extracts it to {tmp}. The copy in {app} is for the uninstaller, which
+; cannot extract anything.
+Source: "..\app\resources\fonts\{#BrandFont}"; Flags: dontcopy
+Source: "..\app\resources\fonts\{#BrandFont}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
 ; VC++ runtime bootstrap. Exit code 1638 means a newer version is already
@@ -95,6 +126,63 @@ Name: "{group}\Uninstall Crater"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Crater";     Filename: "{app}\crater.exe"; Tasks: desktopicon
 
 [Code]
+// Setup and Uninstall set their text in Funnel Sans, the app's font
+// (DialogFontName in [LangOptions]). It is loaded for this process only
+// (FR_PRIVATE), so nothing is installed into Windows, and unloaded at the
+// end so the temp copy can be deleted. If it fails to load, Windows uses
+// its nearest face instead.
+const
+  FR_PRIVATE = $10;
+
+function AddFontResourceEx(FileName: String; Flags: Cardinal; Reserved: Cardinal): Integer;
+  external 'AddFontResourceExW@gdi32.dll stdcall';
+function RemoveFontResourceEx(FileName: String; Flags: Cardinal; Reserved: Cardinal): Integer;
+  external 'RemoveFontResourceExW@gdi32.dll stdcall';
+
+var
+  BrandFontPath: String;
+
+procedure LoadBrandFont(Path: String);
+begin
+  if AddFontResourceEx(Path, FR_PRIVATE, 0) > 0 then
+    BrandFontPath := Path;
+end;
+
+procedure UnloadBrandFont();
+begin
+  if BrandFontPath <> '' then
+    RemoveFontResourceEx(BrandFontPath, FR_PRIVATE, 0);
+  BrandFontPath := '';
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  ExtractTemporaryFile('{#BrandFont}');
+  LoadBrandFont(ExpandConstant('{tmp}\{#BrandFont}'));
+  Result := True;
+end;
+
+procedure DeinitializeSetup();
+begin
+  UnloadBrandFont();
+end;
+
+// From a temp copy, so the installed file is free to be deleted.
+function InitializeUninstall(): Boolean;
+var
+  Copy: String;
+begin
+  Copy := ExpandConstant('{tmp}\{#BrandFont}');
+  if FileCopy(ExpandConstant('{app}\{#BrandFont}'), Copy, False) then
+    LoadBrandFont(Copy);
+  Result := True;
+end;
+
+procedure DeinitializeUninstall();
+begin
+  UnloadBrandFont();
+end;
+
 function LaunchRequested(): Boolean;
 begin
   // True only when the caller passed /LAUNCH=1. In-app updates set it; a
