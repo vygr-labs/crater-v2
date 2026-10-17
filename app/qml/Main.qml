@@ -569,6 +569,13 @@ ApplicationWindow {
         z: 10000
     }
 
+    // Right-click menu for text boxes. Above every modal and the resize
+    // zones, so it opens over a dialog without closing it.
+    TextBoxMenu {
+        anchors.fill: parent
+        z: 10002
+    }
+
     // ── Edge resize zones ───────────────────────────────────────────────
     // 6 px-wide strips at each edge plus 8 px-square corner zones, hung
     // directly off the ApplicationWindow root so they ride the actual
@@ -972,7 +979,7 @@ ApplicationWindow {
         sequence: "Escape"
         autoRepeat: false
         enabled: (AppState.activeModal !== "" || AppState.workspaceMode === "")
-                 && !AppState.colorPopoverOpen
+                 && !AppState.colorPopoverOpen && !AppState.textMenuOpen
         onActivated: {
             if (AppState.activeModal !== "") {
                 AppState.modalEscape()

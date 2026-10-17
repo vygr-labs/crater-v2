@@ -12,6 +12,8 @@ qt_add_executable(crater
     src/LogReportService.h
     src/SingleInstance.cpp
     src/SingleInstance.h
+    src/TextContextMenu.cpp
+    src/TextContextMenu.h
     # First-launch splash while the one-time Bible import runs.
     src/StartupGuard.cpp
     src/StartupGuard.h
@@ -166,6 +168,7 @@ qt_add_qml_module(crater
         qml/components/EditorViewToggle.qml
         qml/components/ColorPicker.qml
         qml/components/ColorPickerPopover.qml
+        qml/components/TextBoxMenu.qml
         qml/components/ColorSwatchInput.qml
         qml/components/MediaPickerPopover.qml
         qml/components/ConfirmationOverlay.qml

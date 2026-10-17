@@ -470,6 +470,7 @@ Rectangle {
     // closed a dialog from also deselecting or closing.
     Shortcut { sequence: "Escape"
         enabled: AppState.activeModal === "" && !AppState.colorPopoverOpen
+                 && !AppState.textMenuOpen
         onActivated: {
             if (AppState.isTrailingEscape()) return
             if (workspace.selectedNodeId !== "") workspace.selectedNodeId = ""

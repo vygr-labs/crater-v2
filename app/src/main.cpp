@@ -39,6 +39,7 @@
 #include "BrowserCastService.h"  // BrowserCast (removable feature)
 #include "ClipboardService.h"
 #include "FileDialogService.h"
+#include "TextContextMenu.h"
 #include "LogReportService.h"
 #include "UpdateService.h"
 #include "MediaPlaybackService.h"
@@ -516,6 +517,7 @@ int main(int argc, char* argv[])
     // that. Source window is wired from Main.qml's Component.onCompleted.
     crater::NdiService        ndiService;
     crater::FileDialogService fileDialogService;
+    crater::TextContextMenu   textContextMenu;
     // Thin QtGui clipboard shim — lets QML copy scripture text to the system
     // clipboard. Stateless, no deps; see ClipboardService.h for why it's in
     // the app target rather than crater-core.
@@ -610,6 +612,7 @@ int main(int argc, char* argv[])
     crater::WindowControls windowControls;
     qmlRegisterSingletonInstance("Crater", 1, 0, "WindowControls",     &windowControls);
     qmlRegisterSingletonInstance("Crater", 1, 0, "FileDialogService",     &fileDialogService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "TextContextMenu",       &textContextMenu);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "HelpLinks",             &helpLinks);
@@ -732,6 +735,7 @@ int main(int argc, char* argv[])
             crater::installNativeWindowChrome(consoleWindow);
             crater::instance::setConsole(consoleWindow);
             fileDialogService.setOwner(consoleWindow);
+            textContextMenu.attach(consoleWindow);
             crater::restoreWindowPlacement(consoleWindow);
 
             // The first painted frame is what "this launch worked" means to
