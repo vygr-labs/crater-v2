@@ -431,6 +431,7 @@ ModalShell {
                     // fight the caret on every keystroke. Seeded once in
                     // Component.onCompleted.
                     onTextChanged: root._title = text
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
                 }
             }
         }
@@ -617,6 +618,7 @@ ModalShell {
                             id: addMa
                             anchors.fill: parent
                             hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: root._addPage()
                         }
                     }

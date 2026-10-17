@@ -53,7 +53,7 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: -4
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: root.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: root.toggled()
     }
 }

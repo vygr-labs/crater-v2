@@ -131,6 +131,7 @@ ModalShell {
                         selectByMouse: true
                         text: root._valid ? root.media.title : ""
                         onAccepted: root._save()
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
             }

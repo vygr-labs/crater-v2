@@ -222,6 +222,7 @@ Item {
                                 NdiService.streamName = text
                             }
                         }
+                        HoverHandler { cursorShape: Qt.IBeamCursor }
                     }
                 }
             }
