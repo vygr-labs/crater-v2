@@ -54,9 +54,9 @@ SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Dark, like the app, in Setup and Uninstall alike. Needs Inno Setup 6.6
-; or later. The wizard images are drawn from the startup splash: the logo's
-; cyan disc rising from the bottom on the console's dark surface. One file
-; per display scale, 100% to 250%, so Setup picks a sharp one.
+; or later. The wizard images use the splash's motif: the logo's cyan disc
+; with rings around it, drawn whole on the wizard's background colour. One
+; file per display scale, 100% to 250%, so Setup picks a sharp one.
 WizardStyle=modern dark
 ; The console's panel surface, so the pages match the images.
 WizardBackColor=#18181b
