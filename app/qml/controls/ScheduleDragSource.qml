@@ -87,4 +87,9 @@ QtObject {
         _dragging = false
         AppState.cancelLibraryDrag()
     }
+
+    // The row can be rebuilt mid-drag (a media import finishing reloads the
+    // grid). Its MouseArea never sees the release then, so end the drag
+    // here, or the label would stay stuck to the pointer.
+    Component.onDestruction: canceled()
 }
