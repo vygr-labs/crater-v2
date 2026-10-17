@@ -672,19 +672,32 @@ Column {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 36; height: 36; radius: 0
                         color: Theme.color.elevated
+                        // The picture, or a video's first-frame thumbnail
+                        // (the film icon until VideoThumbnailer saves it).
                         Image {
-                            visible: root._media && root._media.type === "image"
+                            id: mediaThumb
+                            visible: status === Image.Ready
                             anchors.fill: parent
                             anchors.margins: 1
                             asynchronous: true
                             cache: true
-                            source: root._media ? "file:///" + root._media.path : ""
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                            source: {
+                                const m = root._media
+                                if (!m) return ""
+                                if (m.type === "image") return "file:///" + m.path
+                                if (m.type !== "video") return ""
+                                const _ = VideoThumbnailer.readyCounter   // re-read when a thumb lands
+                                const p = VideoThumbnailer.thumbnailPathFor(m.id)
+                                return p.length > 0 ? "file:///" + p : ""
+                            }
                             fillMode: Image.PreserveAspectCrop
                         }
                         AppIcon {
-                            visible: !root._media || root._media.type !== "image"
+                            visible: mediaThumb.status !== Image.Ready
                             anchors.centerIn: parent
-                            name: root._media ? "film" : "image"
+                            name: root._media && root._media.type === "video" ? "film" : "image"
                             color: Theme.color.textTertiary
                             size: Theme.icon.md
                         }
