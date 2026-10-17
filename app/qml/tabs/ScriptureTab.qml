@@ -60,6 +60,24 @@ Item {
         interval: 120
         onTriggered: root._debouncedQuery = root.queryText
     }
+
+    // A key that acts on the parsed reference (Enter, Ctrl+T, the arrows)
+    // can land inside the debounce, while fluidIndex still points at the
+    // PREVIOUS parse: "jn 3 16" + Enter put John 3:1 on screen. Settle the
+    // typed text first. onParsedRefChanged moves fluidIndex synchronously,
+    // so the caller reads the right verse straight after.
+    function _settleQuery() {
+        if (!queryDebounce.running) return
+        queryDebounce.stop()
+        _debouncedQuery = queryText
+    }
+
+    // A reference that doesn't resolve (a typo, a verse this translation
+    // lacks) must not act on whatever verse was there before.
+    function _typedReferenceUnresolved() {
+        return mode === "reference" && _parserQuery.length > 0 && !parsedRef
+    }
+
     // Text last written into the search input BY a sync rather than typed.
     // _syncInputToVerse rewrites the box after a schedule click, a verse
     // click and an arrow step, and that rewrite drives parsedRef exactly as
@@ -495,8 +513,41 @@ Item {
         // active override keeps the typed-code state alive as long as the
         // operator is still navigating the synced reference.
         if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
+        _spanInBox = false
         _syncedInputText = text
         AppState.setSearch(tabKey, text)
+    }
+
+    // True after _syncInputToRange wrote a span into the box, until a
+    // single-verse sync replaces it. Lets onParsedRefChanged tell an operator
+    // narrowing that span to one verse from one typing a translation code
+    // after a Ctrl+click set (whose box only ever shows the anchor).
+    property bool _spanInBox: false
+
+    // The same sync for a Shift+Arrow / Shift+click span: writes "John 3 14-16"
+    // so the box shows what Enter will send. The parser only reads a span
+    // inside one chapter, so a span that crosses a chapter leaves the box as
+    // it was. The echo of this text must not touch the selection or the
+    // anchor (see _isRangeEcho), or extending upward would snap the anchor
+    // to the low end after one keypress.
+    function _syncInputToRange(lo, hi) {
+        if (lo === hi) { _syncInputToVerse(lo); return }
+        if (mode !== "reference") return
+        const a = currentVerses[lo], b = currentVerses[hi]
+        if (!a || !b || a.book !== b.book || a.chapter !== b.chapter) return
+        let text = a.book + " " + a.chapter + " " + a.verse + "-" + b.verse
+        if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
+        _spanInBox = true
+        _syncedInputText = text
+        AppState.setSearch(tabKey, text)
+    }
+    // True when the parse in flight is the echo of _syncInputToRange. The
+    // selection it describes is already in place, so the parse handlers
+    // leave it alone. Reads _spanInBox, not parsedRange: onParsedRefChanged
+    // runs before parsedRange re-evaluates, so parsedRange still describes
+    // the previous text there (the same trap as _inputIsSyncEcho above).
+    function _isRangeEcho() {
+        return _spanInBox && _inputIsSyncEcho()
     }
 
     // A typed range selects the span. Runs independently of
@@ -506,6 +557,7 @@ Item {
     onParsedRangeChanged: {
         const r = parsedRange
         if (!r) return
+        if (_isRangeEcho()) return
         if (r.verseEnd > r.verseStart) {
             const lo = indexOf(r.book, r.chapter, r.verseStart)
             if (lo < 0) return
@@ -531,14 +583,23 @@ Item {
     // When the parser yields a match, scroll there and highlight.
     onParsedRefChanged: {
         if (!parsedRef) return
+        if (_isRangeEcho()) return
         const idx = indexOf(parsedRef.book, parsedRef.chapter, parsedRef.verse)
         if (idx >= 0) {
             // Typing a reference outside the current multi-selection starts
             // over, otherwise _activeIndices() would join the new verse onto
-            // the old set. Arrow keys echo back through here too, so leave
-            // the set alone for those.
+            // the old set. So does turning a span the box showed
+            // ("John 3 16-18") into a single verse ("John 3 16"), since the
+            // box no longer says what Enter would send. Arrow keys echo back
+            // through here too, so leave the set alone for those.
             const sel = AppState.librarySelectedIndices[tabKey] || []
-            if (!_inputIsSyncEcho() && sel.length > 0 && sel.indexOf(idx) < 0) {
+            // Parsed here rather than read from parsedRange, which can still
+            // hold the previous text at this point (see _isRangeEcho).
+            const span = BibleService.parseReferenceRange(_parserQuery)
+            const typedSpan = !!(span && span.valid) && span.verseEnd > span.verseStart
+            if (!_inputIsSyncEcho() && sel.length > 0
+                    && (sel.indexOf(idx) < 0 || (_spanInBox && !typedSpan))) {
+                _spanInBox = false
                 _rangeFromInput = false
                 AppState.clearLibrarySelected(tabKey)
             }
@@ -1313,6 +1374,7 @@ Item {
                     // so the combined-verse content reflects the new set.
                     AppState.setActiveFocus("library")
                     root.pushPreviewFor(index)
+                    root._syncInputToRange(lo, hi)
                 }
 
                 // Toggle this row in/out of the multi-selection without
@@ -1463,10 +1525,9 @@ Item {
     // cursor starts on the anchor, which makes the first Shift+Arrow select
     // two rows rather than one.
     //
-    // The reference input is deliberately left alone here. Rewriting it
-    // would re-trigger the parse, and onParsedRangeChanged would then reset
-    // the anchor to the low end of the range — extending upward would fight
-    // itself after a single keypress.
+    // The reference input shows the span. Its echo re-triggers the parse,
+    // which used to reset the anchor to the low end and make extending
+    // upward fight itself, so the parse handlers skip it (_isRangeEcho).
     function _extendSelectionByKey(dir) {
         const n = currentVerses.length
         if (n === 0) return
@@ -1492,6 +1553,7 @@ Item {
         AppState.setActiveFocus("library")
         if (SettingsService.autoScrollLibrary) list.positionViewAtIndex(next, ListView.Contain)
         pushPreviewFor(anchor)
+        _syncInputToRange(from, to)
     }
 
     // ── Keyboard navigation routed from TabSearchBar ────────────────────
@@ -1499,6 +1561,7 @@ Item {
         target: AppState
         function onLibraryNavigateDown(extend) {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._settleQuery()
             if (root.currentVerses.length === 0) return
             if (extend) { root._extendSelectionByKey(1); return }
             // Plain arrow nav clears the multi-selection — operator is
@@ -1513,6 +1576,7 @@ Item {
         }
         function onLibraryNavigateUp(extend) {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._settleQuery()
             if (root.currentVerses.length === 0) return
             if (extend) { root._extendSelectionByKey(-1); return }
             AppState.clearLibrarySelected(root.tabKey)
@@ -1523,22 +1587,14 @@ Item {
         }
         function onLibraryActivate() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
-            // Enter right after the last keystroke lands inside the 120 ms
-            // debounce, while fluidIndex still points at the PREVIOUS parse:
-            // "jn 3 16" + Enter put John 3:1 on screen. Settle the typed text
-            // first; onParsedRefChanged moves fluidIndex synchronously.
-            if (queryDebounce.running) {
-                queryDebounce.stop()
-                root._debouncedQuery = root.queryText
-            }
-            // A reference that doesn't resolve (a typo, a verse this
-            // translation lacks) must not send whatever was there before.
-            if (root.mode === "reference" && root._parserQuery.length > 0 && !root.parsedRef)
-                return
+            root._settleQuery()
+            if (root._typedReferenceUnresolved()) return
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
         }
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._settleQuery()
+            if (root._typedReferenceUnresolved()) return
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
         }
     }
