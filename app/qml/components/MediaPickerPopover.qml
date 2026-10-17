@@ -174,8 +174,9 @@ Item {
                     anchors.rightMargin: 8
                     spacing: 10
 
-                    // Thumb — image preview for images, film icon for videos,
-                    // and a different "x" affordance for the None option.
+                    // Thumb — the picture for images, the first-frame
+                    // thumbnail VideoThumbnailer saved for videos (the film
+                    // icon until it exists), and an "x" for the None option.
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 36; height: 36; radius: 0
@@ -184,22 +185,30 @@ Item {
                         border.width: 1
 
                         Image {
-                            visible: !parent.parent.parent._isNone
-                                  && modelData.type === "image"
+                            id: pickThumb
+                            visible: !parent.parent.parent._isNone && status === Image.Ready
                             anchors.fill: parent
                             anchors.margins: 1
                             asynchronous: true
                             cache: true
-                            source: modelData.path
-                                ? "file:///" + modelData.path
-                                : ""
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                            source: {
+                                if (parent.parent.parent._isNone || parent.parent.parent._isImport) return ""
+                                if (modelData.type === "image")
+                                    return modelData.path ? "file:///" + modelData.path : ""
+                                if (modelData.type !== "video") return ""
+                                const _ = VideoThumbnailer.readyCounter   // re-read when a thumb lands
+                                const p = VideoThumbnailer.thumbnailPathFor(modelData.id)
+                                return p.length > 0 ? "file:///" + p : ""
+                            }
                             fillMode: Image.PreserveAspectCrop
                         }
                         AppIcon {
                             anchors.centerIn: parent
                             visible: parent.parent.parent._isNone
                                   || parent.parent.parent._isImport
-                                  || modelData.type === "video"
+                                  || (modelData.type === "video" && pickThumb.status !== Image.Ready)
                             name: parent.parent.parent._isImport ? "plus"
                                 : parent.parent.parent._isNone   ? "x"
                                 : modelData.type === "video"     ? "film"
