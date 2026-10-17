@@ -2,6 +2,7 @@
 
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QSettings>
@@ -44,26 +45,53 @@ void FileDialogService::setOwner(QWindow* owner)
 // the console, and the console stays clickable underneath, so the operator
 // sees a button that does nothing. Owned by the console, the picker opens
 // over it and blocks it until it closes.
-bool FileDialogService::run(QFileDialog& dialog, const char* kind)
+QStringList FileDialogService::run(const char* kind,
+                                   const std::function<void(QFileDialog&)>& setup)
 {
     if (m_open) {
         qWarning() << "FileDialog:" << kind << "ignored, a picker is already open";
-        return false;
+        return {};
     }
-    dialog.setWindowModality(Qt::ApplicationModal);
-    if (m_owner) {
-        dialog.winId();   // creates windowHandle() so it can take an owner
-        if (QWindow* handle = dialog.windowHandle()) handle->setTransientParent(m_owner);
-    }
-    qInfo().noquote() << "FileDialog: opening" << kind << "in" << dialog.directory().path()
-                      << (m_owner ? "" : "(no owner window)");
     m_open = true;
-    const bool accepted = dialog.exec() == QDialog::Accepted;
+    auto show = [&](bool qtPicker, qint64* elapsedMs) -> QStringList {
+        QFileDialog dialog;
+        setup(dialog);
+        if (qtPicker) dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+        dialog.setWindowModality(Qt::ApplicationModal);
+        if (m_owner) {
+            dialog.winId();   // creates windowHandle() so it can take an owner
+            if (QWindow* handle = dialog.windowHandle()) handle->setTransientParent(m_owner);
+        }
+        qInfo().noquote() << "FileDialog: opening" << kind << "in" << dialog.directory().path()
+                          << (m_owner ? "" : "(no owner window)")
+                          << (qtPicker ? "(Qt picker)" : "");
+        QElapsedTimer shown;
+        shown.start();
+        const bool accepted = dialog.exec() == QDialog::Accepted;
+        if (elapsedMs) *elapsedMs = shown.elapsed();
+        return accepted ? dialog.selectedFiles() : QStringList();
+    };
+
+    qint64 elapsed = 0;
+    QStringList picked = show(m_useQtPicker, &elapsed);
+
+    // On some PCs the Windows picker fails before it draws, and Qt reports
+    // that as a cancel: on one Windows 10 machine every picker "cancelled"
+    // 30 to 50 ms after opening, so Import and Export did nothing at all.
+    // Nobody opens and cancels a picker in a quarter of a second, so read
+    // that as a failure, open Qt's own picker instead, and keep using it
+    // for the rest of the session.
+    if (picked.isEmpty() && !m_useQtPicker && elapsed < 250) {
+        qWarning().noquote() << "FileDialog: the system picker closed after" << elapsed
+                             << "ms without being used, switching to Qt's picker";
+        m_useQtPicker = true;
+        picked = show(true, nullptr);
+    }
     m_open = false;
     qInfo().noquote() << "FileDialog:" << kind
-                      << (accepted ? QStringLiteral("picked %1 item(s)").arg(dialog.selectedFiles().size())
-                                   : QStringLiteral("cancelled"));
-    return accepted;
+                      << (!picked.isEmpty() ? QStringLiteral("picked %1 item(s)").arg(picked.size())
+                                            : QStringLiteral("cancelled"));
+    return picked;
 }
 
 void FileDialogService::rememberDir(const QString& rememberKey, const QString& pickedPath)
@@ -77,10 +105,12 @@ QString FileDialogService::chooseOpenFile(QString title, QStringList nameFilters
 {
     const QString initialDir = startDir(rememberKey, fallbackDir,
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
-    QFileDialog dialog(nullptr, title, initialDir, nameFilters.join(QStringLiteral(";;")));
-    dialog.setFileMode(QFileDialog::ExistingFile);
-    if (!run(dialog, "open file")) return {};
-    const QString picked = dialog.selectedFiles().value(0);
+    const QString picked = run("open file", [&](QFileDialog& dialog) {
+        dialog.setWindowTitle(title);
+        dialog.setDirectory(initialDir);
+        dialog.setNameFilters(nameFilters);
+        dialog.setFileMode(QFileDialog::ExistingFile);
+    }).value(0);
     rememberDir(rememberKey, picked);
     return picked;
 }
@@ -96,10 +126,12 @@ QStringList FileDialogService::chooseOpenFiles(QString title, QStringList nameFi
         initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     }
     initialDir = startDir(rememberKey, fallbackDir, initialDir);
-    QFileDialog dialog(nullptr, title, initialDir, nameFilters.join(QStringLiteral(";;")));
-    dialog.setFileMode(QFileDialog::ExistingFiles);
-    if (!run(dialog, "open files")) return {};
-    const QStringList picked = dialog.selectedFiles();
+    const QStringList picked = run("open files", [&](QFileDialog& dialog) {
+        dialog.setWindowTitle(title);
+        dialog.setDirectory(initialDir);
+        dialog.setNameFilters(nameFilters);
+        dialog.setFileMode(QFileDialog::ExistingFiles);
+    });
     if (!picked.isEmpty()) rememberDir(rememberKey, picked.first());
     return picked;
 }
@@ -109,22 +141,25 @@ QString FileDialogService::chooseSaveFile(QString title,
                                           QStringList nameFilters)
 {
     const QString initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    const QString initialPath = QDir(initialDir).filePath(suggestedName);
-    QFileDialog dialog(nullptr, title, initialPath, nameFilters.join(QStringLiteral(";;")));
-    dialog.setAcceptMode(QFileDialog::AcceptSave);
-    dialog.setFileMode(QFileDialog::AnyFile);
-    if (!run(dialog, "save file")) return {};
-    return dialog.selectedFiles().value(0);
+    return run("save file", [&](QFileDialog& dialog) {
+        dialog.setWindowTitle(title);
+        dialog.setDirectory(initialDir);
+        dialog.setNameFilters(nameFilters);
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        dialog.setFileMode(QFileDialog::AnyFile);
+        dialog.selectFile(suggestedName);
+    }).value(0);
 }
 
 QString FileDialogService::chooseDirectory(QString title)
 {
     const QString initialDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    QFileDialog dialog(nullptr, title, initialDir);
-    dialog.setFileMode(QFileDialog::Directory);
-    dialog.setOption(QFileDialog::ShowDirsOnly);
-    if (!run(dialog, "choose folder")) return {};
-    return dialog.selectedFiles().value(0);
+    return run("choose folder", [&](QFileDialog& dialog) {
+        dialog.setWindowTitle(title);
+        dialog.setDirectory(initialDir);
+        dialog.setFileMode(QFileDialog::Directory);
+        dialog.setOption(QFileDialog::ShowDirsOnly);
+    }).value(0);
 }
 
 bool FileDialogService::pathExists(QString path) const

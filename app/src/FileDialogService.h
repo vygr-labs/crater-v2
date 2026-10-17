@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QFileDialog;
 class QWindow;
 
@@ -80,12 +82,16 @@ public:
     Q_INVOKABLE bool pathExists(QString path) const;
 
 private:
-    // Shows `dialog` owned by the console and waits for it. False when
-    // cancelled, or when another picker is already open.
-    bool run(QFileDialog& dialog, const char* kind);
+    // Builds a picker with `setup`, shows it owned by the console and waits
+    // for it. The chosen paths, or empty when cancelled or when another
+    // picker is already open.
+    QStringList run(const char* kind, const std::function<void(QFileDialog&)>& setup);
 
     QPointer<QWindow> m_owner;
     bool              m_open = false;
+    // Set once the system picker has failed this session, after which
+    // every picker is Qt's own (see run()).
+    bool              m_useQtPicker = false;
 
     // The folder to open in: remembered, then fallback, then `standard`.
     static QString startDir(const QString& rememberKey, const QString& fallbackDir,
