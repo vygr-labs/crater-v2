@@ -136,6 +136,7 @@ qt_add_qml_module(crater
         qml/controls/PopoverMenu.qml
         qml/controls/MenuRow.qml
         qml/controls/RightClickArea.qml
+        qml/controls/ScheduleDragSource.qml
         qml/controls/ToggleSwitch.qml
         qml/controls/SelectChip.qml
         qml/controls/Combobox.qml
