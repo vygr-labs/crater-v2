@@ -46,7 +46,9 @@ PopoverMenu {
         return [
             { label: qsTr("Cut"),  kbd: "Ctrl+X", enabled: hasSel && editable,
               action: function() { root._restoreSelection(t, start, end); t.cut() } },
-            { label: qsTr("Copy"), kbd: "Ctrl+C", enabled: hasSel,
+            // On the console Ctrl+C clears the screen, so no hint there.
+            { label: qsTr("Copy"), kbd: AppState.consoleShortcutsActive ? "" : "Ctrl+C",
+              enabled: hasSel,
               action: function() { root._restoreSelection(t, start, end); t.copy() } },
             { label: qsTr("Paste"), kbd: "Ctrl+V", enabled: editable && t.canPaste,
               action: function() {
@@ -69,6 +71,7 @@ PopoverMenu {
     // stand down while it is open (AppState.textMenuOpen).
     Shortcut {
         sequence: "Escape"
+        autoRepeat: false
         enabled: root.active
         onActivated: root.close()
     }

@@ -77,11 +77,12 @@ Item {
         // a picker is open: Main.qml's and the theme editor's both stand down
         // on AppState.colorPopoverOpen, since two enabled Escape Shortcuts
         // cancel each other out. Lives on the chrome, which is visible and
-        // parented to the window while open.
+        // parented to the window while open. Stands down in turn while a
+        // text box right-click menu is open over it (the hex field).
         Shortcut {
             sequence: "Escape"
             autoRepeat: false
-            enabled: root._open
+            enabled: root._open && !AppState.textMenuOpen
             onActivated: root._close()
         }
 
