@@ -9,8 +9,9 @@ import QtQuick
 // authoritative indicator and add visual noise in a dense schedule.
 //
 // Emits clicked(button, modifiers), doubleClicked, rightClicked(x, y), and
-// drag lifecycle signals (dragStarted / dragMoved / dragReleased). The host
-// panel keeps the drag state and triggers ScheduleService.moveItem on release.
+// drag lifecycle signals (dragStarted / dragMoved / dragReleased /
+// dragCanceled). The host panel keeps the drag state and triggers
+// ScheduleService.moveItem on release.
 Item {
     id: root
 
@@ -64,6 +65,9 @@ Item {
     signal dragStarted(int rowIndex)
     signal dragMoved(int rowIndex, real offsetY)
     signal dragReleased(int rowIndex, real offsetY)
+    // The drag ended without a drop (the press was cancelled, or the row
+    // was removed). The panel clears its drag state and moves nothing.
+    signal dragCanceled(int rowIndex)
 
     implicitHeight: Theme.size.scheduleRowHeight
     implicitWidth: 400
@@ -73,6 +77,10 @@ Item {
     // alone wouldn't work — ListView stacks delegates inside contentItem,
     // and a child's z only reorders within its own delegate subtree.
     z: isDragging ? 100 : 0
+
+    // A row removed mid-drag never sees its release. Tell the panel the drag
+    // is over, with no move, or the list stays frozen with the line up.
+    Component.onDestruction: if (isDragging) dragCanceled(rowIndex)
 
     // ── Row body ────────────────────────────────────────────────────────
     // Flat container — translates by dragOffsetY during a drag.
@@ -195,8 +203,7 @@ Item {
                     if (!root.isDragging) return
                     root.isDragging = false
                     root.dragOffsetY = 0
-                    root.dragMoved(root.rowIndex, 0)
-                    root.dragReleased(root.rowIndex, 0)
+                    root.dragCanceled(root.rowIndex)
                 }
             }
         }
@@ -367,8 +374,7 @@ Item {
                 // Put the row back where it was, with no move.
                 root.isDragging = false
                 root.dragOffsetY = 0
-                root.dragMoved(root.rowIndex, 0)
-                root.dragReleased(root.rowIndex, 0)
+                root.dragCanceled(root.rowIndex)
             }
         }
     }

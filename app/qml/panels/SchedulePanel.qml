@@ -609,6 +609,10 @@ Rectangle {
                 onDragMoved: function(i, off) {
                     list.draggedOffsetY = off
                 }
+                onDragCanceled: function(i) {
+                    list.draggedRow = -1
+                    list.draggedOffsetY = 0
+                }
                 onDragReleased: function(i, off) {
                     const target = list.dropTargetIndex()
                     list.draggedRow = -1
