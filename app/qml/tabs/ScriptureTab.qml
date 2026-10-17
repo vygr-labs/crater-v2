@@ -372,6 +372,9 @@ Item {
             const verseStr = String(v.verse)
             if (verseStr === String(target)) { exactIdx = i; break }
             if (rangeIdx === -1 && verseMatches(verseStr, target)) rangeIdx = i
+            // A paragraph hit (The Message) covers verse..verseEnd.
+            if (rangeIdx === -1 && v.verseEnd > v.verse
+                    && target >= v.verse && target <= v.verseEnd) rangeIdx = i
         }
         return exactIdx !== -1 ? exactIdx : rangeIdx
     }
@@ -559,7 +562,7 @@ Item {
         if (mode !== "reference") return
         const a = currentVerses[lo], b = currentVerses[hi]
         if (!a || !b || a.book !== b.book || a.chapter !== b.chapter) return
-        let text = a.book + " " + a.chapter + " " + a.verse + "-" + b.verse
+        let text = a.book + " " + a.chapter + " " + a.verse + "-" + AppState.lastVerse(b)
         if (_queryOverrideCode !== "") text += " " + _queryOverrideCode
         _spanInBox = true
         _syncedInputText = text
@@ -1258,7 +1261,7 @@ Item {
                 anchors.rightMargin: Theme.space.md
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.book + " " + modelData.chapter
-                    + (SettingsService.showVerseNumbers ? ":" + modelData.verse : "")
+                    + (SettingsService.showVerseNumbers ? ":" + AppState.verseSpan(modelData) : "")
                 // Selected: textSecondary (a1a1aa) — quieter than the
                 // verse text's textTitle, so the reference reads as
                 // secondary chrome against the deep-cyan wash.

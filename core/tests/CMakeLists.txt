@@ -214,6 +214,24 @@ target_include_directories(test_bible_cache PRIVATE
 
 add_test(NAME bible_cache COMMAND test_bible_cache)
 
+# -- Paragraph translations -- The Message stores a paragraph under every
+# verse it covers. BibleService lists, looks up and searches it as one row.
+qt_add_executable(test_bible_paragraphs
+    test_bible_paragraphs.cpp
+)
+
+target_link_libraries(test_bible_paragraphs PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_bible_paragraphs PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME bible_paragraphs COMMAND test_bible_paragraphs)
+
 # -- Bundled Bible import -- ElectronDataImporter first run and upgrade --
 # A release can ship a different Bible set. An install that already ran the
 # first import only takes the translations it lacks, keeps what it has, and

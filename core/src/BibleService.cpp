@@ -36,6 +36,31 @@ constexpr QStringView kAllVersesSql = u"SELECT b.name, v.chapter, v.verse, v.tex
     u"WHERE t.code = ? "
     u"ORDER BY b.book_number, v.chapter, v.verse";
 
+// Paraphrases like The Message are written in paragraphs, and the importer
+// stores a paragraph under every verse number it covers (17,011 of MSG's
+// 29,547 rows repeat the one before). Neighbouring verses with the same text
+// are one paragraph, so they become one row spanning them (verse..verseEnd).
+// Only neighbours merge: Psalm 107's refrain repeats word for word four
+// times, and those stay four verses.
+QList<Verse> mergeRepeatedVerses(QList<Verse> in)
+{
+    QList<Verse> out;
+    out.reserve(in.size());
+    for (Verse& v : in) {
+        if (!out.isEmpty() && !v.text.isEmpty()) {
+            Verse& prev = out.last();
+            const int prevEnd = qMax(prev.verse, prev.verseEnd);
+            if (v.verse == prevEnd + 1 && v.chapter == prev.chapter
+                    && v.book == prev.book && v.text == prev.text) {
+                prev.verseEnd = v.verse;
+                continue;
+            }
+        }
+        out.append(std::move(v));
+    }
+    return out;
+}
+
 // Both throw db::Error; callers decide whether a failure is cached.
 QList<Book> readBooks(db::Statement& stmt, const QString& code)
 {
@@ -75,7 +100,7 @@ QList<Verse> readAllVerses(db::Statement& stmt, const QString& code)
         v.text    = stmt.columnText(3);
         out.append(std::move(v));
     }
-    return out;
+    return mergeRepeatedVerses(std::move(out));
 }
 
 // Every translation's verses and books, read on a worker thread when
@@ -132,7 +157,6 @@ struct BibleService::Impl
     // sqlite3_prepare; caching here amortizes that cost across every query.
     db::Statement selectTranslations;
     db::Statement selectBooks;
-    db::Statement selectVerse;
     db::Statement selectChapter;
     db::Statement selectAllVerses;
     db::Statement searchAll;
@@ -171,13 +195,6 @@ struct BibleService::Impl
             "FROM translations "
             "ORDER BY sort_order, code")))
         , selectBooks(conn.prepare(kBooksSql))
-        , selectVerse(conn.prepare(QStringLiteral(
-            "SELECT v.text "
-            "FROM verses v "
-            "JOIN translations t ON t.id = v.translation_id "
-            "JOIN books        b ON b.id = v.book_id "
-            "WHERE t.code = ? AND b.name = ? AND v.chapter = ? AND v.verse = ? "
-            "LIMIT 1")))
         , selectChapter(conn.prepare(QStringLiteral(
             "SELECT v.verse, v.text "
             "FROM verses v "
@@ -344,30 +361,20 @@ QList<Book> BibleService::books(QString translationCode)
     }
 }
 
+// Answered from the merged rows, so a verse inside a paragraph returns the
+// paragraph's row (John 3:17 in MSG is John 3:16-18). A cached translation
+// answers from its row index; otherwise one chapter is read.
 Verse BibleService::verse(QString translationCode, QString bookName, int chapter, int verseNumber)
 {
-    Verse v;
-    if (!m_impl) return v;
-    try {
-        auto& stmt = m_impl->selectVerse;
-        stmt.reset();
-        stmt.bind(1, translationCode);
-        stmt.bind(2, bookName);
-        stmt.bind(3, qint64(chapter));
-        stmt.bind(4, qint64(verseNumber));
-        if (stmt.step()) {
-            v.translationCode = translationCode;
-            v.book            = bookName;
-            v.chapter         = chapter;
-            v.verse           = verseNumber;
-            v.text            = stmt.columnText(0);
-        }
-        stmt.reset();   // close cursor: don't leave a read txn open on the
-                        // bibles connection between lookups (WAL snapshot pin)
-    } catch (const db::Error& e) {
-        qWarning().noquote() << "BibleService::verse():" << e.message();
+    if (!m_impl) return {};
+    if (auto it = m_impl->verses.constFind(translationCode); it != m_impl->verses.cend()) {
+        const int row = verseIndex(translationCode, bookName, chapter, verseNumber);
+        return row >= 0 ? m_impl->verses.value(translationCode).at(row) : Verse();
     }
-    return v;
+    const QList<Verse> rows = this->chapter(translationCode, bookName, chapter);
+    for (const Verse& v : rows)
+        if (v.verse <= verseNumber && verseNumber <= qMax(v.verse, v.verseEnd)) return v;
+    return {};
 }
 
 QList<Verse> BibleService::chapter(QString translationCode, QString bookName, int chapterNumber)
@@ -389,10 +396,11 @@ QList<Verse> BibleService::chapter(QString translationCode, QString bookName, in
             v.text            = stmt.columnText(1);
             out.append(std::move(v));
         }
+        stmt.reset();   // close the cursor so no read txn stays open between lookups
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleService::chapter():" << e.message();
     }
-    return out;
+    return mergeRepeatedVerses(std::move(out));
 }
 
 QList<Verse> BibleService::allVerses(QString translationCode)
@@ -432,7 +440,9 @@ int BibleService::verseIndex(QString translationCode, QString bookName, int chap
                 id = index.bookIds.value(lower, quint32(index.bookIds.size()));
                 index.bookIds.insert(lower, id);
             }
-            index.rows.insert(VerseRows::key(id, v.chapter, v.verse), i);
+            // Every verse a paragraph row covers leads to it.
+            for (int n = v.verse; n <= qMax(v.verse, v.verseEnd); ++n)
+                index.rows.insert(VerseRows::key(id, v.chapter, n), i);
         }
         rows = m_impl->verseRows.insert(translationCode, std::move(index));
     }
@@ -573,12 +583,32 @@ QList<SearchHit> BibleService::search(QString query, QString translationCodeFilt
             hit.score           = stmt->columnDouble(5);
             out.append(std::move(hit));
         }
+        stmt->reset();
     } catch (const db::Error& e) {
         // FTS MATCH syntax errors land here — common with partial user input.
         // Log at debug level (not warning), since users will trigger it constantly.
         qDebug().noquote() << "BibleService::search():" << e.message();
     }
-    return out;
+
+    // The index holds a paragraph once per verse it covers, so one paragraph
+    // matched three times. Each hit takes its row's span and repeats drop,
+    // keeping the best-scored copy where it ranked.
+    QList<SearchHit> merged;
+    merged.reserve(out.size());
+    QSet<QString> seen;
+    for (SearchHit& hit : out) {
+        const Verse row = verse(hit.translationCode, hit.book, hit.chapter, hit.verse);
+        if (!row.text.isEmpty()) {
+            hit.verse    = row.verse;
+            hit.verseEnd = row.verseEnd;
+        }
+        const QString key = hit.translationCode + QLatin1Char('|') + hit.book + QLatin1Char('|')
+                          + QString::number(hit.chapter) + QLatin1Char(':') + QString::number(hit.verse);
+        if (seen.contains(key)) continue;
+        seen.insert(key);
+        merged.append(std::move(hit));
+    }
+    return merged;
 }
 
 QFuture<void> BibleService::rebuildFtsIndex()

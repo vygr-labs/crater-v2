@@ -141,14 +141,17 @@ ModalShell {
                    || String(AppState.activeLibraryGroup.scripture || "").toUpperCase()
         return {
             kind:     "scripture",
-            title:    v.book + " " + v.chapter + ":" + v.verse + " (" + code + ")",
+            title:    v.book + " " + v.chapter + ":" + AppState.verseSpan(v) + " (" + code + ")",
             subtitle: "",
-            pages:    [{ label: v.book + " " + v.chapter + ":" + v.verse, content: v.text }],
+            pages:    [{ label: v.book + " " + v.chapter + ":" + AppState.verseSpan(v), content: v.text }],
             scriptureRef: {
                 translationCode: code,
                 book:            v.book,
                 chapter:         v.chapter,
-                verse:           v.verse
+                verse:           v.verse,
+                // A paragraph hit (The Message) ends past its first verse,
+                // and the live next-verse step continues from here.
+                verseEnd:        AppState.lastVerse(v)
             }
         }
     }
@@ -269,14 +272,14 @@ ModalShell {
             const ref = BibleService.parseReference(q, code)
             const haveRef = ref && ref.text && ref.text.length > 0
             if (haveRef)
-                out.push({ title: ref.book + " " + ref.chapter + ":" + ref.verse + " (" + code + ")",
+                out.push({ title: ref.book + " " + ref.chapter + ":" + AppState.verseSpan(ref) + " (" + code + ")",
                            subtitle: ref.text, source: ref })
             const hits = BibleService.search(q, code)
             for (let i = 0; i < hits.length; i++) {
                 const h = hits[i]
                 if (haveRef && h.book === ref.book && h.chapter === ref.chapter && h.verse === ref.verse)
                     continue  // don't repeat the direct reference
-                out.push({ title: h.book + " " + h.chapter + ":" + h.verse
+                out.push({ title: h.book + " " + h.chapter + ":" + AppState.verseSpan(h)
                                   + " (" + (h.translationCode || code) + ")",
                            subtitle: h.text, source: h })
             }

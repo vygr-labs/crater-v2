@@ -59,8 +59,11 @@ private:
                     .bind(1, tid).bind(2, bookId).bind(3, chapter).bind(4, number)
                     .bind(5, QStringLiteral("%1 original").arg(code)).step();
             };
+            // All verses share one text, so none are seeded side by side.
+            // Neighbours with equal text are one paragraph and merge (see
+            // test_bible_paragraphs).
             verse(john, 3, 16);
-            verse(gen, 1, 2);
+            verse(gen, 1, 3);
             verse(gen, 1, 1);
         }
     }
@@ -109,7 +112,7 @@ private slots:
         QCOMPARE(verses.size(), 3);
         QCOMPARE(verses[0].book, QStringLiteral("Genesis"));
         QCOMPARE(verses[0].verse, 1);
-        QCOMPARE(verses[1].verse, 2);
+        QCOMPARE(verses[1].verse, 3);
         QCOMPARE(verses[2].book, QStringLiteral("John"));
     }
 
@@ -117,7 +120,7 @@ private slots:
     {
         BibleService bible;
         QCOMPARE(bible.verseIndex(QStringLiteral("T1"), QStringLiteral("Genesis"), 1, 1), 0);
-        QCOMPARE(bible.verseIndex(QStringLiteral("T1"), QStringLiteral("Genesis"), 1, 2), 1);
+        QCOMPARE(bible.verseIndex(QStringLiteral("T1"), QStringLiteral("Genesis"), 1, 3), 1);
         // Book names from the parser and from schedule items vary in case.
         QCOMPARE(bible.verseIndex(QStringLiteral("T1"), QStringLiteral("john"), 3, 16), 2);
         QCOMPARE(bible.verseIndex(QStringLiteral("T1"), QStringLiteral("JOHN"), 3, 16), 2);
