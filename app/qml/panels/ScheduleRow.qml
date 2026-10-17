@@ -299,13 +299,28 @@ Item {
         // would slot in here if we ever want per-row drop affordance.
 
         // ── Click area (everything to the right of the drag handle) ──────
+        // Double-click then drag (press a second time and hold, the way
+        // Explorer starts a drag) moves the row like the handle does. The
+        // second press only arms it. Moving past the system drag distance
+        // picks the row up, and releasing without moving is the ordinary
+        // double-click.
         MouseArea {
             id: ma
             anchors.fill: parent
             anchors.leftMargin: handle.width
             hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
+            cursorShape: root.isDragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            // Keeps the list from taking the second press as a flick.
+            preventStealing: _armed
+
+            property bool _armed: false
+            property real _pressY: 0
+
+            // In the delegate's coordinates. The body this area sits in
+            // moves with the drag, so its own coordinates would too.
+            function _rowY(mouse) { return ma.mapToItem(root, mouse.x, mouse.y).y }
+
             onClicked: function(mouse) {
                 if (mouse.button === Qt.RightButton) {
                     root.rightClicked(mouse.x, mouse.y)
@@ -313,7 +328,43 @@ Item {
                     root.clicked(mouse.button, mouse.modifiers)
                 }
             }
-            onDoubleClicked: root.doubleClicked()
+            onDoubleClicked: function(mouse) {
+                if (mouse.button !== Qt.LeftButton) return
+                _armed = true
+                _pressY = _rowY(mouse)
+            }
+            onPositionChanged: function(mouse) {
+                if (!_armed) return
+                const dy = _rowY(mouse) - _pressY
+                if (!root.isDragging) {
+                    if (Math.abs(dy) < Qt.styleHints.startDragDistance) return
+                    root.isDragging = true
+                    root.dragStarted(root.rowIndex)
+                }
+                root.dragOffsetY = dy
+                root.dragMoved(root.rowIndex, dy)
+            }
+            onReleased: {
+                if (!_armed) return
+                _armed = false
+                if (root.isDragging) {
+                    const finalOffset = root.dragOffsetY
+                    root.isDragging = false
+                    root.dragOffsetY = 0
+                    root.dragReleased(root.rowIndex, finalOffset)
+                } else {
+                    root.doubleClicked()
+                }
+            }
+            onCanceled: {
+                _armed = false
+                if (!root.isDragging) return
+                // Put the row back where it was, with no move.
+                root.isDragging = false
+                root.dragOffsetY = 0
+                root.dragMoved(root.rowIndex, 0)
+                root.dragReleased(root.rowIndex, 0)
+            }
         }
     }
 }
