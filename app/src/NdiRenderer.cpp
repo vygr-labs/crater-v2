@@ -81,11 +81,8 @@ constexpr int kRenderBurstTicks = 6;
 // drops to alpha 0 so the QRhi composer skips most of the rasterization
 // work. The actual frame-blanking happens unconditionally at the
 // NdiService::onHeadlessFrame intercept downstream, so this binding is
-// belt+suspenders, not the mechanism. If singletons aren't ready at
-// component creation time (the "Component is not ready" warning at
-// startup that has historically been an issue), the binding still
-// compiles fine — NdiService is a C++ singleton registered eagerly
-// before this engine instantiates any components.
+// belt+suspenders, not the mechanism. NdiService is a C++ singleton
+// registered eagerly before this engine instantiates any components.
 const char* const kSceneQml = R"(
 import QtQuick
 import Crater
@@ -196,10 +193,16 @@ NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
     // ProjectionService state. A second engine would yield a separate
     // SettingsService singleton and the NDI feed would diverge from
     // live operator changes.
+    //
+    // The URL must be qrc: (or file:). Qt compiles setData at once only for
+    // a local URL. Any other scheme counts as remote and loads in the
+    // background, so create() below found the component still loading
+    // ("Component is not ready") and NDI fell back to grabToImage on every
+    // launch. Nothing is read from this path. It only names the component.
     m_impl->sceneComponent = new QQmlComponent(m_impl->qmlEngine, this);
     m_impl->sceneComponent->setData(
         QByteArray(kSceneQml),
-        QUrl(QStringLiteral("crater://NdiRenderer/scene.qml")));
+        QUrl(QStringLiteral("qrc:/crater/NdiRenderer/scene.qml")));
     if (m_impl->sceneComponent->isError()) {
         qWarning().noquote() << "NdiRenderer: failed to compile NDI scene QML:"
                              << m_impl->sceneComponent->errorString();
