@@ -75,7 +75,14 @@ struct ScheduleService::Impl
 {
     db::Connection conn;
     QTimer  autoSaveTimer;
+    // Two separate questions. `dirty` is what the unsaved dot shows: the
+    // working items have edits that no load, save or New has accounted for.
+    // `pendingWrite` is the auto-save's own bookkeeping: the working copy in
+    // current_schedule is behind the items in memory. Auto-save answers the
+    // second and must never touch the first, since writing the working copy
+    // saves nothing into the named schedule.
     bool    dirty = false;
+    bool    pendingWrite = false;
     bool    historyBackedUpThisSession = false;
 
     QJsonArray items;
@@ -194,9 +201,9 @@ ScheduleService::ScheduleService(QObject* parent)
 
 ScheduleService::~ScheduleService()
 {
-    if (m_impl && m_impl->dirty) {
-        // Last-gasp save before destruction (e.g. app shutdown). Bypass
-        // setDirty() so we don't emit signals during teardown.
+    if (m_impl && m_impl->pendingWrite) {
+        // Last-gasp save before destruction (e.g. app shutdown).
+        // saveCurrentNow() emits nothing, so this is safe during teardown.
         try { saveCurrentNow(); } catch (...) { /* swallow on shutdown */ }
     }
 }
@@ -498,8 +505,9 @@ bool ScheduleService::clearWorkingOnShutdown()
     try {
         // Edits to an open saved schedule live only in the working list (the
         // saved row changes on an explicit Save). Compare against the saved
-        // copy rather than trusting isDirty: the auto-save tick clears the
-        // dirty flag, so it cannot answer "is anything unsaved?" on its own.
+        // copy rather than trusting isDirty: an edit undone by hand
+        // leaves the flag set although nothing differs, and a relaunch starts
+        // it clear.
         if (hadLoaded && !workingMatchesLoaded()) {
             qInfo().noquote() << "ScheduleService: kept the working schedule on close,"
                               << "it has unsaved edits to" << m_impl->loadedScheduleName;
@@ -540,7 +548,7 @@ bool ScheduleService::workingMatchesLoaded()
 
 void ScheduleService::onAutoSaveTick()
 {
-    if (!m_impl || !m_impl->dirty) return;
+    if (!m_impl || !m_impl->pendingWrite) return;
     try {
         backupHistoryOnce();
         saveCurrentNow();
@@ -592,6 +600,7 @@ void ScheduleService::persistLoadedKv()
 
 void ScheduleService::markDirty()
 {
+    if (m_impl) m_impl->pendingWrite = true;
     setDirty(true);
 }
 
@@ -604,10 +613,11 @@ void ScheduleService::saveCurrentNow()
     stmt.bind(1, QString::fromUtf8(json));
     stmt.bind(2, QDateTime::currentMSecsSinceEpoch());
     stmt.step();
-    // Don't emit isDirtyChanged unconditionally — the public mutators that
-    // *do* clear dirty (load / saveAs / saveCurrent / clearAll) call
-    // setDirty(false) explicitly, which handles the signal + transition check.
-    m_impl->dirty = false;
+    // Only the working copy is now current. The unsaved dot is left alone:
+    // load / saveAs / saveCurrent / clearAll clear it through setDirty(),
+    // which also tells QML. Clearing `dirty` here without the signal is what
+    // once left the dot stuck on.
+    m_impl->pendingWrite = false;
 }
 
 void ScheduleService::backupHistoryOnce()

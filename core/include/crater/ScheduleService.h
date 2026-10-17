@@ -30,14 +30,16 @@ namespace crater {
 // or stale. The resolution is live — changing the kind's default updates
 // the projection without requiring a re-Go-Live.
 //
-// Auto-save: a QTimer fires every 5s; if the schedule is dirty, current_schedule
-// is updated and a backup is written to AppData/schedules/.history/<ts>.json
+// Auto-save: a QTimer fires every 5s; if the items changed since the last
+// write, current_schedule is updated and a backup is written to AppData/schedules/.history/<ts>.json
 // on the first auto-save of a session (last 10 retained).
 //
 // Loaded-schedule tracking: when the operator loads a saved schedule (or
 // creates one via saveAs), the service remembers its id + name and persists
 // that pointer in the `kv` table so a relaunch returns to the same identity.
-// Edits flip `isDirty` so the UI can show an unsaved indicator. Calling
+// Edits flip `isDirty` so the UI can show an unsaved indicator. Auto-save
+// leaves it alone, because the working copy is not the named schedule. Load,
+// save, Save As and New clear it. Calling
 // `saveCurrent()` writes the working items back into the loaded row;
 // `saveAs(name)` always creates a fresh row.
 class ScheduleService : public QObject
