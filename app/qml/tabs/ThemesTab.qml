@@ -131,8 +131,7 @@ Item {
         if (!dir || dir.length === 0) return
 
         let used = {}
-        let exported = 0
-        let failed = []
+        let jobs = []
         for (let i = 0; i < rows.length; i++) {
             const t = rows[i]
             // Strip characters Windows refuses in file names. Two themes
@@ -146,20 +145,27 @@ Item {
                    || FileDialogService.pathExists(dir + "/" + name + ".craterheme"))
                 name = base + " (" + (k++) + ")"
             used[name.toLowerCase()] = true
-            if (ThemeService.exportTheme(t.id, dir + "/" + name + ".craterheme", []))
-                exported++
-            else
-                failed.push(t.name)
+            jobs.push({ id: t.id, name: t.name, path: dir + "/" + name + ".craterheme" })
         }
-        if (exported > 0)
-            root._statusMessage = qsTr("Exported %1 %2 to %3")
-                                      .arg(exported).arg(_themeNoun(exported)).arg(dir)
-        if (failed.length > 0) {
-            root._importError = qsTr("Could not export %1. %2")
-                                    .arg(failed.join(", "))
-                                    .arg(ThemeService.lastExportError() || "")
-            errorClearTimer.restart()
-        }
+
+        // Written one at a time in the background, with progress and Stop.
+        AppState.openModal("bulkExportThemes", {
+            jobs:   jobs,
+            onDone: function(exported, failed, stopped, error) {
+                if (stopped)
+                    root._statusMessage = qsTr("Stopped. Exported %1 of %2 %3 to %4")
+                                              .arg(exported).arg(jobs.length)
+                                              .arg(_themeNoun(jobs.length)).arg(dir)
+                else if (exported > 0)
+                    root._statusMessage = qsTr("Exported %1 %2 to %3")
+                                              .arg(exported).arg(_themeNoun(exported)).arg(dir)
+                if (failed.length > 0) {
+                    root._importError = qsTr("Could not export %1. %2")
+                                            .arg(failed.join(", ")).arg(error || "")
+                    errorClearTimer.restart()
+                }
+            }
+        })
     }
 
     // Right-click on a checked tile while 2+ are checked.
