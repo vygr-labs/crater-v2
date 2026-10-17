@@ -13,7 +13,15 @@ ModalShell {
     id: root
 
     dialogWidth: 560
-    dialogHeight: 660
+    // The choose step grows to its content, so a line that appears with a
+    // choice (the merge note) grows the card instead of hiding behind the
+    // buttons. Never below the old 660, so the card doesn't jump when the
+    // import starts. ModalShell still caps the card at the window, and the
+    // list scrolls past that. Rounded up: dialogHeight is an int.
+    dialogHeight: _phase === "choose"
+        ? Math.max(660, Math.ceil(Theme.d(48) + Theme.space.lg * 2 + chooseCol.implicitHeight
+                                  + Theme.space.md + actions.height))
+        : 660
     title: qsTr("Import profile")
 
     readonly property string _path: AppState.modalProps.path || ""
