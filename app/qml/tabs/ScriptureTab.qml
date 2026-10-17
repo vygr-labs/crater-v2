@@ -476,6 +476,30 @@ Item {
         if (item) AppState.pushLibraryLive(item)
     }
 
+    // A search hit is one verse out of its chapter, so after sending it live
+    // there was nowhere to step to. Sending a single hit live also opens its
+    // chapter in reference mode with the verse in the box, and the arrows
+    // and Enter carry on from there. Ctrl+F brings the results back (the
+    // mode memory keeps the search text). The hit's translation goes into
+    // the box as a typed code, so an all-translations hit opens in its own
+    // version and a typed new reference later reverts the same way it does
+    // for any typed code.
+    function _openHitInChapter(idx) {
+        if (mode !== "search" || _showingWholeTranslation) return
+        const sel = AppState.librarySelectedIndices[tabKey] || []
+        if (sel.length > 1) return
+        const v = currentVerses[idx]
+        if (!v) return
+        const code = String(v.translationCode || activeTranslation).toUpperCase()
+        let text = v.book + " " + v.chapter + " " + v.verse
+        if (code !== activeTranslation || _queryOverrideCode !== "") text += " " + code
+        _spanInBox = false
+        _rangeFromInput = false
+        AppState.clearLibrarySelected(tabKey)
+        AppState.setLibrarySearchModeWithMemory(tabKey, "reference", text)
+        _settleQuery()
+    }
+
     // Returns the schedule row the passage landed in, or -1. During a
     // "Change passage" that row is the one being replaced, not a new one.
     function addToScheduleFor(idx) {
@@ -1499,6 +1523,7 @@ Item {
                     root._syncInputToVerse(index)
                     root.pushPreviewFor(index)
                     root.pushLiveFor(index)
+                    root._openHitInChapter(index)
                 }
             }
         }
@@ -1589,7 +1614,9 @@ Item {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             root._settleQuery()
             if (root._typedReferenceUnresolved()) return
-            if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
+            if (root.fluidIndex < 0) return
+            root.pushLiveFor(root.fluidIndex)
+            root._openHitInChapter(root.fluidIndex)
         }
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
