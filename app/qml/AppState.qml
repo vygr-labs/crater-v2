@@ -1661,6 +1661,11 @@ QtObject {
     // stand down rather than also closing a dialog or deselecting a layer.
     property bool colorPopoverOpen: false
 
+    // True while the text box right-click menu is open (TextBoxMenu). Same
+    // rule as colorPopoverOpen: its own Escape closes it, the window-level
+    // Escape shortcuts stand down.
+    property bool textMenuOpen: false
+
     function openModal(name, props) {
         modalProps = props || {}
         activeModal = name
