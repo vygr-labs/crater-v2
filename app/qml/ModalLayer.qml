@@ -80,6 +80,11 @@ Item {
         active: AppState.activeModal === "exportTheme"
         sourceComponent: ExportThemeDialog { }
     }
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "bulkExportThemes"
+        sourceComponent: BulkExportThemesDialog { }
+    }
 
     // ── Profiles (ARCHITECTURE.md §12) ──────────────────────────────────
     // Export / import a .craterprofile, and the ask-at-startup picker.

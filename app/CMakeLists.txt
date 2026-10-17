@@ -233,6 +233,7 @@ qt_add_qml_module(crater
         qml/dialogs/PresentationEditorDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml
         qml/dialogs/ExportThemeDialog.qml
+        qml/dialogs/BulkExportThemesDialog.qml
         qml/dialogs/AiDesignDialog.qml
         qml/dialogs/ShortcutsDialog.qml
         qml/dialogs/ProfileExportDialog.qml
