@@ -96,6 +96,7 @@ set_source_files_properties(
     qml/Workspaces.qml
     qml/AppState.qml
     qml/SearchFormat.qml
+    qml/StageTimer.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -110,6 +111,7 @@ qt_add_qml_module(crater
         qml/LucideIcons.qml
         qml/Workspaces.qml
         qml/SearchFormat.qml
+        qml/StageTimer.qml
         qml/ModalLayer.qml
         qml/GlobalSearchOverlay.qml
         qml/ProjectionWindow.qml

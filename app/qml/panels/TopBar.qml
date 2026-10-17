@@ -1,8 +1,8 @@
 import QtQuick
 
 // Top chrome — left cluster (Schedule dropdown, settings gear, NDI
-// blank chip, NDI overdue alert) and right cluster (Logo, Clear,
-// Go Live). Each button calls into AppState; the heavy modal/popover
+// blank chip, NDI overdue alert) and right cluster (NDI, Stage timer,
+// Logo, Clear, Go Live). Each button calls into AppState; the heavy modal/popover
 // rendering happens in ModalLayer.
 Rectangle {
     id: root
@@ -32,6 +32,15 @@ Rectangle {
     // binding that reads _nowMs re-runs. 10 s cadence is invisibly
     // late for a 5 min threshold and saves ~30k Date.now() reads/min
     // vs ticking every frame.
+    // Any output switched on and set to the stage view. The Stage timer
+    // button only means something when there is a stage display to show it.
+    readonly property bool _stageOutputOn: {
+        const list = OutputService.outputs
+        for (let i = 0; i < list.length; i++)
+            if (list[i].enabled && list[i].contentMode === "stage") return true
+        return false
+    }
+
     property double _ndiVisibleSinceMs: 0
     property double _nowMs: Date.now()
     readonly property int _ndiOverdueThresholdMs: 5 * 60 * 1000
@@ -445,6 +454,61 @@ Rectangle {
             onClicked: {
                 if (NdiService.sending) NdiService.stop()
                 else                    NdiService.start()
+            }
+        }
+
+        // Stage timer: a service timer or a countdown for the stage display.
+        // Shown while a stage output is on, or while a timer is running so
+        // it can always be stopped. While running, the button carries the
+        // time, so the operator sees what the stage sees.
+        GhostButton {
+            id: stageTimerBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "clock"
+            text: StageTimer.active ? StageTimer.text : qsTr("Stage timer")
+            visible: root._stageOutputOn || StageTimer.active
+            active: StageTimer.running
+            iconColor: StageTimer.overtime ? Theme.color.live
+                     : StageTimer.nearEnd  ? Theme.color.warning
+                     : StageTimer.running  ? Theme.color.brand
+                                           : Theme.color.textSecondary
+            onClicked: openMenu()
+
+            function openMenu() {
+                const lengths = [5, 10, 15, 20, 30, 45, 60]
+                const countdowns = lengths.map(function(m) {
+                    return {
+                        label: qsTr("%1 minutes").arg(m),
+                        action: function() { StageTimer.startCountdown(m) }
+                    }
+                })
+                const items = []
+                if (StageTimer.active) {
+                    items.push(StageTimer.running
+                        ? { label: qsTr("Pause"), iconName: "pause",
+                            action: function() { StageTimer.pause() } }
+                        : { label: qsTr("Resume"), iconName: "play",
+                            action: function() { StageTimer.resume() } })
+                    items.push({ label: qsTr("Start again"), iconName: "rotate-ccw",
+                                 action: function() {
+                                     if (StageTimer.mode === "countdown")
+                                         StageTimer.startCountdown(StageTimer.durationMs / 60000)
+                                     else
+                                         StageTimer.startElapsed()
+                                 } })
+                    items.push({ separator: true })
+                }
+                items.push({ label: qsTr("Service timer"), iconName: "arrow-up",
+                             detail: qsTr("counts up"),
+                             action: function() { StageTimer.startElapsed() } })
+                items.push({ label: qsTr("Countdown"), iconName: "arrow-down", submenu: countdowns })
+                if (StageTimer.active) {
+                    items.push({ separator: true })
+                    items.push({ label: qsTr("Stop timer"), iconName: "square",
+                                 action: function() { StageTimer.stop() } })
+                }
+                AppState.openContextMenuAt(stageTimerBtn, 0, stageTimerBtn.height + 4, items,
+                                           { menuWidth: 220 })
             }
         }
 

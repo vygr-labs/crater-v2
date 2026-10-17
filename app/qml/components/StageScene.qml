@@ -28,9 +28,18 @@ Item {
 
     // The output id this scene belongs to. Not used for theme resolution
     // (there is no theme here) but kept so the component has the same shape
-    // as ProjectionScene and so future per-output stage preferences —
-    // "show notes", "show clock" — have somewhere obvious to hang.
+    // as ProjectionScene.
     property string outputKind: "stage"
+
+    // What to show and how large, from Settings > Projection > Stage
+    // display. One set for every stage output: a church with two stage
+    // monitors wants them to agree.
+    readonly property var  _opts: SettingsService.stageDisplay
+    readonly property bool _showNext:  _opts.showNext !== false
+    readonly property bool _showNotes: _opts.showNotes !== false
+    readonly property bool _showClock: _opts.showClock !== false
+    readonly property bool _showTimer: _opts.showTimer !== false && StageTimer.active
+    readonly property real _scale: (_opts.textScale || 100) / 100
 
     // ── Live state ──────────────────────────────────────────────────────
     // Read straight off ProjectionService, exactly like ProjectionScene.
@@ -96,7 +105,7 @@ Item {
         }
         return out.join("\n")
     }
-    readonly property bool _hasNext: _nextLabel.length > 0 || _nextLines.length > 0
+    readonly property bool _hasNext: _showNext && (_nextLabel.length > 0 || _nextLines.length > 0)
 
     // ── Palette ─────────────────────────────────────────────────────────
     // Fixed, not Theme.color. The console palette follows the operator's
@@ -109,17 +118,22 @@ Item {
     readonly property color _dim:     "#8b93a3"
     readonly property color _accent:  "#67e8f9"
     readonly property color _notesFg: "#fde68a"
+    readonly property color _over:    "#f87171"
 
     // Type scale derived from height so the layout holds from a 720p
     // confidence monitor to a 4K panel without a second set of numbers.
-    readonly property int _chromeSize: Math.max(11, Math.round(height * 0.030))
-    readonly property int _titleSize:  Math.max(14, Math.round(height * 0.042))
-    readonly property int _bodyMax:    Math.max(20, Math.round(height * 0.115))
+    // The text size setting scales all of it. For the live words it moves
+    // the ceiling the fit can reach, since they are already as large as the
+    // area allows.
+    readonly property real _u: height * _scale
+    readonly property int _chromeSize: Math.max(11, Math.round(_u * 0.030))
+    readonly property int _titleSize:  Math.max(14, Math.round(_u * 0.042))
+    readonly property int _bodyMax:    Math.max(20, Math.round(_u * 0.115))
     readonly property int _bodyMin:    Math.max(12, Math.round(height * 0.022))
-    readonly property int _footSize:   Math.max(12, Math.round(height * 0.030))
+    readonly property int _footSize:   Math.max(12, Math.round(_u * 0.030))
     // Next is read from across the stage, so its two lines are set well
     // above the notes size rather than shrunk to fit a box.
-    readonly property int _nextSize:   Math.max(14, Math.round(height * 0.050))
+    readonly property int _nextSize:   Math.max(14, Math.round(_u * 0.050))
     readonly property int _pad:        Math.max(12, Math.round(height * 0.030))
 
     // Inline lyric/scripture markup ({color=…}, **bold**) reaches us in the
@@ -155,7 +169,8 @@ Item {
             id: liveLabel
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - status.width - counter.width - clock.width - stage._pad * 3
+            width: Math.max(0, parent.width - status.width - counter.width - timer.width
+                                  - clock.width - stage._pad * 4)
             text: stage._curSection.length > 0
                   ? stage._itemTitle + "  ·  " + stage._curSection
                   : stage._itemTitle
@@ -195,7 +210,7 @@ Item {
 
         Text {
             id: counter
-            anchors.right: clock.left
+            anchors.right: timer.left
             anchors.rightMargin: stage._pad
             anchors.verticalCenter: parent.verticalCenter
             visible: stage._pageCount > 1
@@ -204,6 +219,48 @@ Item {
             color: stage._dim
             font.family: Theme.font.family
             font.pixelSize: stage._chromeSize
+        }
+
+        // The service timer or countdown, started from the console's Stage
+        // timer menu. Labelled, so twelve minutes left is never read as the
+        // time of day. Amber for the last two minutes of a countdown, red
+        // and counting up once it is over.
+        Row {
+            id: timer
+            anchors.right: clock.left
+            anchors.rightMargin: stage._pad
+            anchors.verticalCenter: parent.verticalCenter
+            visible: stage._showTimer
+            width: visible ? implicitWidth : 0
+            spacing: Math.round(stage._pad * 0.4)
+
+            readonly property color _tone: StageTimer.overtime ? stage._over
+                                         : StageTimer.nearEnd ? stage._notesFg
+                                         : stage._text
+
+            Text {
+                anchors.baseline: timerValue.baseline
+                text: !StageTimer.running ? qsTr("PAUSED")
+                    : StageTimer.overtime ? qsTr("OVER")
+                    : StageTimer.mode === "countdown" ? qsTr("LEFT")
+                    : qsTr("SERVICE")
+                color: StageTimer.running ? timer._tone : stage._dim
+                font.family: Theme.font.family
+                font.pixelSize: Math.round(stage._chromeSize * 0.7)
+                font.weight: Theme.font.weightBold
+                font.letterSpacing: 1
+            }
+            Text {
+                id: timerValue
+                text: StageTimer.text
+                color: StageTimer.running ? timer._tone : stage._dim
+                font.family: Theme.font.family
+                font.pixelSize: stage._chromeSize
+                font.weight: Theme.font.weightBold
+                // Even-width digits, so the time does not shift sideways
+                // every second.
+                font.features: { "tnum": 1 }
+            }
         }
 
         // Wall clock. The single most-requested thing on a confidence monitor
@@ -220,6 +277,8 @@ Item {
             id: clock
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
+            visible: stage._showClock
+            width: visible ? implicitWidth : 0
             color: stage._text
             font.family: Theme.font.family
             font.pixelSize: stage._chromeSize
@@ -263,7 +322,7 @@ Item {
         anchors.margins: stage._pad
         visible: _hasNotes || stage._hasNext
 
-        readonly property bool _hasNotes: stage._curNotes.length > 0
+        readonly property bool _hasNotes: stage._showNotes && stage._curNotes.length > 0
         readonly property real _gap: stage._pad
         readonly property real _inset: Math.round(stage._pad * 0.7)
         readonly property real _spacing: Math.round(stage._pad * 0.4)

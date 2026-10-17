@@ -716,6 +716,56 @@ Item {
                 }
             }
 
+            // ── STAGE DISPLAY ────────────────────────────────────────────
+            // What every output set to Stage shows. One set for all of
+            // them, stored in SettingsService.stageDisplay.
+            SettingsSectionHeader { title: qsTr("Stage Display") }
+
+            Repeater {
+                model: [
+                    { key: "showNext", title: qsTr("Show what is next"),
+                      description: qsTr("The next slide's first lines, or the next item in the schedule") },
+                    { key: "showNotes", title: qsTr("Show speaker notes"),
+                      description: qsTr("A presentation slide's notes, below the live words") },
+                    { key: "showClock", title: qsTr("Show the clock"),
+                      description: qsTr("The time of day, top right") },
+                    { key: "showTimer", title: qsTr("Show the timer"),
+                      description: qsTr("The service timer or countdown, started from Stage timer in the top bar") }
+                ]
+                delegate: ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    SettingRow {
+                        title: modelData.title
+                        description: modelData.description
+                        ToggleSwitch {
+                            value: SettingsService.stageDisplay[modelData.key] !== false
+                            onToggled: SettingsService.setStageDisplayValue(
+                                           modelData.key, !(SettingsService.stageDisplay[modelData.key] !== false))
+                        }
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+                }
+            }
+
+            SettingRow {
+                title: qsTr("Text size")
+                description: qsTr("The live words still shrink to fit a long slide")
+                SegmentedControl {
+                    width: 280
+                    height: 28
+                    options: [
+                        { value: 85,  label: qsTr("Smaller") },
+                        { value: 100, label: qsTr("Default") },
+                        { value: 120, label: qsTr("Larger") },
+                        { value: 140, label: qsTr("Largest") }
+                    ]
+                    current: SettingsService.stageDisplay.textScale
+                    onChanged: function(v) { SettingsService.setStageDisplayValue("textScale", v) }
+                }
+            }
+
             // ── DEFAULTS ─────────────────────────────────────────────────
             SettingsSectionHeader { title: qsTr("Defaults") }
 

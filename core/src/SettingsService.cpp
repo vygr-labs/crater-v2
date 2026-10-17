@@ -43,6 +43,33 @@ QVariantMap gsDefaults()
     return m;
 }
 
+// Stage display options: the defaults, and the one check the ctor read and
+// setStageDisplayValue() share. Returns the value to store, or an invalid
+// QVariant when the key is unknown or the value has the wrong type.
+QVariantMap stageDefaults()
+{
+    QVariantMap m;
+    m.insert(QStringLiteral("showNext"),  true);
+    m.insert(QStringLiteral("showNotes"), true);
+    m.insert(QStringLiteral("showClock"), true);
+    m.insert(QStringLiteral("showTimer"), true);
+    m.insert(QStringLiteral("textScale"), 100);
+    return m;
+}
+
+QVariant stageValue(const QString& key, const QVariant& v)
+{
+    if (!stageDefaults().contains(key)) return {};
+    const int type = v.typeId();
+    if (key == QLatin1String("textScale")) {
+        if (type != QMetaType::Int && type != QMetaType::LongLong && type != QMetaType::Double)
+            return {};
+        return qBound(80, qRound(v.toDouble()), 140);
+    }
+    if (type != QMetaType::Bool) return {};
+    return v.toBool();
+}
+
 }  // namespace
 
 struct SettingsService::Impl
@@ -149,6 +176,8 @@ struct SettingsService::Impl
     // with any persisted overrides at construction, so it's always complete.
     QVariantMap globalSearchActions;
     QVariantMap consoleLayout;
+    // Only the stage display keys the operator changed. See stageDefaults().
+    QVariantMap stageDisplay;
 
     void putConsoleLayout()
     {
@@ -209,6 +238,7 @@ struct SettingsService::Impl
     static constexpr const char* kLanguage         = "Settings/language";
     static constexpr const char* kGlobalSearchActions = "Settings/globalSearchActions";
     static constexpr const char* kConsoleLayout    = "Settings/consoleLayout";
+    static constexpr const char* kStageDisplay     = "Settings/stageDisplay";
 };
 
 SettingsService::SettingsService(QObject* parent)
@@ -286,6 +316,17 @@ SettingsService::SettingsService(QObject* parent)
         for (auto it = obj.constBegin(); it != obj.constEnd(); ++it)
             if (it.value().isDouble() || it.value().isBool())
                 m_impl->consoleLayout.insert(it.key(), it.value().toVariant());
+    }
+
+    // Stage display: the same check as the setter, so a hand-edited or
+    // stale value falls back to its default.
+    {
+        const QString raw = m_impl->get(Impl::kStageDisplay).toString();
+        const QJsonObject obj = QJsonDocument::fromJson(raw.toUtf8()).object();
+        for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
+            const QVariant v = stageValue(it.key(), it.value().toVariant());
+            if (v.isValid()) m_impl->stageDisplay.insert(it.key(), v);
+        }
     }
 }
 
@@ -797,6 +838,25 @@ void SettingsService::resetConsoleLayout()
     m_impl->consoleLayout.clear();
     m_impl->putConsoleLayout();
     emit consoleLayoutChanged();
+}
+
+QVariantMap SettingsService::stageDisplay() const
+{
+    QVariantMap m = stageDefaults();
+    for (auto it = m_impl->stageDisplay.constBegin(); it != m_impl->stageDisplay.constEnd(); ++it)
+        m.insert(it.key(), it.value());
+    return m;
+}
+
+void SettingsService::setStageDisplayValue(const QString& key, const QVariant& value)
+{
+    const QVariant v = stageValue(key, value);
+    if (!v.isValid()) return;
+    if (stageDisplay().value(key) == v) return;
+    m_impl->stageDisplay.insert(key, v);
+    const QJsonObject obj = QJsonObject::fromVariantMap(m_impl->stageDisplay);
+    m_impl->put(Impl::kStageDisplay, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact)));
+    emit stageDisplayChanged();
 }
 
 }  // namespace crater
