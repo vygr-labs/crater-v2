@@ -97,7 +97,7 @@ void StartupSplash::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::SmoothPixmapTransform);
 
     const QRectF card = QRectF(rect()).adjusted(kShadow, kShadow, -kShadow, -kShadow);
-    constexpr qreal radius = 8;
+    constexpr qreal radius = 6;
 
     // Soft shadow: rings fading out from the card, a little heavier below.
     for (int i = kShadow; i >= 1; i -= 2) {
