@@ -101,7 +101,14 @@ Item {
                : Qt.rect(0, 0, 0, 0)
         restoreMode: Binding.RestoreNone
     }
-    Component.onDestruction: AppState.modalCardRect = Qt.rect(0, 0, 0, 0)
+    // Clear only while still the open dialog. Opening a dialog from another
+    // (Settings > Profiles > Export) creates the new shell before the old
+    // one is destroyed, and an unconditional clear here wiped the new
+    // card's rect, which left the panel at the window edge over the top bar.
+    Component.onDestruction: {
+        if (AppState.modalCloseOwner === root)
+            AppState.modalCardRect = Qt.rect(0, 0, 0, 0)
+    }
 
     // Eased copy of the reservation, so folding or docking the panel glides
     // the card over while a window resize still tracks instantly.
