@@ -70,9 +70,16 @@ Item {
             NumberAnimation { duration: Theme.motion.normal; easing.type: Easing.OutCubic }
         }
 
+        // Takes every button so none reach the console behind. A right-click
+        // used to fall through to a song or schedule row, whose menu opened
+        // in the one modal slot and closed this dialog, edits and all. Only
+        // a left click closes.
         MouseArea {
             anchors.fill: parent
-            onClicked: AppState.requestCloseModal()
+            acceptedButtons: Qt.AllButtons
+            onClicked: function(m) {
+                if (m.button === Qt.LeftButton) AppState.requestCloseModal()
+            }
         }
     }
 
