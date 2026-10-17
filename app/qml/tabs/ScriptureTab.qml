@@ -1321,7 +1321,7 @@ Item {
                 // collapsed, so a following double-click can restore it and
                 // project the whole combined slide instead of one verse.
                 // Reset at the top of onLeftClicked (click 1 of a double-click
-                // runs there first); consumed and cleared in onDoubleClicked.
+                // runs there first); consumed and cleared by _restoreCollapsed.
                 property var _collapseStash: null
 
                 // Group order matches SongsTab and MediaTab: row-edit
@@ -1356,7 +1356,7 @@ Item {
                 // this guard that first click wiped the multi-selection, so
                 // double-clicking a multi-verse range silently sent only the
                 // one clicked verse Live instead of the combined slide. With
-                // it, the set survives into onDoubleClicked → pushLiveFor.
+                // it, the set survives into the double-click → pushLiveFor.
                 function _focus() {
                     // Capture membership BEFORE moving the anchor. setLibraryFluid
                     // flips list.currentIndex (via the standalone Binding), which
@@ -1492,7 +1492,7 @@ Item {
                             // selection: collapse to just this verse NOW, so the
                             // operator gets instant feedback. Stash the prior set
                             // first — if this is actually click 1 of a double-
-                            // click, onDoubleClicked restores it and projects the
+                            // click, the double-click restores it and projects the
                             // whole combined slide. Collapsing instantly (vs. a
                             // deferred timer) avoids a "did it register?" double-
                             // tap that would otherwise send the whole set Live.
@@ -1520,20 +1520,43 @@ Item {
                         _focus()
                     }
                 }
-                onDoubleClicked: {
-                    // If click 1 collapsed a multi-selection, restore it so the
-                    // double-click projects the whole combined slide rather than
-                    // only this verse. Preview is re-pushed to match Live.
+                // Double-click then drag carries the passage to the schedule.
+                preventStealing: toSchedule.armed
+                onDoubleClicked: function(mouse) { toSchedule.doubleClicked(mouse) }
+                onPositionChanged: function(mouse) { toSchedule.moved(mouse) }
+                onReleased: function(mouse) { toSchedule.released(mouse) }
+                onCanceled: toSchedule.canceled()
+
+                // If click 1 collapsed a multi-selection, restore it so a
+                // double-click projects (or a drag carries) the whole
+                // combined passage rather than only this verse.
+                function _restoreCollapsed() {
                     if (verseMa._collapseStash && verseMa._collapseStash.length > 0) {
                         AppState.setLibrarySelected(root.tabKey, verseMa._collapseStash)
                     }
                     verseMa._collapseStash = null
-                    AppState.setLibraryFluid(root.tabKey, index)
-                    AppState.setActiveFocus("library")
-                    root._syncInputToVerse(index)
-                    root.pushPreviewFor(index)
-                    root.pushLiveFor(index)
-                    root._openHitInChapter(index)
+                }
+
+                ScheduleDragSource {
+                    id: toSchedule
+                    area: verseMa
+                    payload: function() {
+                        verseMa._restoreCollapsed()
+                        const item = root.itemFor(index)
+                        if (!item) return null
+                        return { label: item.title || "",
+                                 add: function() { AppState.addItemToSchedule(item) } }
+                    }
+                    // Preview is re-pushed to match Live.
+                    onActivated: {
+                        verseMa._restoreCollapsed()
+                        AppState.setLibraryFluid(root.tabKey, index)
+                        AppState.setActiveFocus("library")
+                        root._syncInputToVerse(index)
+                        root.pushPreviewFor(index)
+                        root.pushLiveFor(index)
+                        root._openHitInChapter(index)
+                    }
                 }
             }
         }
