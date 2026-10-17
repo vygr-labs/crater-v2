@@ -2053,7 +2053,9 @@ QtObject {
     // flipping the mode so binding cascades observe a consistent (text, mode)
     // pair — most importantly TabSearchBar.onIsControlledModeChanged, which
     // hydrates segmented state from searchText when it fires.
-    function setLibrarySearchModeWithMemory(tabKey, nextMode) {
+    // `nextText`, when given, replaces what the next mode remembered (a
+    // scripture search hit opening its chapter in reference mode).
+    function setLibrarySearchModeWithMemory(tabKey, nextMode, nextText) {
         const prevMode = librarySearchMode[tabKey]
         if (prevMode === nextMode) return
 
@@ -2063,7 +2065,7 @@ QtObject {
         byMode[tabKey]   = tabMem
         searchTextByMode = byMode
 
-        setSearch(tabKey, tabMem[nextMode] || "")
+        setSearch(tabKey, nextText !== undefined ? nextText : (tabMem[nextMode] || ""))
         setLibrarySearchMode(tabKey, nextMode)
     }
 
