@@ -23,20 +23,35 @@ const QColor kBrand(0x3a, 0xc8, 0xd4);
 }  // namespace
 
 StartupSplash::StartupSplash()
-    : QWidget(nullptr, Qt::SplashScreen | Qt::FramelessWindowHint)
+    // On top, so the console's window can't cover it while it is shown but
+    // not yet drawn.
+    : QWidget(nullptr, Qt::SplashScreen | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
 {
     // Closing the splash (Alt+F4) must not count as the last window closing,
     // or the app would quit before its main window exists.
     setAttribute(Qt::WA_QuitOnClose, false);
     setAttribute(Qt::WA_TranslucentBackground);
     setWindowTitle(QStringLiteral("Crater"));
-    resize(460, 220);
-    if (QScreen* screen = QGuiApplication::primaryScreen())
-        move(screen->availableGeometry().center() - rect().center());
-    m_line = tr("Getting things ready");
+    resize(460, 112);
+    centerOnScreen();
     m_tick.setInterval(33);
     connect(&m_tick, &QTimer::timeout, this, qOverload<>(&QWidget::update));
     m_clock.start();
+}
+
+void StartupSplash::centerOnScreen()
+{
+    if (QScreen* screen = QGuiApplication::primaryScreen())
+        move(screen->availableGeometry().center() - rect().center());
+}
+
+void StartupSplash::setFirstRun()
+{
+    m_firstRun = true;
+    m_line = tr("Getting things ready");
+    resize(460, 220);
+    centerOnScreen();
+    update();
 }
 
 void StartupSplash::setProgress(int percent, const QString& stage)
@@ -80,14 +95,18 @@ void StartupSplash::paintEvent(QPaintEvent*)
     p.setPen(kText);
     const int textX = pad + 48 + 16;
     p.drawText(QRect(textX, pad - 2, width() - textX - pad, 28), Qt::AlignLeft | Qt::AlignVCenter,
-               tr("Setting up Crater"));
+               m_firstRun ? tr("Setting up Crater") : QStringLiteral("Crater"));
 
     QFont body = font();
     body.setPixelSize(13);
     p.setFont(body);
     p.setPen(kTextSecondary);
     p.drawText(QRect(textX, pad + 26, width() - textX - pad, 22), Qt::AlignLeft | Qt::AlignVCenter,
-               tr("This only happens the first time Crater opens."));
+               m_firstRun ? tr("This only happens the first time Crater opens.") : tr("Opening"));
+
+    // An everyday launch has no progress to show. The main thread is busy
+    // building the console the whole time, so a moving bar would only freeze.
+    if (!m_firstRun) return;
 
     // Progress
     const QRectF track(pad, height() - pad - 34, width() - 2 * pad, 6);

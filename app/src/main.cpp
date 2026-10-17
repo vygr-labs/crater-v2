@@ -357,6 +357,15 @@ int main(int argc, char* argv[])
     registerIconFont();
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
+    // Something on screen at once on every launch, up until the console
+    // paints its first frame (StartupSplash.h). Painted here and now, since
+    // the event loop doesn't run again until the console is built. After the
+    // fonts, so it draws in the console's face.
+    auto splash = std::make_unique<crater::StartupSplash>();
+    splash->show();
+    splash->repaint();
+    QCoreApplication::processEvents();
+
     // ─── Stage 0: pick the profile ──────────────────────────────────────
     // Every database, media folder and per-profile preference below
     // resolves under the profile chosen here (ARCHITECTURE.md §12), so this
@@ -383,6 +392,7 @@ int main(int argc, char* argv[])
     } catch (const std::exception& e) {
         qCritical().noquote() << "Migration failed:" << e.what();
         crater::startup::markExit("database setup failed");
+        splash->close();
         QMessageBox::critical(nullptr, QObject::tr("Crater can't start"),
             QObject::tr("Crater could not set up its database:\n\n%1\n\n"
                         "A report will be sent to the Crater team the next time Crater opens.")
@@ -398,13 +408,12 @@ int main(int argc, char* argv[])
     // fresh schemas. Idempotent (writes a sentinel file). It takes up to half
     // a minute on a modest PC, so a splash shows progress while the import
     // runs on its worker thread and stays up until the main window appears.
-    std::unique_ptr<crater::StartupSplash> splash;
     {
         crater::ElectronDataImporter importer;
         if (importer.needsImport() && importer.legacyAvailable()) {
             qInfo() << "Running first-run data import (this can take a few seconds)...";
-            splash = std::make_unique<crater::StartupSplash>();
-            splash->show();
+            splash->setFirstRun();
+            splash->repaint();
             QObject::connect(&importer, &crater::ElectronDataImporter::progress,
                              [](int percent, const QString& stage) {
                                  qInfo().noquote() << "  import:" << percent << "%" << stage;
@@ -685,9 +694,10 @@ int main(int argc, char* argv[])
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,
         &app,
-        []() {
+        [s = splash.get()]() {
             qCritical() << "QML object creation failed — see warnings above. Exiting.";
             crater::startup::markExit("QML object creation failed");
+            s->close();
             QMessageBox::critical(nullptr, QObject::tr("Crater can't start"),
                 QObject::tr("Crater could not load its main window.\n\n"
                             "A report will be sent to the Crater team the next time Crater opens."));
@@ -721,7 +731,6 @@ int main(int argc, char* argv[])
     crater::startup::mark("qml loaded");
     qInfo().noquote() << "[startup] QML loaded, main window realized: +"
                       << startupClock.elapsed() << "ms";
-    if (splash) splash->close();
 
     // Hand the operator console back to the Windows shell. Must come after
     // loadFromModule — the HWND does not exist until the root Window is
@@ -741,9 +750,24 @@ int main(int argc, char* argv[])
             // The first painted frame is what "this launch worked" means to
             // the startup guard.
             QObject::connect(consoleWindow, &QQuickWindow::frameSwapped, consoleWindow,
-                             [] { crater::startup::markReady(); },
+                             [&startupClock] {
+                                 crater::startup::markReady();
+                                 qInfo().noquote() << "[startup] first frame on screen: +"
+                                                   << startupClock.elapsed() << "ms";
+                             },
                              static_cast<Qt::ConnectionType>(Qt::DirectConnection
                                                              | Qt::SingleShotConnection));
+            // The splash goes when the console is actually drawn, not when
+            // its QML is loaded: between the two the window is on the
+            // taskbar with nothing on screen. Queued, since frameSwapped
+            // comes from the render thread.
+            QObject::connect(consoleWindow, &QQuickWindow::frameSwapped, splash.get(),
+                             &QWidget::close,
+                             static_cast<Qt::ConnectionType>(Qt::QueuedConnection
+                                                             | Qt::SingleShotConnection));
+            // A console that opens minimized draws nothing, so don't leave
+            // the splash on top of everything waiting for a frame.
+            QTimer::singleShot(15000, splash.get(), &QWidget::close);
 
             // The graphics backend could not start on this PC (an old GPU, a
             // broken driver, a remote session). Unhandled, Qt aborts without
@@ -752,8 +776,9 @@ int main(int argc, char* argv[])
             // StartupGuard picks from this launch's trace. The ladder ends at
             // Qt Quick's software renderer, so this can't loop.
             QObject::connect(consoleWindow, &QQuickWindow::sceneGraphError, &app,
-                             [](QQuickWindow::SceneGraphError, const QString& message) {
+                             [s = splash.get()](QQuickWindow::SceneGraphError, const QString& message) {
                 qCritical().noquote() << "Scene graph error:" << message;
+                s->close();
                 crater::startup::markFatal(
                     ("scene graph: " + message.left(300)).toUtf8().constData());
                 if (crater::startup::mayRestartForGraphics()) {
