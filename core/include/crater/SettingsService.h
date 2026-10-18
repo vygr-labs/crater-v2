@@ -247,6 +247,15 @@ private:
     // setConsoleLayoutValue() / resetConsoleLayout().
     Q_PROPERTY(QVariantMap consoleLayout READ consoleLayout NOTIFY consoleLayoutChanged)
 
+    // What the stage display (StageScene) shows and how large its text is.
+    // Keys: showNext, showNotes, showClock, showTimer (bools, default true)
+    // and textScale (percent, 80 to 140, default 100). The getter fills the
+    // default for any key never set, so QML always sees all five. Global,
+    // not per profile, for the same reason as consoleLayout: it describes
+    // the monitor in this building. Stored as one JSON object under
+    // Settings/stageDisplay. Writes go through setStageDisplayValue().
+    Q_PROPERTY(QVariantMap stageDisplay READ stageDisplay NOTIFY stageDisplayChanged)
+
     // ── Library search presentation ──────────────────────────────────────
     // How the library tabs present FTS search results. All default ON so the
     // out-of-box experience is unchanged; operators who find the highlight or
@@ -388,6 +397,11 @@ public:
     // Back to the stock layout.
     Q_INVOKABLE void resetConsoleLayout();
 
+    QVariantMap stageDisplay() const;
+    // Set one stage display key. An unknown key, or a value of the wrong
+    // type, is ignored. textScale is clamped to its range.
+    Q_INVOKABLE void setStageDisplayValue(const QString& key, const QVariant& value);
+
 signals:
     void themeModeChanged();
     void fontSizeChanged();
@@ -436,6 +450,7 @@ signals:
     void languageChanged();
     void globalSearchActionsChanged();
     void consoleLayoutChanged();
+    void stageDisplayChanged();
 
 private:
     struct Impl;

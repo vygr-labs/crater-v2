@@ -250,9 +250,14 @@ nowhere to be.
       `ProjectionWindow.qml` on purpose: that file's ~250 lines of single-screen
       safety logic exist because the AUDIENCE output shares a machine with the
       console, and none of it applies to an output given a display by name.
-- [x] `StageScene.qml` — a real **presenter view**: live text, the preacher's
-      speaker notes, what is next, a clock, and a banner when the audience screen
-      is blanked or showing the logo. Deliberately unthemed (see its header).
+- [x] `StageScene.qml` — a real **presenter view**: live text fitted to its
+      area, the preacher's speaker notes, the next page's first lines (or the
+      next schedule row), a clock, and an amber tag when the audience screen is
+      blanked or showing the logo. Deliberately unthemed (see its header).
+- [x] Stage display settings (Settings ▸ Projection ▸ Stage Display): show next,
+      notes, clock and timer, and a text size. `SettingsService.stageDisplay`.
+- [x] Stage timer: a service timer or countdown started from the top bar's
+      Stage timer button, shown in the stage display's top bar (`StageTimer`).
 - [x] Settings ▸ Projection ▸ Multiple Outputs is live — per-output screen picker
       (incl. "Not assigned"), Mirror/Stage mode, enable toggle, inline rename,
       remove, plus contested-screen / on-console / display-gone warnings. "Add
@@ -308,7 +313,8 @@ auto-advance → *Scripture & Song settings* (§🟡).
       library/tab; distinct from the theme/content layer.
 - [ ] **Timers, clocks & live messages.** Countdown-to-service loops, count-up
       timers, wall clocks, and free-text messages pushed to the projection /
-      stage screens on the fly. Feeds naturally into the Stage Display work.
+      stage screens on the fly. The stage display has its own service timer and
+      countdown (`StageTimer`); the audience overlay is still open (PR #8).
 
 ### Tier 2 — strong differentiators
 - [ ] **Live video input as a source.** Bring a camera / NDI / Syphon feed in as

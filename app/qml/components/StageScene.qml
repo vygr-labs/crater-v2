@@ -28,9 +28,18 @@ Item {
 
     // The output id this scene belongs to. Not used for theme resolution
     // (there is no theme here) but kept so the component has the same shape
-    // as ProjectionScene and so future per-output stage preferences —
-    // "show notes", "show clock" — have somewhere obvious to hang.
+    // as ProjectionScene.
     property string outputKind: "stage"
+
+    // What to show and how large, from Settings > Projection > Stage
+    // display. One set for every stage output: a church with two stage
+    // monitors wants them to agree.
+    readonly property var  _opts: SettingsService.stageDisplay
+    readonly property bool _showNext:  _opts.showNext !== false
+    readonly property bool _showNotes: _opts.showNotes !== false
+    readonly property bool _showClock: _opts.showClock !== false
+    readonly property bool _showTimer: _opts.showTimer !== false && StageTimer.active
+    readonly property real _scale: (_opts.textScale || 100) / 100
 
     // ── Live state ──────────────────────────────────────────────────────
     // Read straight off ProjectionService, exactly like ProjectionScene.
@@ -60,13 +69,43 @@ Item {
     // "" and their rows collapse — the same page shape serves every kind.
     readonly property string _curTitle: (_cur && _cur.title) || ""
     readonly property string _curNotes: (_cur && _cur.notes) || ""
-    readonly property string _nextText: (_next && _next.content) || ""
-    readonly property string _nextTitle: (_next && _next.title) || ""
 
     readonly property string _itemTitle:
         (_item && (_item.title || _item.reference)) || ""
 
+    // A song's section name ("Verse 2") is worth a glance in the header. The
+    // other kinds' page labels repeat what is already on screen (the
+    // reference, the slide heading), so they are left out.
+    readonly property string _curSection: (_kind === "song" && _cur && _cur.label) || ""
+
     readonly property bool _hasLive: _kind.length > 0 && _pageCount > 0
+    readonly property bool _blanked: _clear || _logo
+
+    // ── What comes next ─────────────────────────────────────────────────
+    // The next page of this item, as its label (section name, verse
+    // reference, slide heading) and its first two lines. Past the last page
+    // it is the next schedule row, so the person on stage can see what the
+    // operator moves to.
+    readonly property var _nextRow: {
+        if (_next || AppState.libraryLiveActive) return null
+        const i = AppState.liveScheduleIndex
+        const rows = ScheduleService.currentItems
+        return (i >= 0 && i + 1 < rows.length) ? rows[i + 1] : null
+    }
+    readonly property string _nextLabel: _next
+        ? (_next.title || _next.label || "")
+        : (_nextRow ? (_nextRow.title || "") : "")
+    readonly property string _nextLines: {
+        if (!_next) return ""
+        const out = []
+        const lines = String(_next.content || "").split("\n")
+        for (let i = 0; i < lines.length && out.length < 2; i++) {
+            const t = LyricsService.flattenLine(lines[i]).trim()
+            if (t.length > 0) out.push(t)
+        }
+        return out.join("\n")
+    }
+    readonly property bool _hasNext: _showNext && (_nextLabel.length > 0 || _nextLines.length > 0)
 
     // ── Palette ─────────────────────────────────────────────────────────
     // Fixed, not Theme.color. The console palette follows the operator's
@@ -79,13 +118,22 @@ Item {
     readonly property color _dim:     "#8b93a3"
     readonly property color _accent:  "#67e8f9"
     readonly property color _notesFg: "#fde68a"
+    readonly property color _over:    "#f87171"
 
     // Type scale derived from height so the layout holds from a 720p
     // confidence monitor to a 4K panel without a second set of numbers.
-    readonly property int _chromeSize: Math.max(11, Math.round(height * 0.026))
-    readonly property int _titleSize:  Math.max(14, Math.round(height * 0.042))
-    readonly property int _bodyMax:    Math.max(20, Math.round(height * 0.115))
-    readonly property int _footSize:   Math.max(12, Math.round(height * 0.030))
+    // The text size setting scales all of it. For the live words it moves
+    // the ceiling the fit can reach, since they are already as large as the
+    // area allows.
+    readonly property real _u: height * _scale
+    readonly property int _chromeSize: Math.max(11, Math.round(_u * 0.030))
+    readonly property int _titleSize:  Math.max(14, Math.round(_u * 0.042))
+    readonly property int _bodyMax:    Math.max(20, Math.round(_u * 0.115))
+    readonly property int _bodyMin:    Math.max(12, Math.round(height * 0.022))
+    readonly property int _footSize:   Math.max(12, Math.round(_u * 0.030))
+    // Next is read from across the stage, so its two lines are set well
+    // above the notes size rather than shrunk to fit a box.
+    readonly property int _nextSize:   Math.max(14, Math.round(_u * 0.050))
     readonly property int _pad:        Math.max(12, Math.round(height * 0.030))
 
     // Inline lyric/scripture markup ({color=…}, **bold**) reaches us in the
@@ -96,6 +144,10 @@ Item {
     function _rich(s) {
         const t = AppState.withVerseNumberSetting(s)
         return t.length > 0 ? LyricsService.dslToHtml(t, "") : ""
+    }
+
+    function _escape(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     }
 
     // No anchors on the root: a Loader already sizes its item, and a component
@@ -117,8 +169,11 @@ Item {
             id: liveLabel
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - counter.width - clock.width - stage._pad * 2
-            text: stage._itemTitle
+            width: Math.max(0, parent.width - status.width - counter.width - timer.width
+                                  - clock.width - stage._pad * 4)
+            text: stage._curSection.length > 0
+                  ? stage._itemTitle + "  ·  " + stage._curSection
+                  : stage._itemTitle
             color: stage._accent
             elide: Text.ElideRight
             font.family: Theme.font.family
@@ -126,16 +181,86 @@ Item {
             font.weight: Theme.font.weightSemiBold
         }
 
-        Text {
-            id: counter
-            anchors.right: clock.left
+        // The audience screen being blanked or showing the logo is information
+        // the person on stage needs, otherwise they keep preaching to a black
+        // screen believing their point is up. A tag up here says so without
+        // covering the words, which stay readable through a blank: that is
+        // the reason to blank in the first place.
+        Rectangle {
+            id: status
+            anchors.right: counter.left
             anchors.rightMargin: stage._pad
             anchors.verticalCenter: parent.verticalCenter
-            visible: stage._pageCount > 0
+            visible: stage._blanked
+            width: visible ? statusLabel.implicitWidth + stage._pad : 0
+            height: statusLabel.implicitHeight + Math.round(stage._pad * 0.4)
+            color: stage._notesFg
+
+            Text {
+                id: statusLabel
+                anchors.centerIn: parent
+                text: stage._logo ? qsTr("LOGO ON SCREEN") : qsTr("SCREEN BLANKED")
+                color: stage._bg
+                font.family: Theme.font.family
+                font.pixelSize: stage._chromeSize
+                font.weight: Theme.font.weightBold
+                font.letterSpacing: 1
+            }
+        }
+
+        Text {
+            id: counter
+            anchors.right: timer.left
+            anchors.rightMargin: stage._pad
+            anchors.verticalCenter: parent.verticalCenter
+            visible: stage._pageCount > 1
+            width: visible ? implicitWidth : 0
             text: (stage._page + 1) + " / " + stage._pageCount
             color: stage._dim
             font.family: Theme.font.family
             font.pixelSize: stage._chromeSize
+        }
+
+        // The service timer or countdown, started from the console's Stage
+        // timer menu. Labelled, so twelve minutes left is never read as the
+        // time of day. Amber for the last two minutes of a countdown, red
+        // and counting up once it is over.
+        Row {
+            id: timer
+            anchors.right: clock.left
+            anchors.rightMargin: stage._pad
+            anchors.verticalCenter: parent.verticalCenter
+            visible: stage._showTimer
+            width: visible ? implicitWidth : 0
+            spacing: Math.round(stage._pad * 0.4)
+
+            readonly property color _tone: StageTimer.overtime ? stage._over
+                                         : StageTimer.nearEnd ? stage._notesFg
+                                         : stage._text
+
+            Text {
+                anchors.baseline: timerValue.baseline
+                text: !StageTimer.running ? qsTr("PAUSED")
+                    : StageTimer.overtime ? qsTr("OVER")
+                    : StageTimer.mode === "countdown" ? qsTr("LEFT")
+                    : qsTr("SERVICE")
+                color: StageTimer.running ? timer._tone : stage._dim
+                font.family: Theme.font.family
+                font.pixelSize: Math.round(stage._chromeSize * 0.7)
+                font.weight: Theme.font.weightBold
+                font.letterSpacing: 1
+            }
+            Text {
+                id: timerValue
+                text: StageTimer.text
+                color: StageTimer.running ? timer._tone : stage._dim
+                font.family: Theme.font.family
+                font.pixelSize: stage._chromeSize
+                font.weight: Theme.font.weightBold
+                // Even-width digits, so the time does not shift sideways
+                // every second.
+                font.features: { "tnum": 1 }
+            }
         }
 
         // Wall clock. The single most-requested thing on a confidence monitor
@@ -152,6 +277,8 @@ Item {
             id: clock
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
+            visible: stage._showClock
+            width: visible ? implicitWidth : 0
             color: stage._text
             font.family: Theme.font.family
             font.pixelSize: stage._chromeSize
@@ -178,8 +305,10 @@ Item {
         id: headerRule
         anchors { top: header.bottom; left: parent.left; right: parent.right }
         anchors.topMargin: Math.round(stage._pad / 2)
-        height: 1
-        color: stage._rule
+        // Amber while the audience screen is blanked or on the logo, so the
+        // state shows across the whole width, not only in the tag.
+        height: stage._blanked ? Math.max(2, Math.round(stage._pad / 5)) : 1
+        color: stage._blanked ? stage._notesFg : stage._rule
     }
 
     // ── Footer: speaker notes and what is next ──────────────────────────
@@ -191,23 +320,29 @@ Item {
         id: footer
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.margins: stage._pad
-        height: visible ? Math.round(stage.height * 0.26) : 0
-        visible: stage._curNotes.length > 0 || stage._nextText.length > 0
-                 || stage._nextTitle.length > 0
+        visible: _hasNotes || stage._hasNext
 
-        // Notes take two thirds when both are present: notes are prose the
-        // preacher reads, next is a glance.
-        readonly property bool _hasNotes: stage._curNotes.length > 0
-        readonly property bool _hasNext:  stage._nextText.length > 0
-                                       || stage._nextTitle.length > 0
+        readonly property bool _hasNotes: stage._showNotes && stage._curNotes.length > 0
         readonly property real _gap: stage._pad
+        readonly property real _inset: Math.round(stage._pad * 0.7)
+        readonly property real _spacing: Math.round(stage._pad * 0.4)
+        // Next only needs its label and two lines. Notes are prose the
+        // preacher reads, so they get a fixed share of the screen.
+        readonly property real _nextNeeds: _inset * 2 + nextHead.implicitHeight
+                                           + (stage._nextLines.length > 0
+                                              ? _spacing + nextLines.implicitHeight : 0)
+        height: !visible ? 0
+              : _hasNotes ? Math.max(Math.round(stage.height * 0.30), _nextNeeds)
+              : _nextNeeds
 
         Rectangle {
             id: notesPanel
             visible: footer._hasNotes
             anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
-            width: footer._hasNext
-                       ? Math.round((parent.width - footer._gap) * 0.62)
+            // Notes take the larger share when both are present: notes are
+            // read, next is a glance.
+            width: stage._hasNext
+                       ? Math.round((parent.width - footer._gap) * 0.6)
                        : parent.width
             color: stage._panel
             border.color: stage._rule
@@ -215,29 +350,31 @@ Item {
 
             Column {
                 anchors.fill: parent
-                anchors.margins: Math.round(stage._pad * 0.7)
-                spacing: Math.round(stage._pad * 0.4)
+                anchors.margins: footer._inset
+                spacing: footer._spacing
 
                 Text {
+                    id: notesHead
                     text: qsTr("NOTES")
                     color: stage._notesFg
                     font.family: Theme.font.family
-                    font.pixelSize: Math.round(stage._footSize * 0.8)
+                    font.pixelSize: stage._footSize
                     font.weight: Theme.font.weightBold
-                    font.letterSpacing: 2
+                    font.letterSpacing: 1
                 }
                 Text {
                     width: parent.width
-                    height: parent.height - stage._footSize * 1.6
+                    height: parent.height - notesHead.height - parent.spacing
                     text: stage._curNotes
                     color: stage._text
                     wrapMode: Text.Wrap
                     elide: Text.ElideRight
                     font.family: Theme.font.family
-                    font.pixelSize: stage._footSize
+                    font.pixelSize: Math.round(stage._footSize * 1.2)
                     // Fit rather than clip: a long note shrinks to fit its
                     // panel. Notes are the one thing on this screen the
-                    // operator cannot re-read later.
+                    // operator cannot re-read later. Plain text, where
+                    // Qt's own fit works.
                     fontSizeMode: Text.Fit
                     minimumPixelSize: Math.max(9, Math.round(stage._footSize * 0.55))
                 }
@@ -246,7 +383,7 @@ Item {
 
         Rectangle {
             id: nextPanel
-            visible: footer._hasNext
+            visible: stage._hasNext
             anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
             width: footer._hasNotes
                        ? (parent.width - notesPanel.width - footer._gap)
@@ -254,40 +391,57 @@ Item {
             color: stage._panel
             border.color: stage._rule
             border.width: 1
+            clip: true
 
             Column {
                 anchors.fill: parent
-                anchors.margins: Math.round(stage._pad * 0.7)
-                spacing: Math.round(stage._pad * 0.4)
+                anchors.margins: footer._inset
+                spacing: footer._spacing
 
+                // "NEXT  Verse 2", or "NEXT ITEM  Amazing Grace" past the
+                // last page.
                 Text {
-                    text: qsTr("NEXT")
-                    color: stage._dim
-                    font.family: Theme.font.family
-                    font.pixelSize: Math.round(stage._footSize * 0.8)
-                    font.weight: Theme.font.weightBold
-                    font.letterSpacing: 2
-                }
-                Text {
+                    id: nextHead
                     width: parent.width
-                    height: parent.height - stage._footSize * 1.6
-                    text: stage._nextTitle.length > 0
-                              ? stage._nextTitle + (stage._nextText.length > 0
-                                                        ? "\n" + stage._nextText : "")
-                              : stage._nextText
-                    color: stage._dim
-                    wrapMode: Text.Wrap
                     elide: Text.ElideRight
+                    textFormat: Text.StyledText
+                    text: "<b>" + (stage._next ? qsTr("NEXT") : qsTr("NEXT ITEM")) + "</b>"
+                          + (stage._nextLabel.length > 0
+                             ? "&nbsp;&nbsp;&nbsp;<font color=\"" + stage._accent + "\">"
+                               + stage._escape(stage._nextLabel) + "</font>"
+                             : "")
+                    color: stage._dim
                     font.family: Theme.font.family
                     font.pixelSize: stage._footSize
-                    fontSizeMode: Text.Fit
-                    minimumPixelSize: Math.max(9, Math.round(stage._footSize * 0.55))
+                    font.letterSpacing: 1
+                }
+                Text {
+                    id: nextLines
+                    visible: stage._nextLines.length > 0
+                    width: parent.width
+                    text: stage._nextLines
+                    textFormat: Text.PlainText
+                    color: stage._text
+                    opacity: 0.8
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                    font.family: Theme.font.family
+                    font.pixelSize: stage._nextSize
+                    font.weight: Theme.font.weightMedium
                 }
             }
         }
     }
 
     // ── Body: the live words, as large as they will go ──────────────────
+    // The words are RichText (inline colour and bold), and Qt's own
+    // fontSizeMode: Text.Fit does nothing for RichText, so the text used to
+    // stay at its largest size and run over the header and the Next panel.
+    // The size is found here instead, by the same probe-and-binary-search
+    // NodeRenderer uses: the largest size at which the heading and the words
+    // together fit the area. The area also clips, so nothing can ever draw
+    // outside it.
     Item {
         id: body
         anchors {
@@ -298,74 +452,101 @@ Item {
         }
         anchors.margins: stage._pad
         visible: stage._hasLive
+        clip: true
 
-        Text {
-            id: slideTitle
-            anchors { top: parent.top; left: parent.left; right: parent.right }
-            visible: stage._curTitle.length > 0
-            height: visible ? implicitHeight : 0
-            text: stage._curTitle
-            color: stage._accent
-            wrapMode: Text.Wrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
-            horizontalAlignment: Text.AlignHCenter
-            font.family: Theme.font.family
-            font.pixelSize: stage._titleSize
-            font.weight: Theme.font.weightBold
+        // A presentation is a heading with points under it, read like a
+        // page. Lyrics and scripture are centred, as on the audience screen.
+        readonly property bool _isPage: stage._kind === "presentation"
+        readonly property string _html: stage._rich(stage._curText)
+        readonly property real _titleRatio: 1.15
+
+        property int _size: stage._bodyMax
+        function _gapFor(size) {
+            return stage._curTitle.length > 0 && _html.length > 0 ? Math.round(size * 0.45) : 0
         }
 
-        Text {
-            anchors {
-                top: slideTitle.visible ? slideTitle.bottom : parent.top
-                topMargin: slideTitle.visible ? Math.round(stage._pad * 0.6) : 0
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
+        function _refit() {
+            if (width <= 0 || height <= 0) return
+            titleProbe.text = stage._curTitle
+            bodyProbe.text = _html
+            let lo = stage._bodyMin, hi = stage._bodyMax, best = stage._bodyMin
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1
+                titleProbe.font.pixelSize = Math.round(mid * _titleRatio)
+                bodyProbe.font.pixelSize = mid
+                const h = (titleProbe.text.length > 0 ? titleProbe.paintedHeight : 0)
+                        + _gapFor(mid)
+                        + (bodyProbe.text.length > 0 ? bodyProbe.paintedHeight : 0)
+                const w = Math.max(titleProbe.paintedWidth, bodyProbe.paintedWidth)
+                if (h <= height && w <= width) {
+                    best = mid
+                    lo = mid + 1
+                } else {
+                    hi = mid - 1
+                }
             }
-            text: stage._rich(stage._curText)
-            textFormat: Text.RichText
-            color: stage._text
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            font.family: Theme.font.family
-            font.pixelSize: stage._bodyMax
-            font.weight: Theme.font.weightMedium
-            // Qt's own fit, not the binary search NodeRenderer runs. That
-            // one exists because a theme node must land on an exact pixel
-            // size shared with a hidden measuring probe; here nothing else
-            // depends on the resolved size, so the built-in mode is both
-            // correct and much cheaper.
-            fontSizeMode: Text.Fit
-            minimumPixelSize: Math.max(14, Math.round(stage._bodyMax * 0.28))
+            _size = best
         }
-    }
 
-    // ── Status overlays ─────────────────────────────────────────────────
-    // The audience screen being blanked or showing the logo is information
-    // the person on stage needs — otherwise they keep preaching to a black
-    // screen believing their point is up. Shown as a banner rather than by
-    // blanking this screen too: the notes stay readable through a blank,
-    // which is the entire reason to blank in the first place.
-    Rectangle {
-        anchors.centerIn: body
-        width: blankLabel.implicitWidth + stage._pad * 2
-        height: blankLabel.implicitHeight + stage._pad
-        visible: stage._clear || stage._logo
-        color: "#cc000000"
-        border.color: stage._rule
-        border.width: 1
+        // Synchronous, so a new slide appears at its fitted size in one
+        // step rather than flashing at the largest size for a frame.
+        readonly property string _fitKey: stage._curTitle + "\u0001" + _html
+                                          + "\u0001" + width + "x" + height
+        on_FitKeyChanged: _refit()
+        Component.onCompleted: _refit()
 
+        // Hidden measuring copies. Same width, wrap, weight and format as
+        // what is drawn, so their painted size is the drawn size.
         Text {
-            id: blankLabel
-            anchors.centerIn: parent
-            text: stage._logo ? qsTr("LOGO ON SCREEN") : qsTr("SCREEN BLANKED")
-            color: stage._notesFg
+            id: titleProbe
+            visible: false
+            width: body.width
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
             font.family: Theme.font.family
-            font.pixelSize: stage._titleSize
             font.weight: Theme.font.weightBold
-            font.letterSpacing: 3
+        }
+        Text {
+            id: bodyProbe
+            visible: false
+            width: body.width
+            textFormat: Text.RichText
+            wrapMode: Text.Wrap
+            font.family: Theme.font.family
+            font.weight: Theme.font.weightMedium
+        }
+
+        Column {
+            width: parent.width
+            // Centred when it fits. At the smallest size it can still be
+            // taller than the area, and then the top stays in view.
+            y: Math.max(0, Math.round((parent.height - height) / 2))
+            spacing: body._gapFor(body._size)
+
+            Text {
+                width: parent.width
+                visible: stage._curTitle.length > 0
+                text: stage._curTitle
+                textFormat: Text.PlainText
+                color: stage._accent
+                wrapMode: Text.Wrap
+                horizontalAlignment: body._isPage ? Text.AlignLeft : Text.AlignHCenter
+                font.family: Theme.font.family
+                font.pixelSize: Math.round(body._size * body._titleRatio)
+                font.weight: Theme.font.weightBold
+            }
+            Text {
+                width: parent.width
+                visible: body._html.length > 0
+                text: body._html
+                textFormat: Text.RichText
+                color: stage._text
+                wrapMode: Text.Wrap
+                horizontalAlignment: body._isPage ? Text.AlignLeft : Text.AlignHCenter
+                font.family: Theme.font.family
+                font.pixelSize: body._size
+                font.weight: Theme.font.weightMedium
+            }
         }
     }
 
