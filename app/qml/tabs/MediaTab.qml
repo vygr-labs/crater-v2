@@ -1151,8 +1151,8 @@ Item {
                     // z:2 so the pill sits ABOVE the hover-title scrim
                     // declared lower in this delegate — without it, the
                     // scrim's title text was painting over the pill on
-                    // hover. id is exposed so the hover title's anchors
-                    // can stop at this pill's right edge.
+                    // hover. id is exposed so the hover title can stop
+                    // short of this pill's right edge.
                     Rectangle {
                         id: statePill
                         visible: cell._live || cell._preview
@@ -1180,8 +1180,9 @@ Item {
                     // Video duration badge (bottom-right). Only shown once
                     // VideoThumbnailer has probed the clip — until then
                     // durationMs is 0 and the badge stays hidden.
-                    // z:2 + id mirror the state pill so the hover-title
-                    // scrim never paints over the duration text.
+                    // z:2 + id mirror the state pill: the scrim never
+                    // paints over the duration text, and the hover title
+                    // stops short of the badge's left edge.
                     Rectangle {
                         id: durBadge
                         visible: modelData.type === "video" && modelData.durationMs > 0
@@ -1218,10 +1219,14 @@ Item {
                     // Same trick ThemesTab uses for the name chip over
                     // theme tiles.
                     //
-                    // anchors.left / right adapt to whichever pills are
+                    // The title's margins adapt to whichever pills are
                     // present so the title can never overlap them —
-                    // statePill on the left, durBadge on the right.
+                    // statePill on the left, durBadge on the right. The
+                    // pills are the scrim's siblings, not the title's, so
+                    // the title can't anchor to them and works out their
+                    // edges in the scrim's coordinates instead.
                     Rectangle {
+                        id: titleScrim
                         visible: cellMa.containsMouse
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
@@ -1236,11 +1241,13 @@ Item {
                         }
 
                         Text {
-                            anchors.left: statePill.visible ? statePill.right : parent.left
-                            anchors.right: durBadge.visible ? durBadge.left : parent.right
+                            anchors.left: parent.left
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
+                            anchors.leftMargin: 6 + (statePill.visible
+                                ? statePill.x + statePill.width - titleScrim.x : 0)
+                            anchors.rightMargin: 6 + (durBadge.visible
+                                ? titleScrim.x + titleScrim.width - durBadge.x : 0)
                             text: modelData.title
                             color: "#ffffff"
                             font.family: Theme.font.family
@@ -1248,6 +1255,8 @@ Item {
                             font.weight: Theme.font.weightMedium
                             elide: Text.ElideRight
                             style: Text.Raised
+                            // On the narrowest tiles the pills leave no room.
+                            visible: width > 0
                             styleColor: "#000000"
                         }
                     }
