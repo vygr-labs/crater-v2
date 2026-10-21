@@ -47,8 +47,11 @@ public:
     Q_INVOKABLE void cutSelection(QQuickItem* textBox);
 
 protected:
-    // Installed on the application: catches Ctrl+C / Ctrl+X in a text box
-    // and checks the copy once the box has handled the key.
+    // Installed on the application (Windows only): catches Ctrl+C / Ctrl+X
+    // in a text box and checks the copy once the box has handled the key.
+    // A selected box whose own Keys handler takes Ctrl+C for something else
+    // must declare `readonly property bool ownsCopyKey: true`, or the
+    // check would see no copy and write the selection itself.
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:

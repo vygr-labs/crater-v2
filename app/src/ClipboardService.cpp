@@ -60,8 +60,13 @@ quint32 clipboardSequence()
 // offscreen window's id is not a real HWND).
 HWND ownerWindow()
 {
-    static HWND owner = CreateWindowExW(0, L"STATIC", L"Crater clipboard", 0, 0, 0, 0, 0,
-                                        HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), nullptr);
+    static HWND owner = [] {
+        const HWND hwnd = CreateWindowExW(0, L"STATIC", L"Crater clipboard", 0, 0, 0, 0, 0,
+                                          HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (!hwnd)
+            qWarning() << "Clipboard: no owner window for the Win32 fallback, error" << GetLastError();
+        return hwnd;
+    }();
     return owner;
 }
 
@@ -126,8 +131,10 @@ void ensureCopied(quint32, const QString&) {}
 ClipboardService::ClipboardService(QObject* parent)
     : QObject(parent)
 {
+#ifdef Q_OS_WIN
     if (QCoreApplication* app = QCoreApplication::instance())
         app->installEventFilter(this);
+#endif
 }
 
 void ClipboardService::setText(const QString& text)
@@ -173,9 +180,10 @@ bool ClipboardService::eventFilter(QObject* watched, QEvent* event)
 
     QObject* box = QGuiApplication::focusObject();
     // A box that gives Ctrl+C another job (the console search clears the
-    // screen with it) says so, and its key is left alone.
-    if (!isTextBox(box) || !copiesSelection(box, cut) || box->property("ownsCopyKey").toBool())
-        return false;
+    // screen with it) says so, and its Ctrl+C is left alone. Ctrl+Insert
+    // still copies there.
+    if (!isTextBox(box) || !copiesSelection(box, cut)) return false;
+    if (key->key() == Qt::Key_C && box->property("ownsCopyKey").toBool()) return false;
     const QString text = selectionOf(box);
     if (text.isEmpty()) return false;
 

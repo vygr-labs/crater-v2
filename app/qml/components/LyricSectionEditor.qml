@@ -244,6 +244,12 @@ Rectangle {
                     linesEdit.forceActiveFocus()
                     linesEdit.cursorPosition = linesEdit.length
                 }
+                Keys.onPressed: function(event) {
+                    if (event.matches(StandardKey.Copy) && labelInput.selectedText.length === 0) {
+                        root.copySongRequested()
+                        event.accepted = true
+                    }
+                }
 
                 // Placeholder
                 Text {

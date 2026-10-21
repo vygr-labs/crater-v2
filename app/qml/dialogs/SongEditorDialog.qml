@@ -11,7 +11,8 @@ import Crater
 //   • undo/redo stack, dirty-state confirmation on close
 //   • Ctrl+S = save, Ctrl+Z = undo, Ctrl+Y/Ctrl+Shift+Z = redo, Ctrl+M
 //     toggle view mode (electron used Ctrl+Shift+M; we use Ctrl+M because
-//     it doesn't collide with anything else in the operator console)
+//     it doesn't collide with anything else in the operator console),
+//     Ctrl+C with nothing selected = copy the whole song
 //   • live preview rendered through the same ThemedMonitor used by the
 //     Preview/Live panels, so the editor shows what the projection will
 //
@@ -353,10 +354,10 @@ ModalShell {
     function _copySong() {
         const plain = _sections.map(function(s) {
             return { label: s.label, lines: (s.lines || []).map(function(l) {
-                return LyricsService.flattenLine(l)
+                return LyricsService.flattenLine(String(l || ""))
             }) }
         })
-        ClipboardService.setText(rawEditor.serialize(plain).trim())
+        ClipboardService.setText(rawEditor.serialize(plain).replace(/\s+$/, ""))
     }
 
 
@@ -466,9 +467,9 @@ ModalShell {
     Shortcut { sequence: "Ctrl+Tab";       onActivated: root._toggleViewMode() }
     Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: root._toggleViewMode() }
     // Ctrl+C away from any text box copies the song. A focused box claims
-    // the key first, and the lyric boxes hand it back through
-    // copySongRequested when nothing is selected.
-    Shortcut { sequence: "Ctrl+C"; onActivated: root._copySong() }
+    // the key first, and every box in the dialog hands it back when
+    // nothing is selected.
+    Shortcut { sequences: [StandardKey.Copy]; onActivated: root._copySong() }
 
     // Rich-text shortcuts — apply formatting to the currently-focused
     // lyric editor. Each handler guards on `_focusedLyricEditor.activeFocus`
@@ -618,6 +619,12 @@ ModalShell {
                     // the rest of the header. Saving stays on the Save
                     // button and Ctrl+S, so a half-typed song isn't saved.
                     onAccepted: authorField.focusField()
+                    Keys.onPressed: function(event) {
+                        if (event.matches(StandardKey.Copy) && titleInput.selectedText.length === 0) {
+                            root._copySong()
+                            event.accepted = true
+                        }
+                    }
 
                     Text {
                         visible: titleInput.text.length === 0
@@ -697,6 +704,7 @@ ModalShell {
                 text: root._author
                 onEdited: function(t) { root._author = t }
                 onAdvance: copyrightField.focusField()
+                onCopySongRequested: root._copySong()
             }
             CreditField {
                 id: copyrightField
@@ -705,6 +713,7 @@ ModalShell {
                 text: root._copyright
                 onEdited: function(t) { root._copyright = t }
                 onAdvance: ccliField.focusField()
+                onCopySongRequested: root._copySong()
             }
             CreditField {
                 id: ccliField
@@ -715,6 +724,7 @@ ModalShell {
                 validator: RegularExpressionValidator { regularExpression: /[0-9]*/ }
                 onEdited: function(t) { root._ccli = t }
                 onAdvance: root._focusLyrics()
+                onCopySongRequested: root._copySong()
             }
         }
 
@@ -737,6 +747,7 @@ ModalShell {
         property alias  validator: creditInput.validator
         signal edited(string text)
         signal advance()
+        signal copySongRequested()
 
         function focusField() {
             creditInput.forceActiveFocus()
@@ -787,6 +798,12 @@ ModalShell {
             selectByMouse: true
             onTextEdited: credit.edited(text)
             onAccepted: credit.advance()
+            Keys.onPressed: function(event) {
+                if (event.matches(StandardKey.Copy) && creditInput.selectedText.length === 0) {
+                    credit.copySongRequested()
+                    event.accepted = true
+                }
+            }
         }
     }
 
@@ -966,7 +983,7 @@ ModalShell {
                             height: 20
                             Text {
                                 anchors.centerIn: parent
-                                text: qsTr("Ctrl+S save · Ctrl+Z undo · Ctrl+M toggle view")
+                                text: qsTr("Ctrl+S save · Ctrl+Z undo · Ctrl+M toggle view · Ctrl+C copy song")
                                 color: Theme.color.textTertiary
                                 font.family: Theme.font.family
                                 font.pixelSize: Theme.font.smallSize - 1

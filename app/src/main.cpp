@@ -528,8 +528,8 @@ int main(int argc, char* argv[])
     crater::FileDialogService fileDialogService;
     crater::TextContextMenu   textContextMenu;
     // Thin QtGui clipboard shim — lets QML copy scripture text to the system
-    // clipboard. Stateless, no deps; see ClipboardService.h for why it's in
-    // the app target rather than crater-core.
+    // clipboard, with a Win32 fallback for every copy; see ClipboardService.h
+    // for both, and why it's in the app target rather than crater-core.
     crater::ClipboardService  clipboardService;
     // LogReportService uploads crater.log to voyagerlabs.tech on an explicit
     // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
