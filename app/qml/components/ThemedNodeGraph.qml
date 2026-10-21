@@ -62,25 +62,37 @@ Item {
     // (data.autoHeight), and any node can position relative to another
     // (data.autoPosition). Together these make a bottom-anchored lower-third
     // "card" whose height tracks the verse length, killing the dead space
-    // under short verses. Each node publishes its computed pixel rect + its
-    // measured content height here, keyed by node id; dependents read it.
-    // _rectsRev forces re-evaluation (a plain JS map is not deeply reactive).
-    property var _nodeRects: ({})
-    property int _rectsRev: 0
-    // Publishes a node's CONTENT rect — where its text ACTUALLY renders after
-    // verticalAlign + auto-fit, not its box. Hug / stack align to content, so a
-    // container can wrap auto-fit text without ever resizing the text's box
-    // (which is what broke auto-fit in the first design). Containers publish
-    // their whole box as content.
-    function _publishRect(id, contentTop, contentBottom) {
-        if (!id) return
-        const c = _nodeRects[id]
-        if (c && Math.abs(c.contentTop - contentTop) < 0.01
-              && Math.abs(c.contentBottom - contentBottom) < 0.01) return
-        _nodeRects[id] = { contentTop: contentTop, contentBottom: contentBottom }
-        _rectsRev++
+    // under short verses. Each node exposes its CONTENT rect — where its text
+    // ACTUALLY renders after verticalAlign + auto-fit, not its box — as
+    // contentTop / contentBottom on its delegate. Hug / stack align to
+    // content, so a container can wrap auto-fit text without ever resizing
+    // the text's box (which is what broke auto-fit in the first design).
+    // Containers expose their whole box as content.
+    //
+    // Dependents read those properties straight off the source's delegate,
+    // so a node's layout depends only on the nodes it names. (A shared map
+    // with one revision counter made every stacked node depend on every
+    // node's publish, its own included: moving it bumped the counter its
+    // own position was computed from, a binding loop on every layout.)
+    // _itemsRev only moves when a delegate comes or goes.
+    property var _itemsById: ({})
+    property int _itemsRev: 0
+    // A node naming itself, or two nodes naming each other (A stacks on B
+    // while B hugs A), can't be laid out: each edge would be computed from
+    // the other. Those references are ignored and the nodes keep their
+    // configured box.
+    function _rectOf(id, selfId) {
+        _itemsRev   // dep: the source's delegate may not exist yet
+        if (!id || id === selfId) return null
+        const it = _itemsById[id]
+        if (!it || _names(it, selfId)) return null
+        return { contentTop: it.contentTop, contentBottom: it.contentBottom }
     }
-    function _rectOf(id) { _rectsRev; return _nodeRects[id] || null }   // _rectsRev = dep
+    function _names(item, id) {
+        const ap = item._ap, ah = item._ah
+        return (!!ap && ap.source === id)
+            || (!!ah && (ah.source === id || ah.from === id || ah.to === id))
+    }
 
     // ── Group / card layout registries ──────────────────────────────────
     // A "group" container (data.group) stacks its member nodes, hugs the total,
@@ -203,13 +215,13 @@ Item {
                 if (!_ah) return _baseH
                 const padT = _pct(_ah.padTop), padB = _pct(_ah.padBottom)
                 if (_ah.from && _ah.to) {
-                    const fr = root._rectOf(_ah.from), tr = root._rectOf(_ah.to)
+                    const fr = root._rectOf(_ah.from, _nodeId), tr = root._rectOf(_ah.to, _nodeId)
                     if (fr && tr) return Math.max(0, (tr.contentBottom - fr.contentTop) + padT + padB)
                     return _baseH
                 }
                 if (_ah.source === "self" || _ah.source === _nodeId)
                     return Math.max(0, measuredPx + padT + padB)
-                const sr = root._rectOf(_ah.source)
+                const sr = root._rectOf(_ah.source, _nodeId)
                 if (sr) return Math.max(0, (sr.contentBottom - sr.contentTop) + padT + padB)
                 return _baseH
             }
@@ -232,7 +244,7 @@ Item {
             readonly property var  _ap: _data.autoPosition || null
             readonly property real _effTop: {
                 if (_ap) {
-                    const sr = root._rectOf(_ap.source)
+                    const sr = root._rectOf(_ap.source, _nodeId)
                     if (sr) {
                         const gap = _pct(_ap.gap)
                         if (_ap.place === "above") return sr.contentTop - gap - _cbRel
@@ -242,11 +254,11 @@ Item {
                 }
                 if (_ah) {
                     if (_ah.from && _ah.to) {
-                        const fr = root._rectOf(_ah.from)
+                        const fr = root._rectOf(_ah.from, _nodeId)
                         return fr ? (fr.contentTop - _pct(_ah.padTop)) : _baseY
                     }
                     if (!(_ah.source === "self" || _ah.source === _nodeId)) {
-                        const sr = root._rectOf(_ah.source)
+                        const sr = root._rectOf(_ah.source, _nodeId)
                         return sr ? (sr.contentTop - _pct(_ah.padTop)) : _baseY
                     }
                     // self-hug → anchor to own configured box edge
@@ -322,23 +334,32 @@ Item {
             readonly property string _groupParent: root._groupParentOf(_nodeId)
             readonly property var    _myLayout: _groupParent ? root._memberLayoutOf(_nodeId) : null
 
-            // Publish the CONTENT rect (containers expose their whole box).
-            // y / height are bound to _effTop / _effHeight, so onYChanged /
-            // onHeightChanged catch geometry moves; onMeasuredPxChanged catches
-            // a remeasure that didn't move this node's box. _publishRect de-dupes.
-            function _publish() {
-                const top = _effTop, h = _effHeight
-                const cTop = (measuredPx <= 0) ? top : (top + _ctRel)
-                const cBot = (measuredPx <= 0) ? (top + h) : (cTop + measuredPx)
-                root._publishRect(_nodeId, cTop, cBot)
-                root._publishMeasured(_nodeId, measuredPx)   // for group stacking
-            }
-            onYChanged:          { _publish(); _publishBox() }
-            onHeightChanged:     { _publish(); _publishBox() }
-            onMeasuredPxChanged: _publish()
+            // The CONTENT rect other nodes hug / stack against (containers
+            // expose their whole box). See _rectOf.
+            readonly property real contentTop:
+                measuredPx <= 0 ? _effTop : _effTop + _ctRel
+            readonly property real contentBottom:
+                measuredPx <= 0 ? _effTop + _effHeight : contentTop + measuredPx
+
+            onYChanged:          _publishBox()
+            onHeightChanged:     _publishBox()
+            onMeasuredPxChanged: root._publishMeasured(_nodeId, measuredPx)   // for group stacking
             onXChanged:          _publishBox()
             onWidthChanged:      _publishBox()
-            Component.onCompleted: { _publish(); _publishBox() }
+            Component.onCompleted: {
+                if (_nodeId) {
+                    root._itemsById[_nodeId] = nodeWrap
+                    root._itemsRev++
+                }
+                root._publishMeasured(_nodeId, measuredPx)
+                _publishBox()
+            }
+            Component.onDestruction: {
+                if (root._itemsById[_nodeId] === nodeWrap) {
+                    delete root._itemsById[_nodeId]
+                    root._itemsRev++
+                }
+            }
 
             // The rendered box, for the editor's selection chrome.
             function _publishBox() { root._publishLayoutRect(_nodeId, x, y, width, height) }
