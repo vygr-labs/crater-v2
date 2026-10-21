@@ -7,9 +7,14 @@
 #include <QSet>
 #include <QString>
 
+#include <atomic>
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 class QAudioOutput;
 class QMediaPlayer;
+class QThreadPool;
+class QUrl;
 class QVideoFrame;
 class QVideoSink;
 QT_END_NAMESPACE
@@ -77,7 +82,10 @@ namespace crater {
 //   copy instead, made on a worker the first time the file plays; the entry
 //   stays keyed by the WebM's URL, so subscribers and transport never see
 //   the swap. Until the copy is ready the player has no source and the
-//   outputs show nothing, rather than the video on a white box.
+//   outputs show nothing, rather than the video on a white box. Play and
+//   pause pressed meanwhile are remembered and applied when it opens.
+//   Conversions run one at a time on a low-priority thread, and quitting
+//   stops one within a frame.
 //
 //   VideoOutput draws every frame opaque, so a video with alpha punches a
 //   hole through whatever is behind it. hasAlpha(url) tells QML which
@@ -152,6 +160,9 @@ public:
 
     // Whether the frames playing for `url` carry an alpha channel.
     Q_INVOKABLE bool hasAlpha(const QString& url) const;
+    // Whether `url` is waiting for its transparent copy, so it has no
+    // frames yet through no fault of the file.
+    Q_INVOKABLE bool isPreparing(const QString& url) const;
     int alphaRevision() const { return m_alphaRevision; }
 
     double volume() const { return m_volume; }
@@ -188,6 +199,8 @@ private:
         bool                          loopPinned = false; // operator override
         bool                          cued   = false;  // set up in Preview
         bool                          alpha  = false;  // last frame had alpha
+        bool                          preparing = false;   // waiting for its copy
+        bool                          startPaused = false; // paused while preparing
     };
 
     Entry* entryForToken(int token) const;
@@ -197,6 +210,8 @@ private:
     void   broadcastFrame(Entry& e, const QVideoFrame& frame);
     void   destroyEntry(const QString& url);
     void   openSource(Entry& e);
+    void   startPlayer(Entry& e, const QUrl& source);
+    Entry* preparingEntry(const QString& url) const;
 
     QHash<QString, Entry*> m_byUrl;
     QHash<int, QString>    m_tokenToUrl;
@@ -204,10 +219,14 @@ private:
     double                 m_volume = 1.0;
     bool                   m_muted  = false;
     int                    m_alphaRevision = 0;
-    // Transparent-copy bookkeeping, by local file path: files with a check
-    // or conversion running, and WebMs found to have no alpha stream.
+    // Transparent-copy bookkeeping. Files (local paths) with a check or
+    // conversion running, and the WebMs that play as they are, keyed by
+    // transparentvideo::copyPath so a changed file is looked at again, with
+    // when to try again (failures are retried after a while).
     QSet<QString>          m_preparing;
-    QSet<QString>          m_noAlphaStream;
+    QHash<QString, qint64> m_playOriginalUntil;
+    QThreadPool*           m_convertPool = nullptr;
+    std::shared_ptr<std::atomic_bool> m_cancel;
 };
 
 }  // namespace crater

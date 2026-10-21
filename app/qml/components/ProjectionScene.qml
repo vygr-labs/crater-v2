@@ -352,7 +352,10 @@ Item {
                 if (stalled.length === 0 && now < scene._readyDeadline
                         - scene._readyTimeoutMs + scene._imageTimeoutMs)
                     return
-                for (let i = 0; i < stalled.length; ++i) scene._stalledUrls[stalled[i]] = true
+                // A video still being made transparent isn't broken, and
+                // is waited for normally once its copy exists.
+                for (let i = 0; i < stalled.length; ++i)
+                    if (!MediaPlaybackService.isPreparing(stalled[i])) scene._stalledUrls[stalled[i]] = true
             }
             stop()
             scene._runTransition()

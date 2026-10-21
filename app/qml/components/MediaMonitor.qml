@@ -262,6 +262,9 @@ Item {
             // not the oversized output's.
             layer.enabled: MediaPlaybackService.alphaRevision >= 0
                            && MediaPlaybackService.hasAlpha(root.activeUrl)
+            // Scaled up on a big screen and far down in the monitors.
+            layer.smooth: true
+            layer.mipmap: true
             layer.effect: ShaderEffect {
                 fragmentShader: "qrc:/crater/shaders/premultiply.frag.qsb"
             }
