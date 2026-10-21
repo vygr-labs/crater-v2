@@ -96,6 +96,7 @@ ModalShell {
             { keys: ["Ctrl+Y", "Ctrl+Shift+Z"],    label: qsTr("Redo") },
             { keys: ["Ctrl+M", "Ctrl+Tab"],        label: qsTr("Switch between sections and raw text") },
             { keys: ["Ctrl+B", "Ctrl+I", "Ctrl+U"], label: qsTr("Bold, italic, underline") },
+            { keys: ["Ctrl+C"],                    label: qsTr("Copy the whole song, with nothing selected") },
             { keys: ["Ctrl+Shift+V"],              label: qsTr("Paste as plain text") }
         ] },
         { title: qsTr("Schedule item editor"), rows: [

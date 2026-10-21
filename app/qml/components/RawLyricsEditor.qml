@@ -25,6 +25,8 @@ Rectangle {
     signal dslEdited(string dsl)
     signal cursorMoved(int position, string plainText)
     signal activated()
+    // Ctrl+C with nothing selected, so the host can copy the whole song.
+    signal copySongRequested()
 
     // ── DSL bridge ──────────────────────────────────────────────────────
     // Same echo guard as LyricSectionEditor: writing HTML into the editor
@@ -182,6 +184,10 @@ Rectangle {
                     && (event.modifiers & Qt.ControlModifier)) {
                     RichTextHelper.pasteFiltered(
                         rawArea, !(event.modifiers & Qt.ShiftModifier))
+                    event.accepted = true
+                } else if (event.matches(StandardKey.Copy)
+                           && rawArea.selectedText.length === 0) {
+                    root.copySongRequested()
                     event.accepted = true
                 }
             }
