@@ -1,13 +1,22 @@
 #include "MediaPlaybackService.h"
 
+#include "crater/TransparentVideo.h"
+
 #include <QAudioOutput>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
+#include <QFutureWatcher>
 #include <QMediaPlayer>
+#include <QThreadPool>
 #include <QtAudio>
+#include <QtConcurrent>
 #include <QUrl>
 #include <QVideoFrame>
+#include <QVideoFrameFormat>
 #include <QVideoSink>
 
+#include <limits>
 #include <utility>
 
 namespace crater {
@@ -24,17 +33,43 @@ float linearGain(double perceptual)
                                   QtAudio::LogarithmicVolumeScale,
                                   QtAudio::LinearVolumeScale);
 }
+
+// Straight (not premultiplied) formats with an alpha channel, the ones
+// FFmpeg's decoders hand Qt for PNG, QuickTime Animation and the like.
+bool hasAlphaChannel(QVideoFrameFormat::PixelFormat format)
+{
+    switch (format) {
+    case QVideoFrameFormat::Format_ARGB8888:
+    case QVideoFrameFormat::Format_BGRA8888:
+    case QVideoFrameFormat::Format_ABGR8888:
+    case QVideoFrameFormat::Format_RGBA8888:
+    case QVideoFrameFormat::Format_AYUV:
+        return true;
+    default:
+        return false;
+    }
+}
 }  // namespace
 
 MediaPlaybackService::MediaPlaybackService(QObject* parent)
     : QObject(parent)
+    , m_convertPool(new QThreadPool(this))
+    , m_cancel(std::make_shared<std::atomic_bool>(false))
 {
     g_instance = this;
+    // One transparent copy at a time, behind the live playback.
+    m_convertPool->setMaxThreadCount(1);
+    m_convertPool->setThreadPriority(QThread::LowPriority);
+    if (QCoreApplication* app = QCoreApplication::instance())
+        connect(app, &QCoreApplication::aboutToQuit, this, [cancel = m_cancel] { cancel->store(true); });
 }
 
 MediaPlaybackService::~MediaPlaybackService()
 {
     if (g_instance == this) g_instance = nullptr;
+    // A conversion stops within a frame, so quitting doesn't wait for it.
+    m_cancel->store(true);
+    m_convertPool->waitForDone();
     // QObject parent cleanup destroys players/sinks automatically; the
     // qDeleteAll here just frees the heap Entry structs themselves.
     qDeleteAll(m_byUrl);
@@ -76,7 +111,18 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
                 [this, urlCopy](const QVideoFrame& f) {
                     const auto it = m_byUrl.constFind(urlCopy);
                     if (it == m_byUrl.constEnd()) return;
-                    broadcastFrame(*it.value(), f);
+                    Entry& entry = *it.value();
+                    // An empty frame (stop, source change) says nothing
+                    // about the video.
+                    if (f.isValid()) {
+                        const bool alpha = hasAlphaChannel(f.pixelFormat());
+                        if (alpha != entry.alpha) {
+                            entry.alpha = alpha;
+                            ++m_alphaRevision;
+                            emit alphaRevisionChanged();
+                        }
+                    }
+                    broadcastFrame(entry, f);
                 });
 
         // What the player went through, for when a looping background
@@ -97,10 +143,8 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
                                          << "error:" << message;
                 });
 
-        e->player->setSource(QUrl(sourceUrl));
-        e->player->play();
-
         m_byUrl.insert(sourceUrl, e);
+        openSource(*e);
         emit sourceAdded(sourceUrl);
     } else if (!e->loopPinned) {
         // Existing decoder, new subscriber with a different loop preference —
@@ -132,6 +176,84 @@ void MediaPlaybackService::applyLoop(Entry& e, bool loop)
     emit loopChanged(e.url);
 }
 
+// Points the new player at its file. A WebM that may carry an alpha stream
+// is checked (and converted) on a worker first, see the header.
+void MediaPlaybackService::openSource(Entry& e)
+{
+    using transparentvideo::Result;
+    const QString path = QUrl(e.url).toLocalFile();
+    if (path.isEmpty() || !transparentvideo::mayCarryAlpha(path)) {
+        startPlayer(e, QUrl(e.url));
+        return;
+    }
+    const QString key = transparentvideo::copyPath(path);
+    if (m_playOriginalUntil.value(key) > QDateTime::currentMSecsSinceEpoch()) {
+        startPlayer(e, QUrl(e.url));
+        return;
+    }
+    if (const QString copy = transparentvideo::cachedCopy(path); !copy.isEmpty()) {
+        startPlayer(e, QUrl::fromLocalFile(copy));
+        return;
+    }
+    e.preparing = true;
+    // Already running for an earlier entry of this file. Its result finds
+    // this entry through the map.
+    if (m_preparing.contains(path)) return;
+    m_preparing.insert(path);
+
+    using Watcher = QFutureWatcher<transparentvideo::Prepared>;
+    auto* watcher = new Watcher(this);
+    connect(watcher, &Watcher::finished, this, [this, watcher, path, key] {
+        const transparentvideo::Prepared prepared = watcher->result();
+        watcher->deleteLater();
+        m_preparing.remove(path);
+        if (prepared.result == Result::Cancelled) return;   // quitting
+        if (prepared.result == Result::NoAlpha || prepared.result == Result::TooLarge)
+            m_playOriginalUntil.insert(key, std::numeric_limits<qint64>::max());
+        else if (prepared.result == Result::Failed)   // a locked file, a full disk
+            m_playOriginalUntil.insert(key, QDateTime::currentMSecsSinceEpoch() + 2 * 60 * 1000);
+        // Every entry still waiting on this file, however its url was
+        // spelled. The last subscriber may have gone while it ran.
+        for (Entry* entry : std::as_const(m_byUrl)) {
+            if (!entry->preparing || QUrl(entry->url).toLocalFile() != path) continue;
+            entry->preparing = false;
+            startPlayer(*entry, prepared.copy.isEmpty() ? QUrl(entry->url)
+                                                        : QUrl::fromLocalFile(prepared.copy));
+        }
+    });
+    watcher->setFuture(QtConcurrent::run(m_convertPool, [path, cancel = m_cancel] {
+        try {
+            return transparentvideo::prepare(path, cancel.get());
+        } catch (...) {   // out of memory on a huge frame
+            return transparentvideo::Prepared{ Result::Failed, {} };
+        }
+    }));
+}
+
+void MediaPlaybackService::startPlayer(Entry& e, const QUrl& source)
+{
+    e.player->setSource(source);
+    if (e.startPaused) e.player->pause();
+    else               e.player->play();
+}
+
+MediaPlaybackService::Entry* MediaPlaybackService::preparingEntry(const QString& url) const
+{
+    Entry* e = m_byUrl.value(url, nullptr);
+    return e && e->preparing ? e : nullptr;
+}
+
+bool MediaPlaybackService::hasAlpha(const QString& url) const
+{
+    const Entry* e = m_byUrl.value(url, nullptr);
+    return e && e->alpha;
+}
+
+bool MediaPlaybackService::isPreparing(const QString& url) const
+{
+    return preparingEntry(url) != nullptr;
+}
+
 // ── Transport ───────────────────────────────────────────────────────────
 
 bool MediaPlaybackService::hasSource(const QString& url) const
@@ -153,6 +275,7 @@ bool MediaPlaybackService::loopFor(const QString& url) const
 
 void MediaPlaybackService::play(const QString& url)
 {
+    if (Entry* e = preparingEntry(url)) { e->startPaused = false; return; }
     QMediaPlayer* p = playerFor(url);
     if (!p) return;
     // A play-once clip that ran out sits at EndOfMedia holding its last
@@ -164,11 +287,13 @@ void MediaPlaybackService::play(const QString& url)
 
 void MediaPlaybackService::pause(const QString& url)
 {
+    if (Entry* e = preparingEntry(url)) { e->startPaused = true; return; }
     if (QMediaPlayer* p = playerFor(url)) p->pause();
 }
 
 void MediaPlaybackService::togglePlay(const QString& url)
 {
+    if (Entry* e = preparingEntry(url)) { e->startPaused = !e->startPaused; return; }
     QMediaPlayer* p = playerFor(url);
     if (!p) return;
     if (p->playbackState() == QMediaPlayer::PlayingState) p->pause();
@@ -177,6 +302,7 @@ void MediaPlaybackService::togglePlay(const QString& url)
 
 void MediaPlaybackService::stop(const QString& url)
 {
+    if (Entry* e = preparingEntry(url)) { e->startPaused = true; return; }
     QMediaPlayer* p = playerFor(url);
     if (!p) return;
     // pause + rewind, NOT QMediaPlayer::stop(): stop() releases the decoded
@@ -188,6 +314,7 @@ void MediaPlaybackService::stop(const QString& url)
 
 void MediaPlaybackService::restart(const QString& url)
 {
+    if (Entry* e = preparingEntry(url)) { e->startPaused = false; return; }
     QMediaPlayer* p = playerFor(url);
     if (!p) return;
     p->setPosition(0);
@@ -240,6 +367,13 @@ void MediaPlaybackService::cueForLive(const QString& url, bool loop)
     if (!e) return;
     const bool cued = e->cued;
     e->cued = false;
+    // Still being made transparent: it opens on its first frame anyway, and
+    // goes live playing.
+    if (e->preparing) {
+        e->startPaused = false;
+        if (!cued) { e->loopPinned = false; applyLoop(*e, loop); }
+        return;
+    }
     // Cued in Preview: the operator chose this frame and loop setting, so go
     // live exactly there. A cued clip that ran out still starts over.
     if (cued && e->player->mediaStatus() != QMediaPlayer::EndOfMedia) {
@@ -330,7 +464,14 @@ void MediaPlaybackService::attachOutput(int token, QVideoSink* outSink)
     // away rather than waiting for the next decoded frame (~16-33 ms
     // latency otherwise — visible flash on attach).
     const QVideoFrame current = target->sink->videoFrame();
-    if (current.isValid()) outSink->setVideoFrame(current);
+    if (current.isValid()) {
+        outSink->setVideoFrame(current);
+    } else if (target->preparing || hasAlphaChannel(outSink->videoFrame().pixelFormat())) {
+        // Nothing to show for a while (a transparent copy is being made), or
+        // the frame left over is a transparent one that the new source's
+        // layer settings would draw opaque. Clear it rather than hold it.
+        outSink->setVideoFrame(QVideoFrame());
+    }
 }
 
 void MediaPlaybackService::detachOutput(QVideoSink* outSink)

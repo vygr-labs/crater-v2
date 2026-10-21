@@ -4,11 +4,17 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QString>
+
+#include <atomic>
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 class QAudioOutput;
 class QMediaPlayer;
+class QThreadPool;
+class QUrl;
 class QVideoFrame;
 class QVideoSink;
 QT_END_NAMESPACE
@@ -70,6 +76,23 @@ namespace crater {
 //   session-only master mute. Both apply on top of the per-subscriber
 //   wantsAudio OR, so they never make a muted surface audible.
 //
+// Transparency:
+//   A WebM can keep its transparency in a side stream Qt's decoder drops
+//   (TransparentVideo.h). The player for one opens on a cached transparent
+//   copy instead, made on a worker the first time the file plays; the entry
+//   stays keyed by the WebM's URL, so subscribers and transport never see
+//   the swap. Until the copy is ready the player has no source and the
+//   outputs show nothing, rather than the video on a white box. Play and
+//   pause pressed meanwhile are remembered and applied when it opens.
+//   Conversions run one at a time on a low-priority thread, and quitting
+//   stops one within a frame.
+//
+//   VideoOutput draws every frame opaque, so a video with alpha punches a
+//   hole through whatever is behind it. hasAlpha(url) tells QML which
+//   videos need drawing through a premultiplying layer
+//   (shaders/premultiply.frag); it is read from the decoded frames, so a
+//   transparent MOV the operator imported directly counts too.
+//
 // Safety: output sinks are tracked via QPointer so a VideoOutput
 // destroyed without an explicit detach (e.g. window teardown) auto-
 // invalidates rather than leaving a dangling pointer in the broadcast
@@ -82,6 +105,9 @@ class MediaPlaybackService : public QObject
     Q_PROPERTY(double volume READ volume WRITE setVolume NOTIFY volumeChanged)
     // Session-only master mute for foreground video audio.
     Q_PROPERTY(bool   muted  READ muted  WRITE setMuted  NOTIFY mutedChanged)
+    // Bumped whenever a source's hasAlpha() answer changes, so QML bindings
+    // that call hasAlpha() re-evaluate.
+    Q_PROPERTY(int alphaRevision READ alphaRevision NOTIFY alphaRevisionChanged)
 
 public:
     explicit MediaPlaybackService(QObject* parent = nullptr);
@@ -132,6 +158,13 @@ public:
     // starts at 0 anyway.
     Q_INVOKABLE void cueForLive(const QString& url, bool loop);
 
+    // Whether the frames playing for `url` carry an alpha channel.
+    Q_INVOKABLE bool hasAlpha(const QString& url) const;
+    // Whether `url` is waiting for its transparent copy, so it has no
+    // frames yet through no fault of the file.
+    Q_INVOKABLE bool isPreparing(const QString& url) const;
+    int alphaRevision() const { return m_alphaRevision; }
+
     double volume() const { return m_volume; }
     void   setVolume(double v);
     bool   muted() const  { return m_muted; }
@@ -148,6 +181,7 @@ signals:
     void loopChanged(const QString& url);
     void volumeChanged();
     void mutedChanged();
+    void alphaRevisionChanged();
 
 private:
     struct Subscriber {
@@ -164,6 +198,9 @@ private:
         bool                          loop   = true;   // last-writer-wins per URL
         bool                          loopPinned = false; // operator override
         bool                          cued   = false;  // set up in Preview
+        bool                          alpha  = false;  // last frame had alpha
+        bool                          preparing = false;   // waiting for its copy
+        bool                          startPaused = false; // paused while preparing
     };
 
     Entry* entryForToken(int token) const;
@@ -172,12 +209,24 @@ private:
     void   applyLoop(Entry& e, bool loop);
     void   broadcastFrame(Entry& e, const QVideoFrame& frame);
     void   destroyEntry(const QString& url);
+    void   openSource(Entry& e);
+    void   startPlayer(Entry& e, const QUrl& source);
+    Entry* preparingEntry(const QString& url) const;
 
     QHash<QString, Entry*> m_byUrl;
     QHash<int, QString>    m_tokenToUrl;
     int                    m_nextToken = 1;
     double                 m_volume = 1.0;
     bool                   m_muted  = false;
+    int                    m_alphaRevision = 0;
+    // Transparent-copy bookkeeping. Files (local paths) with a check or
+    // conversion running, and the WebMs that play as they are, keyed by
+    // transparentvideo::copyPath so a changed file is looked at again, with
+    // when to try again (failures are retried after a while).
+    QSet<QString>          m_preparing;
+    QHash<QString, qint64> m_playOriginalUntil;
+    QThreadPool*           m_convertPool = nullptr;
+    std::shared_ptr<std::atomic_bool> m_cancel;
 };
 
 }  // namespace crater

@@ -255,6 +255,20 @@ Item {
             anchors.fill: parent
             clip: root._cropped
 
+            // A video with transparency (an animated logo) goes through a
+            // premultiplying layer so what's behind it shows through. See
+            // shaders/premultiply.frag. On this wrapper rather than the
+            // VideoOutput, so a cropped video's layer is the monitor's size,
+            // not the oversized output's.
+            layer.enabled: MediaPlaybackService.alphaRevision >= 0
+                           && MediaPlaybackService.hasAlpha(root.activeUrl)
+            // Scaled up on a big screen and far down in the monitors.
+            layer.smooth: true
+            layer.mipmap: true
+            layer.effect: ShaderEffect {
+                fragmentShader: "qrc:/crater/shaders/premultiply.frag.qsb"
+            }
+
             // True once a frame from THIS item's player has arrived.
             // Attaching to a player that is already running pushes its
             // current frame straight away (MediaPlaybackService::
