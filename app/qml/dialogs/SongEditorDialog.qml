@@ -346,6 +346,19 @@ ModalShell {
         if (_currentSection >= parsed.length) _currentSection = parsed.length - 1
     }
 
+    // Ctrl+C with nothing selected copies the whole song as plain text in
+    // the raw view's [Label] layout. The structured view gives each section
+    // its own box, so a selection can never cover more than one. Raw edits
+    // commit on every keystroke, so _sections is current in either view.
+    function _copySong() {
+        const plain = _sections.map(function(s) {
+            return { label: s.label, lines: (s.lines || []).map(function(l) {
+                return LyricsService.flattenLine(l)
+            }) }
+        })
+        ClipboardService.setText(rawEditor.serialize(plain).trim())
+    }
+
 
     function _toggleViewMode() {
         if (_viewMode === "structured") {
@@ -452,6 +465,10 @@ ModalShell {
     // the only handler that fires.
     Shortcut { sequence: "Ctrl+Tab";       onActivated: root._toggleViewMode() }
     Shortcut { sequence: "Ctrl+Shift+Tab"; onActivated: root._toggleViewMode() }
+    // Ctrl+C away from any text box copies the song. A focused box claims
+    // the key first, and the lyric boxes hand it back through
+    // copySongRequested when nothing is selected.
+    Shortcut { sequence: "Ctrl+C"; onActivated: root._copySong() }
 
     // Rich-text shortcuts — apply formatting to the currently-focused
     // lyric editor. Each handler guards on `_focusedLyricEditor.activeFocus`
@@ -900,6 +917,7 @@ ModalShell {
                                     onLyricEditorActivated: function(idx, editor) {
                                         root._focusedLyricEditor = editor
                                     }
+                                    onCopySongRequested: root._copySong()
                                 }
                             }
                         }
@@ -1007,6 +1025,7 @@ ModalShell {
                     // Set on entry only, so the toolbar keeps its target
                     // when focus moves onto a toolbar button.
                     onActivated: root._focusedLyricEditor = rawEditor.editor
+                    onCopySongRequested: root._copySong()
                     // Preview follows the verse the caret is in.
                     onCursorMoved: function(position, plainText) {
                         const idx = rawEditor.sectionAt(position, plainText,

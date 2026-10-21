@@ -45,6 +45,9 @@ Rectangle {
     // `editor` is the actual TextEdit QQuickItem — RichTextHelper takes
     // it by pointer via the property system.
     signal lyricEditorActivated(int idx, var editor)
+    // Ctrl+C with nothing selected. The dialog copies the whole song, since
+    // a selection can't reach past this one section.
+    signal copySongRequested()
 
     // Forward-edge accessor used by the parent so it can focus the label
     // input of a freshly-added section after the Repeater has built it.
@@ -320,6 +323,10 @@ Rectangle {
                         RichTextHelper.pasteFiltered(
                             linesEdit,
                             !(event.modifiers & Qt.ShiftModifier))
+                        event.accepted = true
+                    } else if (event.matches(StandardKey.Copy)
+                               && linesEdit.selectedText.length === 0) {
+                        root.copySongRequested()
                         event.accepted = true
                     }
                 }

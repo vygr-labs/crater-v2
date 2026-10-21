@@ -606,6 +606,9 @@ Item {
             // Controlled mode owns editing — we manage characters via
             // Keys.onPressed below. Standard text editing is suppressed.
             readOnly: root.isControlledMode
+            // Ctrl+C here clears the screen (Keys.onPressed below), so
+            // ClipboardService's copy fallback leaves the key alone.
+            readonly property bool ownsCopyKey: true
 
             onTextChanged: {
                 if (text !== root.queryText) AppState.setSearch(root.tabKey, text)
