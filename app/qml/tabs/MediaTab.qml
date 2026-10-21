@@ -1218,10 +1218,14 @@ Item {
                     // Same trick ThemesTab uses for the name chip over
                     // theme tiles.
                     //
-                    // anchors.left / right adapt to whichever pills are
+                    // The title's margins adapt to whichever pills are
                     // present so the title can never overlap them —
-                    // statePill on the left, durBadge on the right.
+                    // statePill on the left, durBadge on the right. The
+                    // pills are the scrim's siblings, not the title's, so
+                    // the title can't anchor to them and works out their
+                    // edges in the scrim's coordinates instead.
                     Rectangle {
+                        id: titleScrim
                         visible: cellMa.containsMouse
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
@@ -1236,11 +1240,13 @@ Item {
                         }
 
                         Text {
-                            anchors.left: statePill.visible ? statePill.right : parent.left
-                            anchors.right: durBadge.visible ? durBadge.left : parent.right
+                            anchors.left: parent.left
+                            anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
+                            anchors.leftMargin: 6 + (statePill.visible
+                                ? statePill.x + statePill.width - titleScrim.x : 0)
+                            anchors.rightMargin: 6 + (durBadge.visible
+                                ? titleScrim.x + titleScrim.width - durBadge.x : 0)
                             text: modelData.title
                             color: "#ffffff"
                             font.family: Theme.font.family
