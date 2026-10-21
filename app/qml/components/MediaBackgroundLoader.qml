@@ -194,6 +194,15 @@ Item {
             fillMode: VideoOutput.PreserveAspectCrop
             opacity: root.bgOpacity
 
+            // A video with transparency (an animated logo) goes through a
+            // premultiplying layer so what's behind it shows through. See
+            // shaders/premultiply.frag. The layer takes the opacity above.
+            layer.enabled: MediaPlaybackService.alphaRevision >= 0
+                           && MediaPlaybackService.hasAlpha(root.activeUrl)
+            layer.effect: ShaderEffect {
+                fragmentShader: "qrc:/crater/shaders/premultiply.frag.qsb"
+            }
+
             // Same url keying as MediaMonitor's video: this item survives a
             // change of background, and the old video's frames must not
             // count for the new one.

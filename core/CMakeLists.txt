@@ -53,6 +53,8 @@ add_library(crater-core STATIC
     src/ThemeTokens.cpp
     src/ThemePrompt.cpp
     src/MediaService.cpp
+    # Transparent WebM: decodes the alpha side stream Qt's FFmpeg skips.
+    src/TransparentVideo.cpp
     src/FontService.cpp
     src/OutputService.cpp
     src/ProjectionService.cpp
@@ -105,6 +107,7 @@ add_library(crater-core STATIC
     include/crater/LyricsDSL.h
     include/crater/LyricsService.h
     include/crater/HelpLinks.h
+    include/crater/TransparentVideo.h
 )
 
 target_include_directories(crater-core
@@ -116,6 +119,10 @@ target_include_directories(crater-core
         # consumers of crater-core never see sqlite3.h directly — services
         # expose only Q_OBJECT-friendly types (ARCHITECTURE.md §4).
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party
+        # FFmpeg's public headers, matching the FFmpeg Qt Multimedia ships.
+        # Only TransparentVideo.cpp includes them, and it links nothing: the
+        # functions are resolved at run time. See the README beside them.
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/ffmpeg
 )
 
 target_link_libraries(crater-core

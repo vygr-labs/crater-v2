@@ -1,11 +1,16 @@
 #include "MediaPlaybackService.h"
 
+#include "crater/TransparentVideo.h"
+
 #include <QAudioOutput>
 #include <QDebug>
+#include <QFutureWatcher>
 #include <QMediaPlayer>
 #include <QtAudio>
+#include <QtConcurrent>
 #include <QUrl>
 #include <QVideoFrame>
+#include <QVideoFrameFormat>
 #include <QVideoSink>
 
 #include <utility>
@@ -23,6 +28,22 @@ float linearGain(double perceptual)
     return QtAudio::convertVolume(static_cast<float>(perceptual),
                                   QtAudio::LogarithmicVolumeScale,
                                   QtAudio::LinearVolumeScale);
+}
+
+// Straight (not premultiplied) formats with an alpha channel, the ones
+// FFmpeg's decoders hand Qt for PNG, QuickTime Animation and the like.
+bool hasAlphaChannel(QVideoFrameFormat::PixelFormat format)
+{
+    switch (format) {
+    case QVideoFrameFormat::Format_ARGB8888:
+    case QVideoFrameFormat::Format_BGRA8888:
+    case QVideoFrameFormat::Format_ABGR8888:
+    case QVideoFrameFormat::Format_RGBA8888:
+    case QVideoFrameFormat::Format_AYUV:
+        return true;
+    default:
+        return false;
+    }
 }
 }  // namespace
 
@@ -76,7 +97,18 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
                 [this, urlCopy](const QVideoFrame& f) {
                     const auto it = m_byUrl.constFind(urlCopy);
                     if (it == m_byUrl.constEnd()) return;
-                    broadcastFrame(*it.value(), f);
+                    Entry& entry = *it.value();
+                    // An empty frame (stop, source change) says nothing
+                    // about the video.
+                    if (f.isValid()) {
+                        const bool alpha = hasAlphaChannel(f.pixelFormat());
+                        if (alpha != entry.alpha) {
+                            entry.alpha = alpha;
+                            ++m_alphaRevision;
+                            emit alphaRevisionChanged();
+                        }
+                    }
+                    broadcastFrame(entry, f);
                 });
 
         // What the player went through, for when a looping background
@@ -97,10 +129,8 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
                                          << "error:" << message;
                 });
 
-        e->player->setSource(QUrl(sourceUrl));
-        e->player->play();
-
         m_byUrl.insert(sourceUrl, e);
+        openSource(*e);
         emit sourceAdded(sourceUrl);
     } else if (!e->loopPinned) {
         // Existing decoder, new subscriber with a different loop preference —
@@ -130,6 +160,49 @@ void MediaPlaybackService::applyLoop(Entry& e, bool loop)
     e.player->setLoops(loop ? QMediaPlayer::Infinite : 1);
     qInfo().noquote() << "MediaPlayback:" << QUrl(e.url).fileName() << "loop" << (loop ? "on" : "off");
     emit loopChanged(e.url);
+}
+
+// Points the new player at its file. A WebM that may carry an alpha stream
+// is checked (and converted) on a worker first, see the header.
+void MediaPlaybackService::openSource(Entry& e)
+{
+    const QString path = QUrl(e.url).toLocalFile();
+    const auto play = [](Entry& entry, const QUrl& source) {
+        entry.player->setSource(source);
+        entry.player->play();
+    };
+    if (path.isEmpty() || m_noAlphaStream.contains(path)
+        || !transparentvideo::mayCarryAlpha(path)) {
+        play(e, QUrl(e.url));
+        return;
+    }
+    if (const QString copy = transparentvideo::cachedCopy(path); !copy.isEmpty()) {
+        play(e, QUrl::fromLocalFile(copy));
+        return;
+    }
+    // Already running for an earlier entry of this URL. Its result finds
+    // this entry through the map.
+    if (m_preparing.contains(path)) return;
+    m_preparing.insert(path);
+
+    auto* watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this,
+            [this, watcher, path, url = e.url, play] {
+                const QString copy = watcher->result();
+                watcher->deleteLater();
+                m_preparing.remove(path);
+                if (copy.isEmpty()) m_noAlphaStream.insert(path);
+                // The last subscriber may have gone while it ran.
+                if (Entry* entry = m_byUrl.value(url, nullptr))
+                    play(*entry, copy.isEmpty() ? QUrl(url) : QUrl::fromLocalFile(copy));
+            });
+    watcher->setFuture(QtConcurrent::run([path] { return transparentvideo::prepare(path); }));
+}
+
+bool MediaPlaybackService::hasAlpha(const QString& url) const
+{
+    const Entry* e = m_byUrl.value(url, nullptr);
+    return e && e->alpha;
 }
 
 // ── Transport ───────────────────────────────────────────────────────────

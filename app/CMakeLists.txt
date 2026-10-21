@@ -272,6 +272,7 @@ qt_add_shaders(crater "crater_shaders"
     BASE   "${CMAKE_CURRENT_SOURCE_DIR}/qml"
     FILES  qml/shaders/gradient.frag
            qml/shaders/outline.frag
+           qml/shaders/premultiply.frag
 )
 
 # Bundle the Lucide icon font and Funnel Sans body font as Qt resources
