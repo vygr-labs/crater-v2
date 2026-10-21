@@ -77,10 +77,21 @@ Item {
     // _itemsRev only moves when a delegate comes or goes.
     property var _itemsById: ({})
     property int _itemsRev: 0
-    function _rectOf(id) {
+    // A node naming itself, or two nodes naming each other (A stacks on B
+    // while B hugs A), can't be laid out: each edge would be computed from
+    // the other. Those references are ignored and the nodes keep their
+    // configured box.
+    function _rectOf(id, selfId) {
         _itemsRev   // dep: the source's delegate may not exist yet
+        if (!id || id === selfId) return null
         const it = _itemsById[id]
-        return it ? { contentTop: it.contentTop, contentBottom: it.contentBottom } : null
+        if (!it || _names(it, selfId)) return null
+        return { contentTop: it.contentTop, contentBottom: it.contentBottom }
+    }
+    function _names(item, id) {
+        const ap = item._ap, ah = item._ah
+        return (!!ap && ap.source === id)
+            || (!!ah && (ah.source === id || ah.from === id || ah.to === id))
     }
 
     // ── Group / card layout registries ──────────────────────────────────
@@ -204,13 +215,13 @@ Item {
                 if (!_ah) return _baseH
                 const padT = _pct(_ah.padTop), padB = _pct(_ah.padBottom)
                 if (_ah.from && _ah.to) {
-                    const fr = root._rectOf(_ah.from), tr = root._rectOf(_ah.to)
+                    const fr = root._rectOf(_ah.from, _nodeId), tr = root._rectOf(_ah.to, _nodeId)
                     if (fr && tr) return Math.max(0, (tr.contentBottom - fr.contentTop) + padT + padB)
                     return _baseH
                 }
                 if (_ah.source === "self" || _ah.source === _nodeId)
                     return Math.max(0, measuredPx + padT + padB)
-                const sr = root._rectOf(_ah.source)
+                const sr = root._rectOf(_ah.source, _nodeId)
                 if (sr) return Math.max(0, (sr.contentBottom - sr.contentTop) + padT + padB)
                 return _baseH
             }
@@ -233,7 +244,7 @@ Item {
             readonly property var  _ap: _data.autoPosition || null
             readonly property real _effTop: {
                 if (_ap) {
-                    const sr = root._rectOf(_ap.source)
+                    const sr = root._rectOf(_ap.source, _nodeId)
                     if (sr) {
                         const gap = _pct(_ap.gap)
                         if (_ap.place === "above") return sr.contentTop - gap - _cbRel
@@ -243,11 +254,11 @@ Item {
                 }
                 if (_ah) {
                     if (_ah.from && _ah.to) {
-                        const fr = root._rectOf(_ah.from)
+                        const fr = root._rectOf(_ah.from, _nodeId)
                         return fr ? (fr.contentTop - _pct(_ah.padTop)) : _baseY
                     }
                     if (!(_ah.source === "self" || _ah.source === _nodeId)) {
-                        const sr = root._rectOf(_ah.source)
+                        const sr = root._rectOf(_ah.source, _nodeId)
                         return sr ? (sr.contentTop - _pct(_ah.padTop)) : _baseY
                     }
                     // self-hug → anchor to own configured box edge
