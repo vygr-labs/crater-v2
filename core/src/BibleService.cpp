@@ -269,6 +269,21 @@ void BibleService::setPreloadAll(bool on)
 
 BibleService::~BibleService() = default;
 
+void BibleService::libraryChanged(const QString& code)
+{
+    if (m_impl) {
+        // Callers aren't consistent about a code's case ("kjv" from the
+        // library group), so every spelling goes.
+        const auto same = [&code](const QString& key) { return key.compare(code, Qt::CaseInsensitive) == 0; };
+        m_impl->verses.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->verseRows.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->books.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->recent.removeIf(same);
+    }
+    ++m_translationsRevision;
+    emit translationsChanged();
+}
+
 QList<Translation> BibleService::libraryTranslations()
 {
     QList<Translation> out;

@@ -2042,6 +2042,24 @@ QtObject {
         activeLibraryGroup = copy
     }
 
+    // A translation the operator removed (Settings > Scripture): the
+    // Scripture tab and the default version move to the first one left
+    // rather than pointing at nothing. BibleService has already dropped it
+    // (main.cpp connects that first).
+    readonly property Connections _removedTranslationWatch: Connections {
+        target: BibleImporter
+        function onRemoved(code) {
+            const up = String(code).toUpperCase()
+            const left = BibleService.translations()
+            if (left.length === 0) return
+            const first = String(left[0].code)
+            if (String(SettingsService.defaultScriptureVersion).toUpperCase() === up)
+                SettingsService.defaultScriptureVersion = first
+            if (String(state.activeLibraryGroup["scripture"] || "").toUpperCase() === up)
+                state.setLibraryGroup("scripture", first.toLowerCase())
+        }
+    }
+
     function setLibraryFluid(tabKey, idx) {
         let copy = Object.assign({}, libraryFluidIndex)
         copy[tabKey] = idx

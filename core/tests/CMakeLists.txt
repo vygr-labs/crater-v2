@@ -252,6 +252,25 @@ target_include_directories(test_bible_import PRIVATE
 
 add_test(NAME bible_import COMMAND test_bible_import)
 
+# -- Bible files -- Zefania, OpenSong, OSIS, USFM and USX each read to the
+# same plain verses, then one goes through BibleImporter into the library,
+# is read and searched through BibleService, and is removed again.
+qt_add_executable(test_bible_formats
+    test_bible_formats.cpp
+)
+
+target_link_libraries(test_bible_formats PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_bible_formats PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME bible_formats COMMAND test_bible_formats)
+
 # -- Media relocation -- issue #14 ----------------------------------------
 # Rows store the absolute path a managed file had at import. A data folder
 # restored under another profile made the startup orphan sweep delete every

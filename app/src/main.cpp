@@ -63,6 +63,7 @@
 #include "crater/PresentationService.h"
 #include "crater/ProfileService.h"
 #include "crater/Bootstrap.h"
+#include "crater/BibleImporter.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
 #include "crater/LyricsService.h"
@@ -589,6 +590,9 @@ int main(int argc, char* argv[])
     // service — the Songs tab's import dialog drives it through signals. It
     // holds no state between runs, so one instance serves every import.
     crater::EasyWorshipImporter easyWorshipImporter;
+    // Bible files (Zefania, OpenSong, OSIS, USFM, USX) into the shared
+    // library, and removing ones the operator added. Same one-shot shape.
+    crater::BibleImporter bibleImporter;
     // BrowserCast (removable feature) — serves the live projection to a TV's
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
@@ -635,6 +639,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
     qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "BibleImporter",         &bibleImporter);
     qmlRegisterSingletonInstance("Crater", 1, 0, "BrowserCastService",    &browserCastService);  // BrowserCast (removable feature)
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionLayering",    &projectionLayering);
     // BrowserCast (removable feature) — the LAN server is started on demand
@@ -660,6 +665,13 @@ int main(int argc, char* argv[])
                      [&songService](int /*imported*/, int /*skipped*/) {
                          songService.reload();
                      });
+    // Likewise a Bible added or removed: BibleImporter wrote bibles.sqlite
+    // on its own connection, so BibleService drops what it cached for that
+    // code and every translation list re-reads.
+    QObject::connect(&bibleImporter, &crater::BibleImporter::completed, &bibleService,
+                     [&bibleService](const QString& code, int) { bibleService.libraryChanged(code); });
+    QObject::connect(&bibleImporter, &crater::BibleImporter::removed, &bibleService,
+                     &crater::BibleService::libraryChanged);
 
     // Warm up pdfium on a worker thread now so the operator's first PDF
     // view doesn't pay its multi-second one-time global init. No-op when

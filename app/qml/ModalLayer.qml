@@ -67,6 +67,13 @@ Item {
         sourceComponent: ImportDialog { }
     }
 
+    // ── Bible import (Zefania, OpenSong, OSIS, USFM, USX) ──────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "bibleImport"
+        sourceComponent: BibleImportDialog { }
+    }
+
     // ── Media edit (per-item fit / crop / loop / mute) ──────────────────
     Loader {
         anchors.fill: parent

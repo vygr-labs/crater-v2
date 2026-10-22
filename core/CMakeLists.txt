@@ -35,6 +35,10 @@ add_library(crater-core STATIC
     src/import/ParadoxTable.cpp
     src/import/EasyWorshipImporter.cpp
 
+    # Bible files (Zefania, OpenSong, OSIS, USFM, USX) into the shared library.
+    src/import/BibleFormats.cpp
+    src/import/BibleImporter.cpp
+
     # Public bootstrap entry point — runs migrations on all DBs.
     src/Bootstrap.cpp
 
@@ -83,6 +87,7 @@ add_library(crater-core STATIC
     include/crater/ProfileService.h
     include/crater/ElectronDataImporter.h
     include/crater/EasyWorshipImporter.h
+    include/crater/BibleImporter.h
     include/crater/WorkingTheme.h
     include/crater/value/Translation.h
     include/crater/value/Book.h

@@ -315,6 +315,11 @@ bool ElectronDataImporter::legacyAvailable() const
     return !findLegacyBibleDbPath().isEmpty();
 }
 
+QString ElectronDataImporter::bundledBiblesPath()
+{
+    return findLegacyBibleDbPath();
+}
+
 QFuture<bool> ElectronDataImporter::run()
 {
     return QtConcurrent::run([this]() -> bool {

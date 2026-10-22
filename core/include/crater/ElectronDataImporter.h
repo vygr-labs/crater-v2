@@ -43,6 +43,10 @@ public:
     // True iff a legacy bibles.sqlite is findable on disk.
     bool legacyAvailable() const;
 
+    // The bundled bibles.sqlite (search order above), or empty when there
+    // isn't one. BibleImporter reads it to tell shipped translations apart.
+    static QString bundledBiblesPath();
+
     // Runs import on a worker thread. QFuture resolves with `true` on success.
     // Progress/completion is also delivered via the signals below — preferred
     // path for QML consumers.
