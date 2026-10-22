@@ -595,6 +595,16 @@ QtObject {
         return "“" + body + "”\n" + attribution
     }
 
+    // An item's copy text in the current shape. Items carry theirs from when
+    // they were built, so a schedule saved before the YouVersion shape holds
+    // the old one ("text", a blank line, "- John 3:16 (KJV)"), rewritten here.
+    function scriptureCopyTextOf(item) {
+        const text = String((item && item.copyText) || "")
+        const old = text.match(/^"([\s\S]*)"\n\n- ([\s\S]*?)(?: \(([^()]*)\))?$/)
+        if (!old) return text
+        return "“" + old[1] + "”\n" + old[2] + (old[3] ? " " + old[3] : "")
+    }
+
     // Human reference for a sorted verse array: grouped by (book, chapter),
     // contiguous runs collapsed ("John 3:14-16, 18; Rom 5:8"). The leading
     // integer of each verse is read, so "12", "1-2" and "2a" all work.
