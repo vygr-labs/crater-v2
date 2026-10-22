@@ -7,10 +7,10 @@
 
 namespace crater::db {
 
-Transaction::Transaction(Connection& c)
+Transaction::Transaction(Connection& c, Begin begin)
     : m_conn(&c)
 {
-    m_conn->exec(QStringLiteral("BEGIN"));
+    m_conn->exec(begin == Begin::Immediate ? QStringLiteral("BEGIN IMMEDIATE") : QStringLiteral("BEGIN"));
     // Record begin time so the BUSY diagnostic and the commit-hook trace
     // can report transaction duration. Done here (not on the exec("BEGIN")
     // path) because db::Transaction is the single explicit boundary for

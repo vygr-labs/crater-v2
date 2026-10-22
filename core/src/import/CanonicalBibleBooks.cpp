@@ -86,6 +86,33 @@ QList<BibleBookMeta> buildCanonicalList()
     };
 }
 
+// USFM's order (TOB, JDT, ESG, WIS, ...). 84 is Psalm 151, stored as Psalms
+// 151 (kPsalm151), so it has no entry.
+QList<BibleBookMeta> buildDeuterocanonList()
+{
+    const auto ot = QStringLiteral("OT");
+    return {
+        {QStringLiteral("Tobit"),              QStringLiteral("Tob"),    67, ot},
+        {QStringLiteral("Judith"),             QStringLiteral("Jdt"),    68, ot},
+        {QStringLiteral("Esther (Greek)"),     QStringLiteral("EsthGr"), 69, ot},
+        {QStringLiteral("Wisdom"),             QStringLiteral("Wis"),    70, ot},
+        {QStringLiteral("Sirach"),             QStringLiteral("Sir"),    71, ot},
+        {QStringLiteral("Baruch"),             QStringLiteral("Bar"),    72, ot},
+        {QStringLiteral("Letter of Jeremiah"), QStringLiteral("EpJer"),  73, ot},
+        {QStringLiteral("Prayer of Azariah"),  QStringLiteral("PrAzar"), 74, ot},
+        {QStringLiteral("Susanna"),            QStringLiteral("Sus"),    75, ot},
+        {QStringLiteral("Bel and the Dragon"), QStringLiteral("Bel"),    76, ot},
+        {QStringLiteral("1 Maccabees"),        QStringLiteral("1Macc"),  77, ot},
+        {QStringLiteral("2 Maccabees"),        QStringLiteral("2Macc"),  78, ot},
+        {QStringLiteral("3 Maccabees"),        QStringLiteral("3Macc"),  79, ot},
+        {QStringLiteral("4 Maccabees"),        QStringLiteral("4Macc"),  80, ot},
+        {QStringLiteral("1 Esdras"),           QStringLiteral("1Esd"),   81, ot},
+        {QStringLiteral("2 Esdras"),           QStringLiteral("2Esd"),   82, ot},
+        {QStringLiteral("Prayer of Manasseh"), QStringLiteral("PrMan"),  83, ot},
+        {QStringLiteral("Daniel (Greek)"),     QStringLiteral("DanGr"),  85, ot},
+    };
+}
+
 // Normalize a book name for lookup: lowercase, collapse whitespace, expand
 // number prefixes ("first" -> "1", "1samuel" -> "1 samuel").
 QString normalizeKey(QStringView s)
@@ -98,6 +125,8 @@ QString normalizeKey(QStringView s)
         out = QStringLiteral("2 ") + out.mid(7);
     else if (out.startsWith(QStringLiteral("third ")))
         out = QStringLiteral("3 ") + out.mid(6);
+    else if (out.startsWith(QStringLiteral("fourth ")))
+        out = QStringLiteral("4 ") + out.mid(7);
 
     // "1samuel" -> "1 samuel"  (digit immediately followed by letter)
     static const QRegularExpression numPrefix(QStringLiteral("^(\\d)([a-z])"));
@@ -139,6 +168,27 @@ const QHash<QString, BibleBookMeta>& lookupTable()
         addAlias(u"jud", QStringLiteral("Jude"));        // vs Judges (Judg)
         addAlias(u"hb",  QStringLiteral("Hebrews"));     // vs Habakkuk (Hab)
         addAlias(u"ph",  QStringLiteral("Philippians")); // vs Philemon (Phlm)
+
+        // The deuterocanon, by name and abbreviation only: none of these
+        // takes part in the fuzzy matching below.
+        for (const auto& b : deuterocanonicalBooks()) {
+            h.insert(normalizeKey(b.name),   b);
+            h.insert(normalizeKey(b.abbrev), b);
+        }
+        addAlias(u"tobias",                          QStringLiteral("Tobit"));   // Douay
+        addAlias(u"wisdom of solomon",               QStringLiteral("Wisdom"));
+        addAlias(u"ecclesiasticus",                  QStringLiteral("Sirach"));
+        addAlias(u"ben sira",                        QStringLiteral("Sirach"));
+        addAlias(u"epistle of jeremiah",             QStringLiteral("Letter of Jeremiah"));
+        addAlias(u"epistle of jeremy",               QStringLiteral("Letter of Jeremiah"));
+        addAlias(u"song of the three",               QStringLiteral("Prayer of Azariah"));
+        addAlias(u"song of the three holy children", QStringLiteral("Prayer of Azariah"));
+        addAlias(u"song of the three young men",     QStringLiteral("Prayer of Azariah"));
+        addAlias(u"prayer of manasses",              QStringLiteral("Prayer of Manasseh"));
+        addAlias(u"greek esther",                    QStringLiteral("Esther (Greek)"));
+        addAlias(u"additions to esther",             QStringLiteral("Esther (Greek)"));
+        addAlias(u"rest of esther",                  QStringLiteral("Esther (Greek)"));
+        addAlias(u"greek daniel",                    QStringLiteral("Daniel (Greek)"));
         return h;
     }();
     return table;
@@ -261,12 +311,242 @@ const QList<BibleBookMeta>& allCanonicalBooks()
     return list;
 }
 
+const QList<BibleBookMeta>& deuterocanonicalBooks()
+{
+    static const QList<BibleBookMeta> list = buildDeuterocanonList();
+    return list;
+}
+
+const BibleBookMeta* bookByNumber(int bookNumber)
+{
+    if (bookNumber >= 1 && bookNumber <= 66) return &allCanonicalBooks().at(bookNumber - 1);
+    for (const auto& b : deuterocanonicalBooks())
+        if (b.bookNumber == bookNumber) return &b;
+    return nullptr;
+}
+
+int bookListPosition(int bookNumber)
+{
+    static const QHash<int, int> positions = [] {
+        // Each book of the deuterocanon follows the one named here.
+        static const int after[][2] = {
+            { 14, 83 },   // 2 Chronicles: the Prayer of Manasseh, his prayer in 2 Chr 33
+            { 16, 81 }, { 81, 82 },             // Nehemiah: 1 and 2 Esdras
+            { 82, 67 }, { 67, 68 },             // Tobit, Judith
+            { 17, 69 },                         // Esther: the Greek Esther
+            { 69, 77 }, { 77, 78 }, { 78, 79 }, { 79, 80 },   // the Maccabees
+            { 22, 70 }, { 70, 71 },             // Song of Songs: Wisdom, Sirach
+            { 25, 72 }, { 72, 73 },             // Lamentations: Baruch, Letter of Jeremiah
+            { 27, 85 }, { 85, 74 }, { 74, 75 }, { 75, 76 },   // Daniel and its additions
+        };
+        QHash<int, int> follows;
+        for (const auto& pair : after) follows.insert(pair[0], pair[1]);
+        QHash<int, int> out;
+        int position = 0;
+        for (const auto& b : allCanonicalBooks()) {
+            for (int n = b.bookNumber; n; n = follows.value(n)) out.insert(n, position++);
+        }
+        return out;
+    }();
+    return positions.value(bookNumber, 1000 + bookNumber);
+}
+
+namespace {
+
+// A book name from a file, ready to compare: lowercase, diacritics off
+// ("Deuteronómium" -> "deuteronomium"), hyphens and dots gone (Vietnamese
+// "Phi-lê-môn", "1. Samuelova"), Roman numbers as digits ("II Kings").
+QString plainName(QStringView name)
+{
+    QString plain;
+    for (const QChar c : normalizeKey(name).normalized(QString::NormalizationForm_D)) {
+        if (c.category() == QChar::Mark_NonSpacing || c == u'-' || c == u'.') continue;
+        plain += c;
+    }
+    static const QRegularExpression roman(QStringLiteral(R"(^(i{1,3})\s+)"));
+    if (const auto m = roman.match(plain); m.hasMatch())
+        plain = QString::number(m.capturedLength(1)) + u' ' + plain.mid(m.capturedEnd());
+    return normalizeKey(plain);
+}
+
+// Every letter is Latin, and there are at least `minimum` of them.
+bool latinLetters(const QString& plain, int minimum, int* count = nullptr)
+{
+    int letters = 0;
+    for (const QChar c : plain) {
+        if (!c.isLetter()) continue;
+        if (c.script() != QChar::Script_Latin) return false;
+        ++letters;
+    }
+    if (count) *count = letters;
+    return letters >= minimum;
+}
+
+// What a plain name says about the deuterocanon: its book number, by the
+// stems its names share across languages, kUnheld for a book Crater holds
+// under no number, kAmbiguous for a name that could be more than one book,
+// or 0 for neither. The stems also keep these names from matching one of the
+// 66 they look like (Ecclesiasticus or Eclesiástico / Ecclesiastes, Tobit /
+// Obadiah, Psalms of Solomon / Song of Solomon). "Esdras" alone is Ezra in
+// French, Spanish and Portuguese. A numbered Esdras is Ezra or Nehemiah in a
+// Catholic Bible and 1 or 2 Esdras in the KJV's Apocrypha, so where the book
+// sits has to decide.
+constexpr int kUnheld = -1;
+constexpr int kAmbiguous = -2;
+
+bool isEsdras(int bookNumber)
+{
+    return bookNumber == 81 || bookNumber == 82;
+}
+
+// The number a book's name gives it: before the name ("1 Maccabees", "IV
+// Maccabees", "4. Makabejcov" once plain) or after it ("Machabaeorum I",
+// "Makkabeusok II"). 0 for none.
+int nameOrdinal(const QString& plain)
+{
+    static const QRegularExpression before(QStringLiteral(R"(^([1-4]|iv)\s)"));
+    static const QRegularExpression after(QStringLiteral(R"(\s([1-4]|i{1,3}|iv)(\s|$))"));
+    const auto toNumber = [](const QString& n) {
+        if (n == u"iv") return 4;
+        if (n.startsWith(u'i')) return int(n.size());
+        return n.toInt();
+    };
+    if (const auto m = before.match(plain); m.hasMatch()) return toNumber(m.captured(1));
+    if (const auto m = after.match(plain); m.hasMatch()) return toNumber(m.captured(1));
+    return 0;
+}
+
+int deuterocanonFromPlain(const QString& plain)
+{
+    const int number = nameOrdinal(plain);
+
+    static const char* const unheld[] = {
+        "laodic", "odes", "psalms of solomon", "enoch", "henoch", "jubile",
+    };
+    for (const char* stem : unheld)
+        if (plain.contains(QLatin1String(stem))) return kUnheld;
+    if (plain.contains(QLatin1String("esdras"))) return number ? kAmbiguous : 0;
+    // A numbered Baruch (2 Baruch, the Syriac apocalypse) isn't Baruch.
+    for (const char* stem : { "baruc", "baruk", "baruh" })
+        if (plain.contains(QLatin1String(stem))) return number ? kUnheld : 72;
+    for (const char* stem : { "macc", "makab", "makk", "macab", "machab" })
+        if (plain.contains(QLatin1String(stem))) return number ? 76 + number : kAmbiguous;
+
+    // Sirach before Wisdom: "The Wisdom of Jesus the Son of Sirach".
+    struct Stem { const char* stem; int book; };
+    static const Stem held[] = {
+        { "sirach", 71 }, { "sirac", 71 }, { "sirak", 71 }, { "syracyd", 71 },
+        { "clesiastic", 71 }, { "clesiastiq", 71 }, { "ben sira", 71 },
+        { "tob", 67 }, { "judit", 68 }, { "giudit", 68 }, { "iudit", 68 }, { "judyt", 68 },
+        { "wisdom", 70 }, { "sabidur", 70 }, { "sagesse", 70 }, { "weisheit", 70 },
+        { "sapienz", 70 }, { "sapient", 70 }, { "wijsheid", 70 }, { "sabedoria", 70 },
+        { "mudrost", 70 }, { "moudrost", 70 }, { "madrosc", 70 }, { "bolcsesseg", 70 },
+        { "jeremy", 73 }, { "azaria", 74 }, { "three holy", 74 }, { "three young", 74 },
+        { "susan", 75 }, { "zuzan", 75 },
+        { "bel and", 76 }, { "bel et", 76 }, { "bel y", 76 }, { "bel und", 76 }, { "bel dan", 76 },
+        { "manasse", 83 }, { "manases", 83 }, { "manase", 83 },
+    };
+    for (const Stem& s : held)
+        if (plain.contains(QLatin1String(s.stem))) return s.book;
+    return 0;
+}
+
+}  // namespace
+
+bool isUnheldBookName(QStringView name)
+{
+    return deuterocanonFromPlain(plainName(name)) == kUnheld;
+}
+
+int apocryphalEsdras(QStringView name)
+{
+    const QString plain = plainName(name);
+    if (!plain.contains(QLatin1String("esdras"))) return 0;
+    switch (nameOrdinal(plain)) {
+    case 1: case 3: return 81;   // the Vulgate's 3 Esdras is 1 Esdras
+    case 2: case 4: return 82;
+    default: return 0;
+    }
+}
+
+std::optional<BibleBookMeta> lookupBookName(QStringView name)
+{
+    const auto& tbl = lookupTable();
+    if (const auto it = tbl.find(normalizeKey(name)); it != tbl.end()) {
+        if (isEsdras(it->bookNumber)) return std::nullopt;
+        return it.value();
+    }
+    const QString plain = plainName(name);
+    if (const int book = deuterocanonFromPlain(plain); book != 0) {
+        if (book < 0) return std::nullopt;
+        return *bookByNumber(book);
+    }
+    // Short names with an accent ("Jób", "Rút") match once it's off.
+    if (const auto it = tbl.find(plain); it != tbl.end()) {
+        if (isEsdras(it->bookNumber)) return std::nullopt;
+        return it.value();
+    }
+    // Ezra in French, Spanish and Portuguese, too far from "Ezra" to match.
+    if (plain == u"esdras") return tbl.value(QStringLiteral("ezra"));
+
+    // Otherwise only Latin names of four letters or more, and only the
+    // closest full name within a third of the length. A tie means it could
+    // be either, so neither.
+    int letters = 0;
+    if (!latinLetters(plain, 4, &letters)) return std::nullopt;
+    const int bound = qMax(1, letters / 3);
+    std::optional<BibleBookMeta> best;
+    int bestDist = bound + 1;
+    bool tied = false;
+    for (const auto& b : allCanonicalBooks()) {
+        const int dist = boundedDamerauLevenshtein(plain, normalizeKey(b.name), bound);
+        if (dist < bestDist) {
+            best = b;
+            bestDist = dist;
+            tied = false;
+        } else if (dist == bestDist && dist <= bound) {
+            tied = true;
+        }
+    }
+    return tied ? std::nullopt : best;
+}
+
+std::optional<BibleBookMeta> guessBookName(QStringView name)
+{
+    const QString plain = plainName(name);
+    bool isNumber = false;
+    plain.toInt(&isNumber);
+    if (isNumber || !latinLetters(plain, 2)) return std::nullopt;
+    if (const int book = deuterocanonFromPlain(plain); book != 0) {
+        if (book < 0) return std::nullopt;
+        return *bookByNumber(book);
+    }
+    auto guess = lookupBook(name);
+    if (guess && isEsdras(guess->bookNumber)) return std::nullopt;
+    return guess;
+}
+
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt)
 {
     const QString key = normalizeKey(nameOrAlt);
     const auto& tbl = lookupTable();
     const auto it = tbl.find(key);
     if (it != tbl.end()) return it.value();
+    // The start of a deuterocanonical name ("tobi", "1 macca"), unless one
+    // of the 66 starts that way too: then the shortform keeps its meaning.
+    if (key.size() >= 3) {
+        const auto starts = [&key](const BibleBookMeta& b) {
+            return normalizeKey(b.name).startsWith(key) || normalizeKey(b.abbrev).startsWith(key);
+        };
+        const auto& canon = allCanonicalBooks();
+        if (std::none_of(canon.cbegin(), canon.cend(), starts)) {
+            const BibleBookMeta* found = nullptr;
+            int count = 0;
+            for (const auto& b : deuterocanonicalBooks())
+                if (starts(b)) { found = &b; ++count; }
+            if (count == 1) return *found;
+        }
+    }
     // Hash miss → fuzzy. Catches shortforms (gn → Genesis, mt → Matthew),
     // typos (phillipians → Philippians), and missing-vowel inputs (jdgs →
     // Judges) without hand-maintaining an alias table for every variant.

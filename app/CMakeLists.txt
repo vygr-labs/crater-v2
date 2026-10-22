@@ -232,6 +232,7 @@ qt_add_qml_module(crater
         qml/dialogs/NamingDialog.qml
         qml/dialogs/ConfirmDialog.qml
         qml/dialogs/ImportDialog.qml
+        qml/dialogs/BibleImportDialog.qml
         qml/dialogs/MediaEditDialog.qml
         qml/dialogs/PresentationEditorDialog.qml
         qml/dialogs/ScheduleDropdownPopover.qml

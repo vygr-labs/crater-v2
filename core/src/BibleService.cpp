@@ -20,21 +20,45 @@ namespace crater {
 
 namespace {
 
-constexpr QStringView kBooksSql = u"SELECT b.name, b.abbrev, b.testament, b.book_number, "
-    u"       COALESCE(MAX(v.chapter), 0) AS chapter_count "
-    u"FROM books b "
-    u"JOIN translations t ON t.id = b.translation_id "
-    u"LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
-    u"WHERE t.code = ? "
-    u"GROUP BY b.id "
-    u"ORDER BY b.book_number";
+// Books in reading order. The 66 keep theirs, and a Bible added from a file
+// with the deuterocanon has those books where a Catholic Bible puts them
+// rather than after Revelation (import::bookListPosition).
+const QString& bookOrderSql()
+{
+    static const QString sql = [] {
+        QString s = QStringLiteral("CASE b.book_number");
+        for (int n = 1; n <= import::kLastBookNumber; ++n)
+            s += QStringLiteral(" WHEN %1 THEN %2").arg(n).arg(import::bookListPosition(n));
+        return s + QStringLiteral(" ELSE 1000 + b.book_number END");
+    }();
+    return sql;
+}
 
-constexpr QStringView kAllVersesSql = u"SELECT b.name, v.chapter, v.verse, v.text "
-    u"FROM verses v "
-    u"JOIN translations t ON t.id = v.translation_id "
-    u"JOIN books        b ON b.id = v.book_id "
-    u"WHERE t.code = ? "
-    u"ORDER BY b.book_number, v.chapter, v.verse";
+const QString& booksSql()
+{
+    static const QString sql = QStringLiteral(
+        "SELECT b.name, b.abbrev, b.testament, b.book_number, "
+        "       COALESCE(MAX(v.chapter), 0) AS chapter_count "
+        "FROM books b "
+        "JOIN translations t ON t.id = b.translation_id "
+        "LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
+        "WHERE t.code = ? "
+        "GROUP BY b.id "
+        "ORDER BY %1").arg(bookOrderSql());
+    return sql;
+}
+
+const QString& allVersesSql()
+{
+    static const QString sql = QStringLiteral(
+        "SELECT b.name, v.chapter, v.verse, v.text "
+        "FROM verses v "
+        "JOIN translations t ON t.id = v.translation_id "
+        "JOIN books        b ON b.id = v.book_id "
+        "WHERE t.code = ? "
+        "ORDER BY %1, v.chapter, v.verse").arg(bookOrderSql());
+    return sql;
+}
 
 // Paraphrases like The Message are written in paragraphs, and the importer
 // stores a paragraph under every verse number it covers (17,011 of MSG's
@@ -119,8 +143,8 @@ Prefetch prefetchAll()
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             u"BibleService prefetch");
         db::Statement codes  = conn.prepare(u"SELECT code FROM translations ORDER BY sort_order, code");
-        db::Statement books  = conn.prepare(kBooksSql);
-        db::Statement verses = conn.prepare(kAllVersesSql);
+        db::Statement books  = conn.prepare(booksSql());
+        db::Statement verses = conn.prepare(allVersesSql());
         while (codes.step()) {
             const QString code = codes.columnText(0);
             p.books.insert(code, readBooks(books, code));
@@ -191,10 +215,10 @@ struct BibleService::Impl
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
-            "SELECT code, name, year, description "
+            "SELECT code, name, year, description, source "
             "FROM translations "
             "ORDER BY sort_order, code")))
-        , selectBooks(conn.prepare(kBooksSql))
+        , selectBooks(conn.prepare(booksSql()))
         , selectChapter(conn.prepare(QStringLiteral(
             "SELECT v.verse, v.text "
             "FROM verses v "
@@ -202,7 +226,7 @@ struct BibleService::Impl
             "JOIN books        b ON b.id = v.book_id "
             "WHERE t.code = ? AND b.name = ? AND v.chapter = ? "
             "ORDER BY v.verse")))
-        , selectAllVerses(conn.prepare(kAllVersesSql))
+        , selectAllVerses(conn.prepare(allVersesSql()))
         , searchAll(conn.prepare(QStringLiteral(
             "SELECT v.text, b.name, v.chapter, v.verse, t.code, bm25(verses_fts) AS score "
             "FROM verses_fts "
@@ -239,6 +263,14 @@ BibleService::BibleService(QObject* parent)
     connect(&m_impl->prefetch, &QFutureWatcher<Prefetch>::finished, this, [this] {
         if (!m_impl->preloadAll) return;
         Prefetch p = m_impl->prefetch.result();
+        // A translation removed while the worker read it stays gone.
+        // (An unreadable library lists nothing; keep the preload then.)
+        QSet<QString> installed;
+        for (const Translation& t : libraryTranslations()) installed.insert(t.code);
+        if (!installed.isEmpty()) {
+            p.verses.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+            p.books.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+        }
         for (auto it = p.verses.begin(); it != p.verses.end(); ++it) {
             if (m_impl->verses.contains(it.key())) continue;
             m_impl->verses.insert(it.key(), std::move(it.value()));
@@ -269,6 +301,21 @@ void BibleService::setPreloadAll(bool on)
 
 BibleService::~BibleService() = default;
 
+void BibleService::libraryChanged(const QString& code)
+{
+    if (m_impl) {
+        // Callers aren't consistent about a code's case ("kjv" from the
+        // library group), so every spelling goes.
+        const auto same = [&code](const QString& key) { return key.compare(code, Qt::CaseInsensitive) == 0; };
+        m_impl->verses.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->verseRows.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->books.removeIf([&](const auto& it) { return same(it.key()); });
+        m_impl->recent.removeIf(same);
+    }
+    ++m_translationsRevision;
+    emit translationsChanged();
+}
+
 QList<Translation> BibleService::libraryTranslations()
 {
     QList<Translation> out;
@@ -282,6 +329,7 @@ QList<Translation> BibleService::libraryTranslations()
             t.name        = stmt.columnText(1);
             t.year        = stmt.columnInt(2);
             t.description = stmt.columnText(3);
+            t.source      = stmt.columnText(4);
             out.append(std::move(t));
         }
         stmt.reset();   // no read cursor left open
@@ -330,6 +378,8 @@ QVariantList BibleService::allTranslations()
             { QStringLiteral("name"),        t.name },
             { QStringLiteral("description"), t.description },
             { QStringLiteral("hidden"),      m_hidden.contains(t.code.toUpper()) },
+            // Added from a file, so it can be removed (BibleImporter).
+            { QStringLiteral("removable"),   t.source == u"file" },
         });
     }
     return out;
@@ -627,6 +677,10 @@ QFuture<void> BibleService::rebuildFtsIndex()
             // ElectronDataImporter and the bibles V002 re-index migration.
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+            // The index is rebuilt from what verses holds now, so removals still
+            // waiting to be cleared from it are moot (db/BibleExtras.h). Clearing
+            // them later would delete rows the new index doesn't have.
+            conn.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
                 "SELECT v.id, "

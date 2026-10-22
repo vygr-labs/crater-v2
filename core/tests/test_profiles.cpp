@@ -31,6 +31,7 @@
 #include <QTest>
 
 #include "bundle/Zip.h"
+#include "db/BibleExtras.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Migrator.h"
@@ -141,6 +142,7 @@ void ensureSharedBibles()
 {
     Connection c(DbPaths::biblesDbPath(), crater::db::OpenMode::ReadWriteCreate);
     crater::db::Migrator::run(c, QStringLiteral("bibles"));
+    crater::db::ensureBibleExtras(c);   // as runAllMigrations does
 }
 
 // Start the shared library over, empty.

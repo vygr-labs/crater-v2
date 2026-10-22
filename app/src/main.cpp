@@ -19,6 +19,7 @@
 #include <QQmlError>
 #include <QProcess>
 #include <QQuickStyle>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -63,6 +64,7 @@
 #include "crater/PresentationService.h"
 #include "crater/ProfileService.h"
 #include "crater/Bootstrap.h"
+#include "crater/BibleImporter.h"
 #include "crater/EasyWorshipImporter.h"
 #include "crater/ElectronDataImporter.h"
 #include "crater/LyricsService.h"
@@ -502,6 +504,29 @@ int main(int argc, char* argv[])
         bibleService.setView(settingsService.translationOrder(),
                              settingsService.hiddenTranslations());
     };
+    // A translation removed while another profile was open is still in this
+    // one's order or hidden list. Forget it, so adding the same code again
+    // starts shown and at the end here too, as in the profile that removed
+    // it (AppState's _removedTranslationWatch). A switch relaunches, so once
+    // at startup covers every profile.
+    {
+        QSet<QString> installed;
+        for (const QVariant& t : bibleService.allTranslations())
+            installed.insert(t.toMap().value(QStringLiteral("code")).toString().toUpper());
+        // An unreadable library lists nothing, which proves nothing.
+        if (!installed.isEmpty()) {
+            const auto installedOnly = [&installed](QStringList codes) {
+                codes.removeIf([&installed](const QString& c) { return !installed.contains(c.toUpper()); });
+                return codes;
+            };
+            if (const QStringList order = installedOnly(settingsService.translationOrder());
+                order != settingsService.translationOrder())
+                settingsService.setTranslationOrder(order);
+            if (const QStringList hidden = installedOnly(settingsService.hiddenTranslations());
+                hidden != settingsService.hiddenTranslations())
+                settingsService.setHiddenTranslations(hidden);
+        }
+    }
     applyBibleView();
     QObject::connect(&settingsService, &crater::SettingsService::translationOrderChanged,
                      &bibleService, applyBibleView);
@@ -589,6 +614,9 @@ int main(int argc, char* argv[])
     // service — the Songs tab's import dialog drives it through signals. It
     // holds no state between runs, so one instance serves every import.
     crater::EasyWorshipImporter easyWorshipImporter;
+    // Bible files (Zefania, OpenSong, OSIS, USFM, USX) into the shared
+    // library, and removing ones the operator added. Same one-shot shape.
+    crater::BibleImporter bibleImporter;
     // BrowserCast (removable feature) — serves the live projection to a TV's
     // web browser over the LAN. Reads projectionService to choose MJPEG vs
     // native-video delivery; its capture source item is wired in Main.qml.
@@ -635,6 +663,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "LyricsService",         &lyricsService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "RichTextHelper",        &richTextHelper);
     qmlRegisterSingletonInstance("Crater", 1, 0, "EasyWorshipImporter",   &easyWorshipImporter);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "BibleImporter",         &bibleImporter);
     qmlRegisterSingletonInstance("Crater", 1, 0, "BrowserCastService",    &browserCastService);  // BrowserCast (removable feature)
     qmlRegisterSingletonInstance("Crater", 1, 0, "ProjectionLayering",    &projectionLayering);
     // BrowserCast (removable feature) — the LAN server is started on demand
@@ -660,6 +689,13 @@ int main(int argc, char* argv[])
                      [&songService](int /*imported*/, int /*skipped*/) {
                          songService.reload();
                      });
+    // Likewise a Bible added or removed: BibleImporter wrote bibles.sqlite
+    // on its own connection, so BibleService drops what it cached for that
+    // code and every translation list re-reads.
+    QObject::connect(&bibleImporter, &crater::BibleImporter::completed, &bibleService,
+                     [&bibleService](int, const QString& code, int) { bibleService.libraryChanged(code); });
+    QObject::connect(&bibleImporter, &crater::BibleImporter::removed, &bibleService,
+                     [&bibleService](int, const QString& code) { bibleService.libraryChanged(code); });
 
     // Warm up pdfium on a worker thread now so the operator's first PDF
     // view doesn't pay its multi-second one-time global init. No-op when

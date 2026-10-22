@@ -16,6 +16,7 @@ add_library(crater-core STATIC
     src/db/Migrator.cpp
     src/db/DbPaths.cpp
     src/db/FtsQuery.cpp
+    src/db/BibleExtras.cpp
 
     # Bundle layer — stored-only ZIP for .craterheme v2 (ARCHITECTURE.md §10).
     src/bundle/Crc32.cpp
@@ -34,6 +35,10 @@ add_library(crater-core STATIC
     src/import/Rtf.cpp
     src/import/ParadoxTable.cpp
     src/import/EasyWorshipImporter.cpp
+
+    # Bible files (Zefania, OpenSong, OSIS, USFM, USX) into the shared library.
+    src/import/BibleFormats.cpp
+    src/import/BibleImporter.cpp
 
     # Public bootstrap entry point — runs migrations on all DBs.
     src/Bootstrap.cpp
@@ -83,6 +88,7 @@ add_library(crater-core STATIC
     include/crater/ProfileService.h
     include/crater/ElectronDataImporter.h
     include/crater/EasyWorshipImporter.h
+    include/crater/BibleImporter.h
     include/crater/WorkingTheme.h
     include/crater/value/Translation.h
     include/crater/value/Book.h

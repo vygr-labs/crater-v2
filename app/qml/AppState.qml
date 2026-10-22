@@ -1831,6 +1831,9 @@ QtObject {
 
     // Escape while a modal is open.
     function modalEscape() {
+        // A dialog mid-write (a Bible being added) sets closeLocked: even
+        // the double tap, which otherwise closes without asking, waits.
+        if (modalCloseOwner && modalCloseOwner.closeLocked === true) return
         const now = Date.now()
         const second = now - _modalEscapeAt <= doubleTapMs
         _modalEscapeAt = second ? 0 : now
@@ -2049,6 +2052,42 @@ QtObject {
         let copy = Object.assign({}, activeLibraryGroup)
         copy[tabKey] = group
         activeLibraryGroup = copy
+    }
+
+    // A translation the operator removed (Settings > Scripture): the
+    // Scripture tab, the live dock and the default version move to the first
+    // one left rather than pointing at nothing, and this profile forgets it
+    // in its order and hidden list, so adding the same code again starts
+    // fresh. translations() reads the library itself, so it is already
+    // without the removed one even if BibleService hears of it after this.
+    readonly property Connections _removedTranslationWatch: Connections {
+        target: BibleImporter
+        // A Bible added under a code this profile once hid or placed starts
+        // at the end and shown, as the import dialog says.
+        function onCompleted(request, code, verses) {
+            const up = String(code).toUpperCase()
+            const notIt = function(c) { return String(c).toUpperCase() !== up }
+            if (!SettingsService.hiddenTranslations.every(notIt))
+                SettingsService.hiddenTranslations = SettingsService.hiddenTranslations.filter(notIt)
+            if (!SettingsService.translationOrder.every(notIt))
+                SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
+        }
+        function onRemoved(request, code) {
+            const up = String(code).toUpperCase()
+            const notIt = function(c) { return String(c).toUpperCase() !== up }
+            if (!SettingsService.hiddenTranslations.every(notIt))
+                SettingsService.hiddenTranslations = SettingsService.hiddenTranslations.filter(notIt)
+            if (!SettingsService.translationOrder.every(notIt))
+                SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
+            if (state.liveDockTranslation.toUpperCase() === up) state.liveDockTranslation = ""
+            const left = BibleService.translations()
+            if (left.length === 0) return
+            const first = String(left[0].code)
+            if (String(SettingsService.defaultScriptureVersion).toUpperCase() === up)
+                SettingsService.defaultScriptureVersion = first
+            if (String(state.activeLibraryGroup["scripture"] || "").toUpperCase() === up)
+                state.setLibraryGroup("scripture", first.toLowerCase())
+        }
     }
 
     function setLibraryFluid(tabKey, idx) {

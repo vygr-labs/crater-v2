@@ -44,7 +44,7 @@ public:
     Q_INVOKABLE QList<crater::Translation> translations();
 
     // Every installed translation in this profile's order, hidden ones
-    // included, as { code, name, description, hidden } maps. For settings
+    // included, as { code, name, description, hidden, removable } maps. For settings
     // and the sidebar's More card, and for recognising a typed code.
     Q_INVOKABLE QVariantList allTranslations();
 
@@ -83,8 +83,9 @@ public:
     //
     // Cached, because re-reading a whole Bible costs ~200 ms on the GUI
     // thread, a visible freeze on the projector at every translation
-    // switch. Bible rows are only written by the first-run import, which
-    // finishes before this service exists, so the cache never goes stale.
+    // switch. Bible rows are written by the first-run import, which
+    // finishes before this service exists, and by BibleImporter, which
+    // calls libraryChanged for the one translation it touched.
     // It holds the few most recently used translations (~13 MB each)
     // unless preloading is on; see setPreloadAll.
     Q_INVOKABLE QList<crater::Verse> allVerses(QString translationCode);
@@ -134,6 +135,11 @@ public:
     // most recently used, and drop the rest now if they were preloaded.
     // Wired to SettingsService::preloadTranslations in main.cpp.
     void setPreloadAll(bool on);
+
+    // A translation was added to or removed from the library behind this
+    // service's back (BibleImporter writes on its own connection). Drops
+    // what's cached for `code` and tells every list to re-read.
+    void libraryChanged(const QString& code);
 
 signals:
     void translationsChanged();

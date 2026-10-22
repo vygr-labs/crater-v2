@@ -89,6 +89,8 @@ void importBibleData(db::Connection& legacy,
             "VALUES (?, ?, ?, ?)"));
         auto find = target.prepare(QStringLiteral(
             "SELECT id FROM translations WHERE code = ?"));
+        auto fromFile = target.prepare(QStringLiteral(
+            "SELECT 1 FROM translations WHERE upper(code) = upper(?) AND source = 'file'"));
 
         int sortOrder = 0;
         if (onlyMissing) {
@@ -108,6 +110,15 @@ void importBibleData(db::Connection& legacy,
                 const bool have = find.step();
                 find.reset();
                 if (have) continue;
+            } else {
+                // A Bible the operator added from a file before the bundle
+                // was found keeps its own verses rather than having the
+                // bundle's merged into it.
+                fromFile.reset();
+                fromFile.bind(1, code);
+                const bool added = fromFile.step();
+                fromFile.reset();
+                if (added) continue;
             }
 
             ins.reset();
@@ -269,6 +280,10 @@ void importBibleData(db::Connection& legacy,
         } else {
             target.exec(QStringLiteral(
                 "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+            // The index is rebuilt from what verses holds now, so removals still
+            // waiting to be cleared from it are moot (db/BibleExtras.h). Clearing
+            // them later would delete rows the new index doesn't have.
+            target.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));
         }
         target.exec(QStringLiteral(
             // Apostrophe-strip verse text at index time (ASCII ' + curly

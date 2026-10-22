@@ -16,7 +16,13 @@ class Connection;
 class Transaction
 {
 public:
-    explicit Transaction(Connection& c);
+    // Immediate takes the write lock up front. A deferred transaction that
+    // reads before it writes can't wait for that lock: if another
+    // connection commits in between it fails at once (SQLITE_BUSY_SNAPSHOT)
+    // instead of waiting out the busy timeout.
+    enum class Begin { Deferred, Immediate };
+
+    explicit Transaction(Connection& c, Begin begin = Begin::Deferred);
     ~Transaction();
 
     Transaction(const Transaction&) = delete;

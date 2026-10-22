@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Scripture — default Bible version, verse number display, translation
+// Scripture — default Bible version, verse number display, the translations
+// this profile lists (and adding or removing Bibles from files), translation
 // preloading, Strong's tab.
 // Highlight-current-verse and footer-line rows are aspirational (no
 // rendering site yet) and carry the "Soon" badge.
@@ -38,10 +39,8 @@ Item {
                     searchable: false
                     // One option per installed translation, shown by code
                     // ("KJV", "NIV") — the same vocabulary the scripture
-                    // sidebar uses. Evaluated when Settings opens; importing a
-                    // translation while this dialog is open won't refresh the
-                    // list (matches the sidebar, which also reads
-                    // translations() non-reactively).
+                    // sidebar uses. Follows translationsRevision, so a Bible
+                    // added or removed shows up here at once.
                     options: {
                         BibleService.translationsRevision   // follow a reorder
                         return BibleService.translations().map(function(t) { return t.code })
@@ -104,26 +103,68 @@ Item {
 
             Repeater {
                 model: { BibleService.translationsRevision; return BibleService.allTranslations() }
-                delegate: CheckRow {
+                delegate: RowLayout {
+                    id: translationRow
                     required property var modelData
                     Layout.fillWidth: true
-                    label: String(modelData.code)
-                    detail: String(modelData.description || "")
-                    checked: !modelData.hidden
-                    onToggled: {
-                        const code = String(modelData.code)
-                        const up = code.toUpperCase()
-                        let hidden = SettingsService.hiddenTranslations
-                            .filter(function(c) { return String(c).toUpperCase() !== up })
-                        if (!modelData.hidden) {
-                            // Keep at least one shown.
-                            const shown = BibleService.translations().length
-                            if (shown <= 1) return
-                            hidden.push(code)
+                    spacing: Theme.space.sm
+
+                    CheckRow {
+                        Layout.fillWidth: true
+                        label: String(translationRow.modelData.code)
+                        detail: String(translationRow.modelData.description || "")
+                        checked: !translationRow.modelData.hidden
+                        onToggled: {
+                            const code = String(translationRow.modelData.code)
+                            const up = code.toUpperCase()
+                            let hidden = SettingsService.hiddenTranslations
+                                .filter(function(c) { return String(c).toUpperCase() !== up })
+                            if (!translationRow.modelData.hidden) {
+                                // Keep at least one shown.
+                                const shown = BibleService.translations().length
+                                if (shown <= 1) return
+                                hidden.push(code)
+                            }
+                            SettingsService.hiddenTranslations = hidden
                         }
-                        SettingsService.hiddenTranslations = hidden
+                    }
+                    // Only for a Bible someone added from a file. The ones
+                    // Crater ships stay; unticking hides them instead.
+                    GhostButton {
+                        visible: translationRow.modelData.removable === true
+                        enabled: root._removeRequest === -1   // one removal at a time
+                        text: qsTr("Remove")
+                        onClicked: root.askRemove(String(translationRow.modelData.code),
+                                                  String(translationRow.modelData.description || ""))
                     }
                 }
+            }
+
+            Row {
+                Layout.topMargin: Theme.space.sm
+                spacing: Theme.space.md
+                GhostButton {
+                    iconName: "plus"
+                    text: qsTr("Add a Bible from a file...")
+                    onClicked: AppState.openModal("bibleImport", {})
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Zefania XML, OpenSong, OSIS, USFM or USX")
+                    color: Theme.color.textTertiary
+                    font.family: Theme.font.family
+                    font.pixelSize: Theme.font.smallSize
+                }
+            }
+            Text {
+                visible: root.removeError.length > 0
+                Layout.fillWidth: true
+                Layout.topMargin: Theme.space.xs
+                text: root.removeError
+                wrapMode: Text.WordWrap
+                color: Theme.color.live
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.smallSize
             }
 
             SettingsSectionHeader { title: qsTr("Performance") }
@@ -152,5 +193,46 @@ Item {
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
+    }
+
+    // ── Removing an added Bible ─────────────────────────────────────────
+    // The confirm card's code, and the removal it started. Only that
+    // removal's failure shows here, not an import's.
+    property string _askedCode: ""
+    property int    _removeRequest: -1
+    property string removeError: ""
+
+    function askRemove(code, name) {
+        if (root._removeRequest !== -1) return
+        root._askedCode = code
+        root.removeError = ""
+        const named = name.replace(/\.+$/, "")
+        removeConfirm.title = qsTr("Remove %1?").arg(code)
+        removeConfirm.body = (named.length > 0 && named !== code ? named + ". " : "")
+            + qsTr("This removes it from every profile, because they all share one Bible library. Schedules keep the verses they already hold. You can add it again from its file.")
+        removeConfirm.openConfirm()
+    }
+
+    Connections {
+        target: BibleImporter
+        function onFailed(request, reason) {
+            if (request !== root._removeRequest) return
+            root.removeError = reason
+            root._removeRequest = -1
+        }
+        function onRemoved(request, code) {
+            if (request === root._removeRequest) root._removeRequest = -1
+        }
+    }
+
+    ConfirmationOverlay {
+        id: removeConfirm
+        anchors.fill: parent
+        confirmLabel: qsTr("Remove")
+        onConfirmed: {
+            if (root._askedCode.length > 0) root._removeRequest = BibleImporter.remove(root._askedCode)
+            root._askedCode = ""
+        }
+        onCancelled: root._askedCode = ""
     }
 }
