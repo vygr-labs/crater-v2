@@ -27,6 +27,10 @@ namespace crater::bundle {
 //     archives are written byte-for-byte as before, so theme bundles are
 //     unaffected.
 //
+// The reader also inflates deflated entries, for zips Crater did not write
+// (a Bible download). That is off unless the caller sets a size limit, so a
+// theme or profile bundle with a deflated entry is still refused.
+//
 // Both classes are non-copyable, non-movable, and meant to be stack-
 // allocated for the duration of one bundle. Writer commits atomically via
 // QSaveFile (tmpfile + rename — ARCHITECTURE.md §8); reader memory-maps
@@ -103,6 +107,11 @@ public:
     ZipReader& operator=(const ZipReader&) = delete;
 
     bool isOpen() const noexcept;
+
+    // Let readEntry() inflate deflated entries whose uncompressed size is at
+    // most `bytes`. 0, the default, refuses them. extractToFile() reads
+    // stored entries only either way.
+    void setMaxInflatedSize(qint64 bytes) noexcept;
 
     // Names of every entry in the archive (in central-directory order).
     QStringList entryNames() const;

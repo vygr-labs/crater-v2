@@ -100,8 +100,8 @@ ModalShell {
     function pickFiles() {
         // OpenSong Bibles often have no extension at all, hence All files.
         const chosen = FileDialogService.chooseOpenFiles(
-            qsTr("Choose a Bible file, or all the book files of one Bible"),
-            [qsTr("Bible files (*.xml *.xmm *.osis *.zefania *.usfm *.sfm *.usx *.txt)"),
+            qsTr("Choose a Bible file, a zip, or all the book files of one Bible"),
+            [qsTr("Bible files (*.xml *.xmm *.osis *.zefania *.usfm *.sfm *.usx *.txt *.zip)"),
              qsTr("All files (*)")],
             "bibleImport")
         if (chosen && chosen.length > 0) scan(chosen)
@@ -262,7 +262,7 @@ ModalShell {
                         spacing: Theme.space.sm
 
                         Note {
-                            text: qsTr("A USFM or USX Bible comes as one file per book, usually in a zip. Unzip it, open the folder and select all of its files. Anything that isn't a book is skipped.")
+                            text: qsTr("A USFM or USX Bible comes as one file per book, usually in a zip. Choose the zip, or select all of the book files. Anything that isn't a book is skipped.")
                         }
                         Note {
                             text: qsTr("Many modern translations are copyrighted. Only add one your church is allowed to use.")
@@ -342,8 +342,8 @@ ModalShell {
                                       : qsTr("%1 verses").arg(root.count(root.info.verses || 0)))
                     }
                     Note {
-                        text: root.files.length > 1
-                              ? qsTr("%1, %2 files").arg(root.info.format || "").arg(root.files.length)
+                        text: (root.info.files || 0) > 1
+                              ? qsTr("%1, %2 files").arg(root.info.format || "").arg(root.info.files)
                               : qsTr("%1 file").arg(root.info.format || "")
                     }
 
@@ -387,6 +387,11 @@ ModalShell {
                         visible: root.info.booksByPosition === true
                         color: Theme.color.textSecondary
                         text: qsTr("Some book names weren't ones Crater knows, so those books were matched by their place in the file. Check a few references once it's added.")
+                    }
+                    Note {
+                        visible: (root.info.otherFormats || []).length > 0
+                        text: qsTr("The zip also has this Bible as %1. Crater read the %2 copy.")
+                                  .arg(root.list(root.info.otherFormats)).arg(root.info.format || "")
                     }
                     Note {
                         visible: (root.info.ignoredFiles || []).length > 0

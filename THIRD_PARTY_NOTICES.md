@@ -14,6 +14,7 @@ own license, and the full license texts ship with the components themselves
 | [PDFium](https://pdfium.googlesource.com/pdfium/) (inside Qt PDF) | rendering PDF pages | BSD-3-Clause |
 | [FFmpeg](https://ffmpeg.org/) (inside Qt Multimedia) | video and audio playback | LGPL-2.1-or-later |
 | [SQLite](https://sqlite.org/) 3.50.4, vendored in `core/src/third_party/` | the database | Public domain |
+| [puff](https://github.com/madler/zlib/tree/v1.3.1/contrib/puff) 2.3 from zlib 1.3.1, vendored in `core/src/third_party/` | reading zipped Bibles | zlib |
 | [Funnel Sans](https://fonts.google.com/specimen/Funnel+Sans) | the interface font | SIL Open Font License 1.1 |
 | [Lucide](https://lucide.dev/) | interface icons | ISC |
 | [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist) (Windows installer only) | the C++ runtime | Microsoft system library, redistributed under its own terms |

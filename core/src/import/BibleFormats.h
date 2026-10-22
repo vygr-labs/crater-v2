@@ -44,7 +44,9 @@ struct ParsedBible {
     QString language;       // e.g. "en", when the file names one
     QList<ParsedVerse> verses;
     QStringList skippedBooks;   // by name where the file used a code
-    QStringList ignoredFiles;   // chosen with the book files but not a Bible
+    QStringList ignoredFiles;   // chosen with the book files, or in the zip, but not a Bible
+    int fileCount = 0;          // Bible files read, counting those inside a zip
+    QStringList otherFormats;   // the zip held this Bible in these formats too, not read
     QStringList warnings;       // read, but not all of it (a damaged file)
     // OpenSong names books in the translation's own language. Books whose
     // names said nothing were placed by their order in the file.
@@ -54,6 +56,9 @@ struct ParsedBible {
 
 // Reads `paths` as one Bible. XML formats are one file; USFM and USX are
 // usually one file per book, and every file must then be the same format.
+// A zip among them is read as the files inside it. A zip with the Bible in
+// several formats is read from one of them, and one with several Bibles is
+// refused.
 ParsedBible parseBibleFiles(const QStringList& paths);
 
 // Canonical book number for a USFM / USX book code ("GEN", "1CO", "TOB"),
