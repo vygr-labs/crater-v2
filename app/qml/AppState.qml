@@ -572,14 +572,13 @@ QtObject {
     }
 
     // "Copy to clipboard" text for a verse array: the verses as one quoted
-    // passage, then the reference on its own attribution line.
+    // passage, then the reference and translation on the next line, the way
+    // the YouVersion app copies a verse.
     //
-    //   "For God so loved the world... to condemn the world..."
+    //   “For God so loved the world... to condemn the world...”
+    //   John 3:16-17 KJV
     //
-    //   - John 3:16-17 (KJV)
-    //
-    // Straight ASCII quotes keep the paste clean across web inputs. Returns
-    // "" when nothing usable is passed so callers can guard on empty.
+    // Returns "" when nothing usable is passed so callers can guard on empty.
     function scriptureCopyText(verses, fallbackCode) {
         const usable = (verses || []).filter(function(v) {
             return v && v.text && v.text.length > 0
@@ -592,8 +591,8 @@ QtObject {
         let ref = scriptureRangeTitle(usable)
         if (ref.length === 0 && first.book)
             ref = first.book + " " + first.chapter + ":" + verseSpan(first)
-        const attribution = (code && code.length > 0) ? ref + " (" + code + ")" : ref
-        return "\"" + body + "\"\n\n- " + attribution
+        const attribution = (code && code.length > 0) ? ref + " " + code : ref
+        return "“" + body + "”\n" + attribution
     }
 
     // Human reference for a sorted verse array: grouped by (book, chapter),
