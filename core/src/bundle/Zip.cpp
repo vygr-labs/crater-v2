@@ -13,6 +13,10 @@
 #include <cstring>
 #include <limits>
 
+extern "C" {
+#include "puff.h"
+}
+
 namespace crater::bundle {
 
 namespace {
@@ -396,6 +400,7 @@ struct ZipReader::Impl
     qint64      size = 0;
 
     struct CdEntry {
+        uint16_t flags;
         uint16_t method;
         uint32_t crc;
         uint64_t compressedSize;
@@ -406,11 +411,13 @@ struct ZipReader::Impl
     QHash<QString, CdEntry> byName;
     QStringList             order;   // CD-order of names (for entryNames())
     bool                    duplicateNames = false;
+    qint64                  maxInflated = 0;
 
     explicit Impl(const QString& path) : file(path) {}
 
     // Locate an entry's payload. Returns -1 when the local header is
-    // missing, out of range or the method is not STORE.
+    // missing or out of range, the entry is encrypted, or the method is
+    // neither STORE nor a DEFLATE the caller allowed.
     qint64 payloadOffset(const CdEntry& e) const
     {
         if (e.lfhOffset > uint64_t(size) || uint64_t(size) - e.lfhOffset < 30) return -1;
@@ -420,10 +427,13 @@ struct ZipReader::Impl
         const uint16_t xLen = readU16(data + lfh + 28);
         const qint64 dataAt = lfh + 30 + nLen + xLen;
         if (dataAt > size || uint64_t(size - dataAt) < e.compressedSize) return -1;
-        // We only emit STORE; reject anything else explicitly rather than
-        // silently mis-extracting (an attacker-shaped bundle would set
-        // method=DEFLATE without us having a decompressor). STORE means the
-        // two sizes agree; a record claiming otherwise is malformed.
+        if (e.flags & 0x0001) return -1;   // encrypted
+        // We only emit STORE. DEFLATE is read only when the caller set a
+        // limit, which also bounds what a hostile entry can make us allocate.
+        // STORE means the two sizes agree; a record claiming otherwise is
+        // malformed.
+        if (e.method == 8)
+            return maxInflated > 0 && e.uncompressedSize <= uint64_t(maxInflated) ? dataAt : -1;
         if (e.method != 0 || e.compressedSize != e.uncompressedSize) return -1;
         return dataAt;
     }
@@ -535,6 +545,7 @@ ZipReader::ZipReader(QString path)
             return;
         }
         Impl::CdEntry e;
+        e.flags            = readU16(d + p + 8);
         e.method           = readU16(d + p + 10);
         e.crc              = readU32(d + p + 16);
         e.compressedSize   = readU32(d + p + 20);
@@ -603,6 +614,11 @@ bool ZipReader::isOpen() const noexcept
     return m_impl != nullptr;
 }
 
+void ZipReader::setMaxInflatedSize(qint64 bytes) noexcept
+{
+    if (m_impl) m_impl->maxInflated = qMax<qint64>(0, bytes);
+}
+
 QStringList ZipReader::entryNames() const
 {
     if (!m_impl) return {};
@@ -641,7 +657,23 @@ QByteArray ZipReader::readEntry(QStringView name) const
     if (dataAt < 0) return {};
     if (e.compressedSize > uint64_t(std::numeric_limits<qsizetype>::max())) return {};
 
-    QByteArray out(m_impl->data + dataAt, qsizetype(e.compressedSize));
+    QByteArray out;
+    if (e.method == 8) {
+        // puff counts in unsigned long, 32 bits on Windows.
+        constexpr uint64_t kMaxPuff = std::numeric_limits<unsigned long>::max();
+        if (e.uncompressedSize > kMaxPuff || e.compressedSize > kMaxPuff) return {};
+        out = QByteArray(qsizetype(e.uncompressedSize), Qt::Uninitialized);
+        unsigned long outLen = static_cast<unsigned long>(e.uncompressedSize);
+        unsigned long inLen  = static_cast<unsigned long>(e.compressedSize);
+        // puff stops at the end of `out`, so an entry that inflates past the
+        // size it claims fails here instead of growing.
+        if (puff(reinterpret_cast<unsigned char*>(out.data()), &outLen,
+                 reinterpret_cast<const unsigned char*>(m_impl->data + dataAt), &inLen) != 0
+            || outLen != e.uncompressedSize)
+            return {};
+    } else {
+        out = QByteArray(m_impl->data + dataAt, qsizetype(e.compressedSize));
+    }
     // Verify CRC — cheap (table-driven) and catches both bit-rot and
     // hostile tampering at the zip-format layer. Higher layers should
     // hash-check too, but a CRC mismatch here is already a refusable
@@ -665,7 +697,7 @@ bool ZipReader::extractToFile(QStringView name, const QString& destPath,
     }
     const auto& e = it.value();
     const qint64 dataAt = m_impl->payloadOffset(e);
-    if (dataAt < 0) {
+    if (dataAt < 0 || e.method != 0) {
         m_error = QStringLiteral("ZipReader: entry %1 is malformed").arg(name.toString());
         return false;
     }

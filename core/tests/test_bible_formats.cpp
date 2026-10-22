@@ -21,6 +21,8 @@
 #include "crater/BibleImporter.h"
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
+#include "bundle/Crc32.h"
+#include "bundle/Zip.h"
 
 #include "db/BibleExtras.h"
 #include "db/Connection.h"
@@ -136,6 +138,90 @@ QByteArray yorubaNewTestament()
     for (const QString& n : names)
         xml += "<b n=\"" + n.toUtf8() + "\"><c n=\"3\"><v n=\"16\">" + n.toUtf8() + " ese</v></c></b>";
     return xml + "</bible>";
+}
+
+// One entry of a zip built by hand, deflated unless `deflate` is false.
+// `claimedSize`, when set, is the uncompressed size the zip states instead
+// of the real one.
+struct ZipFile {
+    QString name;
+    QByteArray bytes;
+    bool deflate = true;
+    qint64 claimedSize = -1;
+};
+
+void appendU16(QByteArray& out, quint16 v)
+{
+    out.append(char(v & 0xFF));
+    out.append(char(v >> 8));
+}
+
+void appendU32(QByteArray& out, quint32 v)
+{
+    appendU16(out, quint16(v & 0xFFFF));
+    appendU16(out, quint16(v >> 16));
+}
+
+// ZipWriter only stores, and the zips Bibles are downloaded in are deflated.
+// qCompress gives a zlib stream: a 4-byte length, a 2-byte header, the raw
+// deflate data a zip holds, and a 4-byte checksum.
+QByteArray makeZip(const QList<ZipFile>& files)
+{
+    QByteArray zip;
+    QByteArray cd;
+    for (const ZipFile& f : files) {
+        QByteArray data = f.bytes;
+        quint16 method = 0;
+        if (f.deflate && !f.bytes.isEmpty()) {
+            const QByteArray z = qCompress(f.bytes, 9);
+            data = z.mid(6, z.size() - 10);
+            method = 8;
+        }
+        const QByteArray name = f.name.toUtf8();
+        const quint32 crc = crater::bundle::Crc32::of(f.bytes);
+        const quint32 size = quint32(f.claimedSize >= 0 ? f.claimedSize : f.bytes.size());
+        const quint32 offset = quint32(zip.size());
+        appendU32(zip, 0x04034b50u);
+        appendU16(zip, 20);
+        appendU16(zip, 0x0800);
+        appendU16(zip, method);
+        appendU32(zip, 0);              // time, date
+        appendU32(zip, crc);
+        appendU32(zip, quint32(data.size()));
+        appendU32(zip, size);
+        appendU16(zip, quint16(name.size()));
+        appendU16(zip, 0);
+        zip.append(name);
+        zip.append(data);
+
+        appendU32(cd, 0x02014b50u);
+        appendU16(cd, 0x031e);
+        appendU16(cd, 20);
+        appendU16(cd, 0x0800);
+        appendU16(cd, method);
+        appendU32(cd, 0);
+        appendU32(cd, crc);
+        appendU32(cd, quint32(data.size()));
+        appendU32(cd, size);
+        appendU16(cd, quint16(name.size()));
+        appendU16(cd, 0);               // extra
+        appendU16(cd, 0);               // comment
+        appendU16(cd, 0);               // disk
+        appendU16(cd, 0);               // internal attributes
+        appendU32(cd, 0);               // external attributes
+        appendU32(cd, offset);
+        cd.append(name);
+    }
+    const quint32 cdOffset = quint32(zip.size());
+    zip.append(cd);
+    appendU32(zip, 0x06054b50u);
+    appendU32(zip, 0);                  // disks
+    appendU16(zip, quint16(files.size()));
+    appendU16(zip, quint16(files.size()));
+    appendU32(zip, quint32(cd.size()));
+    appendU32(zip, cdOffset);
+    appendU16(zip, 0);
+    return zip;
 }
 
 const ParsedVerse* find(const ParsedBible& bible, int book, int chapter, int verse)
@@ -298,6 +384,136 @@ private slots:
         const ParsedBible odes = parseBibleFiles({ write("odes.usfm", "\\id ODA\n\\c 1\n\\p\n\\v 1 A song.\n") });
         QVERIFY(!odes.error.isEmpty());
         QCOMPARE(odes.skippedBooks, QStringList{ QStringLiteral("Odes") });
+    }
+
+    // USFM and USX downloads are zips of book files, deflated. A Digital
+    // Bible Library bundle keeps them in release/USX_1/ beside its metadata,
+    // and a zip made on a Mac carries __MACOSX copies.
+    void zipped()
+    {
+        QByteArray genesis = kUsx;
+        genesis.replace("JHN", "GEN");
+        const ParsedBible b = parseBibleFiles({ write("WEB_usx.zip", makeZip({
+            { QStringLiteral("metadata.xml"), "<?xml version=\"1.0\"?><DBLMetadata/>" },
+            { QStringLiteral("release/"), {}, false },
+            { QStringLiteral("release/USX_1/GEN.usx"), genesis },
+            { QStringLiteral("release/USX_1/JHN.usx"), kUsx, false },
+            { QStringLiteral("__MACOSX/release/USX_1/._JHN.usx"), "not a book" },
+            { QStringLiteral("release/USX_1/.DS_Store"), "not a book" },
+        })) });
+        QVERIFY2(b.error.isEmpty(), qPrintable(b.error));
+        QCOMPARE(b.format, QStringLiteral("USX"));
+        QCOMPARE(b.fileCount, 2);
+        QCOMPARE(b.verses.size(), 4);
+        expectVerse(b, 1, 3, 16, QStringLiteral("For God so loved the world."));
+        expectVerse(b, 43, 3, 17, QStringLiteral("Not to condemn"));
+        QCOMPARE(b.ignoredFiles, QStringList{ QStringLiteral("metadata.xml") });
+        QVERIFY(b.warnings.isEmpty());
+        // Named after the zip.
+        QCOMPARE(b.name, QStringLiteral("WEB"));
+
+        // A zip of one XML Bible, stored the way ZipWriter writes, with a
+        // readme beside it.
+        const QString stored = m_files.filePath("zefania.zip");
+        {
+            crater::bundle::ZipWriter writer(stored);
+            QVERIFY(writer.addEntry(u"KJV/zefania.xml", QByteArray(kZefania)));
+            QVERIFY(writer.addEntry(u"KJV/readme.txt", "Public domain."));
+            QVERIFY(writer.commit());
+        }
+        const ParsedBible z = parseBibleFiles({ stored });
+        QVERIFY2(z.error.isEmpty(), qPrintable(z.error));
+        QCOMPARE(z.format, QStringLiteral("Zefania XML"));
+        QCOMPARE(z.name, QStringLiteral("Zefania Test Bible"));
+        QCOMPARE(z.verses.size(), 4);
+        QCOMPARE(z.ignoredFiles, QStringList{ QStringLiteral("readme.txt") });
+
+        // A zip beside loose book files.
+        const ParsedBible both = parseBibleFiles({
+            write("john.zip", makeZip({ { QStringLiteral("./JHN.usfm"), kUsfmJohn } })),
+            write("01-GEN.usfm", kUsfmGenesis) });
+        QVERIFY2(both.error.isEmpty(), qPrintable(both.error));
+        QCOMPARE(both.fileCount, 2);
+        QVERIFY(find(both, 1, 1, 1) && find(both, 43, 3, 16));
+    }
+
+    // One Bible in every format a download offers, and a JSON copy Crater
+    // doesn't read: read from OSIS, which names the translation.
+    void zippedInSeveralFormats()
+    {
+        const ParsedBible b = parseBibleFiles({ write("NIV.zip", makeZip({
+            { QStringLiteral("NIV/NIV.json"), "{\"books\": []}" },
+            { QStringLiteral("NIV/NIV.opensong.xml"), kOpenSong },
+            { QStringLiteral("NIV/NIV.zefania.xml"), kZefania },
+            { QStringLiteral("NIV/NIV.osis.xml"), kOsis },
+            { QStringLiteral("NIV/usx/JHN.usx"), kUsx },
+            { QStringLiteral("NIV/usfm/44-JHN.usfm"), kUsfmJohn },
+        })) });
+        QVERIFY2(b.error.isEmpty(), qPrintable(b.error));
+        QCOMPARE(b.format, QStringLiteral("OSIS"));
+        QCOMPARE(b.fileCount, 1);
+        QCOMPARE(b.otherFormats, (QStringList{ QStringLiteral("Zefania XML"), QStringLiteral("USX"),
+                                               QStringLiteral("USFM"), QStringLiteral("OpenSong") }));
+        QCOMPARE(b.ignoredFiles, QStringList{ QStringLiteral("NIV.json") });
+
+        // Without OSIS and Zefania, the USX folder over the USFM one.
+        const ParsedBible books = parseBibleFiles({ write("books.zip", makeZip({
+            { QStringLiteral("usfm/44-JHN.usfm"), kUsfmJohn },
+            { QStringLiteral("usx/JHN.usx"), kUsx },
+        })) });
+        QVERIFY2(books.error.isEmpty(), qPrintable(books.error));
+        QCOMPARE(books.format, QStringLiteral("USX"));
+        QCOMPARE(books.otherFormats, QStringList{ QStringLiteral("USFM") });
+        QCOMPARE(books.name, QStringLiteral("books"));
+    }
+
+    void zipRefusals()
+    {
+        // Claims more than any Bible needs, so nothing is inflated.
+        const ParsedBible huge = parseBibleFiles({ write("huge.zip", makeZip({
+            { QStringLiteral("GEN.usx"), kUsx, true, qint64(300) * 1024 * 1024 } })) });
+        QVERIFY(huge.error.contains(QStringLiteral("more than one Bible would")));
+
+        // An entry that inflates past the size it states is left out, and
+        // the operator is told.
+        QByteArray genesis = kUsx;
+        genesis.replace("JHN", "GEN");
+        const ParsedBible lying = parseBibleFiles({ write("lying.zip", makeZip({
+            { QStringLiteral("GEN.usx"), genesis, true, 40 },
+            { QStringLiteral("JHN.usx"), kUsx } })) });
+        QVERIFY2(lying.error.isEmpty(), qPrintable(lying.error));
+        QVERIFY(find(lying, 43, 3, 16) && !find(lying, 1, 3, 16));
+        QCOMPARE(lying.warnings, QStringList{ QStringLiteral("GEN.usx in lying.zip couldn't be read, so it was left out.") });
+
+        // Two XML Bibles in one zip, a zip of no Bible, and a damaged one.
+        QCOMPARE(parseBibleFiles({ write("two.zip", makeZip({
+            { QStringLiteral("KJV.zefania.xml"), kZefania }, { QStringLiteral("ASV.zefania.xml"), kZefania } })) })
+                     .error,
+                 QStringLiteral("The zip holds more than one Bible (KJV and ASV). Unzip it and choose one."));
+        // A folder of book files per Bible, as a download of many Bibles
+        // comes: never read as one.
+        QList<ZipFile> many;
+        for (const char* code : { "KJV", "NKJV", "NIV", "ESV", "NLT" })
+            many.append({ QStringLiteral("%1/JHN.usx").arg(QLatin1String(code)), kUsx });
+        QCOMPARE(parseBibleFiles({ write("all-usx.zip", makeZip(many)) }).error,
+                 QStringLiteral("The zip holds more than one Bible (KJV, NKJV, NIV and 2 more). Unzip it and choose one."));
+        QVERIFY(parseBibleFiles({ write("notes.zip", makeZip({
+            { QStringLiteral("notes.txt"), "Just some notes." } })) })
+                    .error.startsWith(QStringLiteral("Nothing in notes.zip")));
+        QVERIFY(parseBibleFiles({ write("broken.zip", "PK\x03\x04 and then nothing a zip needs") })
+                    .error.contains(QStringLiteral("damaged")));
+
+        // Theme and profile bundles never inflate: a deflated entry stays
+        // unreadable unless the caller asks for it.
+        const QString path = write("deflated.zip", makeZip({ { QStringLiteral("theme.json"), kUsx } }));
+        crater::bundle::ZipReader reader(path);
+        QVERIFY(reader.isOpen());
+        QVERIFY(reader.readEntry(u"theme.json").isEmpty());
+        QVERIFY(!reader.extractToFile(u"theme.json", m_files.filePath("theme.json")));
+        reader.setMaxInflatedSize(1024 * 1024);
+        QCOMPARE(reader.readEntry(u"theme.json"), QByteArray(kUsx));
+        reader.setMaxInflatedSize(16);
+        QVERIFY(reader.readEntry(u"theme.json").isEmpty());
     }
 
     // Real Bibles, when CRATER_BIBLE_SAMPLES names a folder of them: each
@@ -465,6 +681,18 @@ private slots:
         expectVerse(b, 19, 3, 1, QStringLiteral("A psalm of David. LORD, how they are increased"));
         expectVerse(b, 19, 3, 2, QStringLiteral("Many there be"));
         expectVerse(b, 19, 3, 3, QStringLiteral("But thou, O LORD"));
+
+        // A verse split between two combined entries, as The Message and the
+        // CEV do: the second half's entry starts at that verse.
+        const ParsedBible split = parseBibleFiles({ write("osis-split.xml",
+            "<osis><osisText><div type=\"book\" osisID=\"Gen\"><chapter osisID=\"Gen.13\">"
+            "<verse osisID=\"Gen.13.10 Gen.13.11!a\">Lot looked.</verse>"
+            "<verse osisID=\"Gen.13.11!b Gen.13.12\">Abram lived in Canaan.</verse>"
+            "</chapter></div></osisText></osis>") });
+        QVERIFY2(split.error.isEmpty(), qPrintable(split.error));
+        QCOMPARE(split.verses.size(), 2);
+        expectVerse(split, 1, 13, 10, QStringLiteral("Lot looked."), 11);
+        expectVerse(split, 1, 13, 11, QStringLiteral("Abram lived in Canaan."), 12);
     }
 
     // Book names from files: other languages' spellings resolve, the
