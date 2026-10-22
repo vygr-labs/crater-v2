@@ -180,7 +180,7 @@ Rectangle {
 
             onClicked: {
                 if (!root.selectedItem || !root.selectedItem.copyText) return
-                ClipboardService.setText(root.selectedItem.copyText)
+                ClipboardService.setText(AppState.scriptureCopyTextOf(root.selectedItem))
                 copyBtn._copied = true
                 copiedReset.restart()
             }
