@@ -125,6 +125,8 @@ QString normalizeKey(QStringView s)
         out = QStringLiteral("2 ") + out.mid(7);
     else if (out.startsWith(QStringLiteral("third ")))
         out = QStringLiteral("3 ") + out.mid(6);
+    else if (out.startsWith(QStringLiteral("fourth ")))
+        out = QStringLiteral("4 ") + out.mid(7);
 
     // "1samuel" -> "1 samuel"  (digit immediately followed by letter)
     static const QRegularExpression numPrefix(QStringLiteral("^(\\d)([a-z])"));
@@ -382,46 +384,67 @@ bool latinLetters(const QString& plain, int minimum, int* count = nullptr)
 
 // What a plain name says about the deuterocanon: its book number, by the
 // stems its names share across languages, kUnheld for a book Crater holds
-// under no number or a name that could be more than one, or 0 for neither.
-// The stems also keep these names from matching one of the 66 they look
-// like (Ecclesiasticus or Eclesiástico / Ecclesiastes, Tobit / Obadiah,
-// Psalms of Solomon / Song of Solomon). "Esdras" alone is Ezra in French,
-// Spanish and Portuguese. A numbered Esdras is Ezra or Nehemiah in a
-// Catholic Bible and 1 or 2 Esdras in the KJV's Apocrypha.
+// under no number, kAmbiguous for a name that could be more than one book,
+// or 0 for neither. The stems also keep these names from matching one of the
+// 66 they look like (Ecclesiasticus or Eclesiástico / Ecclesiastes, Tobit /
+// Obadiah, Psalms of Solomon / Song of Solomon). "Esdras" alone is Ezra in
+// French, Spanish and Portuguese. A numbered Esdras is Ezra or Nehemiah in a
+// Catholic Bible and 1 or 2 Esdras in the KJV's Apocrypha, so where the book
+// sits has to decide.
 constexpr int kUnheld = -1;
+constexpr int kAmbiguous = -2;
 
 bool isEsdras(int bookNumber)
 {
     return bookNumber == 81 || bookNumber == 82;
 }
 
+// The number a book's name gives it: before the name ("1 Maccabees", "IV
+// Maccabees", "4. Makabejcov" once plain) or after it ("Machabaeorum I",
+// "Makkabeusok II"). 0 for none.
+int nameOrdinal(const QString& plain)
+{
+    static const QRegularExpression before(QStringLiteral(R"(^([1-4]|iv)\s)"));
+    static const QRegularExpression after(QStringLiteral(R"(\s([1-4]|i{1,3}|iv)(\s|$))"));
+    const auto toNumber = [](const QString& n) {
+        if (n == u"iv") return 4;
+        if (n.startsWith(u'i')) return int(n.size());
+        return n.toInt();
+    };
+    if (const auto m = before.match(plain); m.hasMatch()) return toNumber(m.captured(1));
+    if (const auto m = after.match(plain); m.hasMatch()) return toNumber(m.captured(1));
+    return 0;
+}
+
 int deuterocanonFromPlain(const QString& plain)
 {
-    static const QRegularExpression numbered(QStringLiteral(R"(^([1-4])\s*)"));
-    const auto m = numbered.match(plain);
-    const int number = m.hasMatch() ? m.captured(1).toInt() : 0;
+    const int number = nameOrdinal(plain);
 
     static const char* const unheld[] = {
         "laodic", "odes", "psalms of solomon", "enoch", "henoch", "jubile",
     };
     for (const char* stem : unheld)
         if (plain.contains(QLatin1String(stem))) return kUnheld;
-    if (plain.contains(QLatin1String("esdras"))) return number ? kUnheld : 0;
+    if (plain.contains(QLatin1String("esdras"))) return number ? kAmbiguous : 0;
     // A numbered Baruch (2 Baruch, the Syriac apocalypse) isn't Baruch.
-    if (plain.contains(QLatin1String("baruc"))) return number ? kUnheld : 72;
+    for (const char* stem : { "baruc", "baruk", "baruh" })
+        if (plain.contains(QLatin1String(stem))) return number ? kUnheld : 72;
     for (const char* stem : { "macc", "makab", "makk", "macab", "machab" })
-        if (plain.contains(QLatin1String(stem))) return number ? 76 + number : kUnheld;
+        if (plain.contains(QLatin1String(stem))) return number ? 76 + number : kAmbiguous;
 
+    // Sirach before Wisdom: "The Wisdom of Jesus the Son of Sirach".
     struct Stem { const char* stem; int book; };
     static const Stem held[] = {
-        { "tob", 67 }, { "judit", 68 },
+        { "sirach", 71 }, { "sirac", 71 }, { "sirak", 71 }, { "syracyd", 71 },
+        { "clesiastic", 71 }, { "clesiastiq", 71 }, { "ben sira", 71 },
+        { "tob", 67 }, { "judit", 68 }, { "giudit", 68 }, { "iudit", 68 }, { "judyt", 68 },
         { "wisdom", 70 }, { "sabidur", 70 }, { "sagesse", 70 }, { "weisheit", 70 },
-        { "sapienz", 70 }, { "wijsheid", 70 }, { "sabedoria", 70 }, { "mudrost", 70 },
-        { "sirach", 71 }, { "sirac", 71 }, { "clesiastic", 71 }, { "clesiastiq", 71 },
+        { "sapienz", 70 }, { "sapient", 70 }, { "wijsheid", 70 }, { "sabedoria", 70 },
+        { "mudrost", 70 }, { "moudrost", 70 }, { "madrosc", 70 }, { "bolcsesseg", 70 },
         { "jeremy", 73 }, { "azaria", 74 }, { "three holy", 74 }, { "three young", 74 },
         { "susan", 75 }, { "zuzan", 75 },
-        { "bel and", 76 }, { "bel et", 76 }, { "bel y", 76 }, { "bel und", 76 },
-        { "manasse", 83 },
+        { "bel and", 76 }, { "bel et", 76 }, { "bel y", 76 }, { "bel und", 76 }, { "bel dan", 76 },
+        { "manasse", 83 }, { "manases", 83 }, { "manase", 83 },
     };
     for (const Stem& s : held)
         if (plain.contains(QLatin1String(s.stem))) return s.book;
@@ -435,6 +458,17 @@ bool isUnheldBookName(QStringView name)
     return deuterocanonFromPlain(plainName(name)) == kUnheld;
 }
 
+int apocryphalEsdras(QStringView name)
+{
+    const QString plain = plainName(name);
+    if (!plain.contains(QLatin1String("esdras"))) return 0;
+    switch (nameOrdinal(plain)) {
+    case 1: case 3: return 81;   // the Vulgate's 3 Esdras is 1 Esdras
+    case 2: case 4: return 82;
+    default: return 0;
+    }
+}
+
 std::optional<BibleBookMeta> lookupBookName(QStringView name)
 {
     const auto& tbl = lookupTable();
@@ -444,7 +478,7 @@ std::optional<BibleBookMeta> lookupBookName(QStringView name)
     }
     const QString plain = plainName(name);
     if (const int book = deuterocanonFromPlain(plain); book != 0) {
-        if (book == kUnheld) return std::nullopt;
+        if (book < 0) return std::nullopt;
         return *bookByNumber(book);
     }
     // Short names with an accent ("Jób", "Rút") match once it's off.
@@ -484,7 +518,7 @@ std::optional<BibleBookMeta> guessBookName(QStringView name)
     plain.toInt(&isNumber);
     if (isNumber || !latinLetters(plain, 2)) return std::nullopt;
     if (const int book = deuterocanonFromPlain(plain); book != 0) {
-        if (book == kUnheld) return std::nullopt;
+        if (book < 0) return std::nullopt;
         return *bookByNumber(book);
     }
     auto guess = lookupBook(name);

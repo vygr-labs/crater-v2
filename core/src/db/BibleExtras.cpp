@@ -6,24 +6,33 @@
 
 namespace crater::db {
 
+namespace {
+
+bool hasSourceColumn(Connection& conn)
+{
+    auto info = conn.prepare(QStringLiteral("PRAGMA table_info(translations)"));
+    while (info.step())
+        if (info.columnText(1) == u"source") return true;
+    return false;
+}
+
+bool hasPendingTable(Connection& conn)
+{
+    auto table = conn.prepare(QStringLiteral(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'verses_fts_pending_delete'"));
+    return table.step();
+}
+
+}  // namespace
+
 void ensureBibleExtras(Connection& conn)
 {
-    bool hasSource = false;
-    {
-        auto info = conn.prepare(QStringLiteral("PRAGMA table_info(translations)"));
-        while (info.step())
-            if (info.columnText(1) == u"source") hasSource = true;
-    }
-    bool hasPending = false;
-    {
-        auto table = conn.prepare(QStringLiteral(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'verses_fts_pending_delete'"));
-        hasPending = table.step();
-    }
     // Nothing to write, so no write lock: this runs at every startup.
-    if (hasSource && hasPending) return;
+    if (hasSourceColumn(conn) && hasPendingTable(conn)) return;
     Transaction tx(conn, Transaction::Begin::Immediate);
-    if (!hasSource)
+    // Asked again under the lock: another Crater starting at the same moment
+    // may have added the column first, and adding it twice fails.
+    if (!hasSourceColumn(conn))
         conn.exec(QStringLiteral(
             "ALTER TABLE translations ADD COLUMN source TEXT NOT NULL DEFAULT 'bundled'"));
     conn.exec(QStringLiteral(

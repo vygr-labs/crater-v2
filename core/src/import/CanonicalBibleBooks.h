@@ -72,6 +72,10 @@ std::optional<BibleBookMeta> guessBookName(QStringView name);
 // their order must never give one of these a number.
 bool isUnheldBookName(QStringView name);
 
+// 1 Esdras (81) or 2 Esdras (82) for a numbered Esdras where it can only be
+// one of the KJV's Apocrypha (a Zefania book numbered past 66), else 0.
+int apocryphalEsdras(QStringView name);
+
 // All 66 books in canonical order.
 const QList<BibleBookMeta>& allCanonicalBooks();
 

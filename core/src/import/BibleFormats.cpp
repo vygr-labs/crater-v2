@@ -255,6 +255,8 @@ void readZefania(QXmlStreamReader& x, ParsedBible& out)
             if (!book) {
                 const int named = bookFromName(name);
                 book = number > 66 && named <= 66 ? 0 : named;
+                // Past 66 a numbered Esdras can only be 1 or 2 Esdras.
+                if (!book && number > 66) book = apocryphalEsdras(name);
             }
             if (!book) skipBook(out, name.isEmpty() ? attr(x, "bnumber") : name);
             chapter = 0;
@@ -339,20 +341,20 @@ const QList<QList<int>>& bookOrders()
             // Catholic (NAB, Jerusalem): Tobit and Judith after Nehemiah, the
             // Maccabees after Esther, Wisdom and Sirach after the Song, Baruch
             // after Lamentations.
-            range(1, 16) + QList<int>{ 67, 68, 17, 69, 77, 78 } + range(18, 22) + QList<int>{ 70, 71 }
+            range(1, 16) + QList<int>{ 67, 68, 17, 69, 77, 78, 79, 80 } + range(18, 22) + QList<int>{ 70, 71 }
                 + range(23, 25) + QList<int>{ 72, 73, 26, 27, 85, 74, 75, 76 } + range(28, 39),
             // Vulgate and Douay: the Maccabees last.
             range(1, 16) + QList<int>{ 67, 68, 17, 69 } + range(18, 22) + QList<int>{ 70, 71 }
                 + range(23, 25) + QList<int>{ 72, 73, 26, 27, 85, 74, 75, 76 } + range(28, 39)
-                + QList<int>{ 77, 78 },
+                + QList<int>{ 77, 78, 79, 80 },
             // The KJV's Apocrypha, between the testaments.
-            range(1, 39) + QList<int>{ 81, 82, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 83, 77, 78 },
+            range(1, 39) + QList<int>{ 81, 82, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 83, 77, 78, 79, 80 },
             // Luther, and Bibles that follow it (the Slovak Catholic): after Malachi.
-            range(1, 39) + QList<int>{ 68, 70, 67, 71, 72, 73, 77, 78, 69, 74, 75, 76, 83 },
+            range(1, 39) + QList<int>{ 68, 70, 67, 71, 72, 73, 77, 78, 79, 80, 69, 74, 75, 76, 83 },
             // Russian Synodal.
             range(1, 14) + QList<int>{ 83, 15, 16, 81, 67, 68, 17, 69 } + range(18, 22) + QList<int>{ 70, 71 }
                 + range(23, 25) + QList<int>{ 73, 72, 26, 27, 85, 74, 75, 76 } + range(28, 39)
-                + QList<int>{ 77, 78, 79, 82 },
+                + QList<int>{ 77, 78, 79, 80, 82 },
         };
         const QList<QList<int>> newTestaments = {
             range(40, 66),
@@ -386,10 +388,17 @@ const QList<QList<int>>& bookOrders()
 // The best-scoring order wins. A book placed without its name to go by is
 // kept only when the file gives enough to trust its order, three books
 // placed by name or twenty books or more whose chapter counts mostly agree,
-// and its chapter count fits. Books between two placed ones then take the
-// numbers between them in that order when the counts match exactly, and
-// with three placed by name, books before the first or after the last take
-// the ones leading up to it or following on.
+// and its chapter count fits, and only when it doesn't pass over books of
+// the 66 the file lacks to get there (Matthew a chapter short is not
+// Leviticus). Books between two placed ones then take the numbers between
+// them in that order when the counts match exactly, and when the file is
+// trusted, books before the first or after the last take the ones leading up
+// to it or following on. A book its name places that ended up off the
+// chosen order still takes its own number when that's free and its chapter
+// count fits.
+//
+// Douay and other Vulgate-numbered Bibles call Samuel 1 and 2 Kings and
+// Kings 3 and 4 Kings. A "3 Kings" or "4 Kings" says a file numbers them so.
 //
 // With too little to go by otherwise (names in another script, chapters
 // left out), a whole Bible or a whole testament says by its size which
@@ -402,7 +411,26 @@ QList<int> placeBooks(const QList<FileBook>& books, bool* byPosition)
     const int n = int(books.size());
     struct Evidence { int name = 0; int guess = 0; bool unheld = false; };
     QList<Evidence> evidence(n);
+    static const QRegularExpression vulgateKings(
+        QStringLiteral(R"(^(1|2|3|4|i|ii|iii|iv)\.?\s*(kings|kgs|regum|reis|reyes|rois)\b)"),
+        QRegularExpression::CaseInsensitiveOption);
+    bool vulgateNumbering = false;
+    for (const FileBook& b : books) {
+        const auto m = vulgateKings.match(b.name.trimmed());
+        if (m.hasMatch() && (m.captured(1) == u"3" || m.captured(1) == u"4"
+                             || m.captured(1).compare(u"iii", Qt::CaseInsensitive) == 0
+                             || m.captured(1).compare(u"iv", Qt::CaseInsensitive) == 0))
+            vulgateNumbering = true;
+    }
     for (int i = 0; i < n; ++i) {
+        if (vulgateNumbering) {
+            if (const auto m = vulgateKings.match(books[i].name.trimmed()); m.hasMatch()) {
+                const QString k = m.captured(1).toLower();
+                evidence[i].name = k == u"1" || k == u"i" ? 9 : k == u"2" || k == u"ii" ? 10
+                                 : k == u"3" || k == u"iii" ? 11 : 12;
+                continue;
+            }
+        }
         evidence[i].name = bookFromName(books[i].name);
         if (!evidence[i].name) {
             evidence[i].unheld = isUnheldBookName(books[i].name);
@@ -510,9 +538,37 @@ QList<int> placeBooks(const QList<FileBook>& books, bool* byPosition)
             if (!(agrees || (trusted && boxedIn)) || !(fits || guessed)) continue;
             if (!guessed) *byPosition = true;
         }
-        out[match.file] = match.book;
         kept.append(match);
     }
+    // A book placed by its count alone that passes over books of the 66 the
+    // file lacks, to reach a place or leave it, is on a chance match: a
+    // 27-chapter Matthew at the start of a New Testament fits Leviticus. Two
+    // are let pass, for a file that lacks a book or two (a Swahili New
+    // Testament without Philippians).
+    constexpr int kMissingAllowed = 2;
+    const auto canonPassed = [&](int fromPosition, int toPosition) {
+        int count = 0;
+        for (int p = fromPosition + 1; p < toPosition; ++p)
+            if (bestOrder->at(p) <= 66) ++count;
+        return count;
+    };
+    for (bool dropped = true; dropped; ) {
+        dropped = false;
+        for (int k = 0; k < kept.size(); ++k) {
+            const Evidence& e = evidence[kept[k].file];
+            if (e.name || e.guess == kept[k].book) continue;
+            const bool jumpIn = k > 0 && canonPassed(kept[k - 1].position, kept[k].position)
+                                         > kept[k].file - kept[k - 1].file - 1 + kMissingAllowed;
+            const bool jumpOut = k + 1 < kept.size() && canonPassed(kept[k].position, kept[k + 1].position)
+                                                         > kept[k + 1].file - kept[k].file - 1 + kMissingAllowed;
+            if (jumpIn || jumpOut) {
+                kept.removeAt(k);
+                dropped = true;
+                break;
+            }
+        }
+    }
+    for (const Match& match : std::as_const(kept)) out[match.file] = match.book;
     if (kept.isEmpty()) return out;
     // Books from `from` to `to` in the file (inclusive) take `numbers`, one
     // for one, unless one of them says by its name it's something else.
@@ -525,31 +581,48 @@ QList<int> placeBooks(const QList<FileBook>& books, bool* byPosition)
             if (evidence[i].guess != out[i]) *byPosition = true;
         }
     };
-    // The order's books from position `from` up to `to` (exclusive), all of
-    // them or only the 66: a Bible without the deuterocanon skips its places
-    // in the order.
-    const auto between = [&](int from, int to, bool onlyCanon) {
+    // The order's books from position `from` up to `to` (exclusive): all of
+    // them, all but the ones few Bibles carry as books (a Catholic Bible has
+    // no Greek Esther or Susanna of its own), or only the 66.
+    enum class Books { All, Common, Canon };
+    const auto between = [&](int from, int to, Books which) {
         QList<int> numbers;
-        for (int p = qMax(0, from); p < qMin(int(bestOrder->size()), to); ++p)
-            if (!onlyCanon || bestOrder->at(p) <= 66) numbers << bestOrder->at(p);
+        for (int p = qMax(0, from); p < qMin(int(bestOrder->size()), to); ++p) {
+            const int book = bestOrder->at(p);
+            if (which == Books::Canon && book > 66) continue;
+            if (which == Books::Common && isRareBook(book)) continue;
+            numbers << book;
+        }
         return numbers;
     };
     for (int k = 1; k < kept.size(); ++k) {
         const Match& a = kept[k - 1];
         const Match& b = kept[k];
         if (b.file - a.file < 2) continue;
-        for (const bool onlyCanon : { false, true }) {
-            fill(a.file + 1, b.file - 1, between(a.position + 1, b.position, onlyCanon));
+        for (const Books which : { Books::All, Books::Common, Books::Canon }) {
+            fill(a.file + 1, b.file - 1, between(a.position + 1, b.position, which));
             if (out[a.file + 1]) break;
         }
     }
-    if (named >= 3) {
+    if (trusted) {
         const Match& first = kept.first();
         const Match& last = kept.last();
-        QList<int> before = between(0, first.position, true);
+        QList<int> before = between(0, first.position, Books::Canon);
         if (before.size() >= first.file) fill(0, first.file - 1, before.mid(before.size() - first.file));
-        const QList<int> after = between(last.position + 1, int(bestOrder->size()), true);
+        const QList<int> after = between(last.position + 1, int(bestOrder->size()), Books::Canon);
         if (after.size() >= n - 1 - last.file) fill(last.file + 1, n - 1, after.first(n - 1 - last.file));
+    }
+    // Named books the chosen order passed over (the Psalms after Revelation
+    // in a New Testament with Psalms): their own number, when it's free and
+    // their chapters fit.
+    QSet<int> used;
+    for (int number : std::as_const(out))
+        if (number) used.insert(number);
+    for (int i = 0; i < n; ++i) {
+        const int name = evidence[i].name;
+        if (out[i] || !name || used.contains(name) || chapterGap(name, books[i].chapters) > 1) continue;
+        out[i] = name;
+        used.insert(name);
     }
     return out;
 }

@@ -407,6 +407,7 @@ int BibleImporter::run(QStringList files, QString code, QString name)
                     // Quitting: the transaction rolls back, nothing is added.
                     if ((i & 1023) == 0 && stop->load()) return;
                     const import::ParsedVerse& v = bible.verses.at(i);
+                    if (!bookIds.contains(v.book)) continue;   // a book with no row above
                     for (int n = v.verse; n <= v.verseEnd; ++n) {
                         ins.reset();
                         ins.bind(1, translationId);

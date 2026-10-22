@@ -25,6 +25,7 @@
 #include "db/BibleExtras.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
+#include "db/Migrator.h"
 #include "db/Statement.h"
 #include "import/BibleFormats.h"
 #include "import/CanonicalBibleBooks.h"
@@ -495,6 +496,21 @@ private slots:
         QCOMPARE(number(guessBookName(u"67")), 0);
         QCOMPARE(number(guessBookName(QString::fromUtf8("Иов"))), 0);
         QCOMPARE(number(guessBookName(u"Judit")), 68);
+        // Sirach's longer titles hold "Wisdom" too.
+        QCOMPARE(number(lookupBookName(u"The Wisdom of Jesus the Son of Sirach")), 71);
+        QCOMPARE(number(lookupBookName(u"Wijsheid van Jezus Sirach")), 71);
+        // Numbers after the name, Roman ones, and words.
+        QCOMPARE(number(lookupBookName(u"Machabaeorum I")), 77);
+        QCOMPARE(number(lookupBookName(u"IV Maccabees")), 80);
+        QCOMPARE(number(lookupBookName(u"Fourth Maccabees")), 80);
+        QCOMPARE(number(lookupBookName(u"Giuditta")), 68);
+        QCOMPARE(number(lookupBookName(u"Maccabees")), 0);   // which one?
+        // Could be more than one book: not unheld, so where it sits decides.
+        QVERIFY(!crater::import::isUnheldBookName(u"1 Esdras"));
+        QVERIFY(!crater::import::isUnheldBookName(u"Maccabees"));
+        QCOMPARE(crater::import::apocryphalEsdras(u"3 Esdras"), 81);
+        QCOMPARE(crater::import::apocryphalEsdras(u"2 Esdras"), 82);
+        QCOMPARE(crater::import::apocryphalEsdras(u"Esdras"), 0);
         QVERIFY(crater::import::isUnheldBookName(u"Odes"));
         QVERIFY(crater::import::isUnheldBookName(u"Psalms of Solomon"));
         QVERIFY(!crater::import::isUnheldBookName(u"Tobit"));
@@ -631,21 +647,117 @@ private slots:
         QCOMPARE(c.verses.size(), [&] { int n = 0; for (int b : catholic) n += chaptersOf(b, true); return n; }());
     }
 
+    // Named books whose names say less than they seem: the KJV's 1 and 2
+    // Esdras, Douay's four Books of Kings and its Esdras for Ezra and
+    // Nehemiah, 4 Maccabees, and the Psalms after Revelation. Then unnamed
+    // books a chapter short, which must not land on a far-off book with
+    // that count.
+    void placedByNameAndCount()
+    {
+        constexpr int counts[] = {
+            50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31,
+            12, 8, 66, 52, 5, 48, 12, 14, 3, 9, 1, 4, 7, 3, 3, 3, 2, 14, 4,
+            28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5,
+            5, 3, 5, 1, 1, 1, 22,
+        };
+        struct B { QString name; int book; int chapters; };
+        const auto english = [&](int book) {
+            return B{ crater::import::bookByNumber(book)->name, book, counts[book - 1] };
+        };
+        const auto bible = [](const QList<B>& list) {
+            QByteArray xml = "<bible>";
+            for (const B& b : list) {
+                xml += "<b n=\"" + b.name.toUtf8() + "\">";
+                for (int c = 1; c <= b.chapters; ++c)
+                    xml += "<c n=\"" + QByteArray::number(c) + "\"><v n=\"1\">book " + QByteArray::number(b.book)
+                         + " chapter " + QByteArray::number(c) + "</v></c>";
+                xml += "</b>";
+            }
+            return xml + "</bible>";
+        };
+        const auto wrong = [&](const ParsedBible& p, const QList<B>& list) {
+            for (const B& b : list) {
+                const ParsedVerse* v = find(p, b.book, 1, 1);
+                if (!v || v->text != QStringLiteral("book %1 chapter 1").arg(b.book)) return b.name;
+            }
+            return QString();
+        };
+
+        // KJV with the Apocrypha between the testaments.
+        QList<B> kjv;
+        for (int n = 1; n <= 39; ++n) kjv << english(n);
+        kjv << B{ "1 Esdras", 81, 9 } << B{ "2 Esdras", 82, 16 } << B{ "Tobit", 67, 14 } << B{ "Judith", 68, 16 }
+            << B{ "Wisdom", 70, 19 } << B{ "Ecclesiasticus", 71, 51 } << B{ "Baruch", 72, 5 }
+            << B{ "1 Maccabees", 77, 16 } << B{ "2 Maccabees", 78, 15 };
+        for (int n = 40; n <= 66; ++n) kjv << english(n);
+        const ParsedBible k = parseBibleFiles({ write("kjva.xmm", bible(kjv)) });
+        QVERIFY2(k.error.isEmpty(), qPrintable(k.error));
+        QCOMPARE(wrong(k, kjv), QString());
+
+        // Douay: Samuel and Kings as 1-4 Kings, Ezra and Nehemiah as 1-2 Esdras.
+        QList<B> douay;
+        for (int n = 1; n <= 8; ++n) douay << english(n);
+        douay << B{ "1 Kings", 9, 31 } << B{ "2 Kings", 10, 24 } << B{ "3 Kings", 11, 22 } << B{ "4 Kings", 12, 25 }
+              << english(13) << english(14) << B{ "1 Esdras", 15, 10 } << B{ "2 Esdras", 16, 13 }
+              << B{ "Tobias", 67, 14 } << B{ "Judith", 68, 16 } << B{ "Esther", 17, 16 };
+        for (int n = 18; n <= 39; ++n) douay << english(n);
+        douay << B{ "1 Machabees", 77, 16 } << B{ "2 Machabees", 78, 15 };
+        const ParsedBible d = parseBibleFiles({ write("douay.xmm", bible(douay)) });
+        QVERIFY2(d.error.isEmpty(), qPrintable(d.error));
+        QCOMPARE(wrong(d, douay), QString());
+
+        // An Orthodox Old Testament's 4 Maccabees, and a New Testament with
+        // the Psalms and Proverbs after it.
+        QList<B> extra;
+        for (int n = 40; n <= 66; ++n) extra << english(n);
+        extra << english(19) << english(20) << B{ "4 Maccabees", 80, 18 };
+        const ParsedBible e = parseBibleFiles({ write("nt-psalms.xmm", bible(extra)) });
+        QVERIFY2(e.error.isEmpty(), qPrintable(e.error));
+        QCOMPARE(wrong(e, extra), QString());
+
+        // Names in a script Crater can't read, Matthew a chapter short and
+        // Revelation too: Matthew is not Leviticus, which has 27.
+        QList<B> nt;
+        for (int n = 40; n <= 66; ++n)
+            nt << B{ QString::fromUtf8("Книга ") + QString::number(n), n, counts[n - 1] - (n == 40 || n == 66 ? 1 : 0) };
+        const ParsedBible r = parseBibleFiles({ write("short-nt.xmm", bible(nt)) });
+        QVERIFY2(r.error.isEmpty(), qPrintable(r.error));
+        QCOMPARE(wrong(r, nt), QString());
+
+        // Zefania past 66: a numbered Esdras can only be the KJV's.
+        const ParsedBible z = parseBibleFiles({ write("esdras.xml",
+            "<XMLBIBLE><BIBLEBOOK bnumber=\"81\" bname=\"3 Esdras\"><CHAPTER cnumber=\"1\">"
+            "<VERS vnumber=\"1\">And Josias held the feast.</VERS></CHAPTER></BIBLEBOOK></XMLBIBLE>") });
+        QVERIFY2(z.error.isEmpty(), qPrintable(z.error));
+        expectVerse(z, 81, 1, 1, QStringLiteral("And Josias held the feast."));
+    }
+
     // The library's additions for imported Bibles leave its schema version
     // alone, so an older Crater still opens it, and come back if an older
     // Crater's copy of the library lacks them.
     void schemaStaysOpenToOlderVersions()
     {
-        crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
-        QCOMPARE(conn.userVersion(), qint64(2));
+        // A library as an older Crater leaves it: migrated, no additions.
+        const QString path = m_files.filePath(QStringLiteral("older-bibles.sqlite"));
+        crater::db::Connection conn(path);
+        crater::db::Migrator::run(conn, QStringLiteral("bibles"));
+        const qint64 version = conn.userVersion();
+        const auto count = [&conn](QStringView sql) {
+            auto st = conn.prepare(sql);
+            return st.step() ? st.columnInt(0) : -1;
+        };
+        QCOMPARE(count(u"SELECT count(*) FROM pragma_table_info('translations') WHERE name = 'source'"), 0);
+        conn.exec(u"INSERT INTO translations (code, name) VALUES ('OLD', 'Written by an older Crater')");
+
+        crater::db::ensureBibleExtras(conn);
         crater::db::ensureBibleExtras(conn);   // again: changes nothing
-        auto source = conn.prepare(u"SELECT count(*) FROM pragma_table_info('translations') WHERE name = 'source'");
-        QVERIFY(source.step());
-        QCOMPARE(source.columnInt(0), 1);
-        source.reset();
-        auto pending = conn.prepare(u"SELECT count(*) FROM sqlite_master WHERE name = 'verses_fts_pending_delete'");
-        QVERIFY(pending.step());
-        QCOMPARE(pending.columnInt(0), 1);
+        QCOMPARE(conn.userVersion(), version);
+        QCOMPARE(count(u"SELECT count(*) FROM pragma_table_info('translations') WHERE name = 'source'"), 1);
+        QCOMPARE(count(u"SELECT count(*) FROM sqlite_master WHERE name = 'verses_fts_pending_delete'"), 1);
+        QCOMPARE(count(u"SELECT count(*) FROM translations WHERE code = 'OLD' AND source = 'bundled'"), 1);
+        // What an older Crater writes afterwards, naming no source, is bundled.
+        conn.exec(u"INSERT INTO translations (code, name) VALUES ('OLD2', 'Also older')");
+        QCOMPARE(count(u"SELECT count(*) FROM translations WHERE code = 'OLD2' AND source = 'bundled'"), 1);
     }
 
     // Round two of the readers: an unclosed note at the end of one book in
