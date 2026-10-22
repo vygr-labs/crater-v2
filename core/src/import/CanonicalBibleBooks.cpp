@@ -261,6 +261,53 @@ const QList<BibleBookMeta>& allCanonicalBooks()
     return list;
 }
 
+std::optional<BibleBookMeta> lookupBookName(QStringView name)
+{
+    const QString key = normalizeKey(name);
+    const auto& tbl = lookupTable();
+    if (const auto it = tbl.find(key); it != tbl.end()) return it.value();
+
+    // Diacritics off ("Deuteronómium" -> "deuteronomium"), then only names
+    // that are Latin letters, four or more of them.
+    QString plain;
+    for (const QChar c : key.normalized(QString::NormalizationForm_D))
+        if (c.category() != QChar::Mark_NonSpacing) plain += c;
+    int letters = 0;
+    for (const QChar c : plain) {
+        if (!c.isLetter()) continue;
+        if (c.script() != QChar::Script_Latin) return std::nullopt;
+        ++letters;
+    }
+    if (letters < 4) return std::nullopt;
+
+    // The deuterocanon is close enough to canonical names to match one
+    // (Ecclesiasticus / Ecclesiastes, Tobit / Obadiah) and isn't among them.
+    static const char* const outsideCanon[] = {
+        "tob", "judit", "wisdom", "sirach", "ecclesiasticus", "baruch", "macc", "makab", "makk",
+        "esdras", "manasse", "susanna", "bel and", "azaria", "jeremy", "laodic", "odes",
+    };
+    for (const char* stem : outsideCanon)
+        if (plain.contains(QLatin1String(stem))) return std::nullopt;
+
+    // Closest full name within a third of the length. A tie means it could
+    // be either, so neither.
+    const int bound = qMax(1, letters / 3);
+    std::optional<BibleBookMeta> best;
+    int bestDist = bound + 1;
+    bool tied = false;
+    for (const auto& b : allCanonicalBooks()) {
+        const int dist = boundedDamerauLevenshtein(plain, normalizeKey(b.name), bound);
+        if (dist < bestDist) {
+            best = b;
+            bestDist = dist;
+            tied = false;
+        } else if (dist == bestDist && dist <= bound) {
+            tied = true;
+        }
+    }
+    return tied ? std::nullopt : best;
+}
+
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt)
 {
     const QString key = normalizeKey(nameOrAlt);

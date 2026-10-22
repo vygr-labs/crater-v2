@@ -1,11 +1,10 @@
 #pragma once
 
-#include <QFuture>
 #include <QMutex>
 #include <QObject>
-#include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QThreadPool>
 #include <QVariantMap>
 
 #include <atomic>
@@ -24,16 +23,21 @@ namespace import { struct ParsedBible; }
 //
 // Same two-step protocol as EasyWorshipImporter, so the operator sees what
 // the file holds and picks its code before anything is written:
-//   1. analyze(files)            -> analyzed(info)
-//   2. run(files, code, name)    -> progress(...), then completed(code, verses)
+//   1. analyze(files)            -> analyzed(request, info)
+//   2. run(files, code, name)    -> progress(...), then completed(request, code, verses)
+//
+// Each call returns a request id that its signals carry, so a dialog can
+// ignore the answer to a request it didn't make (one closed mid-import, or a
+// removal running from Settings).
 //
 // An imported Bible is stored like a bundled one: canonical English book
 // names (so references and translation switching work unchanged), its verses,
-// and its rows in the search index. BibleService only learns of it through
-// BibleService::libraryChanged, which main.cpp connects to completed/removed.
+// and its rows in the search index, with translations.source = 'file'.
+// BibleService only learns of it through BibleService::libraryChanged, which
+// main.cpp connects to completed/removed.
 //
-// Removing is offered only for translations Crater didn't ship, found by
-// comparing with the bundled bibles.sqlite.
+// Everything runs one task at a time on a thread of its own, so two writes
+// never contend for the library, and the destructor can wait for all of it.
 class BibleImporter : public QObject
 {
     Q_OBJECT
@@ -44,48 +48,50 @@ public:
 
     // Reads the files and reports what they hold, as a map:
     //   format, name, code (a free one, suggested from the file), language,
-    //   books, verses, skippedBooks (list), booksByPosition (bool).
-    // Result via analyzed() or failed(). Runs on a worker thread.
-    Q_INVOKABLE void analyze(QStringList files);
+    //   books, verses, skippedBooks (list), ignoredFiles (list),
+    //   booksByPosition (bool).
+    // Result via analyzed() or failed().
+    Q_INVOKABLE int analyze(QStringList files);
 
     // Imports the files as a new translation called `name` with `code`.
-    // Progress via progress(); result via completed() or failed(). Runs on a
-    // worker thread.
-    Q_INVOKABLE void run(QStringList files, QString code, QString name);
+    // Progress via progress(); result via completed() or failed().
+    Q_INVOKABLE int run(QStringList files, QString code, QString name);
+
+    // Drops what analyze() read and kept for run(). For a dialog closing
+    // without importing.
+    Q_INVOKABLE void discardAnalysis();
 
     // Empty when `code` can name a new translation, otherwise why not.
     Q_INVOKABLE QString codeProblem(QString code) const;
 
-    // True for a translation the operator added (one Crater didn't ship).
+    // True for a translation the operator added from a file.
     Q_INVOKABLE bool isRemovable(QString code) const;
 
-    // Deletes an added translation and its search index rows. Result via
-    // removed() or failed(). Runs on a worker thread.
-    Q_INVOKABLE void remove(QString code);
+    // Deletes an added translation. Its search index rows are cleared just
+    // after, in the background. Result via removed() or failed().
+    Q_INVOKABLE int remove(QString code);
 
 signals:
-    void analyzed(QVariantMap info);
-    void progress(int percent, QString stage);
-    void completed(QString code, int verseCount);
-    void removed(QString code);
-    void failed(QString reason);
+    void analyzed(int request, QVariantMap info);
+    void progress(int request, int percent, QString stage);
+    void completed(int request, QString code, int verseCount);
+    void removed(int request, QString code);
+    void failed(int request, QString reason);
 
 private:
-    QSet<QString> bundledCodes() const;
     // The files read once for analyze() and reused by run(), since a whole
-    // Bible in USFM takes seconds to read.
+    // Bible in USFM takes a while to read. Keyed by each file's path, size
+    // and modified time; a failed read isn't kept.
     std::shared_ptr<const import::ParsedBible> parse(const QStringList& files);
 
     QMutex                                     m_parsedLock;
-    QStringList                                m_parsedFiles;
+    QString                                    m_parsedKey;
     std::shared_ptr<const import::ParsedBible> m_parsed;
 
-    mutable QSet<QString> m_bundled;   // uppercased, read once
-    mutable bool          m_bundledRead = false;
-    // The destructor waits on it, so a running import can't outlive this.
-    QFuture<void> m_task;
-    // Set on destruction: stops the search index clean-up a removal leaves
-    // running in the background.
+    int         m_nextRequest = 1;
+    QThreadPool m_pool;   // one thread: tasks run in order
+    // Set on destruction, so a running import or index clean-up stops at
+    // its next step instead of holding up the quit.
     std::shared_ptr<std::atomic_bool> m_stop;
 };
 

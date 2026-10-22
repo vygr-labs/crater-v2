@@ -11,17 +11,23 @@ import QtQuick
 //   importing -> BibleImporter.run() with a live progress bar
 //   done      -> ready, with a shortcut to it  |  error -> why not
 //
+// Every BibleImporter call returns a request id its signals carry, and this
+// dialog only listens to its own: an earlier dialog's late answer, or a
+// removal running from Settings, never lands here. It can't be closed while
+// reading or importing, as the profile export dialog can't mid-export.
+//
 // Opened via AppState.openModal("bibleImport") from Settings > Scripture.
 // modalProps.files, when given, skips the picker.
 ModalShell {
     id: root
 
     dialogWidth: 580
-    dialogHeight: 520
+    dialogHeight: 540
     title: qsTr("Add a Bible")
 
     // ── State machine ───────────────────────────────────────────────────
     property string phase: "pick"   // pick | scanning | confirm | importing | done | error
+    property int    request: -1     // the BibleImporter call this dialog waits on
     property var    files: []
     property var    info: ({})
     property string importedCode: ""
@@ -36,27 +42,31 @@ ModalShell {
         codeProblem.length === 0 && nameField.text.trim().length > 0
 
     function count(n) { return Number(n).toLocaleString(Qt.locale(), "f", 0) }
+    function list(items) { return (items || []).join(", ") }
 
     Connections {
         target: BibleImporter
-        function onAnalyzed(info) {
-            if (root.phase !== "scanning") return
+        function onAnalyzed(request, info) {
+            if (request !== root.request || root.phase !== "scanning") return
             root.info = info
             nameField.text = info.name || ""
             codeField.text = info.code || ""
             root.phase = "confirm"
+            Qt.callLater(nameField.focusInput)
         }
-        function onProgress(percent, stage) {
+        function onProgress(request, percent, stage) {
+            if (request !== root.request) return
             root.progressPercent = percent
             root.progressStage = stage
         }
-        function onCompleted(code, verses) {
+        function onCompleted(request, code, verses) {
+            if (request !== root.request) return
             root.importedCode = code
             root.importedVerses = verses
             root.phase = "done"
         }
-        function onFailed(reason) {
-            if (root.phase !== "scanning" && root.phase !== "importing") return
+        function onFailed(request, reason) {
+            if (request !== root.request) return
             root.errorText = reason
             root.phase = "error"
         }
@@ -65,6 +75,22 @@ ModalShell {
     Component.onCompleted: {
         const given = AppState.modalProps.files
         if (given && given.length > 0) scan(given)
+    }
+    // Closed without importing: what was read for the import goes.
+    Component.onDestruction: if (phase !== "done") BibleImporter.discardAnalysis()
+
+    // Escape, the backdrop and the X wait while the file is being read or
+    // added: closing then would leave the operator not knowing whether the
+    // Bible went in.
+    function requestClose() {
+        if (root.phase === "scanning" || root.phase === "importing") return
+        AppState.closeModal()
+    }
+
+    // Ctrl+Enter twice: Add Bible on the confirm step, close otherwise.
+    function requestSave() {
+        if (root.phase === "confirm") startImport()
+        else requestClose()
     }
 
     function pickFiles() {
@@ -80,15 +106,15 @@ ModalShell {
     function scan(chosen) {
         root.files = chosen
         root.phase = "scanning"
-        BibleImporter.analyze(chosen)
+        root.request = BibleImporter.analyze(chosen)
     }
 
     function startImport() {
-        if (!root.canImport) return
+        if (root.phase !== "confirm" || !root.canImport) return
         root.progressPercent = 0
         root.progressStage = qsTr("Starting...")
         root.phase = "importing"
-        BibleImporter.run(root.files, codeField.text.trim(), nameField.text.trim())
+        root.request = BibleImporter.run(root.files, codeField.text.trim(), nameField.text.trim())
     }
 
     function openInScripture() {
@@ -99,13 +125,10 @@ ModalShell {
 
     function resetToStart() {
         root.phase = "pick"
+        root.request = -1
         root.files = []
         root.errorText = ""
     }
-
-    // Ctrl+Enter twice (AppState.saveAndCloseModal) imports from the
-    // confirm step, the same as its Import button.
-    function requestSave() { if (root.phase === "confirm") startImport() }
 
     component Body: Text {
         width: parent ? parent.width : 0
@@ -135,8 +158,14 @@ ModalShell {
     component Field: Column {
         id: field
         property string label: ""
-        property alias text: box.text
+        property alias  text: box.text
+        property alias  maximumLength: box.maximumLength
         property string problem: ""
+        signal accepted()
+        function focusInput() {
+            box.forceActiveFocus()
+            box.selectAll()
+        }
         spacing: Theme.space.xs
         Text {
             text: field.label
@@ -153,7 +182,6 @@ ModalShell {
             border.color: field.problem.length > 0 ? Theme.color.live
                         : box.activeFocus ? Theme.color.brand : Theme.color.borderStrong
             border.width: 1
-            Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
             TextInput {
                 id: box
                 anchors.fill: parent
@@ -165,7 +193,7 @@ ModalShell {
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.bodySize
                 selectByMouse: true
-                onAccepted: root.startImport()
+                onAccepted: field.accepted()
                 HoverHandler { cursorShape: Qt.IBeamCursor }
             }
         }
@@ -218,7 +246,7 @@ ModalShell {
                         spacing: Theme.space.sm
 
                         Note {
-                            text: qsTr("A USFM or USX Bible comes as one file per book, usually in a zip. Unzip it, open the folder and select all of its files. Anything that isn't a book is passed over.")
+                            text: qsTr("A USFM or USX Bible comes as one file per book, usually in a zip. Unzip it, open the folder and select all of its files. Anything that isn't a book is skipped.")
                         }
                         Note {
                             text: qsTr("Many modern translations are copyrighted. Only add one your church is allowed to use.")
@@ -262,62 +290,87 @@ ModalShell {
             anchors.fill: parent
             visible: root.phase === "confirm"
 
-            Column {
+            // Scrolls when a long list of left-out books or skipped files
+            // (or a larger UI scale) would run under the buttons.
+            Flickable {
+                id: confirmFlick
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                spacing: Theme.space.md
+                anchors.bottom: confirmButtons.top
+                anchors.bottomMargin: Theme.space.md
+                contentHeight: confirmCol.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
 
-                Heading {
-                    text: (root.info.books || 0) === 1
-                          ? qsTr("Found 1 book, %1 verses").arg(root.count(root.info.verses || 0))
-                          : qsTr("Found %1 books, %2 verses").arg(root.info.books || 0)
-                                                             .arg(root.count(root.info.verses || 0))
-                }
-                Note {
-                    text: qsTr("%1 file").arg(root.info.format || "")
-                          + (root.files.length > 1 ? "  ·  " + qsTr("%1 files chosen").arg(root.files.length) : "")
-                }
-
-                Row {
-                    width: parent.width
+                Column {
+                    id: confirmCol
+                    width: confirmFlick.width
                     spacing: Theme.space.md
-                    Field {
-                        id: nameField
-                        width: parent.width - codeField.width - parent.spacing
-                        label: qsTr("Name")
-                        problem: nameField.text.trim().length === 0 ? qsTr("Give it a name.") : ""
-                    }
-                    Field {
-                        id: codeField
-                        width: 150
-                        label: qsTr("Code")
-                        problem: root.codeProblem
-                    }
-                }
 
-                Note {
-                    text: qsTr("The code is what the Scripture tab shows on its card, and what you type after a reference to use it, as in John 3:16 KJV.")
-                }
+                    Heading {
+                        text: qsTr("Found %1, %2").arg(
+                                  (root.info.books || 0) === 1 ? qsTr("1 book")
+                                      : qsTr("%1 books").arg(root.info.books || 0)).arg(
+                                  (root.info.verses || 0) === 1 ? qsTr("1 verse")
+                                      : qsTr("%1 verses").arg(root.count(root.info.verses || 0)))
+                    }
+                    Note {
+                        text: root.files.length > 1
+                              ? qsTr("%1, %2 files").arg(root.info.format || "").arg(root.files.length)
+                              : qsTr("%1 file").arg(root.info.format || "")
+                    }
 
-                Note {
-                    visible: (root.info.skippedBooks || []).length > 0
-                    color: Theme.color.textSecondary
-                    text: qsTr("Left out: %1. Crater's Bibles share the 66 books of the Protestant canon, so books outside it aren't added.")
-                              .arg((root.info.skippedBooks || []).join(", "))
-                }
-                Note {
-                    visible: root.info.booksByPosition === true
-                    color: Theme.color.textSecondary
-                    text: qsTr("Some book names weren't ones Crater knows, so those books were matched by their place in the file. Check a few references once it's added.")
-                }
-                Note {
-                    visible: (root.info.ignoredFiles || []).length > 0
-                    text: qsTr("Not Bible files, passed over: %1").arg((root.info.ignoredFiles || []).join(", "))
+                    Row {
+                        width: parent.width
+                        spacing: Theme.space.md
+                        Field {
+                            id: nameField
+                            width: parent.width - codeField.width - parent.spacing
+                            label: qsTr("Name")
+                            problem: root.phase === "confirm" && nameField.text.trim().length === 0
+                                     ? qsTr("Give it a name.") : ""
+                            onAccepted: root.startImport()
+                        }
+                        Field {
+                            id: codeField
+                            width: 150
+                            label: qsTr("Code")
+                            maximumLength: 12
+                            problem: root.codeProblem
+                            onAccepted: root.startImport()
+                        }
+                    }
+
+                    Note {
+                        text: qsTr("The code is what the Scripture tab shows on its card, and what you type after a reference to use it, as in John 3:16 KJV.")
+                    }
+
+                    Note {
+                        visible: (root.info.warnings || []).length > 0
+                        color: Theme.color.live
+                        text: root.list(root.info.warnings)
+                    }
+                    Note {
+                        visible: (root.info.skippedBooks || []).length > 0
+                        color: Theme.color.textSecondary
+                        text: qsTr("Left out: %1. Crater's Bibles share the 66 books of the Protestant canon, so books outside it aren't added.")
+                                  .arg(root.list(root.info.skippedBooks))
+                    }
+                    Note {
+                        visible: root.info.booksByPosition === true
+                        color: Theme.color.textSecondary
+                        text: qsTr("Some book names weren't ones Crater knows, so those books were matched by their place in the file. Check a few references once it's added.")
+                    }
+                    Note {
+                        visible: (root.info.ignoredFiles || []).length > 0
+                        text: qsTr("Skipped, not Bible files: %1").arg(root.list(root.info.ignoredFiles))
+                    }
                 }
             }
 
             Row {
+                id: confirmButtons
                 anchors.bottom: parent.bottom
                 anchors.right: parent.right
                 spacing: Theme.space.sm

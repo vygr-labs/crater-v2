@@ -197,32 +197,42 @@ Item {
     }
 
     // ── Removing an added Bible ─────────────────────────────────────────
-    property string _removeCode: ""
+    // The confirm card's code, and the removal it started. Only that
+    // removal's failure shows here, not an import's.
+    property string _askedCode: ""
+    property int    _removeRequest: -1
     property string removeError: ""
 
     function askRemove(code, name) {
-        root._removeCode = code
+        root._askedCode = code
         root.removeError = ""
+        const named = name.replace(/\.+$/, "")
         removeConfirm.title = qsTr("Remove %1?").arg(code)
-        removeConfirm.body = (name.length > 0 && name !== code ? name + ". " : "")
-            + qsTr("It goes from every profile, since they share one Bible library. Schedules keep the verses they already hold. You can add it again from its file.")
+        removeConfirm.body = (named.length > 0 && named !== code ? named + ". " : "")
+            + qsTr("This removes it from every profile, because they all share one Bible library. Schedules keep the verses they already hold. You can add it again from its file.")
         removeConfirm.openConfirm()
     }
 
     Connections {
         target: BibleImporter
-        function onFailed(reason) {
-            if (root._removeCode.length > 0) root.removeError = reason
-            root._removeCode = ""
+        function onFailed(request, reason) {
+            if (request !== root._removeRequest) return
+            root.removeError = reason
+            root._removeRequest = -1
         }
-        function onRemoved(code) { root._removeCode = "" }
+        function onRemoved(request, code) {
+            if (request === root._removeRequest) root._removeRequest = -1
+        }
     }
 
     ConfirmationOverlay {
         id: removeConfirm
         anchors.fill: parent
         confirmLabel: qsTr("Remove")
-        onConfirmed: BibleImporter.remove(root._removeCode)
-        onCancelled: root._removeCode = ""
+        onConfirmed: {
+            if (root._askedCode.length > 0) root._removeRequest = BibleImporter.remove(root._askedCode)
+            root._askedCode = ""
+        }
+        onCancelled: root._askedCode = ""
     }
 }

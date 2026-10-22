@@ -1,6 +1,5 @@
 #include "crater/BibleImporter.h"
 
-#include "crater/ElectronDataImporter.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
@@ -9,14 +8,18 @@
 #include "import/BibleFormats.h"
 #include "import/CanonicalBibleBooks.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QElapsedTimer>
-#include <QMutexLocker>
 #include <QFileInfo>
+#include <QLocale>
+#include <QMutexLocker>
 #include <QRegularExpression>
-#include <QtConcurrent>
+#include <QThread>
+#include <QTimer>
 
 #include <set>
+#include <vector>
 
 namespace crater {
 
@@ -29,6 +32,31 @@ bool codeTaken(db::Connection& conn, const QString& code)
     const bool taken = st.step();
     st.reset();
     return taken;
+}
+
+// Letters, digits and hyphens, up to 12, starting with a letter or digit.
+// Empty when `code` has that shape, otherwise why not.
+QString codeShapeProblem(const QString& code)
+{
+    static const QRegularExpression valid(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9-]{0,11}$"));
+    if (code.isEmpty()) return BibleImporter::tr("Give it a short code, like KJV.");
+    if (!valid.match(code).hasMatch())
+        return BibleImporter::tr("Use up to 12 letters, numbers or hyphens, with no spaces.");
+    return {};
+}
+
+bool isBusy(const db::Error& e)
+{
+    // SQLITE_BUSY and SQLITE_LOCKED, with their extended codes.
+    const int primary = e.sqliteCode() & 0xff;
+    return primary == 5 || primary == 6;
+}
+
+QString userMessage(const db::Error& e)
+{
+    if (isBusy(e))
+        return BibleImporter::tr("Crater was busy with another change to the Bibles. Try again in a moment.");
+    return e.message();
 }
 
 // Letters and digits from the file's own code ("KJV"), else the initials
@@ -81,63 +109,169 @@ int distinctBooks(const import::ParsedBible& bible)
     return int(books.size());
 }
 
+// Clears the search index rows a removal left in verses_fts_pending_delete
+// (see the bibles V003 migration), a batch per transaction so an import or
+// a search never waits long behind it. A batch that finds the library busy
+// is retried; one that keeps failing, or a quit, leaves the rest for the
+// next launch.
+void clearPendingIndexRows(const std::atomic_bool& stop)
+{
+    QElapsedTimer timer;
+    timer.start();
+    int cleared = 0;
+    constexpr int kBatch = 2000;
+    // Opening the connection can find the library busy too (another
+    // connection starting up at launch), so the retry covers everything.
+    // Batches already committed stay done; a retry carries on from there.
+    for (int busyRetries = 0; !stop.load(); ) {
+        try {
+            db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
+                                QStringLiteral("BibleImport-unindex"));
+            while (!stop.load()) {
+                struct Row { qint64 id; QString text, book, code; };
+                std::vector<Row> rows;
+                {
+                    auto sel = conn.prepare(QStringLiteral(
+                        "SELECT verse_id, text, book_name, translation_code "
+                        "FROM verses_fts_pending_delete LIMIT ?"));
+                    sel.bind(1, qint64(kBatch));
+                    while (sel.step())
+                        rows.push_back({ sel.columnInt64(0), sel.columnText(1), sel.columnText(2),
+                                         sel.columnText(3) });
+                }
+                if (rows.empty()) break;
+                db::Transaction tx(conn);
+                auto del = conn.prepare(QStringLiteral(
+                    "INSERT INTO verses_fts (verses_fts, rowid, text, book_name, translation_code) "
+                    "VALUES ('delete', ?, ?, ?, ?)"));
+                auto done = conn.prepare(QStringLiteral(
+                    "DELETE FROM verses_fts_pending_delete WHERE verse_id = ?"));
+                for (const Row& r : rows) {
+                    del.reset();
+                    del.bind(1, r.id);
+                    del.bind(2, r.text);
+                    del.bind(3, r.book);
+                    del.bind(4, r.code);
+                    del.step();
+                    done.reset();
+                    done.bind(1, r.id);
+                    done.step();
+                }
+                tx.commit();
+                cleared += int(rows.size());
+                busyRetries = 0;
+            }
+            break;
+        } catch (const db::Error& e) {
+            if (isBusy(e) && ++busyRetries <= 20) {
+                QThread::msleep(250);
+                continue;
+            }
+            qWarning().noquote() << "BibleImport: clearing removed verses from the search index stopped:"
+                                 << e.message();
+            break;
+        }
+    }
+    if (cleared > 0)
+        qInfo().noquote() << "BibleImport: cleared" << cleared << "removed verses from the search index in"
+                          << timer.elapsed() << "ms";
+}
+
 }  // namespace
 
 BibleImporter::BibleImporter(QObject* parent)
     : QObject(parent)
     , m_stop(std::make_shared<std::atomic_bool>(false))
 {
+    m_pool.setMaxThreadCount(1);
+    // Finish any search index clean-up a quit interrupted last time, once
+    // startup is over: a write connection opening while the other services
+    // open theirs can find the library busy. Imports and removals also
+    // finish it first, whenever they come.
+    QTimer::singleShot(10'000, this, [this] {
+        m_pool.start([stop = m_stop] { clearPendingIndexRows(*stop); });
+    });
 }
 
 BibleImporter::~BibleImporter()
 {
     m_stop->store(true);
-    if (m_task.isValid()) m_task.waitForFinished();
+    m_pool.waitForDone();
 }
 
 std::shared_ptr<const import::ParsedBible> BibleImporter::parse(const QStringList& files)
 {
+    QString key;
+    for (const QString& f : files) {
+        const QFileInfo info(f);
+        key += f + u'|' + QString::number(info.size()) + u'|'
+             + QString::number(info.lastModified().toMSecsSinceEpoch()) + u'\n';
+    }
     {
         QMutexLocker lock(&m_parsedLock);
-        if (m_parsed && m_parsedFiles == files) return m_parsed;
+        if (m_parsed && m_parsedKey == key) return m_parsed;
     }
     auto parsed = std::make_shared<const import::ParsedBible>(import::parseBibleFiles(files));
     QMutexLocker lock(&m_parsedLock);
-    m_parsedFiles = files;
-    m_parsed = parsed;
+    if (parsed->error.isEmpty()) {
+        m_parsedKey = key;
+        m_parsed = parsed;
+    }
     return parsed;
+}
+
+void BibleImporter::discardAnalysis()
+{
+    QMutexLocker lock(&m_parsedLock);
+    m_parsed.reset();
+    m_parsedKey.clear();
 }
 
 QString BibleImporter::codeProblem(QString code) const
 {
     code = code.trimmed();
-    static const QRegularExpression valid(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9-]{0,11}$"));
-    if (code.isEmpty()) return tr("Give it a short code, like KJV.");
-    if (!valid.match(code).hasMatch())
-        return tr("Use up to 12 letters and numbers, with no spaces.");
+    if (const QString shape = codeShapeProblem(code); !shape.isEmpty()) return shape;
     try {
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             QStringLiteral("BibleImport-check"));
         if (codeTaken(conn, code)) return tr("There's already a translation called %1.").arg(code.toUpper());
     } catch (const db::Error& e) {
-        return e.message();
+        return userMessage(e);
     }
     return {};
 }
 
-void BibleImporter::analyze(QStringList files)
+bool BibleImporter::isRemovable(QString code) const
 {
-    m_task = QtConcurrent::run([this, files]() {
+    code = code.trimmed();
+    if (code.isEmpty()) return false;
+    try {
+        db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
+                            QStringLiteral("BibleImport-check"));
+        auto st = conn.prepare(QStringLiteral(
+            "SELECT source FROM translations WHERE upper(code) = upper(?)"));
+        st.bind(1, code);
+        return st.step() && st.columnText(0) == u"file";
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "BibleImport: isRemovable:" << e.message();
+        return false;
+    }
+}
+
+int BibleImporter::analyze(QStringList files)
+{
+    const int request = m_nextRequest++;
+    m_pool.start([this, request, files]() {
         try {
             const auto parsed = parse(files);
             const import::ParsedBible& bible = *parsed;
             if (!bible.error.isEmpty()) {
-                emit failed(bible.error);
+                emit failed(request, bible.error);
                 return;
             }
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                                 QStringLiteral("BibleImport-analyze"));
-            emit analyzed(QVariantMap{
+            emit analyzed(request, QVariantMap{
                 { QStringLiteral("format"),          bible.format },
                 { QStringLiteral("name"),            bible.name },
                 { QStringLiteral("code"),            suggestCode(bible, conn) },
@@ -146,29 +280,37 @@ void BibleImporter::analyze(QStringList files)
                 { QStringLiteral("verses"),          int(bible.verses.size()) },
                 { QStringLiteral("skippedBooks"),    bible.skippedBooks },
                 { QStringLiteral("ignoredFiles"),    bible.ignoredFiles },
+                { QStringLiteral("warnings"),        bible.warnings },
                 { QStringLiteral("booksByPosition"), bible.booksByPosition },
             });
         } catch (const db::Error& e) {
-            emit failed(e.message());
+            emit failed(request, userMessage(e));
         } catch (...) {
-            emit failed(QStringLiteral("Unexpected error while reading the file."));
+            emit failed(request, tr("Something went wrong reading the file."));
         }
     });
+    return request;
 }
 
-void BibleImporter::run(QStringList files, QString code, QString name)
+int BibleImporter::run(QStringList files, QString code, QString name)
 {
+    const int request = m_nextRequest++;
     code = code.trimmed().toUpper();
     name = name.trimmed();
-    m_task = QtConcurrent::run([this, files, code, name]() {
+    m_pool.start([this, request, files, code, name, stop = m_stop]() {
+        clearPendingIndexRows(*stop);
+        if (const QString shape = codeShapeProblem(code); !shape.isEmpty()) {
+            emit failed(request, shape);
+            return;
+        }
         try {
             QElapsedTimer timer;
             timer.start();
-            emit progress(0, QStringLiteral("Reading the file..."));
+            emit progress(request, 0, tr("Reading the file..."));
             const auto parsed = parse(files);
             const import::ParsedBible& bible = *parsed;
             if (!bible.error.isEmpty()) {
-                emit failed(bible.error);
+                emit failed(request, bible.error);
                 return;
             }
 
@@ -176,10 +318,10 @@ void BibleImporter::run(QStringList files, QString code, QString name)
                                 QStringLiteral("BibleImport"));
             db::Transaction tx(conn);
             if (codeTaken(conn, code)) {
-                emit failed(QStringLiteral("There's already a translation called %1.").arg(code));
+                emit failed(request, tr("There's already a translation called %1.").arg(code));
                 return;
             }
-            emit progress(10, QStringLiteral("Adding the translation..."));
+            emit progress(request, 10, tr("Adding the translation..."));
 
             qint64 sortOrder = 0;
             {
@@ -190,8 +332,8 @@ void BibleImporter::run(QStringList files, QString code, QString name)
             qint64 translationId = 0;
             {
                 auto ins = conn.prepare(QStringLiteral(
-                    "INSERT INTO translations (code, name, language, description, sort_order) "
-                    "VALUES (?, ?, ?, ?, ?)"));
+                    "INSERT INTO translations (code, name, language, description, sort_order, source) "
+                    "VALUES (?, ?, ?, ?, ?, 'file')"));
                 ins.bind(1, code);
                 ins.bind(2, name.isEmpty() ? code : name);
                 ins.bind(3, bible.language.isEmpty() ? QStringLiteral("en") : bible.language.toLower());
@@ -232,9 +374,12 @@ void BibleImporter::run(QStringList files, QString code, QString name)
                 auto ins = conn.prepare(QStringLiteral(
                     "INSERT OR IGNORE INTO verses (translation_id, book_id, chapter, verse, text) "
                     "VALUES (?, ?, ?, ?, ?)"));
+                const QLocale locale;
                 const qsizetype total = bible.verses.size();
                 int lastPercent = -1;
                 for (qsizetype i = 0; i < total; ++i) {
+                    // Quitting: the transaction rolls back, nothing is added.
+                    if ((i & 1023) == 0 && stop->load()) return;
                     const import::ParsedVerse& v = bible.verses.at(i);
                     for (int n = v.verse; n <= v.verseEnd; ++n) {
                         ins.reset();
@@ -248,13 +393,13 @@ void BibleImporter::run(QStringList files, QString code, QString name)
                     const int percent = 10 + int(75 * (i + 1) / qMax<qsizetype>(1, total));
                     if (percent != lastPercent) {
                         lastPercent = percent;
-                        emit progress(percent, QStringLiteral("Adding verses (%1 of %2)...")
-                                                   .arg(i + 1).arg(total));
+                        emit progress(request, percent, tr("Adding verses (%1 of %2)...")
+                                                            .arg(locale.toString(i + 1), locale.toString(total)));
                     }
                 }
             }
 
-            emit progress(88, QStringLiteral("Building the search index..."));
+            emit progress(request, 88, tr("Building the search index..."));
             // Same index shape and apostrophe stripping as the first-run
             // importer, BibleService::rebuildFtsIndex and mergeBibles.
             {
@@ -273,66 +418,30 @@ void BibleImporter::run(QStringList files, QString code, QString name)
                 if (count.step()) stored = count.columnInt(0);
             }
             tx.commit();
-            {
-                QMutexLocker lock(&m_parsedLock);   // done with it
-                m_parsed.reset();
-                m_parsedFiles.clear();
-            }
+            discardAnalysis();   // done with it
             qInfo().noquote() << QStringLiteral("BibleImport: %1 from %2 (%3): %4 verses in %5 ms%6")
                 .arg(code, QFileInfo(files.first()).fileName(), bible.format)
                 .arg(stored).arg(timer.elapsed())
                 .arg(bible.skippedBooks.isEmpty() ? QString()
                      : QStringLiteral(", skipped ") + bible.skippedBooks.join(QStringLiteral(", ")));
-            emit progress(100, QStringLiteral("Done"));
-            emit completed(code, stored);
+            emit progress(request, 100, tr("Done"));
+            emit completed(request, code, stored);
         } catch (const db::Error& e) {
             qWarning().noquote() << "BibleImport failed:" << e.message();
-            emit failed(e.message());
+            emit failed(request, userMessage(e));
         } catch (...) {
-            emit failed(QStringLiteral("Unexpected error during the import."));
+            emit failed(request, tr("Something went wrong during the import."));
         }
     });
+    return request;
 }
 
-QSet<QString> BibleImporter::bundledCodes() const
+int BibleImporter::remove(QString code)
 {
-    if (m_bundledRead) return m_bundled;
-    m_bundledRead = true;
-    const QString path = ElectronDataImporter::bundledBiblesPath();
-    if (path.isEmpty()) return m_bundled;
-    try {
-        db::Connection conn(path, db::OpenMode::ReadOnly, QStringLiteral("BibleImport-bundled"));
-        auto st = conn.prepare(QStringLiteral("SELECT version FROM bibles"));
-        while (st.step()) m_bundled.insert(st.columnText(0).toUpper());
-    } catch (const db::Error& e) {
-        qWarning().noquote() << "BibleImport: couldn't read the bundled Bibles:" << e.message();
-    }
-    return m_bundled;
-}
-
-bool BibleImporter::isRemovable(QString code) const
-{
-    // Without the bundled list there's no telling what Crater shipped, so
-    // nothing is offered for removal.
-    const QSet<QString> bundled = bundledCodes();
-    return !bundled.isEmpty() && !bundled.contains(code.trimmed().toUpper());
-}
-
-void BibleImporter::remove(QString code)
-{
-    if (!isRemovable(code)) {
-        emit failed(QStringLiteral("%1 came with Crater and can't be removed.").arg(code));
-        return;
-    }
-    m_task = QtConcurrent::run([this, code, stop = m_stop]() mutable {
-        // The search index is contentless, so its rows can only go through
-        // FTS5's 'delete' command with the exact values they were indexed
-        // with, and that takes seconds for a whole Bible. So the values are
-        // read first, the translation goes at once, and the index rows go
-        // afterwards in short batches. Until then search can't return them:
-        // it joins through verses, and verse ids are never reused.
-        struct Indexed { qint64 id; QString text, book; };
-        std::vector<Indexed> indexed;
+    const int request = m_nextRequest++;
+    code = code.trimmed();
+    m_pool.start([this, request, code, stop = m_stop]() mutable {
+        clearPendingIndexRows(*stop);
         try {
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
                                 QStringLiteral("BibleImport-remove"));
@@ -344,26 +453,37 @@ void BibleImporter::remove(QString code)
             conn.exec(QStringLiteral("PRAGMA foreign_keys = OFF"));
             db::Transaction tx(conn);
             qint64 id = 0;
+            QString source;
             {
                 auto find = conn.prepare(QStringLiteral(
-                    "SELECT id, code FROM translations WHERE upper(code) = upper(?)"));
+                    "SELECT id, code, source FROM translations WHERE upper(code) = upper(?)"));
                 find.bind(1, code);
                 if (find.step()) {
                     id = find.columnInt64(0);
-                    code = find.columnText(1);   // as indexed
+                    code = find.columnText(1);
+                    source = find.columnText(2);
                 }
             }
             if (id == 0) {
-                emit failed(QStringLiteral("%1 isn't installed.").arg(code));
+                emit failed(request, tr("%1 isn't installed.").arg(code));
                 return;
             }
+            if (source != u"file") {
+                emit failed(request, tr("%1 came with Crater and can't be removed. Untick it to hide it.").arg(code));
+                return;
+            }
+            // The index rows can only be deleted with the values they were
+            // indexed with, which go with the verses. They're kept for the
+            // clean-up below (see the bibles V003 migration).
             {
-                auto rows = conn.prepare(QStringLiteral(
-                    "SELECT v.id, replace(replace(v.text, '''', ''), char(8217), ''), b.name "
-                    "FROM verses v JOIN books b ON b.id = v.book_id WHERE v.translation_id = ?"));
-                rows.bind(1, id);
-                while (rows.step())
-                    indexed.push_back({ rows.columnInt64(0), rows.columnText(1), rows.columnText(2) });
+                auto keep = conn.prepare(QStringLiteral(
+                    "INSERT OR REPLACE INTO verses_fts_pending_delete "
+                    "(verse_id, text, book_name, translation_code) "
+                    "SELECT v.id, replace(replace(v.text, '''', ''), char(8217), ''), b.name, t.code "
+                    "FROM verses v JOIN books b ON b.id = v.book_id "
+                    "JOIN translations t ON t.id = v.translation_id WHERE v.translation_id = ?"));
+                keep.bind(1, id);
+                keep.step();
             }
             for (const char* sql : { "DELETE FROM verses WHERE translation_id = ?",
                                      "DELETE FROM books WHERE translation_id = ?",
@@ -376,41 +496,13 @@ void BibleImporter::remove(QString code)
             qInfo().noquote() << "BibleImport: removed" << code;
         } catch (const db::Error& e) {
             qWarning().noquote() << "BibleImport: removing" << code << "failed:" << e.message();
-            emit failed(e.message());
+            emit failed(request, userMessage(e));
             return;
         }
-        emit removed(code);
-
-        // Nothing below touches `this`. When Crater quits `stop` is set and
-        // whatever is left stays in the index, where it is harmless.
-        try {
-            QElapsedTimer timer;
-            timer.start();
-            db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
-                                QStringLiteral("BibleImport-unindex"));
-            constexpr size_t kBatch = 2000;
-            for (size_t start = 0; start < indexed.size() && !stop->load(); start += kBatch) {
-                db::Transaction tx(conn);
-                auto del = conn.prepare(QStringLiteral(
-                    "INSERT INTO verses_fts (verses_fts, rowid, text, book_name, translation_code) "
-                    "VALUES ('delete', ?, ?, ?, ?)"));
-                for (size_t i = start; i < qMin(indexed.size(), start + kBatch); ++i) {
-                    del.reset();
-                    del.bind(1, indexed[i].id);
-                    del.bind(2, indexed[i].text);
-                    del.bind(3, indexed[i].book);
-                    del.bind(4, code);
-                    del.step();
-                }
-                tx.commit();
-            }
-            qInfo().noquote() << "BibleImport: cleared" << code << "from the search index in"
-                              << timer.elapsed() << "ms";
-        } catch (const db::Error& e) {
-            qWarning().noquote() << "BibleImport: clearing" << code << "from the search index failed:"
-                                 << e.message();
-        }
+        emit removed(request, code);
+        clearPendingIndexRows(*stop);
     });
+    return request;
 }
 
 }  // namespace crater

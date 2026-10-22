@@ -34,6 +34,14 @@ struct BibleBookMeta {
 // Returns nullopt only when nothing clears the fuzzy quality gate.
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt);
 
+// For a book name read from a file rather than typed by the operator.
+// Exact names, abbreviations and aliases as above, then only a close spelling
+// of a full name: Latin letters, at least four, within a third of the name's
+// length, ignoring diacritics ("Genezis", "Levitikus"). No shortform
+// guessing, which would read a two-letter name in another script as Psalms,
+// and nothing from the deuterocanon. nullopt when unsure.
+std::optional<BibleBookMeta> lookupBookName(QStringView name);
+
 // All 66 books in canonical order.
 const QList<BibleBookMeta>& allCanonicalBooks();
 

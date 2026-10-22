@@ -760,6 +760,7 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
             vacuumInto(db::DbPaths::biblesDbPath(), snap);   // shared library
             db::Connection c(snap, db::OpenMode::ReadWrite, QStringLiteral("ProfileExport-bibles"));
             c.exec(QStringLiteral("INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+            c.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));   // the index is empty
             counts.insert(QStringLiteral("scriptures"),
                           countRows(c, QStringLiteral("SELECT count(*) FROM translations")));
             schema.insert(QStringLiteral("bibles"), c.userVersion());
@@ -1023,15 +1024,17 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         auto st = dst.prepare(QStringLiteral("SELECT code FROM translations"));
         while (st.step()) haveCodes.insert(st.columnText(0).toUpper());
     }
-    struct T { qint64 id; QString code, name, language, description; bool yearNull; qint64 year; qint64 sort; };
+    struct T { qint64 id; QString code, name, language, description; bool yearNull; qint64 year; qint64 sort;
+               QString source; };
     QList<T> trans;
     {
         auto st = src.prepare(QStringLiteral(
-            "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order "
+            "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order, source "
             "FROM translations ORDER BY sort_order, id"));
         while (st.step())
             trans.append({ st.columnInt64(0), st.columnText(1), st.columnText(2), st.columnText(3),
-                           st.columnText(5), st.columnIsNull(4), st.columnInt64(4), st.columnInt64(6) });
+                           st.columnText(5), st.columnIsNull(4), st.columnInt64(4), st.columnInt64(6),
+                           st.columnText(7) });
     }
     int done = 0;
     for (const T& t : trans) {
@@ -1042,14 +1045,17 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         }
         db::Transaction tx(dst);
         auto insT = dst.prepare(QStringLiteral(
-            "INSERT INTO translations (code, name, language, year, description, sort_order) "
-            "VALUES (?, ?, ?, ?, ?, ?)"));
+            "INSERT INTO translations (code, name, language, year, description, sort_order, source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)"));
         insT.bind(1, t.code);
         insT.bind(2, t.name);
         insT.bind(3, t.language.isEmpty() ? QStringLiteral("en") : t.language);
         if (t.yearNull) insT.bindNull(4); else insT.bind(4, t.year);
         insT.bind(5, t.description);
         insT.bind(6, t.sort);
+        // A Bible added from a file stays removable on the machine it moves
+        // to. The source is migrated (V003) before it is read here.
+        insT.bind(7, t.source.isEmpty() ? QStringLiteral("bundled") : t.source);
         insT.step();
         const qint64 newT = dst.lastInsertRowId();
 

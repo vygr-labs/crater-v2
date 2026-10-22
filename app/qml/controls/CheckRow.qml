@@ -68,6 +68,10 @@ Rectangle {
         anchors.right: parent.right
         anchors.rightMargin: Theme.space.sm
         anchors.verticalCenter: parent.verticalCenter
+        // A long detail (a Bible's full name from its file) gives way to
+        // the label instead of running over the box.
+        width: Math.min(implicitWidth, root.width * 0.55)
+        elide: Text.ElideRight
         text: root.detail
         color: Theme.color.textTertiary
         font.family: Theme.font.family

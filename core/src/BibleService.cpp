@@ -239,6 +239,11 @@ BibleService::BibleService(QObject* parent)
     connect(&m_impl->prefetch, &QFutureWatcher<Prefetch>::finished, this, [this] {
         if (!m_impl->preloadAll) return;
         Prefetch p = m_impl->prefetch.result();
+        // A translation removed while the worker read it stays gone.
+        QSet<QString> installed;
+        for (const Translation& t : libraryTranslations()) installed.insert(t.code);
+        p.verses.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+        p.books.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
         for (auto it = p.verses.begin(); it != p.verses.end(); ++it) {
             if (m_impl->verses.contains(it.key())) continue;
             m_impl->verses.insert(it.key(), std::move(it.value()));

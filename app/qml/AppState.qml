@@ -2043,13 +2043,21 @@ QtObject {
     }
 
     // A translation the operator removed (Settings > Scripture): the
-    // Scripture tab and the default version move to the first one left
-    // rather than pointing at nothing. BibleService has already dropped it
-    // (main.cpp connects that first).
+    // Scripture tab, the live dock and the default version move to the first
+    // one left rather than pointing at nothing, and this profile forgets it
+    // in its order and hidden list, so adding the same code again starts
+    // fresh. translations() reads the library itself, so it is already
+    // without the removed one even if BibleService hears of it after this.
     readonly property Connections _removedTranslationWatch: Connections {
         target: BibleImporter
-        function onRemoved(code) {
+        function onRemoved(request, code) {
             const up = String(code).toUpperCase()
+            const notIt = function(c) { return String(c).toUpperCase() !== up }
+            if (!SettingsService.hiddenTranslations.every(notIt))
+                SettingsService.hiddenTranslations = SettingsService.hiddenTranslations.filter(notIt)
+            if (!SettingsService.translationOrder.every(notIt))
+                SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
+            if (state.liveDockTranslation.toUpperCase() === up) state.liveDockTranslation = ""
             const left = BibleService.translations()
             if (left.length === 0) return
             const first = String(left[0].code)

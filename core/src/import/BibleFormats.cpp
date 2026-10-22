@@ -52,14 +52,16 @@ int indexIn(const char* const (&codes)[66], QStringView code)
 // ── Shared helpers ──────────────────────────────────────────────────────
 
 // One line of plain text: runs of whitespace (line breaks, tabs, the
-// no-break spaces some files use) become one space.
+// no-break spaces some files use) become one space. The ideographic space
+// is part of Chinese text (the Union Version sets one before a name) and
+// stays.
 QString cleanText(const QString& raw)
 {
     QString out;
     out.reserve(raw.size());
     bool space = false;
     for (QChar c : raw) {
-        if (c.isSpace() || c == QChar(0x00A0)) {
+        if (c.isSpace() && c != QChar(0x3000)) {
             space = true;
             continue;
         }
@@ -88,13 +90,81 @@ void addVerse(ParsedBible& out, int book, int chapter, int verse, int verseEnd,
     if (book < 1 || book > 66 || chapter < 1 || verse < 1) return;
     const QString text = cleanText(rawText);
     if (text.isEmpty()) return;   // a verse the translation leaves out
+    // A verse split in two ("3a", "3b") is one verse.
+    if (!out.verses.isEmpty()) {
+        ParsedVerse& last = out.verses.last();
+        if (last.book == book && last.chapter == chapter && last.verse == verse) {
+            last.text += QLatin1Char(' ') + text;
+            last.verseEnd = qMax(last.verseEnd, verseEnd);
+            return;
+        }
+    }
     out.verses.append({ book, chapter, verse, qMax(verse, verseEnd), text });
+}
+
+// What to call a book outside the 66 in the list of ones left out. Files
+// name them by code ("TOB", "1Macc"), which few operators would recognise.
+QString outsideCanonName(const QString& code)
+{
+    static const QHash<QString, QString> names = {
+        { QStringLiteral("TOB"), QStringLiteral("Tobit") },
+        { QStringLiteral("JDT"), QStringLiteral("Judith") },
+        { QStringLiteral("JDTH"), QStringLiteral("Judith") },
+        { QStringLiteral("ESG"), QStringLiteral("Esther (Greek)") },
+        { QStringLiteral("ESTHGR"), QStringLiteral("Esther (Greek)") },
+        { QStringLiteral("ADDESTH"), QStringLiteral("Additions to Esther") },
+        { QStringLiteral("WIS"), QStringLiteral("Wisdom") },
+        { QStringLiteral("SIR"), QStringLiteral("Sirach") },
+        { QStringLiteral("BAR"), QStringLiteral("Baruch") },
+        { QStringLiteral("LJE"), QStringLiteral("Letter of Jeremiah") },
+        { QStringLiteral("EPJER"), QStringLiteral("Letter of Jeremiah") },
+        { QStringLiteral("S3Y"), QStringLiteral("Song of the Three") },
+        { QStringLiteral("PRAZAR"), QStringLiteral("Prayer of Azariah") },
+        { QStringLiteral("SUS"), QStringLiteral("Susanna") },
+        { QStringLiteral("BEL"), QStringLiteral("Bel and the Dragon") },
+        { QStringLiteral("DAG"), QStringLiteral("Daniel (Greek)") },
+        { QStringLiteral("ADDDAN"), QStringLiteral("Additions to Daniel") },
+        { QStringLiteral("1MA"), QStringLiteral("1 Maccabees") },
+        { QStringLiteral("1MACC"), QStringLiteral("1 Maccabees") },
+        { QStringLiteral("2MA"), QStringLiteral("2 Maccabees") },
+        { QStringLiteral("2MACC"), QStringLiteral("2 Maccabees") },
+        { QStringLiteral("3MA"), QStringLiteral("3 Maccabees") },
+        { QStringLiteral("3MACC"), QStringLiteral("3 Maccabees") },
+        { QStringLiteral("4MA"), QStringLiteral("4 Maccabees") },
+        { QStringLiteral("4MACC"), QStringLiteral("4 Maccabees") },
+        { QStringLiteral("1ES"), QStringLiteral("1 Esdras") },
+        { QStringLiteral("1ESD"), QStringLiteral("1 Esdras") },
+        { QStringLiteral("2ES"), QStringLiteral("2 Esdras") },
+        { QStringLiteral("2ESD"), QStringLiteral("2 Esdras") },
+        { QStringLiteral("MAN"), QStringLiteral("Prayer of Manasseh") },
+        { QStringLiteral("PRMAN"), QStringLiteral("Prayer of Manasseh") },
+        { QStringLiteral("PS2"), QStringLiteral("Psalm 151") },
+        { QStringLiteral("ADDPS"), QStringLiteral("Psalm 151") },
+        { QStringLiteral("ODA"), QStringLiteral("Odes") },
+        { QStringLiteral("ODES"), QStringLiteral("Odes") },
+        { QStringLiteral("PSS"), QStringLiteral("Psalms of Solomon") },
+        { QStringLiteral("PSSSOL"), QStringLiteral("Psalms of Solomon") },
+        { QStringLiteral("LAO"), QStringLiteral("Laodiceans") },
+        { QStringLiteral("EPLAO"), QStringLiteral("Laodiceans") },
+    };
+    return names.value(code.trimmed().toUpper(), code.trimmed());
 }
 
 void skipBook(ParsedBible& out, const QString& name)
 {
-    const QString n = name.trimmed();
+    const QString n = outsideCanonName(name);
     if (!n.isEmpty() && !out.skippedBooks.contains(n)) out.skippedBooks.append(n);
+}
+
+// A book named in a file: a number from 1 to 66, or a name close enough to
+// one Crater knows (lookupBookName). 0 when unsure.
+int bookFromName(const QString& name)
+{
+    bool isNumber = false;
+    const int number = name.trimmed().toInt(&isNumber);
+    if (isNumber) return number >= 1 && number <= 66 ? number : 0;
+    const auto meta = lookupBookName(name);
+    return meta ? meta->bookNumber : 0;
 }
 
 bool isName(const QXmlStreamReader& x, const char* name)
@@ -168,9 +238,7 @@ void readZefania(QXmlStreamReader& x, ParsedBible& out)
             const int number = attr(x, "bnumber").toInt();
             const QString name = attr(x, "bname");
             book = number >= 1 && number <= 66 ? number : 0;
-            if (!book && number == 0) {
-                if (const auto meta = lookupBook(name)) book = meta->bookNumber;
-            }
+            if (!book && number == 0) book = bookFromName(name);
             if (!book) skipBook(out, name.isEmpty() ? attr(x, "bnumber") : name);
             chapter = 0;
         } else if (isName(x, "CHAPTER")) {
@@ -190,20 +258,23 @@ void readZefania(QXmlStreamReader& x, ParsedBible& out)
 // 0 for a book that can't be placed. OpenSong names books in the
 // translation's own language, so a name alone often says nothing.
 //
-// Names that resolve (English, the usual abbreviations, and others close
-// enough) and keep canonical order are anchors: the longest such run is
-// trusted, so one name that resolves wrongly can't drag the rest. Books
-// between two anchors take the numbers between them when the counts match
-// exactly. Before the first anchor and after the last, they take the
-// numbers leading up to it or following it when there's room, as in a New
-// Testament on its own. Books that fit nowhere, like the deuterocanon
-// between the testaments of a Catholic Bible, are left out.
+// Names that resolve (numbers, English names and abbreviations, and close
+// spellings of them, see bookFromName) and keep canonical order are anchors:
+// the longest such run is trusted, so one name that resolves wrongly can't
+// drag the rest. Books between two anchors take the numbers between them
+// when the counts match exactly. Before the first anchor and after the last,
+// they take the numbers leading up to it or following it when there's room,
+// as in a New Testament on its own, but only with three anchors or more to
+// go by. Books that fit nowhere, like the deuterocanon between the
+// testaments of a Catholic Bible, are left out.
+//
+// With fewer than three anchors (book names in another script), a whole
+// Bible or a whole testament is taken in order.
 QList<int> placeBooks(const QStringList& names, bool* byPosition)
 {
     const int n = int(names.size());
     QList<int> resolved(n, 0);
-    for (int i = 0; i < n; ++i)
-        if (const auto meta = lookupBook(names[i])) resolved[i] = meta->bookNumber;
+    for (int i = 0; i < n; ++i) resolved[i] = bookFromName(names[i]);
 
     // Longest strictly increasing run of resolved numbers. A Bible has
     // under a hundred books, so the quadratic search costs nothing.
@@ -230,24 +301,60 @@ QList<int> placeBooks(const QStringList& names, bool* byPosition)
         if (count > 0) *byPosition = true;
     };
 
-    if (anchors.isEmpty()) {
-        // Nothing recognised: only a whole Bible or one whole testament
-        // says by its size which books it holds.
-        if (n == 66 || n == 39) fill(0, 1, n);
-        else if (n == 27)       fill(0, 40, n);
-        return out;
+    // Too little recognised to go by: only a whole Bible or one whole
+    // testament says by its size which books it holds, and then only if
+    // what was recognised sits where that order puts it (a Russian-order
+    // New Testament has the general letters straight after Acts).
+    if (anchors.size() < 3 && (n == 66 || n == 39 || n == 27)) {
+        const int firstNumber = n == 27 ? 40 : 1;
+        const bool agrees = std::all_of(anchors.cbegin(), anchors.cend(),
+                                        [&](int i) { return resolved[i] == firstNumber + i; });
+        if (agrees) {
+            fill(0, firstNumber, n);
+            return out;
+        }
     }
+    if (anchors.isEmpty()) return out;
     // Leading up to the first anchor, following on from the last.
     const int first = anchors.first(), last = anchors.last();
-    if (first <= out[first] - 1) fill(0, out[first] - first, first);
-    if (n - 1 - last <= 66 - out[last]) fill(last + 1, out[last] + 1, n - 1 - last);
+    if (anchors.size() >= 3) {
+        if (first <= out[first] - 1) fill(0, out[first] - first, first);
+        if (n - 1 - last <= 66 - out[last]) fill(last + 1, out[last] + 1, n - 1 - last);
+    }
     for (int k = 1; k < anchors.size(); ++k) {
         const int a = anchors[k - 1], b = anchors[k];
         if (b - a == out[b] - out[a]) fill(a + 1, out[a] + 1, b - a - 1);
     }
+
+    // A gap whose count didn't fit (Matthew after a Catholic Bible's
+    // deuterocanon): a looser guess at a name is taken only when it lands
+    // between the books placed either side of it, which leaves it little
+    // room to be wrong.
+    QSet<int> used;
+    for (int number : std::as_const(out))
+        if (number) used.insert(number);
+    for (int i = 0; i < n; ++i) {
+        if (out[i]) continue;
+        int before = 0, after = 67;
+        for (int j = i - 1; j >= 0; --j)
+            if (out[j]) { before = out[j]; break; }
+        for (int j = i + 1; j < n; ++j)
+            if (out[j]) { after = out[j]; break; }
+        if (before == 0 && after == 67) continue;   // nothing placed to go by
+        const auto guess = lookupBook(names[i]);
+        if (guess && guess->bookNumber > before && guess->bookNumber < after
+            && !used.contains(guess->bookNumber)) {
+            out[i] = guess->bookNumber;
+            used.insert(out[i]);
+        }
+    }
     return out;
 }
 
+// OpenSong: <bible><b n="Genesis"><c n="1"><v n="1">. The same reader takes
+// the "XML Bible" layout Beblia publishes, <bible><testament><book
+// number="1"><chapter number="1"><verse number="1">, whose book numbers
+// follow the 66-book order like Zefania's.
 void readOpenSong(QXmlStreamReader& x, ParsedBible& out)
 {
     out.format = QStringLiteral("OpenSong");
@@ -257,14 +364,19 @@ void readOpenSong(QXmlStreamReader& x, ParsedBible& out)
     while (!x.atEnd()) {
         x.readNext();
         if (!x.isStartElement()) continue;
-        if (isName(x, "b")) {
-            books.append({ attr(x, "n"), {} });
+        if (isName(x, "bible") && !attr(x, "translation").isEmpty()) {
+            out.name = attr(x, "translation");
+        } else if (isName(x, "b") || isName(x, "book")) {
+            const QString number = attr(x, "number");
+            books.append({ number.isEmpty() ? attr(x, "n") : number, {} });
             chapter = 0;
-        } else if (isName(x, "c")) {
-            chapter = attr(x, "n").toInt();
-        } else if (isName(x, "v") && !books.isEmpty()) {
+        } else if (isName(x, "c") || isName(x, "chapter")) {
+            const QString number = attr(x, "number");
+            chapter = (number.isEmpty() ? attr(x, "n") : number).toInt();
+        } else if ((isName(x, "v") || isName(x, "verse")) && !books.isEmpty()) {
             int first = 0, last = 0;
-            const bool ok = parseVerseNumbers(attr(x, "n"), &first, &last);
+            const QString number = attr(x, "number");
+            const bool ok = parseVerseNumbers(number.isEmpty() ? attr(x, "n") : number, &first, &last);
             const QString text = cleanText(readMixed(x, {}));
             if (ok && chapter > 0 && !text.isEmpty())
                 books.last().verses.append({ 0, chapter, first, last, text });
@@ -313,6 +425,7 @@ OsisRef parseOsisRef(const QString& osisId)
         if (i == 0) {
             ref.bookCode = parts[0];
             ref.book     = bookFromOsisCode(parts[0]);
+            if (!ref.book) ref.book = bookFromUsfmCode(parts[0]);   // "Psa", "Mat" in looser files
             ref.chapter  = parts[1].toInt();
             ref.verse    = verse;
             ref.verseEnd = verse;
@@ -329,6 +442,7 @@ void readOsis(QXmlStreamReader& x, ParsedBible& out)
     OsisRef open;
     bool isOpen = false, container = false, inWork = false;
     int skipDepth = 0;
+    int sinceVerseStart = 0;   // tokens since a container verse opened
     QString text;
     const auto flush = [&] {
         if (!isOpen) return;
@@ -339,8 +453,14 @@ void readOsis(QXmlStreamReader& x, ParsedBible& out)
     };
     while (!x.atEnd()) {
         x.readNext();
+        ++sinceVerseStart;
         if (x.isStartElement()) {
             if (skipDepth > 0) { ++skipDepth; continue; }
+            // A milestone verse never closed with an eID ends with its
+            // chapter or book, not in the next book's introduction.
+            if ((isName(x, "chapter") || (isName(x, "div") && attr(x, "type") == u"book"))
+                && isOpen && !container)
+                flush();
             if (isName(x, "osisText")) {
                 out.code = attr(x, "osisIDWork");
                 if (const QString lang = attr(x, "xml:lang"); !lang.isEmpty()) out.language = lang;
@@ -360,6 +480,10 @@ void readOsis(QXmlStreamReader& x, ParsedBible& out)
                 open = parseOsisRef(id);
                 isOpen = open.verse > 0;
                 container = sid.isEmpty();
+                sinceVerseStart = 0;
+            } else if (isName(x, "title") && isOpen && attr(x, "canonical") == u"true") {
+                // A psalm's title inside the verse it belongs to: where the
+                // Hebrew numbering makes it verse 1, it is the verse.
             } else if (isAnyName(x, { "note", "title", "rdg" })) {
                 skipDepth = 1;
             } else if (isAnyName(x, { "lb", "l", "p", "lg" }) && isOpen) {
@@ -367,9 +491,16 @@ void readOsis(QXmlStreamReader& x, ParsedBible& out)
             }
         } else if (x.isEndElement()) {
             if (skipDepth > 0) { --skipDepth; continue; }
-            if (isName(x, "work")) inWork = false;
-            else if (isName(x, "verse") && isOpen && container) flush();
-            else if (isAnyName(x, { "l", "p", "lg" }) && isOpen) text += QLatin1Char(' ');
+            if (isName(x, "work")) {
+                inWork = false;
+            } else if (isName(x, "verse") && isOpen && container) {
+                // <verse osisID="Gen.1.1"/>, self-closing with no sID, is
+                // used as a milestone too: its text follows it.
+                if (sinceVerseStart == 1) container = false;
+                else flush();
+            } else if (isAnyName(x, { "l", "p", "lg", "title" }) && isOpen) {
+                text += QLatin1Char(' ');
+            }
         } else if (x.isCharacters() && isOpen && skipDepth == 0) {
             text += x.text();
         }
@@ -391,6 +522,7 @@ bool isHeadingStyle(QString style)
         QStringLiteral("s"), QStringLiteral("sr"), QStringLiteral("sp"), QStringLiteral("sd"),
         QStringLiteral("r"), QStringLiteral("d"), QStringLiteral("cl"), QStringLiteral("cd"),
         QStringLiteral("cp"), QStringLiteral("lit"), QStringLiteral("restore"),
+        QStringLiteral("qa"),   // Psalm 119's acrostic letters (ALEPH, BETH)
         // Introduction (\it is italic, not one of these)
         QStringLiteral("imt"), QStringLiteral("imte"), QStringLiteral("is"), QStringLiteral("ip"),
         QStringLiteral("ipi"), QStringLiteral("im"), QStringLiteral("imi"), QStringLiteral("ipq"),
@@ -437,12 +569,21 @@ void readUsx(QXmlStreamReader& x, ParsedBible& out)
                 if (isOpen) text += QLatin1Char(' ');
             } else if (isAnyName(x, { "note", "figure", "sidebar" })) {
                 skipDepth = 1;
+            } else if (isName(x, "char")) {
+                // Alternate and published numbers, and the reference after
+                // a quotation, aren't verse text.
+                const QString style = attr(x, "style");
+                if (style == u"va" || style == u"vp" || style == u"ca" || style == u"rq") skipDepth = 1;
+            } else if (isAnyName(x, { "row", "cell" }) && isOpen) {
+                text += QLatin1Char(' ');
             }
         } else if (x.isEndElement()) {
             if (skipDepth > 0) { --skipDepth; continue; }
             if (isName(x, "para")) {
                 heading = false;
                 if (isOpen) text += QLatin1Char(' ');
+            } else if (isAnyName(x, { "row", "cell" }) && isOpen) {
+                text += QLatin1Char(' ');
             }
         } else if (x.isCharacters() && isOpen && !heading && skipDepth == 0) {
             text += x.text();
@@ -464,7 +605,7 @@ Marker classifyMarker(QString name)
         QStringLiteral("cls"), QStringLiteral("pmo"), QStringLiteral("pm"), QStringLiteral("pmc"),
         QStringLiteral("pmr"), QStringLiteral("pi"), QStringLiteral("mi"), QStringLiteral("nb"),
         QStringLiteral("pc"), QStringLiteral("ph"), QStringLiteral("q"), QStringLiteral("qr"),
-        QStringLiteral("qc"), QStringLiteral("qa"), QStringLiteral("qm"), QStringLiteral("qd"),
+        QStringLiteral("qc"), QStringLiteral("qm"), QStringLiteral("qd"),
         QStringLiteral("lh"), QStringLiteral("li"), QStringLiteral("lf"), QStringLiteral("lim"),
         QStringLiteral("b"), QStringLiteral("tr"), QStringLiteral("tc"), QStringLiteral("th"),
         QStringLiteral("tcr"), QStringLiteral("thr"),
@@ -476,25 +617,44 @@ void readUsfm(const QString& source, ParsedBible& out)
 {
     out.format = QStringLiteral("USFM");
     QString t = source;
-    // Footnotes, cross references and figures go with their contents.
+    // USFM 3 milestones (\qt-s |who="Jesus"\*, \ts\*, the aligned-word
+    // \zaln-s ...\* of unfoldingWord texts) carry no verse text.
+    static const QRegularExpression milestones(
+        QStringLiteral(R"(\\[A-Za-z0-9]+(?:-[se])?[ \t]*(?:\|[^\\]*)?\\\*)"));
+    t.remove(milestones);
+    // Footnotes, cross references and figures go with their contents. One
+    // left unclosed stops at the next verse or chapter rather than taking
+    // everything up to some later note's end with it.
     static const QRegularExpression notes(
-        QStringLiteral(R"(\\(f|fe|ef|x|ex|fig)\b.*?\\\1\*)"),
+        QStringLiteral(R"(\\(f|fe|ef|x|ex|fig)\b(?:(?!\\[cv]\s).)*?\\\1\*)"),
         QRegularExpression::DotMatchesEverythingOption);
     t.remove(notes);
+    static const QRegularExpression unclosedNotes(
+        QStringLiteral(R"(\\(?:f|fe|ef|x|ex|fig)\b(?:(?!\\[cv]\s).)*)"),
+        QRegularExpression::DotMatchesEverythingOption);
+    t.remove(unclosedNotes);
+    // Sidebars (\esb ... \esbe) and the reference after a quotation
+    // (\rq Isa 40:3\rq*) aren't verse text either.
+    static const QRegularExpression asides(
+        QStringLiteral(R"(\\esb\b.*?\\esbe\b|\\rq\b.*?\\rq\*)"),
+        QRegularExpression::DotMatchesEverythingOption);
+    t.remove(asides);
     // Attributes on a word (\w grace|strong="G5485"\w*) go, the word stays.
-    static const QRegularExpression attributes(QStringLiteral(R"(\|[^\\]*(?=\\\+?[a-z0-9]+\*))"));
+    static const QRegularExpression attributes(QStringLiteral(R"(\|[^\\]*(?=\\\+?[a-z0-9]*\*))"));
     t.remove(attributes);
     // Word markers wrap every word of a Bible with Strong's numbers. Going
-    // now, as plain text, saves the marker loop below most of its work.
-    for (const QLatin1String word : { QLatin1String("\\w "), QLatin1String("\\+w ") })
-        t.replace(word, QLatin1String(" "));
-    for (const QLatin1String word : { QLatin1String("\\w*"), QLatin1String("\\+w*") })
+    // now, as plain text, saves the marker loop below most of its work. The
+    // space after an opening marker belongs to the marker, so Chinese or
+    // Thai words, which have none between them, don't gain one.
+    for (const QLatin1String word : { QLatin1String("\\w "), QLatin1String("\\+w "),
+                                      QLatin1String("\\w*"), QLatin1String("\\+w*") })
         t.remove(word);
     t.replace(QLatin1Char('~'), QLatin1Char(' '));
     t.remove(QStringLiteral("//"));
 
     static const QRegularExpression marker(QStringLiteral(R"(\\(\+?)([A-Za-z]+[0-9]*)(\*?))"));
-    static const QRegularExpression number(QStringLiteral(R"(^\s+(\d+[a-z]?(?:-\d+[a-z]?)?))"));
+    static const QRegularExpression number(
+        QStringLiteral(R"(^\s+(\d+[a-z]?(?:[-\x{2013}]\d+[a-z]?)?))"));
     static const QRegularExpression code(QStringLiteral(R"(^\s+([A-Za-z0-9]{3}))"));
 
     int book = 0, chapter = 0, verse = 0, verseEnd = 0;
@@ -530,6 +690,9 @@ void readUsfm(const QString& source, ParsedBible& out)
         // A short window: the number or code is right after the marker, and
         // matching against the rest of the file each time costs seconds.
         const QStringView rest = QStringView(t).mid(pos, 48);
+        // An alternate number never closed ends with its verse.
+        if (name == u"v" || name == u"c" || classifyMarker(name) != Marker::Character)
+            inlineSkip = false;
         if (name == u"id") {
             flush();
             const auto c = code.matchView(rest);
@@ -562,6 +725,8 @@ void readUsfm(const QString& source, ParsedBible& out)
                 if (isOpen) text += QLatin1Char(' ');
                 break;
             case Marker::Character:
+                // Its space belongs to the marker, not the text.
+                if (pos < t.size() && t.at(pos).isSpace()) ++pos;
                 break;
             }
         }
@@ -571,11 +736,50 @@ void readUsfm(const QString& source, ParsedBible& out)
 
 // ── Files ───────────────────────────────────────────────────────────────
 
+// An old 8-bit file is Windows-1252 far more often than true Latin-1. The
+// two differ only at 0x80-0x9F, where 1252 has curly quotes, dashes and the
+// ellipsis.
+QString fromWindows1252(const QByteArray& bytes)
+{
+    static const char16_t high[32] = {
+        0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+        0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+        0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+        0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178,
+    };
+    QString out;
+    out.reserve(bytes.size());
+    for (const char ch : bytes) {
+        const uchar b = uchar(ch);
+        out += (b >= 0x80 && b < 0xA0) ? QChar(high[b - 0x80]) : QChar(b);
+    }
+    return out;
+}
+
+// Text files are UTF-8 unless a byte-order mark says otherwise (UTF-16
+// USFM exists). Invalid bytes decide between the rest: a UTF-8 file with a
+// stray bad byte still has far more good non-ASCII characters than bad
+// ones, and only loses that character. An 8-bit file has none good.
 QString decode(const QByteArray& bytes)
 {
+    if (const auto bom = QStringConverter::encodingForData(bytes)) {
+        if (*bom != QStringConverter::Utf8) {
+            QStringDecoder decoder(*bom);
+            QString text = decoder.decode(bytes);
+            if (text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+            return text;
+        }
+    }
     QStringDecoder utf8(QStringDecoder::Utf8);
     QString text = utf8.decode(bytes);
-    if (utf8.hasError()) text = QString::fromLatin1(bytes);   // an old 8-bit file
+    if (utf8.hasError()) {
+        qsizetype good = 0, bad = 0;
+        for (const QChar c : std::as_const(text)) {
+            if (c == QChar(QChar::ReplacementCharacter)) ++bad;
+            else if (c.unicode() > 0x7F) ++good;
+        }
+        if (good <= bad) return fromWindows1252(bytes);
+    }
     if (text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
     return text;
 }
@@ -595,6 +799,8 @@ Format detect(const QByteArray& bytes)
             return Format::Unknown;
         }
     }
+    // Decoded first, so UTF-16 USFM is found too. An odd byte count from
+    // cutting a UTF-16 file mid-character doesn't matter here.
     const QString head = decode(bytes.left(64 * 1024));
     if (head.contains(QStringLiteral("\\id ")) || head.contains(QStringLiteral("\\c "))) return Format::Usfm;
     return Format::Unknown;
@@ -675,11 +881,16 @@ ParsedBible parseBibleFiles(const QStringList& paths)
         case Format::Usfm:     readUsfm(decode(bytes), out); break;
         case Format::Unknown:  break;
         }
-        if (x.hasError() && f != Format::Usfm && out.verses.isEmpty()) {
-            out.error = QStringLiteral("%1 couldn't be read: %2 (line %3).")
-                            .arg(QFileInfo(path).fileName(), x.errorString())
-                            .arg(x.lineNumber());
-            return out;
+        if (x.hasError() && f != Format::Usfm) {
+            const QString problem = QStringLiteral("%1 is damaged at line %2 (%3).")
+                .arg(QFileInfo(path).fileName()).arg(x.lineNumber()).arg(x.errorString());
+            if (out.verses.isEmpty()) {
+                out.error = problem.left(problem.size() - 1) + QStringLiteral(", so nothing could be read.");
+                return out;
+            }
+            // Reading stops at the damage. What came before is usable, but
+            // the operator has to know the rest is missing.
+            out.warnings.append(problem + QStringLiteral(" Only what comes before that was read."));
         }
         if (!out.error.isEmpty()) return out;
     }

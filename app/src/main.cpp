@@ -669,9 +669,9 @@ int main(int argc, char* argv[])
     // on its own connection, so BibleService drops what it cached for that
     // code and every translation list re-reads.
     QObject::connect(&bibleImporter, &crater::BibleImporter::completed, &bibleService,
-                     [&bibleService](const QString& code, int) { bibleService.libraryChanged(code); });
+                     [&bibleService](int, const QString& code, int) { bibleService.libraryChanged(code); });
     QObject::connect(&bibleImporter, &crater::BibleImporter::removed, &bibleService,
-                     &crater::BibleService::libraryChanged);
+                     [&bibleService](int, const QString& code) { bibleService.libraryChanged(code); });
 
     // Warm up pdfium on a worker thread now so the operator's first PDF
     // view doesn't pay its multi-second one-time global init. No-op when
