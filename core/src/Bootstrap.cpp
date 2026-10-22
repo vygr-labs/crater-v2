@@ -1,5 +1,6 @@
 #include "crater/Bootstrap.h"
 
+#include "db/BibleExtras.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Error.h"
@@ -25,6 +26,7 @@ void runAllMigrations()
                             db::OpenMode::ReadWriteCreate,
                             QStringLiteral("Migrator-bibles"));
         db::Migrator::run(conn, QStringLiteral("bibles"));
+        db::ensureBibleExtras(conn);
     }
     {
         db::Connection conn(db::DbPaths::songsDbPath(),

@@ -1,8 +1,8 @@
 // Bible file import: Zefania XML, OpenSong, OSIS, USFM and USX.
 //
 // Each reader gets a small file with the awkward parts real files have
-// (footnotes, headings, Strong's markup, combined verses, books outside the
-// 66, milestone verses), and must come out with the same plain verse text.
+// (footnotes, headings, Strong's markup, combined verses, the deuterocanon,
+// milestone verses), and must come out with the same plain verse text.
 // Then a file goes through BibleImporter into the library and is read back
 // through BibleService the way the Scripture tab reads it, searched, and
 // removed again.
@@ -22,6 +22,7 @@
 #include "crater/BibleService.h"
 #include "crater/Bootstrap.h"
 
+#include "db/BibleExtras.h"
 #include "db/Connection.h"
 #include "db/DbPaths.h"
 #include "db/Statement.h"
@@ -195,11 +196,12 @@ private slots:
         QCOMPARE(b.name, QStringLiteral("Zefania Test Bible"));
         QCOMPARE(b.code, QStringLiteral("ZTB"));
         QCOMPARE(b.language, QStringLiteral("ENG"));
-        QCOMPARE(b.verses.size(), 3);
+        QCOMPARE(b.verses.size(), 4);
         expectVerse(b, 1, 1, 1, QStringLiteral("In the beginning God created the heaven."));
         expectVerse(b, 1, 1, 2, QStringLiteral("Two verses as one."), 3);
         expectVerse(b, 43, 3, 16, QStringLiteral("For God so loved the world."));
-        QCOMPARE(b.skippedBooks, QStringList{ QStringLiteral("Tobit") });
+        expectVerse(b, 67, 1, 1, QStringLiteral("Tobit's words."));   // by its name, past 66
+        QVERIFY(b.skippedBooks.isEmpty());
     }
 
     void openSongEnglish()
@@ -243,11 +245,12 @@ private slots:
         QCOMPARE(b.name, QStringLiteral("OSIS Test Bible"));
         QCOMPARE(b.code, QStringLiteral("TOSIS"));
         QCOMPARE(b.language, QStringLiteral("yo"));
-        QCOMPARE(b.verses.size(), 3);
+        QCOMPARE(b.verses.size(), 4);
         expectVerse(b, 1, 1, 1, QStringLiteral("In the beginning God"));
         expectVerse(b, 1, 1, 2, QStringLiteral("Two verses as one."), 3);
         expectVerse(b, 43, 3, 16, QStringLiteral("For God so loved"));
-        QCOMPARE(b.skippedBooks, QStringList{ QStringLiteral("Tobit") });   // by name, not "Tob"
+        expectVerse(b, 67, 1, 1, QStringLiteral("Tobit's words."));
+        QVERIFY(b.skippedBooks.isEmpty());
     }
 
     void usfm()
@@ -260,12 +263,13 @@ private slots:
         const ParsedBible b = parseBibleFiles({ gen, jhn, tob, copr });
         QVERIFY2(b.error.isEmpty(), qPrintable(b.error));
         QCOMPARE(b.format, QStringLiteral("USFM"));
-        QCOMPARE(b.verses.size(), 4);
+        QCOMPARE(b.verses.size(), 5);
         expectVerse(b, 1, 1, 1, QStringLiteral("In the beginning God created the heavens."));
         expectVerse(b, 1, 1, 2, QStringLiteral("Combined italic text."), 3);
         expectVerse(b, 43, 3, 16, QStringLiteral("For God so loved the world."));
         expectVerse(b, 43, 3, 17, QStringLiteral("Not to condemn."));
-        QCOMPARE(b.skippedBooks, QStringList{ QStringLiteral("Tobit") });   // by name, not "TOB"
+        expectVerse(b, 67, 1, 1, QStringLiteral("Tobit's words."));
+        QVERIFY(b.skippedBooks.isEmpty());
         QCOMPARE(b.ignoredFiles, QStringList{ QStringLiteral("copr.htm") });
         // Named after the folder the book files are in.
         QCOMPARE(b.name, QDir(m_files.path()).dirName());
@@ -289,8 +293,10 @@ private slots:
         QVERIFY(!parseBibleFiles({ write("a.xml", kZefania), write("b.xml", kZefania) }).error.isEmpty());
         // One Bible is one format.
         QVERIFY(!parseBibleFiles({ write("c.usfm", kUsfmJohn), write("d.usx", kUsx) }).error.isEmpty());
-        // A well-formed file with nothing from the 66 books.
-        QVERIFY(!parseBibleFiles({ write("tobit.usfm", kUsfmTobit) }).error.isEmpty());
+        // A well-formed file with no book Crater holds, which names it.
+        const ParsedBible odes = parseBibleFiles({ write("odes.usfm", "\\id ODA\n\\c 1\n\\p\n\\v 1 A song.\n") });
+        QVERIFY(!odes.error.isEmpty());
+        QCOMPARE(odes.skippedBooks, QStringList{ QStringLiteral("Odes") });
     }
 
     // Real Bibles, when CRATER_BIBLE_SAMPLES names a folder of them: each
@@ -373,7 +379,7 @@ private slots:
     }
 
     // A Zefania book with no number is matched by name, and a deuterocanon
-    // name must not be taken for a canonical book it resembles.
+    // name must land on its own book, not a canonical one it resembles.
     void zefaniaNamesOnly()
     {
         const ParsedBible b = parseBibleFiles({ write("names.xml",
@@ -383,9 +389,11 @@ private slots:
             "<BIBLEBOOK bname=\"Ecclesiasticus\"><CHAPTER cnumber=\"1\"><VERS vnumber=\"1\">All wisdom.</VERS></CHAPTER></BIBLEBOOK>"
             "</XMLBIBLE>") });
         QVERIFY2(b.error.isEmpty(), qPrintable(b.error));
-        QCOMPARE(b.verses.size(), 1);
+        QCOMPARE(b.verses.size(), 3);
+        expectVerse(b, 67, 1, 1, QStringLiteral("Tobit's words."));
         expectVerse(b, 31, 1, 1, QStringLiteral("The vision of Obadiah."));
-        QCOMPARE(b.skippedBooks, (QStringList{ QStringLiteral("Tobit"), QStringLiteral("Ecclesiasticus") }));
+        expectVerse(b, 71, 1, 1, QStringLiteral("All wisdom."));
+        QVERIFY(b.skippedBooks.isEmpty());
     }
 
     // A file that breaks partway is read up to the damage, and says so.
@@ -459,18 +467,24 @@ private slots:
     }
 
     // Book names from files: other languages' spellings resolve, the
-    // deuterocanon never lands on a canonical book, and the looser guess
-    // refuses numbers and other scripts.
+    // deuterocanon lands on its own books, never a canonical one, and the
+    // looser guess refuses numbers and other scripts.
     void bookNames()
     {
         using crater::import::guessBookName;
         using crater::import::lookupBookName;
         const auto number = [](const auto& meta) { return meta ? meta->bookNumber : 0; };
         QCOMPARE(number(lookupBookName(u"Esdras")), 15);         // Ezra in French and Spanish
-        QCOMPARE(number(lookupBookName(u"1 Esdras")), 0);
-        QCOMPARE(number(lookupBookName(u"Eclesiástico")), 0);    // Sirach, not Ecclesiastes
-        QCOMPARE(number(lookupBookName(u"Ecclésiastique")), 0);
-        QCOMPARE(number(lookupBookName(u"Ecclesiastico")), 0);
+        QCOMPARE(number(lookupBookName(u"1 Esdras")), 0);        // Ezra in Catholic Bibles
+        QCOMPARE(number(lookupBookName(u"Eclesiástico")), 71);   // Sirach, not Ecclesiastes
+        QCOMPARE(number(lookupBookName(u"Ecclésiastique")), 71);
+        QCOMPARE(number(lookupBookName(u"Ecclesiastico")), 71);
+        QCOMPARE(number(lookupBookName(u"Tobiáš")), 67);
+        QCOMPARE(number(lookupBookName(u"1. Makabejcov")), 77);
+        QCOMPARE(number(lookupBookName(u"II Maccabees")), 78);
+        QCOMPARE(number(lookupBookName(u"Múdrosti")), 70);
+        QCOMPARE(number(lookupBookName(u"Baruch")), 72);
+        QCOMPARE(number(lookupBookName(u"2 Baruch")), 0);
         QCOMPARE(number(lookupBookName(u"Eclesiastés")), 21);
         QCOMPARE(number(lookupBookName(u"Psalms of Solomon")), 0);
         QCOMPARE(number(lookupBookName(u"Jób")), 18);
@@ -480,7 +494,158 @@ private slots:
         QCOMPARE(number(guessBookName(u"Matúš")), 40);
         QCOMPARE(number(guessBookName(u"67")), 0);
         QCOMPARE(number(guessBookName(QString::fromUtf8("Иов"))), 0);
-        QCOMPARE(number(guessBookName(u"Judit")), 0);
+        QCOMPARE(number(guessBookName(u"Judit")), 68);
+        QVERIFY(crater::import::isUnheldBookName(u"Odes"));
+        QVERIFY(crater::import::isUnheldBookName(u"Psalms of Solomon"));
+        QVERIFY(!crater::import::isUnheldBookName(u"Tobit"));
+    }
+
+    // References typed by the operator: the deuterocanon by name, by
+    // abbreviation and by the start of its name, while the shortforms of the
+    // 66 mean what they always did.
+    void typedReferences()
+    {
+        using crater::import::lookupBook;
+        const auto number = [](const auto& meta) { return meta ? meta->bookNumber : 0; };
+        QCOMPARE(number(lookupBook(u"Tobit")), 67);
+        QCOMPARE(number(lookupBook(u"tobi")), 67);
+        QCOMPARE(number(lookupBook(u"sir")), 71);
+        QCOMPARE(number(lookupBook(u"ecclesiasticus")), 71);
+        QCOMPARE(number(lookupBook(u"1 macc")), 77);
+        QCOMPARE(number(lookupBook(u"2maccabees")), 78);
+        QCOMPARE(number(lookupBook(u"wisd")), 70);
+        QCOMPARE(number(lookupBook(u"jud")), 65);   // still Jude
+        QCOMPARE(number(lookupBook(u"jn")), 43);
+        QCOMPARE(number(lookupBook(u"gn")), 1);
+        QCOMPARE(number(lookupBook(u"eccl")), 21);
+        QCOMPARE(number(lookupBook(u"est")), 17);   // Esther, not the Greek one
+        QCOMPARE(number(lookupBook(u"dan")), 27);
+    }
+
+    // The deuterocanon by its codes, Psalm 151 as the 151st psalm, and a
+    // Catholic Bible's books listed in its order rather than after
+    // Revelation.
+    void deuterocanon()
+    {
+        const ParsedBible u = parseBibleFiles({ write("dc.usfm",
+            "\\id SIR\n\\c 1\n\\p\n\\v 1 All wisdom is from the Lord.\n"
+            "\\id 1MA\n\\c 1\n\\p\n\\v 1 After Alexander.\n"
+            "\\id PS2\n\\c 1\n\\p\n\\v 1 I was small among my brothers.\n"
+            "\\id DAG\n\\c 13\n\\p\n\\v 1 There dwelt a man in Babylon.\n") });
+        QVERIFY2(u.error.isEmpty(), qPrintable(u.error));
+        expectVerse(u, 71, 1, 1, QStringLiteral("All wisdom is from the Lord."));
+        expectVerse(u, 77, 1, 1, QStringLiteral("After Alexander."));
+        expectVerse(u, 19, 151, 1, QStringLiteral("I was small among my brothers."));
+        expectVerse(u, 85, 13, 1, QStringLiteral("There dwelt a man in Babylon."));
+
+        const ParsedBible o = parseBibleFiles({ write("dc.osis.xml",
+            R"(<osis><osisText osisIDWork="X">)"
+            R"(<div type="book" osisID="EpJer"><chapter osisID="EpJer.1"><verse osisID="EpJer.1.1">A copy of an epistle.</verse></chapter></div>)"
+            R"(<div type="book" osisID="AddPs"><chapter osisID="AddPs.1"><verse osisID="AddPs.1.1">I was small.</verse></chapter></div>)"
+            R"(</osisText></osis>)") });
+        QVERIFY2(o.error.isEmpty(), qPrintable(o.error));
+        expectVerse(o, 73, 1, 1, QStringLiteral("A copy of an epistle."));
+        expectVerse(o, 19, 151, 1, QStringLiteral("I was small."));
+
+        using crater::import::bookListPosition;
+        QVERIFY(bookListPosition(16) < bookListPosition(67));   // Nehemiah, Tobit
+        QVERIFY(bookListPosition(68) < bookListPosition(17));   // Judith, Esther
+        QVERIFY(bookListPosition(22) < bookListPosition(70));   // Song, Wisdom
+        QVERIFY(bookListPosition(71) < bookListPosition(23));   // Sirach, Isaiah
+        QVERIFY(bookListPosition(39) < bookListPosition(40));
+        for (int n = 2; n <= 66; ++n) QVERIFY(bookListPosition(n - 1) < bookListPosition(n));
+    }
+
+    // Book names that say nothing, placed by their chapter counts in the
+    // orders Bibles use: Luther's New Testament, the Russian one, and a
+    // Catholic Old Testament with the deuterocanon in its places.
+    void placedByChapters()
+    {
+        constexpr int counts[] = {
+            50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31,
+            12, 8, 66, 52, 5, 48, 12, 14, 3, 9, 1, 4, 7, 3, 3, 3, 2, 14, 4,
+            28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5,
+            5, 3, 5, 1, 1, 1, 22,
+        };
+        const auto chaptersOf = [&](int book, bool greek) {
+            switch (book) {
+            case 67: return 14;
+            case 68: return 16;
+            case 70: return 19;
+            case 71: return 51;
+            case 72: return 6;
+            case 77: return 16;
+            case 78: return 15;
+            case 17: return greek ? 16 : 10;   // Esther with the Greek additions
+            case 27: return greek ? 14 : 12;   // Daniel with Susanna and Bel
+            default: return counts[book - 1];
+            }
+        };
+        // Every chapter present, each book named in a script Crater can't read.
+        const auto bible = [&](const QList<int>& order, bool greek = true) {
+            QByteArray xml = "<bible>";
+            for (int book : order) {
+                xml += "<b n=\"" + QString::fromUtf8("Книга ").toUtf8() + QByteArray::number(book) + "\">";
+                for (int c = 1; c <= chaptersOf(book, greek); ++c)
+                    xml += "<c n=\"" + QByteArray::number(c) + "\"><v n=\"1\">book " + QByteArray::number(book)
+                         + " chapter " + QByteArray::number(c) + "</v></c>";
+                xml += "</b>";
+            }
+            return xml + "</bible>";
+        };
+        const auto range = [](int from, int to) {
+            QList<int> r;
+            for (int n = from; n <= to; ++n) r << n;
+            return r;
+        };
+        const auto placedRight = [&](const ParsedBible& b, const QList<int>& order) {
+            for (int book : order) {
+                const ParsedVerse* v = find(b, book, 1, 1);
+                if (!v || v->text != QStringLiteral("book %1 chapter 1").arg(book)) return book;
+            }
+            return 0;
+        };
+
+        const QList<int> luther = range(40, 57) + QList<int>{ 60, 61, 62, 63, 64, 58, 59, 65, 66 };
+        const ParsedBible l = parseBibleFiles({ write("luther.xmm", bible(luther)) });
+        QVERIFY2(l.error.isEmpty(), qPrintable(l.error));
+        QCOMPARE(placedRight(l, luther), 0);
+        QVERIFY(l.booksByPosition);
+
+        const QList<int> russian = range(40, 44) + range(59, 65) + range(45, 58) + QList<int>{ 66 };
+        const ParsedBible r = parseBibleFiles({ write("russian-nt.xmm", bible(russian)) });
+        QVERIFY2(r.error.isEmpty(), qPrintable(r.error));
+        QCOMPARE(placedRight(r, russian), 0);
+
+        // Lamentations, not Baruch beside it with as many chapters.
+        const QList<int> protestant = range(1, 39);
+        const ParsedBible p = parseBibleFiles({ write("protestant-ot.xmm", bible(protestant, false)) });
+        QVERIFY2(p.error.isEmpty(), qPrintable(p.error));
+        QCOMPARE(placedRight(p, protestant), 0);
+
+        const QList<int> catholic = range(1, 16) + QList<int>{ 67, 68, 17, 77, 78 } + range(18, 22)
+            + QList<int>{ 70, 71 } + range(23, 25) + QList<int>{ 72, 26, 27 } + range(28, 39);
+        const ParsedBible c = parseBibleFiles({ write("catholic-ot.xmm", bible(catholic)) });
+        QVERIFY2(c.error.isEmpty(), qPrintable(c.error));
+        QCOMPARE(placedRight(c, catholic), 0);
+        QCOMPARE(c.verses.size(), [&] { int n = 0; for (int b : catholic) n += chaptersOf(b, true); return n; }());
+    }
+
+    // The library's additions for imported Bibles leave its schema version
+    // alone, so an older Crater still opens it, and come back if an older
+    // Crater's copy of the library lacks them.
+    void schemaStaysOpenToOlderVersions()
+    {
+        crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
+        QCOMPARE(conn.userVersion(), qint64(2));
+        crater::db::ensureBibleExtras(conn);   // again: changes nothing
+        auto source = conn.prepare(u"SELECT count(*) FROM pragma_table_info('translations') WHERE name = 'source'");
+        QVERIFY(source.step());
+        QCOMPARE(source.columnInt(0), 1);
+        source.reset();
+        auto pending = conn.prepare(u"SELECT count(*) FROM sqlite_master WHERE name = 'verses_fts_pending_delete'");
+        QVERIFY(pending.step());
+        QCOMPARE(pending.columnInt(0), 1);
     }
 
     // Round two of the readers: an unclosed note at the end of one book in
@@ -562,9 +727,9 @@ private slots:
         QCOMPARE(analyzed.first().at(0).toInt(), first);   // answers carry their request
         const QVariantMap info = analyzed.first().at(1).toMap();
         QCOMPARE(info.value("code").toString(), QStringLiteral("ZTB"));
-        QCOMPARE(info.value("books").toInt(), 2);
-        QCOMPARE(info.value("verses").toInt(), 4);   // as stored: 2-3 counts twice
-        QCOMPARE(info.value("skippedBooks").toStringList(), QStringList{ QStringLiteral("Tobit") });
+        QCOMPARE(info.value("books").toInt(), 3);
+        QCOMPARE(info.value("verses").toInt(), 5);   // as stored: 2-3 counts twice
+        QVERIFY(info.value("skippedBooks").toStringList().isEmpty());
 
         const auto suggested = [&](const QString& name, const QByteArray& bytes) {
             analyzed.clear();
@@ -596,20 +761,28 @@ private slots:
         QTRY_COMPARE(completed.size() + failed.size(), 1);
         QCOMPARE(failed.size(), 0);
         QCOMPARE(completed.first().at(1).toString(), QStringLiteral("ZTB"));
-        QCOMPARE(completed.first().at(2).toInt(), 4);   // 2-3 is stored under both
+        QCOMPARE(completed.first().at(2).toInt(), 5);   // 2-3 is stored under both
         QVERIFY(bible.translationsRevision() > revision);
 
         bool listed = false;
         for (const crater::Translation& t : bible.translations()) listed |= t.code == u"ZTB";
         QVERIFY(listed);
-        QCOMPARE(bible.books(QStringLiteral("ZTB")).size(), 2);
+        // Tobit sits after the Old Testament's Nehemiah, not after John.
+        const QList<crater::Book> books = bible.books(QStringLiteral("ZTB"));
+        QCOMPARE(books.size(), 3);
+        QCOMPARE(books.at(0).name, QStringLiteral("Genesis"));
+        QCOMPARE(books.at(1).name, QStringLiteral("Tobit"));
+        QCOMPARE(books.at(2).name, QStringLiteral("John"));
+        QCOMPARE(bible.parseReference(QStringLiteral("tobit 1:1"), QStringLiteral("ZTB")).text,
+                 QStringLiteral("Tobit's words."));
         QCOMPARE(bible.verse(QStringLiteral("ZTB"), QStringLiteral("Genesis"), 1, 1).text,
                  QStringLiteral("In the beginning God created the heaven."));
         // The combined verse is one row spanning both.
         const crater::Verse two = bible.verse(QStringLiteral("ZTB"), QStringLiteral("Genesis"), 1, 3);
         QCOMPARE(two.verse, 2);
         QCOMPARE(two.verseEnd, 3);
-        QCOMPARE(bible.allVerses(QStringLiteral("ZTB")).size(), 3);
+        QCOMPARE(bible.allVerses(QStringLiteral("ZTB")).size(), 4);
+        QCOMPARE(bible.allVerses(QStringLiteral("ZTB")).at(2).book, QStringLiteral("Tobit"));
         QCOMPARE(bible.parseReference(QStringLiteral("jn 3:16"), QStringLiteral("ZTB")).text,
                  QStringLiteral("For God so loved the world."));
         QCOMPARE(bible.search(QStringLiteral("beginning"), QStringLiteral("ZTB")).size(), 1);
@@ -683,6 +856,34 @@ private slots:
         };
         QTRY_COMPARE(count(u"SELECT count(*) FROM verses_fts_pending_delete"), 0);
         QTRY_COMPARE(count(u"SELECT count(*) FROM verses_fts"), 0);
+    }
+
+    // An older Crater rebuilding the search index knows nothing of the
+    // pending table, so rows waiting there may no longer be in the index.
+    // Clearing one of those must not touch the index, which a contentless
+    // index can't survive.
+    void pendingCleanupSkipsRowsNoLongerIndexed()
+    {
+        crater::BibleImporter importer;
+        QSignalSpy completed(&importer, &crater::BibleImporter::completed);
+        importer.run({ write("kept.xml", kZefania) }, QStringLiteral("KEPT"), QStringLiteral("Kept"));
+        QTRY_COMPARE(completed.size(), 1);
+        {
+            crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
+            conn.exec(u"INSERT INTO verses_fts_pending_delete (verse_id, text, book_name, translation_code) "
+                      u"VALUES (987654, 'gone since the rebuild', 'Genesis', 'GONE')");
+        }
+        QSignalSpy failed(&importer, &crater::BibleImporter::failed);
+        importer.remove(QStringLiteral("NOPE"));
+        QTRY_COMPARE(failed.size(), 1);
+        crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
+        auto left = conn.prepare(u"SELECT count(*) FROM verses_fts_pending_delete");
+        QVERIFY(left.step());
+        QCOMPARE(left.columnInt(0), 0);
+        left.reset();
+        conn.exec(u"INSERT INTO verses_fts(verses_fts) VALUES('integrity-check')");
+        crater::BibleService bible;
+        QCOMPARE(bible.search(QStringLiteral("beginning"), QStringLiteral("KEPT")).size(), 1);
     }
 };
 

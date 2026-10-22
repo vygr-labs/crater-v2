@@ -20,21 +20,45 @@ namespace crater {
 
 namespace {
 
-constexpr QStringView kBooksSql = u"SELECT b.name, b.abbrev, b.testament, b.book_number, "
-    u"       COALESCE(MAX(v.chapter), 0) AS chapter_count "
-    u"FROM books b "
-    u"JOIN translations t ON t.id = b.translation_id "
-    u"LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
-    u"WHERE t.code = ? "
-    u"GROUP BY b.id "
-    u"ORDER BY b.book_number";
+// Books in reading order. The 66 keep theirs, and a Bible added from a file
+// with the deuterocanon has those books where a Catholic Bible puts them
+// rather than after Revelation (import::bookListPosition).
+const QString& bookOrderSql()
+{
+    static const QString sql = [] {
+        QString s = QStringLiteral("CASE b.book_number");
+        for (int n = 1; n <= import::kLastBookNumber; ++n)
+            s += QStringLiteral(" WHEN %1 THEN %2").arg(n).arg(import::bookListPosition(n));
+        return s + QStringLiteral(" ELSE 1000 + b.book_number END");
+    }();
+    return sql;
+}
 
-constexpr QStringView kAllVersesSql = u"SELECT b.name, v.chapter, v.verse, v.text "
-    u"FROM verses v "
-    u"JOIN translations t ON t.id = v.translation_id "
-    u"JOIN books        b ON b.id = v.book_id "
-    u"WHERE t.code = ? "
-    u"ORDER BY b.book_number, v.chapter, v.verse";
+const QString& booksSql()
+{
+    static const QString sql = QStringLiteral(
+        "SELECT b.name, b.abbrev, b.testament, b.book_number, "
+        "       COALESCE(MAX(v.chapter), 0) AS chapter_count "
+        "FROM books b "
+        "JOIN translations t ON t.id = b.translation_id "
+        "LEFT JOIN verses v ON v.book_id = b.id AND v.translation_id = t.id "
+        "WHERE t.code = ? "
+        "GROUP BY b.id "
+        "ORDER BY %1").arg(bookOrderSql());
+    return sql;
+}
+
+const QString& allVersesSql()
+{
+    static const QString sql = QStringLiteral(
+        "SELECT b.name, v.chapter, v.verse, v.text "
+        "FROM verses v "
+        "JOIN translations t ON t.id = v.translation_id "
+        "JOIN books        b ON b.id = v.book_id "
+        "WHERE t.code = ? "
+        "ORDER BY %1, v.chapter, v.verse").arg(bookOrderSql());
+    return sql;
+}
 
 // Paraphrases like The Message are written in paragraphs, and the importer
 // stores a paragraph under every verse number it covers (17,011 of MSG's
@@ -119,8 +143,8 @@ Prefetch prefetchAll()
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             u"BibleService prefetch");
         db::Statement codes  = conn.prepare(u"SELECT code FROM translations ORDER BY sort_order, code");
-        db::Statement books  = conn.prepare(kBooksSql);
-        db::Statement verses = conn.prepare(kAllVersesSql);
+        db::Statement books  = conn.prepare(booksSql());
+        db::Statement verses = conn.prepare(allVersesSql());
         while (codes.step()) {
             const QString code = codes.columnText(0);
             p.books.insert(code, readBooks(books, code));
@@ -194,7 +218,7 @@ struct BibleService::Impl
             "SELECT code, name, year, description, source "
             "FROM translations "
             "ORDER BY sort_order, code")))
-        , selectBooks(conn.prepare(kBooksSql))
+        , selectBooks(conn.prepare(booksSql()))
         , selectChapter(conn.prepare(QStringLiteral(
             "SELECT v.verse, v.text "
             "FROM verses v "
@@ -202,7 +226,7 @@ struct BibleService::Impl
             "JOIN books        b ON b.id = v.book_id "
             "WHERE t.code = ? AND b.name = ? AND v.chapter = ? "
             "ORDER BY v.verse")))
-        , selectAllVerses(conn.prepare(kAllVersesSql))
+        , selectAllVerses(conn.prepare(allVersesSql()))
         , searchAll(conn.prepare(QStringLiteral(
             "SELECT v.text, b.name, v.chapter, v.verse, t.code, bm25(verses_fts) AS score "
             "FROM verses_fts "
@@ -654,7 +678,7 @@ QFuture<void> BibleService::rebuildFtsIndex()
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
             // The index is rebuilt from what verses holds now, so removals still
-            // waiting to be cleared from it are moot (bibles V003). Clearing
+            // waiting to be cleared from it are moot (db/BibleExtras.h). Clearing
             // them later would delete rows the new index doesn't have.
             conn.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));
             conn.exec(QStringLiteral(

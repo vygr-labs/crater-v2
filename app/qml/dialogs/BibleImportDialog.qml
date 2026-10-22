@@ -380,7 +380,7 @@ ModalShell {
                     Note {
                         visible: (root.info.skippedBooks || []).length > 0
                         color: Theme.color.textSecondary
-                        text: qsTr("Left out: %1. Crater only holds the 66 books of the Protestant canon.")
+                        text: qsTr("Left out: %1. Crater doesn't recognise these books.")
                                   .arg(root.list(root.info.skippedBooks))
                     }
                     Note {

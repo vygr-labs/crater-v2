@@ -15,7 +15,7 @@ struct Translation
     Q_PROPERTY(QString name         MEMBER name)
     Q_PROPERTY(int     year         MEMBER year)
     Q_PROPERTY(QString description  MEMBER description)
-    // 'bundled', or 'file' for one the operator added (bibles V003).
+    // 'bundled', or 'file' for one the operator added (db/BibleExtras.h).
     Q_PROPERTY(QString source       MEMBER source)
 
 public:

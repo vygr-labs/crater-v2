@@ -8,8 +8,9 @@
 namespace crater::import {
 
 // Readers for the Bible file formats Crater imports. Each one reduces a file
-// to plain verse text keyed by canonical book number (1..66, see
-// CanonicalBibleBooks.h), so the importer never deals with a format.
+// to plain verse text keyed by canonical book number (1..66, and 67 up for
+// the deuterocanon, see CanonicalBibleBooks.h), so the importer never deals
+// with a format.
 //
 //   Zefania XML   <XMLBIBLE><BIBLEBOOK bnumber><CHAPTER cnumber><VERS vnumber>
 //   OpenSong      <bible><b n="Genesis"><c n="1"><v n="1">, and Beblia's
@@ -21,14 +22,15 @@ namespace crater::import {
 //                 number="1"/>, one file per book
 //
 // Footnotes, cross references, section headings and Strong's numbers are
-// dropped. Books outside the 66 (the deuterocanon, front matter with verses)
-// are listed in skippedBooks rather than imported, because every Bible here
-// shares the 66-book numbering that references and translation switching rely
-// on. The additions a Catholic Bible makes inside Daniel and Esther are part
-// of those books in its file, so they come in as extra chapters and verses.
+// dropped. The deuterocanon comes in under its own numbers. The additions a
+// Catholic Bible makes inside Daniel and Esther are part of those books in
+// its file, so they come in as its chapters and verses, numbered as that
+// Bible numbers them. Books Crater holds under no number (the Odes, the
+// Psalms of Solomon, front matter with verses) are listed in skippedBooks
+// rather than imported.
 
 struct ParsedVerse {
-    int     book = 0;       // canonical 1..66
+    int     book = 0;       // canonical 1..66, 67 up for the deuterocanon
     int     chapter = 0;
     int     verse = 0;
     int     verseEnd = 0;   // == verse unless the file combined verses ("1-2")
@@ -54,9 +56,10 @@ struct ParsedBible {
 // usually one file per book, and every file must then be the same format.
 ParsedBible parseBibleFiles(const QStringList& paths);
 
-// Canonical book number for a USFM / USX book code ("GEN", "1CO"), or 0.
+// Canonical book number for a USFM / USX book code ("GEN", "1CO", "TOB"),
+// or 0. Psalm 151 ("PS2") is kPsalm151, which addVerse stores as Psalms 151.
 int bookFromUsfmCode(QStringView code);
-// Canonical book number for an OSIS book name ("Gen", "1Cor"), or 0.
+// Canonical book number for an OSIS book name ("Gen", "1Cor", "Tob"), or 0.
 int bookFromOsisCode(QStringView code);
 
 }  // namespace crater::import

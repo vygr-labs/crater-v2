@@ -119,11 +119,16 @@ int verseCount(const import::ParsedBible& bible)
 }
 
 // Clears the search index rows a removal left in verses_fts_pending_delete
-// (see the bibles V003 migration), a batch per transaction so an import or
+// (see db/BibleExtras.h), a batch per transaction so an import or
 // a search never waits long behind it. Finding the library busy, it tries
 // again up to `busyRetries` times; then, or on a quit, the rest waits for
 // the next time. Before an import or removal the operator is waiting on,
 // that is no retry at all.
+//
+// A row is only deleted while the index still has it. An older Crater knows
+// nothing of the pending table, so one that rebuilt the index meanwhile left
+// the table full of rows the new index never had, and deleting a row a
+// contentless index doesn't hold corrupts it.
 void clearPendingIndexRows(const std::atomic_bool& stop, int busyRetries)
 {
     QElapsedTimer timer;
@@ -151,18 +156,24 @@ void clearPendingIndexRows(const std::atomic_bool& stop, int busyRetries)
                 }
                 if (rows.empty()) break;
                 db::Transaction tx(conn, db::Transaction::Begin::Immediate);
+                auto indexed = conn.prepare(QStringLiteral("SELECT 1 FROM verses_fts WHERE rowid = ?"));
                 auto del = conn.prepare(QStringLiteral(
                     "INSERT INTO verses_fts (verses_fts, rowid, text, book_name, translation_code) "
                     "VALUES ('delete', ?, ?, ?, ?)"));
                 auto done = conn.prepare(QStringLiteral(
                     "DELETE FROM verses_fts_pending_delete WHERE verse_id = ?"));
                 for (const Row& r : rows) {
-                    del.reset();
-                    del.bind(1, r.id);
-                    del.bind(2, r.text);
-                    del.bind(3, r.book);
-                    del.bind(4, r.code);
-                    del.step();
+                    indexed.reset();
+                    indexed.bind(1, r.id);
+                    if (indexed.step()) {
+                        indexed.reset();
+                        del.reset();
+                        del.bind(1, r.id);
+                        del.bind(2, r.text);
+                        del.bind(3, r.book);
+                        del.bind(4, r.code);
+                        del.step();
+                    }
                     done.reset();
                     done.bind(1, r.id);
                     done.step();
@@ -364,12 +375,13 @@ int BibleImporter::run(QStringList files, QString code, QString name)
             {
                 std::set<int> numbers;
                 for (const import::ParsedVerse& v : bible.verses) numbers.insert(v.book);
-                const QList<import::BibleBookMeta>& canon = import::allCanonicalBooks();
                 auto ins = conn.prepare(QStringLiteral(
                     "INSERT INTO books (translation_id, name, abbrev, testament, book_number) "
                     "VALUES (?, ?, ?, ?, ?)"));
                 for (int n : numbers) {
-                    const import::BibleBookMeta& m = canon.at(n - 1);
+                    const import::BibleBookMeta* book = import::bookByNumber(n);
+                    if (!book) continue;   // the readers only produce books Crater holds
+                    const import::BibleBookMeta& m = *book;
                     ins.reset();
                     ins.bind(1, translationId);
                     ins.bind(2, m.name);
@@ -488,7 +500,7 @@ int BibleImporter::remove(QString code)
             }
             // The index rows can only be deleted with the values they were
             // indexed with, which go with the verses. They're kept for the
-            // clean-up below (see the bibles V003 migration).
+            // clean-up below (see db/BibleExtras.h).
             {
                 auto keep = conn.prepare(QStringLiteral(
                     "INSERT OR REPLACE INTO verses_fts_pending_delete "

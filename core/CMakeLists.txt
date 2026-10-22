@@ -16,6 +16,7 @@ add_library(crater-core STATIC
     src/db/Migrator.cpp
     src/db/DbPaths.cpp
     src/db/FtsQuery.cpp
+    src/db/BibleExtras.cpp
 
     # Bundle layer — stored-only ZIP for .craterheme v2 (ARCHITECTURE.md §10).
     src/bundle/Crc32.cpp
@@ -194,7 +195,6 @@ qt_add_resources(crater-core "crater_migrations"
     FILES
         src/db/migrations/bibles/V001__init.sql
         src/db/migrations/bibles/V002__fts_apostrophe_normalize.sql
-        src/db/migrations/bibles/V003__translation_source.sql
         src/db/migrations/songs/V001__init.sql
         src/db/migrations/songs/V002__fts_marker_strip.sql
         src/db/migrations/songs/V003__collections.sql

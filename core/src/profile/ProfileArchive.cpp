@@ -12,6 +12,7 @@
 #include "db/DbPaths.h"
 #include "db/Error.h"
 #include "db/Migrator.h"
+#include "db/BibleExtras.h"
 #include "db/Statement.h"
 #include "db/Transaction.h"
 
@@ -352,6 +353,7 @@ std::optional<QString> vetStagedDb(const QString& path, const QString& dbName)
         }
         for (const QString& d : drops) c.exec(d);
         db::Migrator::run(c, dbName);
+        if (dbName == u"bibles") db::ensureBibleExtras(c);
     } catch (const db::Error& e) {
         const QString msg = e.message();
         if (msg.contains(QLatin1String("newer"), Qt::CaseInsensitive)
@@ -1055,7 +1057,7 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         insT.bind(5, t.description);
         insT.bind(6, t.sort);
         // A Bible added from a file stays removable on the machine it moves
-        // to. The source is migrated (V003) before it is read here.
+        // to. Every source has the column by now (db::ensureBibleExtras).
         insT.bind(7, t.source == u"file" ? t.source : QStringLiteral("bundled"));
         insT.step();
         const qint64 newT = dst.lastInsertRowId();
@@ -1132,6 +1134,7 @@ int consolidateProfileBibles()
             {
                 db::Connection c(copy, db::OpenMode::ReadWrite, QStringLiteral("BibleMerge-migrate"));
                 db::Migrator::run(c, QStringLiteral("bibles"));
+                db::ensureBibleExtras(c);
                 c.exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
             }
             const BibleMergeResult m = mergeBibles(copy, shared, {});

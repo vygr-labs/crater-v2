@@ -19,6 +19,7 @@
 #include <QQmlError>
 #include <QProcess>
 #include <QQuickStyle>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
@@ -503,6 +504,29 @@ int main(int argc, char* argv[])
         bibleService.setView(settingsService.translationOrder(),
                              settingsService.hiddenTranslations());
     };
+    // A translation removed while another profile was open is still in this
+    // one's order or hidden list. Forget it, so adding the same code again
+    // starts shown and at the end here too, as in the profile that removed
+    // it (AppState's _removedTranslationWatch). A switch relaunches, so once
+    // at startup covers every profile.
+    {
+        QSet<QString> installed;
+        for (const QVariant& t : bibleService.allTranslations())
+            installed.insert(t.toMap().value(QStringLiteral("code")).toString().toUpper());
+        // An unreadable library lists nothing, which proves nothing.
+        if (!installed.isEmpty()) {
+            const auto installedOnly = [&installed](QStringList codes) {
+                codes.removeIf([&installed](const QString& c) { return !installed.contains(c.toUpper()); });
+                return codes;
+            };
+            if (const QStringList order = installedOnly(settingsService.translationOrder());
+                order != settingsService.translationOrder())
+                settingsService.setTranslationOrder(order);
+            if (const QStringList hidden = installedOnly(settingsService.hiddenTranslations());
+                hidden != settingsService.hiddenTranslations())
+                settingsService.setHiddenTranslations(hidden);
+        }
+    }
     applyBibleView();
     QObject::connect(&settingsService, &crater::SettingsService::translationOrderChanged,
                      &bibleService, applyBibleView);

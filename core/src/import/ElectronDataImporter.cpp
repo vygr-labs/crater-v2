@@ -281,7 +281,7 @@ void importBibleData(db::Connection& legacy,
             target.exec(QStringLiteral(
                 "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
             // The index is rebuilt from what verses holds now, so removals still
-            // waiting to be cleared from it are moot (bibles V003). Clearing
+            // waiting to be cleared from it are moot (db/BibleExtras.h). Clearing
             // them later would delete rows the new index doesn't have.
             target.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));
         }
