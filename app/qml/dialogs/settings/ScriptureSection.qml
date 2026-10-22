@@ -39,10 +39,8 @@ Item {
                     searchable: false
                     // One option per installed translation, shown by code
                     // ("KJV", "NIV") — the same vocabulary the scripture
-                    // sidebar uses. Evaluated when Settings opens; importing a
-                    // translation while this dialog is open won't refresh the
-                    // list (matches the sidebar, which also reads
-                    // translations() non-reactively).
+                    // sidebar uses. Follows translationsRevision, so a Bible
+                    // added or removed shows up here at once.
                     options: {
                         BibleService.translationsRevision   // follow a reorder
                         return BibleService.translations().map(function(t) { return t.code })
@@ -133,7 +131,8 @@ Item {
                     // Only for a Bible someone added from a file. The ones
                     // Crater ships stay; unticking hides them instead.
                     GhostButton {
-                        visible: BibleImporter.isRemovable(String(translationRow.modelData.code))
+                        visible: translationRow.modelData.removable === true
+                        enabled: root._removeRequest === -1   // one removal at a time
                         text: qsTr("Remove")
                         onClicked: root.askRemove(String(translationRow.modelData.code),
                                                   String(translationRow.modelData.description || ""))
@@ -204,6 +203,7 @@ Item {
     property string removeError: ""
 
     function askRemove(code, name) {
+        if (root._removeRequest !== -1) return
         root._askedCode = code
         root.removeError = ""
         const named = name.replace(/\.+$/, "")

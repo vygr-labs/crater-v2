@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Add a Bible from a file: Zefania XML, OpenSong, OSIS, USFM or USX.
 //
@@ -14,7 +15,8 @@ import QtQuick
 // Every BibleImporter call returns a request id its signals carry, and this
 // dialog only listens to its own: an earlier dialog's late answer, or a
 // removal running from Settings, never lands here. It can't be closed while
-// reading or importing, as the profile export dialog can't mid-export.
+// importing, by any route (closeLocked holds off even a double Escape).
+// Reading can be cancelled: it writes nothing.
 //
 // Opened via AppState.openModal("bibleImport") from Settings > Scripture.
 // modalProps.files, when given, skips the picker.
@@ -35,6 +37,8 @@ ModalShell {
     property int    progressPercent: 0
     property string progressStage: ""
     property string errorText: ""
+    property string failedIn: ""    // the phase that failed: scanning | importing
+    readonly property bool closeLocked: phase === "importing"
 
     readonly property string codeProblem:
         phase === "confirm" ? BibleImporter.codeProblem(codeField.text) : ""
@@ -68,6 +72,7 @@ ModalShell {
         function onFailed(request, reason) {
             if (request !== root.request) return
             root.errorText = reason
+            root.failedIn = root.phase
             root.phase = "error"
         }
     }
@@ -79,11 +84,10 @@ ModalShell {
     // Closed without importing: what was read for the import goes.
     Component.onDestruction: if (phase !== "done") BibleImporter.discardAnalysis()
 
-    // Escape, the backdrop and the X wait while the file is being read or
-    // added: closing then would leave the operator not knowing whether the
-    // Bible went in.
+    // Escape, the backdrop and the X wait while the Bible is being added:
+    // closing then would leave the operator not knowing whether it went in.
     function requestClose() {
-        if (root.phase === "scanning" || root.phase === "importing") return
+        if (root.closeLocked) return
         AppState.closeModal()
     }
 
@@ -124,10 +128,21 @@ ModalShell {
     }
 
     function resetToStart() {
+        BibleImporter.discardAnalysis()   // and a read still running won't keep its result
         root.phase = "pick"
         root.request = -1
         root.files = []
         root.errorText = ""
+    }
+
+    // After a failed import (the library was busy, the code was taken
+    // meanwhile) the files, name and code are all still good: back to the
+    // confirm step. After a failed read, other files are needed.
+    function tryAgain() {
+        root.errorText = ""
+        root.request = -1
+        if (root.failedIn === "importing") root.phase = "confirm"
+        else resetToStart()
     }
 
     component Body: Text {
@@ -193,6 +208,7 @@ ModalShell {
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.bodySize
                 selectByMouse: true
+                activeFocusOnTab: true
                 onAccepted: field.accepted()
                 HoverHandler { cursorShape: Qt.IBeamCursor }
             }
@@ -264,7 +280,7 @@ ModalShell {
                 PrimaryButton {
                     variant: "brand"
                     inkColor: "#ffffff"
-                    iconName: "download"
+                    iconName: "folder"
                     text: qsTr("Choose files...")
                     onClicked: root.pickFiles()
                 }
@@ -282,6 +298,15 @@ ModalShell {
                 color: Theme.color.textSecondary
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.bodySize
+            }
+
+            // Reading writes nothing, so it can be abandoned. Its answer,
+            // if it still comes, is for a request no one is waiting on.
+            GhostButton {
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                text: qsTr("Cancel")
+                onClicked: root.resetToStart()
             }
         }
 
@@ -302,6 +327,7 @@ ModalShell {
                 contentHeight: confirmCol.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: AppScrollBar {}
 
                 Column {
                     id: confirmCol
@@ -354,7 +380,7 @@ ModalShell {
                     Note {
                         visible: (root.info.skippedBooks || []).length > 0
                         color: Theme.color.textSecondary
-                        text: qsTr("Left out: %1. Crater's Bibles share the 66 books of the Protestant canon, so books outside it aren't added.")
+                        text: qsTr("Left out: %1. Crater only holds the 66 books of the Protestant canon.")
                                   .arg(root.list(root.info.skippedBooks))
                     }
                     Note {
@@ -364,7 +390,7 @@ ModalShell {
                     }
                     Note {
                         visible: (root.info.ignoredFiles || []).length > 0
-                        text: qsTr("Skipped, not Bible files: %1").arg(root.list(root.info.ignoredFiles))
+                        text: qsTr("Not Bible files, so skipped: %1").arg(root.list(root.info.ignoredFiles))
                     }
                 }
             }
@@ -511,8 +537,8 @@ ModalShell {
                 PrimaryButton {
                     variant: "brand"
                     inkColor: "#ffffff"
-                    text: qsTr("Try again")
-                    onClicked: root.resetToStart()
+                    text: root.failedIn === "importing" ? qsTr("Try again") : qsTr("Choose other files")
+                    onClicked: root.tryAgain()
                 }
             }
         }

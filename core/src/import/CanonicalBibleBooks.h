@@ -40,7 +40,12 @@ std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt);
 // length, ignoring diacritics ("Genezis", "Levitikus"). No shortform
 // guessing, which would read a two-letter name in another script as Psalms,
 // and nothing from the deuterocanon. nullopt when unsure.
-std::optional<BibleBookMeta> lookupBookName(QStringView name);
+std::optional<BibleBookMeta> lookupBookName(QStringView name);
+
+// A looser guess at a name from a file, for when where the book sits already
+// narrows down which it can be: lookupBook's shortform matching, but never
+// for a number, a name in another script, or one from the deuterocanon.
+std::optional<BibleBookMeta> guessBookName(QStringView name);
 
 // All 66 books in canonical order.
 const QList<BibleBookMeta>& allCanonicalBooks();

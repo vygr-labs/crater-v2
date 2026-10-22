@@ -87,6 +87,7 @@ private:
     QMutex                                     m_parsedLock;
     QString                                    m_parsedKey;
     std::shared_ptr<const import::ParsedBible> m_parsed;
+    std::atomic_int                            m_parseGeneration{ 0 };   // bumped by discardAnalysis
 
     int         m_nextRequest = 1;
     QThreadPool m_pool;   // one thread: tasks run in order

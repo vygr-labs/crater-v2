@@ -191,7 +191,7 @@ struct BibleService::Impl
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
-            "SELECT code, name, year, description "
+            "SELECT code, name, year, description, source "
             "FROM translations "
             "ORDER BY sort_order, code")))
         , selectBooks(conn.prepare(kBooksSql))
@@ -240,10 +240,13 @@ BibleService::BibleService(QObject* parent)
         if (!m_impl->preloadAll) return;
         Prefetch p = m_impl->prefetch.result();
         // A translation removed while the worker read it stays gone.
+        // (An unreadable library lists nothing; keep the preload then.)
         QSet<QString> installed;
         for (const Translation& t : libraryTranslations()) installed.insert(t.code);
-        p.verses.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
-        p.books.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+        if (!installed.isEmpty()) {
+            p.verses.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+            p.books.removeIf([&](const auto& it) { return !installed.contains(it.key()); });
+        }
         for (auto it = p.verses.begin(); it != p.verses.end(); ++it) {
             if (m_impl->verses.contains(it.key())) continue;
             m_impl->verses.insert(it.key(), std::move(it.value()));
@@ -302,6 +305,7 @@ QList<Translation> BibleService::libraryTranslations()
             t.name        = stmt.columnText(1);
             t.year        = stmt.columnInt(2);
             t.description = stmt.columnText(3);
+            t.source      = stmt.columnText(4);
             out.append(std::move(t));
         }
         stmt.reset();   // no read cursor left open
@@ -350,6 +354,8 @@ QVariantList BibleService::allTranslations()
             { QStringLiteral("name"),        t.name },
             { QStringLiteral("description"), t.description },
             { QStringLiteral("hidden"),      m_hidden.contains(t.code.toUpper()) },
+            // Added from a file, so it can be removed (BibleImporter).
+            { QStringLiteral("removable"),   t.source == u"file" },
         });
     }
     return out;
@@ -647,6 +653,10 @@ QFuture<void> BibleService::rebuildFtsIndex()
             // ElectronDataImporter and the bibles V002 re-index migration.
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts(verses_fts) VALUES('delete-all')"));
+            // The index is rebuilt from what verses holds now, so removals still
+            // waiting to be cleared from it are moot (bibles V003). Clearing
+            // them later would delete rows the new index doesn't have.
+            conn.exec(QStringLiteral("DELETE FROM verses_fts_pending_delete"));
             conn.exec(QStringLiteral(
                 "INSERT INTO verses_fts (rowid, text, book_name, translation_code) "
                 "SELECT v.id, "

@@ -109,12 +109,22 @@ int distinctBooks(const import::ParsedBible& bible)
     return int(books.size());
 }
 
+// Verses as they'll be stored: a combined one ("1-2") under each number, so
+// the count before the import matches the one after.
+int verseCount(const import::ParsedBible& bible)
+{
+    int n = 0;
+    for (const import::ParsedVerse& v : bible.verses) n += v.verseEnd - v.verse + 1;
+    return n;
+}
+
 // Clears the search index rows a removal left in verses_fts_pending_delete
 // (see the bibles V003 migration), a batch per transaction so an import or
-// a search never waits long behind it. A batch that finds the library busy
-// is retried; one that keeps failing, or a quit, leaves the rest for the
-// next launch.
-void clearPendingIndexRows(const std::atomic_bool& stop)
+// a search never waits long behind it. Finding the library busy, it tries
+// again up to `busyRetries` times; then, or on a quit, the rest waits for
+// the next time. Before an import or removal the operator is waiting on,
+// that is no retry at all.
+void clearPendingIndexRows(const std::atomic_bool& stop, int busyRetries)
 {
     QElapsedTimer timer;
     timer.start();
@@ -123,7 +133,7 @@ void clearPendingIndexRows(const std::atomic_bool& stop)
     // Opening the connection can find the library busy too (another
     // connection starting up at launch), so the retry covers everything.
     // Batches already committed stay done; a retry carries on from there.
-    for (int busyRetries = 0; !stop.load(); ) {
+    for (int retried = 0; !stop.load(); ) {
         try {
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
                                 QStringLiteral("BibleImport-unindex"));
@@ -140,7 +150,7 @@ void clearPendingIndexRows(const std::atomic_bool& stop)
                                          sel.columnText(3) });
                 }
                 if (rows.empty()) break;
-                db::Transaction tx(conn);
+                db::Transaction tx(conn, db::Transaction::Begin::Immediate);
                 auto del = conn.prepare(QStringLiteral(
                     "INSERT INTO verses_fts (verses_fts, rowid, text, book_name, translation_code) "
                     "VALUES ('delete', ?, ?, ?, ?)"));
@@ -159,12 +169,12 @@ void clearPendingIndexRows(const std::atomic_bool& stop)
                 }
                 tx.commit();
                 cleared += int(rows.size());
-                busyRetries = 0;
+                retried = 0;
             }
             break;
         } catch (const db::Error& e) {
-            if (isBusy(e) && ++busyRetries <= 20) {
-                QThread::msleep(250);
+            if (isBusy(e) && ++retried <= busyRetries) {
+                for (int slept = 0; slept < 250 && !stop.load(); slept += 50) QThread::msleep(50);
                 continue;
             }
             qWarning().noquote() << "BibleImport: clearing removed verses from the search index stopped:"
@@ -189,7 +199,7 @@ BibleImporter::BibleImporter(QObject* parent)
     // open theirs can find the library busy. Imports and removals also
     // finish it first, whenever they come.
     QTimer::singleShot(10'000, this, [this] {
-        m_pool.start([stop = m_stop] { clearPendingIndexRows(*stop); });
+        m_pool.start([stop = m_stop] { clearPendingIndexRows(*stop, 20); });
     });
 }
 
@@ -201,6 +211,7 @@ BibleImporter::~BibleImporter()
 
 std::shared_ptr<const import::ParsedBible> BibleImporter::parse(const QStringList& files)
 {
+    const int generation = m_parseGeneration.load();
     QString key;
     for (const QString& f : files) {
         const QFileInfo info(f);
@@ -213,7 +224,9 @@ std::shared_ptr<const import::ParsedBible> BibleImporter::parse(const QStringLis
     }
     auto parsed = std::make_shared<const import::ParsedBible>(import::parseBibleFiles(files));
     QMutexLocker lock(&m_parsedLock);
-    if (parsed->error.isEmpty()) {
+    // Not kept if discardAnalysis() ran meanwhile: the dialog that asked is
+    // gone.
+    if (parsed->error.isEmpty() && generation == m_parseGeneration.load()) {
         m_parsedKey = key;
         m_parsed = parsed;
     }
@@ -222,6 +235,7 @@ std::shared_ptr<const import::ParsedBible> BibleImporter::parse(const QStringLis
 
 void BibleImporter::discardAnalysis()
 {
+    ++m_parseGeneration;
     QMutexLocker lock(&m_parsedLock);
     m_parsed.reset();
     m_parsedKey.clear();
@@ -277,7 +291,7 @@ int BibleImporter::analyze(QStringList files)
                 { QStringLiteral("code"),            suggestCode(bible, conn) },
                 { QStringLiteral("language"),        bible.language },
                 { QStringLiteral("books"),           distinctBooks(bible) },
-                { QStringLiteral("verses"),          int(bible.verses.size()) },
+                { QStringLiteral("verses"),          verseCount(bible) },
                 { QStringLiteral("skippedBooks"),    bible.skippedBooks },
                 { QStringLiteral("ignoredFiles"),    bible.ignoredFiles },
                 { QStringLiteral("warnings"),        bible.warnings },
@@ -298,15 +312,15 @@ int BibleImporter::run(QStringList files, QString code, QString name)
     code = code.trimmed().toUpper();
     name = name.trimmed();
     m_pool.start([this, request, files, code, name, stop = m_stop]() {
-        clearPendingIndexRows(*stop);
         if (const QString shape = codeShapeProblem(code); !shape.isEmpty()) {
             emit failed(request, shape);
             return;
         }
+        emit progress(request, 0, tr("Reading the file..."));
+        clearPendingIndexRows(*stop, 0);
         try {
             QElapsedTimer timer;
             timer.start();
-            emit progress(request, 0, tr("Reading the file..."));
             const auto parsed = parse(files);
             const import::ParsedBible& bible = *parsed;
             if (!bible.error.isEmpty()) {
@@ -316,7 +330,7 @@ int BibleImporter::run(QStringList files, QString code, QString name)
 
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
                                 QStringLiteral("BibleImport"));
-            db::Transaction tx(conn);
+            db::Transaction tx(conn, db::Transaction::Begin::Immediate);
             if (codeTaken(conn, code)) {
                 emit failed(request, tr("There's already a translation called %1.").arg(code));
                 return;
@@ -441,7 +455,7 @@ int BibleImporter::remove(QString code)
     const int request = m_nextRequest++;
     code = code.trimmed();
     m_pool.start([this, request, code, stop = m_stop]() mutable {
-        clearPendingIndexRows(*stop);
+        clearPendingIndexRows(*stop, 0);
         try {
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
                                 QStringLiteral("BibleImport-remove"));
@@ -451,7 +465,7 @@ int BibleImporter::remove(QString code)
             // nothing. Only this connection is affected, and only outside
             // a transaction can it be switched.
             conn.exec(QStringLiteral("PRAGMA foreign_keys = OFF"));
-            db::Transaction tx(conn);
+            db::Transaction tx(conn, db::Transaction::Begin::Immediate);
             qint64 id = 0;
             QString source;
             {
@@ -500,7 +514,7 @@ int BibleImporter::remove(QString code)
             return;
         }
         emit removed(request, code);
-        clearPendingIndexRows(*stop);
+        clearPendingIndexRows(*stop, 20);
     });
     return request;
 }

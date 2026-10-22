@@ -26,6 +26,7 @@
 #include "db/DbPaths.h"
 #include "db/Statement.h"
 #include "import/BibleFormats.h"
+#include "import/CanonicalBibleBooks.h"
 
 using crater::import::ParsedBible;
 using crater::import::ParsedVerse;
@@ -457,6 +458,91 @@ private slots:
         expectVerse(b, 19, 3, 3, QStringLiteral("But thou, O LORD"));
     }
 
+    // Book names from files: other languages' spellings resolve, the
+    // deuterocanon never lands on a canonical book, and the looser guess
+    // refuses numbers and other scripts.
+    void bookNames()
+    {
+        using crater::import::guessBookName;
+        using crater::import::lookupBookName;
+        const auto number = [](const auto& meta) { return meta ? meta->bookNumber : 0; };
+        QCOMPARE(number(lookupBookName(u"Esdras")), 15);         // Ezra in French and Spanish
+        QCOMPARE(number(lookupBookName(u"1 Esdras")), 0);
+        QCOMPARE(number(lookupBookName(u"Eclesiástico")), 0);    // Sirach, not Ecclesiastes
+        QCOMPARE(number(lookupBookName(u"Ecclésiastique")), 0);
+        QCOMPARE(number(lookupBookName(u"Ecclesiastico")), 0);
+        QCOMPARE(number(lookupBookName(u"Eclesiastés")), 21);
+        QCOMPARE(number(lookupBookName(u"Psalms of Solomon")), 0);
+        QCOMPARE(number(lookupBookName(u"Jób")), 18);
+        QCOMPARE(number(lookupBookName(u"Phi-lê-môn")), 57);
+        QCOMPARE(number(lookupBookName(u"II Kings")), 12);
+        QCOMPARE(number(lookupBookName(u"Genezis")), 1);
+        QCOMPARE(number(guessBookName(u"Matúš")), 40);
+        QCOMPARE(number(guessBookName(u"67")), 0);
+        QCOMPARE(number(guessBookName(QString::fromUtf8("Иов"))), 0);
+        QCOMPARE(number(guessBookName(u"Judit")), 0);
+    }
+
+    // Round two of the readers: an unclosed note at the end of one book in
+    // a single-file Bible, a stray closer, an unclosed \rq, acrostic titles,
+    // duplicated and split verses, a damaged first file of several, and a
+    // UTF-8 file with a byte-order mark and one bad byte.
+    void readersRoundTwo()
+    {
+        const ParsedBible u = parseBibleFiles({ write("onefile.usfm",
+            "\\id MAL\n\\c 4\n\\p\n\\v 6 And he shall turn\\f + \\ft an unclosed note\n"
+            "\\id MAT\n\\c 1\n\\p\n\\v 1 The book of the generation\n"
+            "\\v 2 Abraham begat\\f* Isaac.\n"
+            "\\v 3 Judas begat \\rq Gen 38\n\\v 4 And Aram begat\n") });
+        QVERIFY2(u.error.isEmpty(), qPrintable(u.error));
+        expectVerse(u, 39, 4, 6, QStringLiteral("And he shall turn"));
+        expectVerse(u, 40, 1, 1, QStringLiteral("The book of the generation"));
+        expectVerse(u, 40, 1, 2, QStringLiteral("Abraham begat Isaac."));
+        expectVerse(u, 40, 1, 4, QStringLiteral("And Aram begat"));
+
+        const ParsedBible o = parseBibleFiles({ write("acrostic.xml",
+            "<osis><osisText osisIDWork=\"X\"><div type=\"book\" osisID=\"Ps\"><chapter osisID=\"Ps.119\">"
+            "<verse osisID=\"Ps.119.8\"/>I will keep thy statutes"
+            "<verse osisID=\"Ps.119.9\"/><title type=\"acrostic\" canonical=\"true\">BETH.</title>"
+            "Wherewithal shall a young man</chapter></div></osisText></osis>") });
+        QVERIFY2(o.error.isEmpty(), qPrintable(o.error));
+        expectVerse(o, 19, 119, 8, QStringLiteral("I will keep thy statutes"));
+        expectVerse(o, 19, 119, 9, QStringLiteral("Wherewithal shall a young man"));
+
+        const ParsedBible z = parseBibleFiles({ write("dupes.xml",
+            "<XMLBIBLE><BIBLEBOOK bnumber=\"1\"><CHAPTER cnumber=\"1\">"
+            "<VERS vnumber=\"1\">In the beginning</VERS><VERS vnumber=\"1\">In the beginning</VERS>"
+            "</CHAPTER></BIBLEBOOK></XMLBIBLE>") });
+        expectVerse(z, 1, 1, 1, QStringLiteral("In the beginning"));
+
+        const ParsedBible s = parseBibleFiles({ write("split.xmm",
+            "<bible><b n=\"Genesis\"><c n=\"1\"><v n=\"3a\">And God said,</v><v n=\"3b\">Let there be light.</v>"
+            "</c></b></bible>") });
+        expectVerse(s, 1, 1, 3, QStringLiteral("And God said, Let there be light."));
+
+        QTemporaryDir books;
+        const auto put = [&](const QString& name, const QByteArray& bytes) {
+            QFile f(books.filePath(name));
+            if (f.open(QIODevice::WriteOnly)) f.write(bytes);
+            return f.fileName();
+        };
+        const ParsedBible d = parseBibleFiles({
+            put("GEN.usx", "<usx version=\"3.0\"><book code=\"GEN\"/><chapter number=\"1\"/>&nbsp;"),
+            put("JHN.usx", kUsx) });
+        QVERIFY2(d.error.isEmpty(), qPrintable(d.error));
+        QCOMPARE(d.warnings.size(), 1);
+        QVERIFY(d.warnings.first().contains(QStringLiteral("GEN.usx")));
+        QVERIFY(!d.warnings.first().contains(QStringLiteral(").")));   // one full stop, not two
+        expectVerse(d, 43, 3, 16, QStringLiteral("For God so loved the world."));
+
+        const ParsedBible b = parseBibleFiles({ write("bom.usfm",
+            "\xef\xbb\xbf\\id JHN\n\\c 1\n\\p\n\\v 1 Au commencement \xc3\xa9tait la Parole\xff.\n") });
+        QVERIFY2(b.error.isEmpty(), qPrintable(b.error));
+        const ParsedVerse* v = find(b, 43, 1, 1);
+        QVERIFY(v);
+        QVERIFY(v->text.contains(QString::fromUtf8("\xc3\xa9tait")));   // still UTF-8
+    }
+
     // Into the library and back out the way the Scripture tab reads it.
     void importReadSearchRemove()
     {
@@ -477,7 +563,7 @@ private slots:
         const QVariantMap info = analyzed.first().at(1).toMap();
         QCOMPARE(info.value("code").toString(), QStringLiteral("ZTB"));
         QCOMPARE(info.value("books").toInt(), 2);
-        QCOMPARE(info.value("verses").toInt(), 3);
+        QCOMPARE(info.value("verses").toInt(), 4);   // as stored: 2-3 counts twice
         QCOMPARE(info.value("skippedBooks").toStringList(), QStringList{ QStringLiteral("Tobit") });
 
         const auto suggested = [&](const QString& name, const QByteArray& bytes) {

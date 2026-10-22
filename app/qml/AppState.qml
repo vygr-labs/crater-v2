@@ -1822,6 +1822,9 @@ QtObject {
 
     // Escape while a modal is open.
     function modalEscape() {
+        // A dialog mid-write (a Bible being added) sets closeLocked: even
+        // the double tap, which otherwise closes without asking, waits.
+        if (modalCloseOwner && modalCloseOwner.closeLocked === true) return
         const now = Date.now()
         const second = now - _modalEscapeAt <= doubleTapMs
         _modalEscapeAt = second ? 0 : now
@@ -2050,6 +2053,16 @@ QtObject {
     // without the removed one even if BibleService hears of it after this.
     readonly property Connections _removedTranslationWatch: Connections {
         target: BibleImporter
+        // A Bible added under a code this profile once hid or placed starts
+        // at the end and shown, as the import dialog says.
+        function onCompleted(request, code, verses) {
+            const up = String(code).toUpperCase()
+            const notIt = function(c) { return String(c).toUpperCase() !== up }
+            if (!SettingsService.hiddenTranslations.every(notIt))
+                SettingsService.hiddenTranslations = SettingsService.hiddenTranslations.filter(notIt)
+            if (!SettingsService.translationOrder.every(notIt))
+                SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
+        }
         function onRemoved(request, code) {
             const up = String(code).toUpperCase()
             const notIt = function(c) { return String(c).toUpperCase() !== up }

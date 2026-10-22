@@ -261,36 +261,72 @@ const QList<BibleBookMeta>& allCanonicalBooks()
     return list;
 }
 
-std::optional<BibleBookMeta> lookupBookName(QStringView name)
-{
-    const QString key = normalizeKey(name);
-    const auto& tbl = lookupTable();
-    if (const auto it = tbl.find(key); it != tbl.end()) return it.value();
+namespace {
 
-    // Diacritics off ("Deuteronómium" -> "deuteronomium"), then only names
-    // that are Latin letters, four or more of them.
+// A book name from a file, ready to compare: lowercase, diacritics off
+// ("Deuteronómium" -> "deuteronomium"), hyphens and dots gone (Vietnamese
+// "Phi-lê-môn", "1. Samuelova"), Roman numbers as digits ("II Kings").
+QString plainName(QStringView name)
+{
     QString plain;
-    for (const QChar c : key.normalized(QString::NormalizationForm_D))
-        if (c.category() != QChar::Mark_NonSpacing) plain += c;
+    for (const QChar c : normalizeKey(name).normalized(QString::NormalizationForm_D)) {
+        if (c.category() == QChar::Mark_NonSpacing || c == u'-' || c == u'.') continue;
+        plain += c;
+    }
+    static const QRegularExpression roman(QStringLiteral(R"(^(i{1,3})\s+)"));
+    if (const auto m = roman.match(plain); m.hasMatch())
+        plain = QString::number(m.capturedLength(1)) + u' ' + plain.mid(m.capturedEnd());
+    return normalizeKey(plain);
+}
+
+// Every letter is Latin, and there are at least `minimum` of them.
+bool latinLetters(const QString& plain, int minimum, int* count = nullptr)
+{
     int letters = 0;
     for (const QChar c : plain) {
         if (!c.isLetter()) continue;
-        if (c.script() != QChar::Script_Latin) return std::nullopt;
+        if (c.script() != QChar::Script_Latin) return false;
         ++letters;
     }
-    if (letters < 4) return std::nullopt;
+    if (count) *count = letters;
+    return letters >= minimum;
+}
 
-    // The deuterocanon is close enough to canonical names to match one
-    // (Ecclesiasticus / Ecclesiastes, Tobit / Obadiah) and isn't among them.
-    static const char* const outsideCanon[] = {
-        "tob", "judit", "wisdom", "sirach", "ecclesiasticus", "baruch", "macc", "makab", "makk",
-        "esdras", "manasse", "susanna", "bel and", "azaria", "jeremy", "laodic", "odes",
+// The deuterocanon is close enough to canonical names to match one
+// (Ecclesiasticus or Eclesiástico / Ecclesiastes, Tobit / Obadiah, Psalms of
+// Solomon / Song of Solomon) and isn't among them. "Esdras" alone is Ezra in
+// French, Spanish and Portuguese, so only a numbered Esdras counts.
+bool outsideCanon(const QString& plain)
+{
+    static const char* const stems[] = {
+        "tob", "judit", "wisdom", "sirach", "clesiastic", "clesiastiq", "baruch",
+        "macc", "makab", "makk", "macab", "machab", "manasse", "susanna", "bel and",
+        "azaria", "jeremy", "laodic", "odes", "psalms of solomon",
     };
-    for (const char* stem : outsideCanon)
-        if (plain.contains(QLatin1String(stem))) return std::nullopt;
+    for (const char* stem : stems)
+        if (plain.contains(QLatin1String(stem))) return true;
+    static const QRegularExpression numberedEsdras(QStringLiteral(R"(^\d\s*esdras)"));
+    return numberedEsdras.match(plain).hasMatch();
+}
 
-    // Closest full name within a third of the length. A tie means it could
+}  // namespace
+
+std::optional<BibleBookMeta> lookupBookName(QStringView name)
+{
+    const auto& tbl = lookupTable();
+    if (const auto it = tbl.find(normalizeKey(name)); it != tbl.end()) return it.value();
+    const QString plain = plainName(name);
+    if (outsideCanon(plain)) return std::nullopt;
+    // Short names with an accent ("Jób", "Rút") match once it's off.
+    if (const auto it = tbl.find(plain); it != tbl.end()) return it.value();
+    // Ezra in French, Spanish and Portuguese, too far from "Ezra" to match.
+    if (plain == u"esdras") return tbl.value(QStringLiteral("ezra"));
+
+    // Otherwise only Latin names of four letters or more, and only the
+    // closest full name within a third of the length. A tie means it could
     // be either, so neither.
+    int letters = 0;
+    if (!latinLetters(plain, 4, &letters)) return std::nullopt;
     const int bound = qMax(1, letters / 3);
     std::optional<BibleBookMeta> best;
     int bestDist = bound + 1;
@@ -306,6 +342,15 @@ std::optional<BibleBookMeta> lookupBookName(QStringView name)
         }
     }
     return tied ? std::nullopt : best;
+}
+
+std::optional<BibleBookMeta> guessBookName(QStringView name)
+{
+    const QString plain = plainName(name);
+    bool isNumber = false;
+    plain.toInt(&isNumber);
+    if (isNumber || outsideCanon(plain) || !latinLetters(plain, 2)) return std::nullopt;
+    return lookupBook(name);
 }
 
 std::optional<BibleBookMeta> lookupBook(QStringView nameOrAlt)

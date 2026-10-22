@@ -69,6 +69,8 @@ QString cleanText(const QString& raw)
         space = false;
         out += c;
     }
+    while (out.startsWith(QChar(0x3000))) out.remove(0, 1);
+    while (out.endsWith(QChar(0x3000))) out.chop(1);
     return out;
 }
 
@@ -94,7 +96,8 @@ void addVerse(ParsedBible& out, int book, int chapter, int verse, int verseEnd,
     if (!out.verses.isEmpty()) {
         ParsedVerse& last = out.verses.last();
         if (last.book == book && last.chapter == chapter && last.verse == verse) {
-            last.text += QLatin1Char(' ') + text;
+            // The same verse twice (a file's mistake) stays once.
+            if (!last.text.endsWith(text)) last.text += QLatin1Char(' ') + text;
             last.verseEnd = qMax(last.verseEnd, verseEnd);
             return;
         }
@@ -119,6 +122,7 @@ QString outsideCanonName(const QString& code)
         { QStringLiteral("LJE"), QStringLiteral("Letter of Jeremiah") },
         { QStringLiteral("EPJER"), QStringLiteral("Letter of Jeremiah") },
         { QStringLiteral("S3Y"), QStringLiteral("Song of the Three") },
+        { QStringLiteral("SGTHREE"), QStringLiteral("Song of the Three") },
         { QStringLiteral("PRAZAR"), QStringLiteral("Prayer of Azariah") },
         { QStringLiteral("SUS"), QStringLiteral("Susanna") },
         { QStringLiteral("BEL"), QStringLiteral("Bel and the Dragon") },
@@ -152,7 +156,10 @@ QString outsideCanonName(const QString& code)
 
 void skipBook(ParsedBible& out, const QString& name)
 {
-    const QString n = outsideCanonName(name);
+    bool isNumber = false;
+    name.trimmed().toInt(&isNumber);
+    // A book known only by its number (Zefania's deuterocanon is 67 up).
+    const QString n = isNumber ? QStringLiteral("book %1").arg(name.trimmed()) : outsideCanonName(name);
     if (!n.isEmpty() && !out.skippedBooks.contains(n)) out.skippedBooks.append(n);
 }
 
@@ -327,9 +334,9 @@ QList<int> placeBooks(const QStringList& names, bool* byPosition)
     }
 
     // A gap whose count didn't fit (Matthew after a Catholic Bible's
-    // deuterocanon): a looser guess at a name is taken only when it lands
-    // between the books placed either side of it, which leaves it little
-    // room to be wrong.
+    // deuterocanon): a looser guess at a name (guessBookName) is taken only
+    // between two placed books, and only when it lands between them, which
+    // leaves it little room to be wrong.
     QSet<int> used;
     for (int number : std::as_const(out))
         if (number) used.insert(number);
@@ -340,8 +347,8 @@ QList<int> placeBooks(const QStringList& names, bool* byPosition)
             if (out[j]) { before = out[j]; break; }
         for (int j = i + 1; j < n; ++j)
             if (out[j]) { after = out[j]; break; }
-        if (before == 0 && after == 67) continue;   // nothing placed to go by
-        const auto guess = lookupBook(names[i]);
+        if (before == 0 || after == 67) continue;   // boxed in on both sides only
+        const auto guess = guessBookName(names[i]);
         if (guess && guess->bookNumber > before && guess->bookNumber < after
             && !used.contains(guess->bookNumber)) {
             out[i] = guess->bookNumber;
@@ -378,8 +385,15 @@ void readOpenSong(QXmlStreamReader& x, ParsedBible& out)
             const QString number = attr(x, "number");
             const bool ok = parseVerseNumbers(number.isEmpty() ? attr(x, "n") : number, &first, &last);
             const QString text = cleanText(readMixed(x, {}));
-            if (ok && chapter > 0 && !text.isEmpty())
-                books.last().verses.append({ 0, chapter, first, last, text });
+            if (!ok || chapter <= 0 || text.isEmpty()) continue;
+            // A verse split in two ("3a", "3b") is one verse, as in addVerse.
+            QList<ParsedVerse>& verses = books.last().verses;
+            if (!verses.isEmpty() && verses.last().chapter == chapter && verses.last().verse == first) {
+                if (!verses.last().text.endsWith(text)) verses.last().text += QLatin1Char(' ') + text;
+                verses.last().verseEnd = qMax(verses.last().verseEnd, last);
+                continue;
+            }
+            verses.append({ 0, chapter, first, last, text });
         }
     }
     books.removeIf([](const FileBook& b) { return b.verses.isEmpty(); });
@@ -481,9 +495,12 @@ void readOsis(QXmlStreamReader& x, ParsedBible& out)
                 isOpen = open.verse > 0;
                 container = sid.isEmpty();
                 sinceVerseStart = 0;
-            } else if (isName(x, "title") && isOpen && attr(x, "canonical") == u"true") {
-                // A psalm's title inside the verse it belongs to: where the
-                // Hebrew numbering makes it verse 1, it is the verse.
+            } else if (isName(x, "title") && isOpen && attr(x, "canonical") == u"true"
+                       && attr(x, "type") == u"psalm" && cleanText(text).isEmpty()) {
+                // A psalm's title opening the verse it belongs to: where the
+                // Hebrew numbering makes it verse 1, it is the verse. Other
+                // canonical titles (Psalm 119's acrostic letters) are
+                // headings.
             } else if (isAnyName(x, { "note", "title", "rdg" })) {
                 skipDepth = 1;
             } else if (isAnyName(x, { "lb", "l", "p", "lg" }) && isOpen) {
@@ -623,20 +640,21 @@ void readUsfm(const QString& source, ParsedBible& out)
         QStringLiteral(R"(\\[A-Za-z0-9]+(?:-[se])?[ \t]*(?:\|[^\\]*)?\\\*)"));
     t.remove(milestones);
     // Footnotes, cross references and figures go with their contents. One
-    // left unclosed stops at the next verse or chapter rather than taking
-    // everything up to some later note's end with it.
+    // left unclosed stops at the next verse, chapter or book rather than
+    // taking everything up to some later note's end with it. A stray closer
+    // (\f* on its own) isn't an opener.
     static const QRegularExpression notes(
-        QStringLiteral(R"(\\(f|fe|ef|x|ex|fig)\b(?:(?!\\[cv]\s).)*?\\\1\*)"),
+        QStringLiteral(R"(\\(f|fe|ef|x|ex|fig)\b(?!\*)(?:(?!\\(?:[cv]|id)\s).)*?\\\1\*)"),
         QRegularExpression::DotMatchesEverythingOption);
     t.remove(notes);
     static const QRegularExpression unclosedNotes(
-        QStringLiteral(R"(\\(?:f|fe|ef|x|ex|fig)\b(?:(?!\\[cv]\s).)*)"),
+        QStringLiteral(R"(\\(?:f|fe|ef|x|ex|fig)\b(?!\*)(?:(?!\\(?:[cv]|id)\s).)*)"),
         QRegularExpression::DotMatchesEverythingOption);
     t.remove(unclosedNotes);
     // Sidebars (\esb ... \esbe) and the reference after a quotation
-    // (\rq Isa 40:3\rq*) aren't verse text either.
+    // (\rq Isa 40:3\rq*) aren't verse text either, bounded the same way.
     static const QRegularExpression asides(
-        QStringLiteral(R"(\\esb\b.*?\\esbe\b|\\rq\b.*?\\rq\*)"),
+        QStringLiteral(R"(\\esb\b(?:(?!\\(?:c|id)\s).)*?\\esbe\b|\\rq\b(?!\*)(?:(?!\\(?:[cv]|id)\s).)*?\\rq\*)"),
         QRegularExpression::DotMatchesEverythingOption);
     t.remove(asides);
     // Attributes on a word (\w grace|strong="G5485"\w*) go, the word stays.
@@ -725,8 +743,26 @@ void readUsfm(const QString& source, ParsedBible& out)
                 if (isOpen) text += QLatin1Char(' ');
                 break;
             case Marker::Character:
-                // Its space belongs to the marker, not the text.
-                if (pos < t.size() && t.at(pos).isSpace()) ++pos;
+                // Its space belongs to the marker, not the text, which
+                // matters where words have no spaces between them. Kept
+                // otherwise: a file that writes "the\nd LORD\nd*" still
+                // reads "the LORD".
+                if (pos < t.size() && t.at(pos).isSpace() && m.capturedStart() > 0) {
+                    switch (t.at(m.capturedStart() - 1).script()) {
+                    case QChar::Script_Han:
+                    case QChar::Script_Hiragana:
+                    case QChar::Script_Katakana:
+                    case QChar::Script_Thai:
+                    case QChar::Script_Lao:
+                    case QChar::Script_Khmer:
+                    case QChar::Script_Myanmar:
+                    case QChar::Script_Tibetan:
+                        ++pos;
+                        break;
+                    default:
+                        break;
+                    }
+                }
                 break;
             }
         }
@@ -762,13 +798,12 @@ QString fromWindows1252(const QByteArray& bytes)
 // ones, and only loses that character. An 8-bit file has none good.
 QString decode(const QByteArray& bytes)
 {
+    // A byte-order mark settles it, UTF-8 included.
     if (const auto bom = QStringConverter::encodingForData(bytes)) {
-        if (*bom != QStringConverter::Utf8) {
-            QStringDecoder decoder(*bom);
-            QString text = decoder.decode(bytes);
-            if (text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
-            return text;
-        }
+        QStringDecoder decoder(*bom);
+        QString text = decoder.decode(bytes);
+        if (text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+        return text;
     }
     QStringDecoder utf8(QStringDecoder::Utf8);
     QString text = utf8.decode(bytes);
@@ -873,6 +908,7 @@ ParsedBible parseBibleFiles(const QStringList& paths)
         const QByteArray& bytes = source.bytes;
         const Format f = source.format;
         QXmlStreamReader x(bytes);
+        const qsizetype versesBefore = out.verses.size();
         switch (f) {
         case Format::Zefania:  readZefania(x, out); break;
         case Format::OpenSong: readOpenSong(x, out); break;
@@ -882,15 +918,20 @@ ParsedBible parseBibleFiles(const QStringList& paths)
         case Format::Unknown:  break;
         }
         if (x.hasError() && f != Format::Usfm) {
-            const QString problem = QStringLiteral("%1 is damaged at line %2 (%3).")
-                .arg(QFileInfo(path).fileName()).arg(x.lineNumber()).arg(x.errorString());
-            if (out.verses.isEmpty()) {
-                out.error = problem.left(problem.size() - 1) + QStringLiteral(", so nothing could be read.");
+            QString reason = x.errorString().trimmed();
+            while (reason.endsWith(u'.')) reason.chop(1);
+            const QString problem = QStringLiteral("%1 is damaged at line %2 (%3)")
+                .arg(QFileInfo(path).fileName(), QString::number(x.lineNumber()), reason);
+            const bool nothingRead = out.verses.size() == versesBefore;
+            if (nothingRead && sources.size() == 1) {
+                out.error = problem + QStringLiteral(", so nothing could be read.");
                 return out;
             }
             // Reading stops at the damage. What came before is usable, but
             // the operator has to know the rest is missing.
-            out.warnings.append(problem + QStringLiteral(" Only what comes before that was read."));
+            out.warnings.append(problem + (nothingRead
+                ? QStringLiteral(", so it was left out.")
+                : QStringLiteral(". Only what comes before that was read.")));
         }
         if (!out.error.isEmpty()) return out;
     }

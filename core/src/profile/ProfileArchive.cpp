@@ -29,6 +29,7 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QStorageInfo>
+#include <QTemporaryDir>
 #include <QUuid>
 
 #include <optional>
@@ -1055,7 +1056,7 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         insT.bind(6, t.sort);
         // A Bible added from a file stays removable on the machine it moves
         // to. The source is migrated (V003) before it is read here.
-        insT.bind(7, t.source.isEmpty() ? QStringLiteral("bundled") : t.source);
+        insT.bind(7, t.source == u"file" ? t.source : QStringLiteral("bundled"));
         insT.step();
         const qint64 newT = dst.lastInsertRowId();
 
@@ -1120,14 +1121,20 @@ int consolidateProfileBibles()
         const QString marker = legacy + QStringLiteral(".merged");
         if (!QFileInfo::exists(legacy) || QFileInfo::exists(marker)) continue;
         try {
+            // Read through a copy brought up to the current schema. The
+            // profile's own file stays at its old version, so the older
+            // Crater that may still open it (see below) isn't refused by a
+            // schema it doesn't know.
+            QTemporaryDir staging;
+            if (!staging.isValid()) throw db::Error(QStringLiteral("no temporary folder for the merge"));
+            const QString copy = staging.filePath(QStringLiteral("bibles.sqlite"));
+            vacuumInto(legacy, copy);
             {
-                // Bring an older profile's copy up to the current schema
-                // before reading it (migrations are idempotent).
-                db::Connection c(legacy, db::OpenMode::ReadWrite, QStringLiteral("BibleMerge-migrate"));
+                db::Connection c(copy, db::OpenMode::ReadWrite, QStringLiteral("BibleMerge-migrate"));
                 db::Migrator::run(c, QStringLiteral("bibles"));
                 c.exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
             }
-            const BibleMergeResult m = mergeBibles(legacy, shared, {});
+            const BibleMergeResult m = mergeBibles(copy, shared, {});
             qInfo().noquote() << "Shared Bibles: merged profile" << id
                               << "added" << m.added << "already there" << m.skipped;
         } catch (const db::Error& e) {

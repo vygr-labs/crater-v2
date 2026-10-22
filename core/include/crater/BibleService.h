@@ -44,7 +44,7 @@ public:
     Q_INVOKABLE QList<crater::Translation> translations();
 
     // Every installed translation in this profile's order, hidden ones
-    // included, as { code, name, description, hidden } maps. For settings
+    // included, as { code, name, description, hidden, removable } maps. For settings
     // and the sidebar's More card, and for recognising a typed code.
     Q_INVOKABLE QVariantList allTranslations();
 

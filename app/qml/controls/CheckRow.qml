@@ -51,6 +51,7 @@ Rectangle {
     }
 
     Text {
+        id: labelText
         anchors.left: box.right
         anchors.leftMargin: Theme.space.md
         anchors.right: detailText.left
@@ -69,8 +70,12 @@ Rectangle {
         anchors.rightMargin: Theme.space.sm
         anchors.verticalCenter: parent.verticalCenter
         // A long detail (a Bible's full name from its file) gives way to
-        // the label instead of running over the box.
-        width: Math.min(implicitWidth, root.width * 0.55)
+        // the label instead of running over the box, but takes whatever a
+        // short label leaves free.
+        width: Math.min(implicitWidth,
+                        Math.max(root.width * 0.55,
+                                 root.width - box.width - labelText.implicitWidth - Theme.space.sm * 2
+                                     - Theme.space.md * 2))
         elide: Text.ElideRight
         text: root.detail
         color: Theme.color.textTertiary

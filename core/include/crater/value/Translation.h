@@ -15,12 +15,15 @@ struct Translation
     Q_PROPERTY(QString name         MEMBER name)
     Q_PROPERTY(int     year         MEMBER year)
     Q_PROPERTY(QString description  MEMBER description)
+    // 'bundled', or 'file' for one the operator added (bibles V003).
+    Q_PROPERTY(QString source       MEMBER source)
 
 public:
     QString code;
     QString name;
     int     year = 0;
     QString description;
+    QString source;
 };
 
 }  // namespace crater
