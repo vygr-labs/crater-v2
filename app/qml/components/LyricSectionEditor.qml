@@ -33,6 +33,8 @@ Rectangle {
     // Drives the live-preview update — clicking inside a section makes it
     // the previewed one even though we don't store that fact ourselves.
     property bool   active: false
+    // The whole song is selected (Ctrl+A twice). Every section shows it.
+    property bool   songSelected: false
 
     // ── Signals ─────────────────────────────────────────────────────────
     signal labelEdited(int idx, string value)
@@ -45,9 +47,30 @@ Rectangle {
     // `editor` is the actual TextEdit QQuickItem — RichTextHelper takes
     // it by pointer via the property system.
     signal lyricEditorActivated(int idx, var editor)
-    // Ctrl+C with nothing selected. The dialog copies the whole song, since
-    // a selection can't reach past this one section.
+    // Ctrl+A in a box that's already all selected: the dialog selects the
+    // whole song, since a selection can't reach past this one section.
+    signal selectSongRequested()
+    // Ctrl+C while the whole song is selected.
     signal copySongRequested()
+    // The caret or selection moved, or focus left, so the song is no longer
+    // the selection.
+    signal songSelectionLeft()
+
+    function _allSelected(box) {
+        return box.length === 0 || (box.selectionStart === 0 && box.selectionEnd === box.length)
+    }
+    // Shared by the label and the lyrics: Ctrl+A grows the selection to the
+    // whole song once the box is all selected, and Ctrl+C then copies it.
+    function _songKeys(box, event) {
+        if (event.matches(StandardKey.SelectAll) && _allSelected(box)) {
+            root.selectSongRequested()
+            event.accepted = true
+        } else if (event.matches(StandardKey.Copy) && root.songSelected) {
+            root.copySongRequested()
+            event.accepted = true
+        }
+    }
+    function _leaveSong() { if (root.songSelected) root.songSelectionLeft() }
 
     // Forward-edge accessor used by the parent so it can focus the label
     // input of a freshly-added section after the Repeater has built it.
@@ -212,7 +235,8 @@ Rectangle {
             width: parent.width
             height: 28
             radius: 0
-            color: labelInput.activeFocus ? Theme.color.raised : "transparent"
+            color: root.songSelected ? Theme.color.brandSubtle
+                 : labelInput.activeFocus ? Theme.color.raised : "transparent"
             border.color: labelInput.activeFocus ? Theme.color.brand : "transparent"
             border.width: 1
 
@@ -235,7 +259,13 @@ Rectangle {
                 selectByMouse: true
                 text: root.label
                 onTextEdited: root.labelEdited(root.index, text)
-                onActiveFocusChanged: if (activeFocus) root.focused(root.index)
+                onActiveFocusChanged: {
+                    if (activeFocus) root.focused(root.index)
+                    root._leaveSong()
+                }
+                onCursorPositionChanged: root._leaveSong()
+                onSelectionStartChanged: root._leaveSong()
+                onSelectionEndChanged: root._leaveSong()
                 // Tab or Enter after typing "Chorus" carries on into the
                 // lyrics below, the next thing the operator fills in.
                 activeFocusOnTab: true
@@ -244,12 +274,7 @@ Rectangle {
                     linesEdit.forceActiveFocus()
                     linesEdit.cursorPosition = linesEdit.length
                 }
-                Keys.onPressed: function(event) {
-                    if (event.matches(StandardKey.Copy) && labelInput.selectedText.length === 0) {
-                        root.copySongRequested()
-                        event.accepted = true
-                    }
-                }
+                Keys.onPressed: function(event) { root._songKeys(labelInput, event) }
 
                 // Placeholder
                 Text {
@@ -282,7 +307,8 @@ Rectangle {
             // brand-new empty section is comfortable to click into.
             height: Math.max(60, linesEdit.contentHeight + Theme.space.sm * 2)
             radius: 0
-            color: linesEdit.activeFocus ? Theme.color.raised : "transparent"
+            color: root.songSelected ? Theme.color.brandSubtle
+                 : linesEdit.activeFocus ? Theme.color.raised : "transparent"
             border.color: linesEdit.activeFocus ? Theme.color.brand : "transparent"
             border.width: 1
 
@@ -330,12 +356,13 @@ Rectangle {
                             linesEdit,
                             !(event.modifiers & Qt.ShiftModifier))
                         event.accepted = true
-                    } else if (event.matches(StandardKey.Copy)
-                               && linesEdit.selectedText.length === 0) {
-                        root.copySongRequested()
-                        event.accepted = true
+                    } else {
+                        root._songKeys(linesEdit, event)
                     }
                 }
+                onCursorPositionChanged: root._leaveSong()
+                onSelectionStartChanged: root._leaveSong()
+                onSelectionEndChanged: root._leaveSong()
 
                 // Deferred: Enter on the last line moves the caret before
                 // the card has grown, so checking now would clamp to the
@@ -343,6 +370,7 @@ Rectangle {
                 onCursorRectangleChanged: Qt.callLater(root._revealCursor)
 
                 onActiveFocusChanged: {
+                    root._leaveSong()
                     if (activeFocus) {
                         root.focused(root.index)
                         // Tell the parent dialog which TextEdit to re-target
