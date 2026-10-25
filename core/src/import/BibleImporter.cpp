@@ -305,6 +305,8 @@ int BibleImporter::analyze(QStringList files)
                 { QStringLiteral("verses"),          verseCount(bible) },
                 { QStringLiteral("skippedBooks"),    bible.skippedBooks },
                 { QStringLiteral("ignoredFiles"),    bible.ignoredFiles },
+                { QStringLiteral("files"),           bible.fileCount },
+                { QStringLiteral("otherFormats"),    bible.otherFormats },
                 { QStringLiteral("warnings"),        bible.warnings },
                 { QStringLiteral("booksByPosition"), bible.booksByPosition },
             });

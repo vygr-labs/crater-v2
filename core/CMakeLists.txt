@@ -19,8 +19,11 @@ add_library(crater-core STATIC
     src/db/BibleExtras.cpp
 
     # Bundle layer — stored-only ZIP for .craterheme v2 (ARCHITECTURE.md §10).
+    # puff (zlib's small reference inflater) reads the deflated zips a Bible
+    # download comes in.
     src/bundle/Crc32.cpp
     src/bundle/Zip.cpp
+    src/third_party/puff.c
 
     # Profiles (ARCHITECTURE.md §12) — per-profile settings routing and the
     # .craterprofile archive engine (export / inspect / import / duplicate).
@@ -180,10 +183,10 @@ target_compile_definitions(crater-core
 # Silence warnings inside sqlite3.c — it's vendor code and we don't want to
 # patch it just to make MSVC's high warning levels happy.
 if(MSVC)
-    set_source_files_properties(src/third_party/sqlite3.c
+    set_source_files_properties(src/third_party/sqlite3.c src/third_party/puff.c
         PROPERTIES COMPILE_OPTIONS "/W0")
 else()
-    set_source_files_properties(src/third_party/sqlite3.c
+    set_source_files_properties(src/third_party/sqlite3.c src/third_party/puff.c
         PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 

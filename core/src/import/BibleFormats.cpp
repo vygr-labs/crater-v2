@@ -1,5 +1,6 @@
 #include "import/BibleFormats.h"
 
+#include "bundle/Zip.h"
 #include "import/CanonicalBibleBooks.h"
 
 #include <QDir>
@@ -708,7 +709,9 @@ OsisRef parseOsisRef(const QString& osisId)
         if (const int colon = id.indexOf(QLatin1Char(':')); colon >= 0) id = id.mid(colon + 1);
         const QStringList parts = id.split(QLatin1Char('.'));
         if (parts.size() < 3) continue;
-        const int verse = parts[2].toInt();
+        // A verse split across two entries is "Gen.13.11!a" and
+        // "Gen.13.11!b": the part after "!" names the half.
+        const int verse = parts[2].section(QLatin1Char('!'), 0, 0).toInt();
         if (i == 0) {
             ref.bookCode = parts[0];
             ref.book     = bookFromOsisCode(parts[0]);
@@ -1114,6 +1117,149 @@ Format detect(const QByteArray& bytes)
     return Format::Unknown;
 }
 
+// One chosen file, or one file inside a chosen zip.
+struct Input {
+    QString name;           // the file's own name, for messages
+    QString folder;         // where it is, so book files can be told apart by folder
+    QString folderLabel;    // that folder's own name, or the zip's
+    QByteArray bytes;
+};
+
+struct Source {
+    Input input;
+    Format format;
+};
+
+QString formatName(Format format)
+{
+    switch (format) {
+    case Format::Zefania:  return QStringLiteral("Zefania XML");
+    case Format::OpenSong: return QStringLiteral("OpenSong");
+    case Format::Osis:     return QStringLiteral("OSIS");
+    case Format::Usx:      return QStringLiteral("USX");
+    case Format::Usfm:     return QStringLiteral("USFM");
+    case Format::Unknown:  break;
+    }
+    return {};
+}
+
+// A zip can hold one Bible in several formats (a download that offers each
+// of them) or several Bibles. Each XML file is one Bible, and each folder of
+// USFM or USX book files one. The same Bible in several formats is read from
+// the one that says most about it: OSIS and Zefania name the translation and
+// number every book, USX and USFM number the books, and OpenSong only names
+// them. Several Bibles are refused rather than read as one.
+bool keepOneBible(QList<Source>& sources, ParsedBible& out)
+{
+    struct Bible { Format format; QString folder; QString label; QList<qsizetype> members; };
+    QList<Bible> bibles;
+    for (qsizetype i = 0; i < sources.size(); ++i) {
+        const Source& s = sources[i];
+        const bool bookFiles = s.format == Format::Usfm || s.format == Format::Usx;
+        const auto same = std::find_if(bibles.begin(), bibles.end(), [&](const Bible& b) {
+            return bookFiles && b.format == s.format && b.folder == s.input.folder;
+        });
+        if (same != bibles.end()) {
+            same->members.append(i);
+            continue;
+        }
+        bibles.append({ s.format, s.input.folder,
+                        bookFiles ? s.input.folderLabel : s.input.name.section(u'.', 0, 0), { i } });
+    }
+    if (bibles.size() < 2) return true;
+
+    for (const Bible& b : std::as_const(bibles)) {
+        const auto sameFormat = std::count_if(bibles.cbegin(), bibles.cend(),
+                                              [&](const Bible& other) { return other.format == b.format; });
+        if (sameFormat < 2) continue;
+        QStringList labels;
+        for (const Bible& each : std::as_const(bibles))
+            if (!labels.contains(each.label)) labels.append(each.label);
+        const QString named = labels.size() > 4
+            ? QStringLiteral("%1 and %2 more").arg(labels.first(3).join(QStringLiteral(", "))).arg(labels.size() - 3)
+            : labels.size() > 1
+                ? QStringLiteral("%1 and %2").arg(labels.first(labels.size() - 1).join(QStringLiteral(", ")), labels.last())
+                : labels.join(QString());
+        out.error = QStringLiteral("The zip holds more than one Bible (%1). Unzip it and choose one.").arg(named);
+        return false;
+    }
+
+    const auto rank = [](Format f) {
+        switch (f) {
+        case Format::Osis:     return 0;
+        case Format::Zefania:  return 1;
+        case Format::Usx:      return 2;
+        case Format::Usfm:     return 3;
+        default:               return 4;
+        }
+    };
+    std::sort(bibles.begin(), bibles.end(),
+              [&](const Bible& a, const Bible& b) { return rank(a.format) < rank(b.format); });
+    for (qsizetype k = 1; k < bibles.size(); ++k) out.otherFormats.append(formatName(bibles[k].format));
+    QList<Source> kept;
+    for (const qsizetype i : std::as_const(bibles.first().members)) kept.append(std::move(sources[i]));
+    sources = std::move(kept);
+    return true;
+}
+
+// Reads the files inside the zip at `path` into `inputs`, at any depth: a
+// Digital Bible Library bundle keeps its books in release/USX_1/. Folders,
+// macOS's __MACOSX copies and hidden files are passed over. A zip is someone
+// else's file, so what it may hold is capped before anything is inflated.
+// False with out.error set when the zip can't be read at all.
+bool readZip(const QString& path, QList<Input>& inputs, ParsedBible& out)
+{
+    constexpr qint64 kMaxBytes = qint64(256) * 1024 * 1024;
+    constexpr qsizetype kMaxFiles = 5000;
+    const QString zipName = QFileInfo(path).fileName();
+    bundle::ZipReader zip(path);
+    if (!zip.isOpen()) {
+        out.error = QStringLiteral("%1 is damaged or isn't a zip, so it couldn't be opened.").arg(zipName);
+        return false;
+    }
+    zip.setMaxInflatedSize(kMaxBytes);
+
+    static const QRegularExpression separator(QStringLiteral("[/\\\\]"));
+    const QString zipLabel = QFileInfo(path).completeBaseName();
+    QStringList names;
+    QSet<QString> seen;
+    qint64 total = 0;
+    for (const QString& name : zip.entryNames()) {
+        if (name.endsWith(u'/') || name.endsWith(u'\\') || seen.contains(name)) continue;
+        const QStringList parts = name.split(separator, Qt::SkipEmptyParts);
+        // "./GEN.usx" is in the zip's top folder, not a hidden one.
+        const bool skipped = std::any_of(parts.cbegin(), parts.cend(), [](const QString& part) {
+            return (part.startsWith(u'.') && part != u"." && part != u"..")
+                || part.compare(u"__MACOSX", Qt::CaseInsensitive) == 0;
+        });
+        if (skipped || parts.isEmpty()) continue;
+        seen.insert(name);
+        names.append(name);
+        total += qMax<qint64>(0, zip.entrySize(name));
+    }
+    if (names.size() > kMaxFiles || total > kMaxBytes) {
+        out.error = QStringLiteral("%1 holds more than one Bible would. Unzip it and choose the Bible's files.")
+                        .arg(zipName);
+        return false;
+    }
+    for (const QString& name : std::as_const(names)) {
+        QStringList parts = name.split(separator, Qt::SkipEmptyParts);
+        parts.removeAll(QStringLiteral("."));
+        if (parts.isEmpty()) continue;
+        const QString fileName = parts.takeLast();
+        QByteArray bytes = zip.readEntry(name);
+        if (bytes.isEmpty() && zip.entrySize(name) != 0) {
+            // Compressed in a way Crater doesn't read, encrypted, or damaged.
+            out.warnings.append(QStringLiteral("%1 in %2 couldn't be read, so it was left out.")
+                                    .arg(fileName, zipName));
+            continue;
+        }
+        inputs.append({ fileName, path + u'|' + parts.join(u'/'),
+                        parts.isEmpty() ? zipLabel : parts.last(), std::move(bytes) });
+    }
+    return true;
+}
+
 }  // namespace
 
 int bookFromUsfmCode(QStringView code)
@@ -1133,52 +1279,69 @@ ParsedBible parseBibleFiles(const QStringList& paths)
         out.error = QStringLiteral("No file chosen.");
         return out;
     }
-    // A folder of book files often carries other things too (eBible's
-    // copyright page, a stylesheet). With several files chosen those are
-    // passed over; a single file has to be a Bible.
-    struct Source { QString path; QByteArray bytes; Format format; };
-    QList<Source> sources;
+    // USFM and USX downloads are zips of book files. Those are read in
+    // memory and stand in for the files chosen one by one.
+    QList<Input> inputs;
+    bool zipped = false;
     for (const QString& path : paths) {
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly)) {
             out.error = QStringLiteral("Couldn't open %1.").arg(QFileInfo(path).fileName());
             return out;
         }
-        QByteArray bytes = file.readAll();
-        const Format f = detect(bytes);
-        if (f == Format::Unknown && paths.size() > 1) {
-            out.ignoredFiles.append(QFileInfo(path).fileName());
+        const QByteArray magic = file.peek(4);
+        if (magic == QByteArrayLiteral("PK\x03\x04") || magic == QByteArrayLiteral("PK\x05\x06")) {
+            file.close();
+            if (!readZip(path, inputs, out)) return out;
+            zipped = true;
+            continue;
+        }
+        const QFileInfo info(path);
+        inputs.append({ info.fileName(), info.absolutePath(), info.dir().dirName(), file.readAll() });
+    }
+
+    // A folder of book files often carries other things too (eBible's
+    // copyright page, a stylesheet). With several files chosen those are
+    // passed over; a single file has to be a Bible.
+    QList<Source> sources;
+    for (Input& input : inputs) {
+        const Format f = detect(input.bytes);
+        if (f == Format::Unknown && (inputs.size() > 1 || zipped)) {
+            out.ignoredFiles.append(input.name);
             continue;
         }
         if (f == Format::Unknown) {
             out.error = QStringLiteral("%1 isn't a Bible format Crater reads "
                                        "(Zefania XML, OpenSong, OSIS, USFM or USX).")
-                            .arg(QFileInfo(path).fileName());
+                            .arg(input.name);
             return out;
         }
-        if (!sources.isEmpty() && f != sources.first().format) {
-            out.error = QStringLiteral("The chosen files are in different formats. Choose the files of one Bible.");
-            return out;
-        }
-        sources.append({ path, std::move(bytes), f });
+        sources.append({ std::move(input), f });
     }
     if (sources.isEmpty()) {
-        out.error = QStringLiteral("None of the chosen files is a Bible format Crater reads "
-                                   "(Zefania XML, OpenSong, OSIS, USFM or USX).");
+        out.error = zipped && paths.size() == 1
+            ? QStringLiteral("Nothing in %1 is a Bible format Crater reads "
+                             "(Zefania XML, OpenSong, OSIS, USFM or USX).").arg(QFileInfo(paths.first()).fileName())
+            : QStringLiteral("None of the chosen files is a Bible format Crater reads "
+                             "(Zefania XML, OpenSong, OSIS, USFM or USX).");
         return out;
     }
+    // Files chosen together, a zip among them, are one Bible by choice.
+    if (zipped && paths.size() == 1 && !keepOneBible(sources, out)) return out;
     const Format format = sources.first().format;
+    if (std::any_of(sources.cbegin(), sources.cend(), [&](const Source& s) { return s.format != format; })) {
+        out.error = QStringLiteral("The chosen files are in different formats. Choose the files of one Bible.");
+        return out;
+    }
     if (format != Format::Usfm && format != Format::Usx && sources.size() > 1) {
         out.error = QStringLiteral("A %1 Bible is a single file. Choose just that one.")
-                        .arg(format == Format::Zefania ? QStringLiteral("Zefania")
-                           : format == Format::Osis    ? QStringLiteral("OSIS")
-                                                       : QStringLiteral("OpenSong"));
+                        .arg(format == Format::Zefania ? QStringLiteral("Zefania") : formatName(format));
         return out;
     }
+    out.fileCount = int(sources.size());
 
     for (const Source& source : std::as_const(sources)) {
-        const QString& path = source.path;
-        const QByteArray& bytes = source.bytes;
+        const QByteArray& bytes = source.input.bytes;
         const Format f = source.format;
         QXmlStreamReader x(bytes);
         const qsizetype versesBefore = out.verses.size();
@@ -1194,7 +1357,7 @@ ParsedBible parseBibleFiles(const QStringList& paths)
             QString reason = x.errorString().trimmed();
             while (reason.endsWith(u'.')) reason.chop(1);
             const QString problem = QStringLiteral("%1 is damaged at line %2 (%3)")
-                .arg(QFileInfo(path).fileName(), QString::number(x.lineNumber()), reason);
+                .arg(source.input.name, QString::number(x.lineNumber()), reason);
             const bool nothingRead = out.verses.size() == versesBefore;
             if (nothingRead && sources.size() == 1) {
                 out.error = problem + QStringLiteral(", so nothing could be read.");

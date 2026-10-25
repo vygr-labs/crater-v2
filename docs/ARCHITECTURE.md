@@ -402,10 +402,12 @@ shape (no `mediaRef`/`fontRef`), and a second set of import warnings —
 permanently — to support files that produce broken projection state on
 import. Not worth the surface area.
 
-The zip wrapper for v2 lives in `core/src/bundle/`, mirroring the §2
-"thin wrapper over a C library" approach we already use for SQLite. We
-vendor `miniz` (single-file public-domain) rather than depend on Qt's
-private `QZipReader`/`QZipWriter`.
+The zip wrapper for v2 lives in `core/src/bundle/`: our own stored-only
+reader and writer, rather than Qt's private `QZipReader`/`QZipWriter`.
+Bundles are refused if an entry is deflated. The one exception is the Bible
+importer, which opts in to reading deflated entries (USFM and USX Bibles are
+downloaded as zips) through `puff`, zlib's small reference inflater,
+vendored in `core/src/third_party/`.
 
 ### 10.3 Export — confirmation dialog required
 
