@@ -25,8 +25,16 @@ Rectangle {
     signal dslEdited(string dsl)
     signal cursorMoved(int position, string plainText)
     signal activated()
-    // Ctrl+C with nothing selected, so the host can copy the whole song.
+    // The host's whole song is selected (Ctrl+A twice), shown as a wash.
+    property bool songSelected: false
+    // Ctrl+A with the text already all selected: the host can select the
+    // whole song. Ctrl+C while it is selected copies it. songSelectionLeft
+    // fires when the caret, the selection or focus moves on.
+    signal selectSongRequested()
     signal copySongRequested()
+    signal songSelectionLeft()
+
+    function _leaveSong() { if (root.songSelected) root.songSelectionLeft() }
 
     // ── DSL bridge ──────────────────────────────────────────────────────
     // Same echo guard as LyricSectionEditor: writing HTML into the editor
@@ -127,6 +135,13 @@ Rectangle {
     border.width: 1
     Behavior on border.color { ColorAnimation { duration: Theme.motion.instant } }
 
+    Rectangle {
+        anchors.fill: parent
+        radius: root.radius
+        color: Theme.color.brandSubtle
+        visible: root.songSelected
+    }
+
     Flickable {
         id: rawScroll
         anchors.fill: parent
@@ -185,14 +200,24 @@ Rectangle {
                     RichTextHelper.pasteFiltered(
                         rawArea, !(event.modifiers & Qt.ShiftModifier))
                     event.accepted = true
-                } else if (event.matches(StandardKey.Copy)
-                           && rawArea.selectedText.length === 0) {
+                } else if (event.matches(StandardKey.SelectAll)
+                           && (rawArea.length === 0
+                               || (rawArea.selectionStart === 0 && rawArea.selectionEnd === rawArea.length))) {
+                    root.selectSongRequested()
+                    event.accepted = true
+                } else if (event.matches(StandardKey.Copy) && root.songSelected) {
                     root.copySongRequested()
                     event.accepted = true
                 }
             }
-            onActiveFocusChanged: if (activeFocus) root.activated()
+            onActiveFocusChanged: {
+                root._leaveSong()
+                if (activeFocus) root.activated()
+            }
+            onSelectionStartChanged: root._leaveSong()
+            onSelectionEndChanged: root._leaveSong()
             onCursorPositionChanged: {
+                root._leaveSong()
                 if (!activeFocus) return
                 root.cursorMoved(cursorPosition, rawArea.getText(0, rawArea.length))
             }
