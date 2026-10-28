@@ -310,9 +310,9 @@ bool NdiRenderer::start()
     }
 
     // Render-target texture. RGBA8 because it's universally supported
-    // across QRhi backends; we channel-swap to BGRA in the readback
-    // completion callback (renderTick()) — that's the format
-    // NDIlib_send_video_v2 expects via NDIlib_FourCC_video_type_BGRA.
+    // across QRhi backends; the readback completion callback (renderTick())
+    // swaps it to premultiplied B-G-R-A, the byte order NDI's 32-bit
+    // formats use.
     m_impl->renderTexture = rhi->newTexture(
         QRhiTexture::RGBA8,
         QSize(kRenderWidth, kRenderHeight),
@@ -530,33 +530,30 @@ void NdiRenderer::renderTick()
             if (r.data.isEmpty()) return;
 
             // The texture was rendered as RGBA8, so the bytes are R-G-B-A
-            // in order. Wrap (don't copy) into an RGBA8888 QImage, then
-            // convertToFormat to ARGB32 — on little-endian (Windows), that
-            // produces bytes in B-G-R-A order, which is exactly the
-            // NDIlib_FourCC_video_type_BGRA layout. convertToFormat()
-            // returns a deep copy so the new QImage outlives `r.data`
-            // even when this slot gets recycled on the next tick.
-            //
-            // The scene graph blends premultiplied, so the texture holds
-            // premultiplied colour. NDI's BGRA is straight alpha, and
-            // converting from the premultiplied format is what divides it
-            // back out. Read as straight, a 94% panel or an antialiased
-            // edge would key darker than it is. The legacy grabToImage path
-            // gets the same conversion in NdiService.
+            // in order, and the scene graph blends premultiplied, so the
+            // colour is premultiplied. Wrap (don't copy) as
+            // RGBA8888_Premultiplied and swap to ARGB32_Premultiplied: on
+            // little-endian that is B-G-R-A bytes, still premultiplied.
+            // NdiService decides the rest per pixel format after any
+            // scaling: BGRA divides the alpha back out (NDI's BGRA is
+            // straight), while BGRX and UYVY use these bytes as they are,
+            // which is the frame composited over black. convertToFormat()
+            // returns a deep copy, so the image outlives `r.data` when this
+            // slot is recycled on the next tick.
             const QImage view(
                 reinterpret_cast<const uchar*>(r.data.constData()),
                 r.pixelSize.width(),
                 r.pixelSize.height(),
                 r.pixelSize.width() * 4,
                 QImage::Format_RGBA8888_Premultiplied);
-            const QImage bgra = view.convertToFormat(QImage::Format_ARGB32);
+            const QImage frame = view.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
-            // Cache for the on-demand keepalive re-send. convertToFormat
-            // returned a deep copy, so lastFrame owns its pixels independently
-            // of the recycled readback slot. Harmless (one ~8 MB frame) when
-            // on-demand is off — it's simply never re-sent.
-            m_impl->lastFrame = bgra;
-            emit frameReady(bgra);
+            // Cache for the on-demand keepalive re-send. lastFrame owns its
+            // pixels independently of the recycled readback slot. Harmless
+            // (one ~8 MB frame) when on-demand is off — it's simply never
+            // re-sent.
+            m_impl->lastFrame = frame;
+            emit frameReady(frame);
         };
 
         batch->readBackTexture(readDesc, result);

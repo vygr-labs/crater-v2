@@ -70,11 +70,12 @@ signals:
     void availableChanged();
     void framerateChanged();
 
-    // Emitted on the GUI thread after each successful async readback. The
-    // QImage is BGRA (the channel order NDIlib_send_video_v2 expects via
-    // NDIlib_FourCC_video_type_BGRA). Consumers must either consume the
-    // image synchronously or copy it; the underlying buffer is reused
-    // for the next frame.
+    // Emitted on the GUI thread after each successful async readback, and
+    // again for the on-demand keepalive. The QImage is
+    // Format_ARGB32_Premultiplied (B-G-R-A bytes on little-endian, colour
+    // premultiplied by alpha) and owns its pixels; the renderer keeps a
+    // shared copy for the keepalive, so consumers that write to it detach.
+    // Straight alpha for NDI's BGRA is the consumer's job (NdiService).
     void frameReady(const QImage& image);
 
 private slots:

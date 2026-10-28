@@ -561,8 +561,10 @@ void NdiService::captureFrame()
 
         QImage img = result->image();
         if (img.isNull()) return;
-        if (img.format() != QImage::Format_ARGB32) {
-            img = img.convertToFormat(QImage::Format_ARGB32);
+        // Premultiplied until sendResolvedFrame picks the output format.
+        // A grab normally already is, so this is usually a no-op.
+        if (img.format() != QImage::Format_ARGB32_Premultiplied) {
+            img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
         }
 
         // Toggle FIRST, then assign into the now-free slot. The other
@@ -587,7 +589,9 @@ void NdiService::captureFrame()
     }, Qt::SingleShotConnection);
 }
 
-// Pack an ARGB32 (little-endian: byte order B,G,R,A) image into UYVY 4:2:2.
+// Pack a 32-bit (little-endian: byte order B,G,R,A) image into UYVY 4:2:2.
+// The alpha byte is ignored. Fed premultiplied, so what goes out is the
+// frame composited over black.
 // Two horizontal pixels share one U/V pair (averaged); each keeps its own
 // luma. BT.709 limited-range coefficients (video range 16–235 luma), scaled
 // by 256. UYVY byte order per pixel-pair: U, Y0, V, Y1.
@@ -633,14 +637,27 @@ static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
 
 void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
 {
-    // Optional downscale, written back into the SAME ping-pong slot so the
-    // pixels p_data points at stay alive until NDI releases them.
+    // `dst` arrives ARGB32_Premultiplied from both capture paths. Every
+    // step below writes back into the SAME ping-pong slot so the pixels
+    // p_data points at stay alive until NDI releases them.
+    //
+    // Optional downscale. Scaling premultiplied is what filters edges
+    // correctly, and Qt's smooth scaler returns premultiplied anyway.
     if (m_impl->targetSize.isValid()
         && (dst.width()  != m_impl->targetSize.width()
          || dst.height() != m_impl->targetSize.height())) {
         dst = dst.scaled(m_impl->targetSize.width(), m_impl->targetSize.height(),
                          Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     }
+    // Only BGRA carries alpha, and NDI's BGRA is straight alpha, so it is
+    // the one format that divides it back out. BGRX and UYVY ignore alpha
+    // and take the premultiplied colour as it is, which is the frame over
+    // black: an antialiased edge fades to black instead of going out at
+    // full brightness.
+    const bool straightAlpha = !m_impl->packUyvy
+                            && m_impl->ndiFourCC == NDIlib_FourCC_video_type_BGRA;
+    if (straightAlpha && dst.format() != QImage::Format_ARGB32)
+        dst = dst.convertToFormat(QImage::Format_ARGB32);
 
     NDIlib_video_frame_v2_t frame = {};
     frame.xres                  = dst.width();
@@ -662,8 +679,9 @@ void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
         frame.p_data               = reinterpret_cast<uint8_t*>(buf.data());
         frame.line_stride_in_bytes = dst.width() * 2;
     } else {
-        // BGRA or BGRX — identical 32-bit layout; only the FourCC (whether
-        // the alpha byte is honored) differs. dst is ARGB32 → B,G,R,A bytes.
+        // BGRA or BGRX — identical 32-bit B,G,R,A layout; only the FourCC
+        // (whether the alpha byte is honored) differs. BGRA is straight
+        // ARGB32 by now, BGRX still premultiplied (see above).
         frame.FourCC               = m_impl->ndiFourCC;
         frame.p_data               = dst.bits();
         frame.line_stride_in_bytes = dst.bytesPerLine();
@@ -693,8 +711,9 @@ void NdiService::onHeadlessFrame(const QImage& image)
     m_impl->activeBuffer ^= 1;
     QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
     dst = image;
-    if (dst.format() != QImage::Format_ARGB32) {
-        dst = dst.convertToFormat(QImage::Format_ARGB32);
+    // The renderer already sends ARGB32_Premultiplied; kept as a guard.
+    if (dst.format() != QImage::Format_ARGB32_Premultiplied) {
+        dst = dst.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     }
 
     // Blank intercept — same gate as the legacy captureFrame path. Mirror
