@@ -46,7 +46,7 @@ compositor at all.
    │      (3 × QRhiReadbackResult) │     completion fires on the next
    │                               │     beginFrame() boundary.
    └──────────────┬────────────────┘
-                  │ QImage (BGRA, canvas-native 1920×1080)
+                  │ QImage (ARGB32_Premultiplied, canvas-native 1920×1080)
                   │ — frameReady signal
    ┌──────────────▼────────────────┐
    │  NdiService                   │

@@ -160,6 +160,8 @@ struct NdiRenderer::Impl
     // bug report can include "we were running on D3D11 / Vulkan / etc."
     // without re-deriving it from Qt's logs.
     QString                   backendName;
+    // OpenGL reads textures back bottom-up; D3D11 doesn't. Set at start().
+    bool                      yUpReadback = false;
 };
 
 NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
@@ -300,6 +302,7 @@ bool NdiRenderer::start()
         return false;
     }
     m_impl->backendName = QString::fromLatin1(rhi->backendName());
+    m_impl->yUpReadback = rhi->isYUpInFramebuffer();
     qInfo().noquote() << "NdiRenderer: QRhi backend =" << m_impl->backendName;
     if (rhi->backend() != QRhi::D3D11) {
         // Today Crater is Windows-only; D3D11 is the expected QRhi backend.
@@ -439,9 +442,9 @@ void NdiRenderer::renderTick()
     if (!m_impl->running) return;
 
     // On-demand: once the render burst from the last scene change is spent,
-    // skip the entire render → readback → color-convert → encode chain. Re-send
-    // the cached last frame every Nth tick so the NDI receiver keeps the source
-    // live. This is the CPU win for static broadcasts (e.g. a dual-output
+    // skip render → readback → swizzle. Re-send the cached last frame every Nth
+    // tick so the NDI receiver keeps the source live (NdiService still converts
+    // it to the output format each time). This is the CPU win for static broadcasts (e.g. a dual-output
     // lower-third that only changes on text advance). The budget is re-armed by
     // the renderControl signals wired in the constructor; it's decremented
     // below once we commit to a real render.
@@ -547,7 +550,10 @@ void NdiRenderer::renderTick()
                 r.pixelSize.height(),
                 r.pixelSize.width() * 4,
                 QImage::Format_RGBA8888_Premultiplied);
-            const QImage frame = view.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            QImage frame = view.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            // On OpenGL the rows arrive bottom-up. Without this the frame
+            // goes out upside down. Qt's own QSGRhiLayer::toImage does the same.
+            if (m_impl->yUpReadback) frame.flip(Qt::Vertical);
 
             // Cache for the on-demand keepalive re-send. lastFrame owns its
             // pixels independently of the recycled readback slot. Harmless

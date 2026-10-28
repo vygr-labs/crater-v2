@@ -572,9 +572,9 @@ void NdiService::captureFrame()
         dst = std::move(img);
 
         // Blank intercept — operator toggled "Blank broadcast" in the
-        // TopBar. Zero the just-assigned buffer; the BGRA pixel layout
-        // becomes all-zero, which NDI sends as fully-transparent (alpha-
-        // respecting receivers) or solid black (alpha-stripping). The
+        // TopBar. Zero the just-assigned buffer: it goes out fully
+        // transparent in BGRA and solid black in BGRX (alpha forced to 255
+        // by sendResolvedFrame) and UYVY. The
         // grab itself already happened — we eat that cost — but the
         // outgoing frame is blank. We keep streaming at full cadence so
         // receivers stay locked on the source instead of timing out.

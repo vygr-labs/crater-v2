@@ -56,7 +56,8 @@ class NdiService : public QObject
     Q_PROPERTY(bool    sending      READ sending      NOTIFY sendingChanged)
     // Blank-the-broadcast flag — session-scoped, defaults false. When true,
     // captureFrame() and onHeadlessFrame() zero the outgoing pixel buffer
-    // before handing it to NDI's send, regardless of which capture pipeline
+    // before handing it to NDI's send (transparent in BGRA; BGRX and UYVY
+    // go out opaque black), regardless of which capture pipeline
     // (legacy grabToImage / headless QRhi) is active and regardless of
     // single/dual output mode. Intercepting at the send boundary makes this
     // bullet-proof: every NDI source path funnels through one of those two
