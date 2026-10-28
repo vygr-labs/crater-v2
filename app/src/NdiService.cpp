@@ -559,13 +559,10 @@ void NdiService::captureFrame()
         // we'd crash calling into the runtime.
         if (!m_impl->sending || !m_impl->sender) return;
 
+        // Premultiplied (RGBA8888_Premultiplied from the scene graph);
+        // sendResolvedFrame converts it to the output format in one pass.
         QImage img = result->image();
         if (img.isNull()) return;
-        // Premultiplied until sendResolvedFrame picks the output format.
-        // A grab normally already is, so this is usually a no-op.
-        if (img.format() != QImage::Format_ARGB32_Premultiplied) {
-            img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-        }
 
         // Toggle FIRST, then assign into the now-free slot. The other
         // slot is whatever NDI is currently consuming from the previous
@@ -637,27 +634,46 @@ static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
 
 void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
 {
-    // `dst` arrives ARGB32_Premultiplied from both capture paths. Every
-    // step below writes back into the SAME ping-pong slot so the pixels
-    // p_data points at stay alive until NDI releases them.
+    // `dst` holds premultiplied colour from either capture path: the
+    // headless renderer sends ARGB32_Premultiplied, a grab comes back
+    // RGBA8888_Premultiplied. Every step below writes back into the SAME
+    // ping-pong slot so the pixels p_data points at stay alive until NDI
+    // releases them.
     //
-    // Optional downscale. Scaling premultiplied is what filters edges
-    // correctly, and Qt's smooth scaler returns premultiplied anyway.
-    if (m_impl->targetSize.isValid()
-        && (dst.width()  != m_impl->targetSize.width()
-         || dst.height() != m_impl->targetSize.height())) {
-        dst = dst.scaled(m_impl->targetSize.width(), m_impl->targetSize.height(),
-                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    }
     // Only BGRA carries alpha, and NDI's BGRA is straight alpha, so it is
     // the one format that divides it back out. BGRX and UYVY ignore alpha
     // and take the premultiplied colour as it is, which is the frame over
     // black: an antialiased edge fades to black instead of going out at
     // full brightness.
+    const bool scale = m_impl->targetSize.isValid()
+                    && (dst.width()  != m_impl->targetSize.width()
+                     || dst.height() != m_impl->targetSize.height());
     const bool straightAlpha = !m_impl->packUyvy
                             && m_impl->ndiFourCC == NDIlib_FourCC_video_type_BGRA;
-    if (straightAlpha && dst.format() != QImage::Format_ARGB32)
-        dst = dst.convertToFormat(QImage::Format_ARGB32);
+
+    // Premultiplied B-G-R-A for scaling, the UYVY packer and BGRX. Native
+    // BGRA skips this and converts straight to ARGB32 in one pass below.
+    if ((scale || !straightAlpha) && dst.format() != QImage::Format_ARGB32_Premultiplied)
+        dst = dst.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+
+    // Optional downscale. Scaling premultiplied is what filters edges
+    // correctly, and Qt's smooth scaler returns premultiplied anyway.
+    if (scale) {
+        dst = dst.scaled(m_impl->targetSize.width(), m_impl->targetSize.height(),
+                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+
+    if (straightAlpha) {
+        if (dst.format() != QImage::Format_ARGB32)
+            dst = dst.convertToFormat(QImage::Format_ARGB32);
+    } else if (!m_impl->packUyvy) {
+        // NDI defines BGRX memory as "blue, green, red, 255". The colour is
+        // already over black; only the 4th byte has to be made opaque.
+        for (int y = 0; y < dst.height(); ++y) {
+            auto* px = reinterpret_cast<QRgb*>(dst.scanLine(y));
+            for (int x = 0; x < dst.width(); ++x) px[x] |= 0xff000000u;
+        }
+    }
 
     NDIlib_video_frame_v2_t frame = {};
     frame.xres                  = dst.width();
@@ -681,7 +697,7 @@ void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
     } else {
         // BGRA or BGRX — identical 32-bit B,G,R,A layout; only the FourCC
         // (whether the alpha byte is honored) differs. BGRA is straight
-        // ARGB32 by now, BGRX still premultiplied (see above).
+        // ARGB32 by now, BGRX premultiplied with an opaque 4th byte.
         frame.FourCC               = m_impl->ndiFourCC;
         frame.p_data               = dst.bits();
         frame.line_stride_in_bytes = dst.bytesPerLine();
@@ -710,11 +726,7 @@ void NdiService::onHeadlessFrame(const QImage& image)
     // still holds; that ref is released when we issue the new send).
     m_impl->activeBuffer ^= 1;
     QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
-    dst = image;
-    // The renderer already sends ARGB32_Premultiplied; kept as a guard.
-    if (dst.format() != QImage::Format_ARGB32_Premultiplied) {
-        dst = dst.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    }
+    dst = image;   // ARGB32_Premultiplied; sendResolvedFrame converts it
 
     // Blank intercept — same gate as the legacy captureFrame path. Mirror
     // the comment there: cost of the headless render is already paid,

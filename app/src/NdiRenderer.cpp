@@ -57,7 +57,8 @@ constexpr int kPromoteWindow   = 60;
 // re-send the cached last frame every Nth tick so the NDI receiver (vMix,
 // Studio Monitor, …) holds a live source with correct timing rather than
 // timing it out. 6 ticks @ 30 Hz ≈ 5 Hz — a re-send only (no render, no
-// readback, no color convert), so the cost is negligible.
+// readback). NdiService still converts it to the output format each time,
+// one full-frame pass for BGRA, which at 5 Hz stays cheap.
 constexpr int kKeepaliveEveryNTicks = 6;
 
 // On-demand render burst. A scene change arms this many render ticks. We must
