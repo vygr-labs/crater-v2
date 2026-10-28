@@ -57,7 +57,8 @@ constexpr int kPromoteWindow   = 60;
 // re-send the cached last frame every Nth tick so the NDI receiver (vMix,
 // Studio Monitor, …) holds a live source with correct timing rather than
 // timing it out. 6 ticks @ 30 Hz ≈ 5 Hz — a re-send only (no render, no
-// readback, no color convert), so the cost is negligible.
+// readback). NdiService still converts it to the output format each time,
+// one full-frame pass for BGRA, which at 5 Hz stays cheap.
 constexpr int kKeepaliveEveryNTicks = 6;
 
 // On-demand render burst. A scene change arms this many render ticks. We must
@@ -159,6 +160,8 @@ struct NdiRenderer::Impl
     // bug report can include "we were running on D3D11 / Vulkan / etc."
     // without re-deriving it from Qt's logs.
     QString                   backendName;
+    // OpenGL reads textures back bottom-up; D3D11 doesn't. Set at start().
+    bool                      yUpReadback = false;
 };
 
 NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
@@ -181,7 +184,10 @@ NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
     // sync / render / endFrame cycle.
     m_impl->renderControl = new QQuickRenderControl(this);
     m_impl->quickWindow   = new QQuickWindow(m_impl->renderControl);
-    m_impl->quickWindow->setColor(Qt::black);
+    // Transparent, so whatever the theme leaves empty goes out with alpha 0
+    // and a switcher can key it. Opaque black here sent every lower third
+    // as a full-frame black picture.
+    m_impl->quickWindow->setColor(Qt::transparent);
     // Logical size only — the window is headless. Setting size on a
     // window without a native handle gives the scene graph a viewport
     // size for `anchors.fill: parent` to resolve against.
@@ -296,6 +302,7 @@ bool NdiRenderer::start()
         return false;
     }
     m_impl->backendName = QString::fromLatin1(rhi->backendName());
+    m_impl->yUpReadback = rhi->isYUpInFramebuffer();
     qInfo().noquote() << "NdiRenderer: QRhi backend =" << m_impl->backendName;
     if (rhi->backend() != QRhi::D3D11) {
         // Today Crater is Windows-only; D3D11 is the expected QRhi backend.
@@ -307,9 +314,9 @@ bool NdiRenderer::start()
     }
 
     // Render-target texture. RGBA8 because it's universally supported
-    // across QRhi backends; we channel-swap to BGRA in the readback
-    // completion callback (renderTick()) — that's the format
-    // NDIlib_send_video_v2 expects via NDIlib_FourCC_video_type_BGRA.
+    // across QRhi backends; the readback completion callback (renderTick())
+    // swaps it to premultiplied B-G-R-A, the byte order NDI's 32-bit
+    // formats use.
     m_impl->renderTexture = rhi->newTexture(
         QRhiTexture::RGBA8,
         QSize(kRenderWidth, kRenderHeight),
@@ -435,9 +442,9 @@ void NdiRenderer::renderTick()
     if (!m_impl->running) return;
 
     // On-demand: once the render burst from the last scene change is spent,
-    // skip the entire render → readback → color-convert → encode chain. Re-send
-    // the cached last frame every Nth tick so the NDI receiver keeps the source
-    // live. This is the CPU win for static broadcasts (e.g. a dual-output
+    // skip render → readback → swizzle. Re-send the cached last frame every Nth
+    // tick so the NDI receiver keeps the source live (NdiService still converts
+    // it to the output format each time). This is the CPU win for static broadcasts (e.g. a dual-output
     // lower-third that only changes on text advance). The budget is re-armed by
     // the renderControl signals wired in the constructor; it's decremented
     // below once we commit to a real render.
@@ -527,26 +534,33 @@ void NdiRenderer::renderTick()
             if (r.data.isEmpty()) return;
 
             // The texture was rendered as RGBA8, so the bytes are R-G-B-A
-            // in order. Wrap (don't copy) into an RGBA8888 QImage, then
-            // convertToFormat to ARGB32 — on little-endian (Windows), that
-            // produces bytes in B-G-R-A order, which is exactly the
-            // NDIlib_FourCC_video_type_BGRA layout. convertToFormat()
-            // returns a deep copy so the new QImage outlives `r.data`
-            // even when this slot gets recycled on the next tick.
+            // in order, and the scene graph blends premultiplied, so the
+            // colour is premultiplied. Wrap (don't copy) as
+            // RGBA8888_Premultiplied and swap to ARGB32_Premultiplied: on
+            // little-endian that is B-G-R-A bytes, still premultiplied.
+            // NdiService decides the rest per pixel format after any
+            // scaling: BGRA divides the alpha back out (NDI's BGRA is
+            // straight), while BGRX and UYVY use these bytes as they are,
+            // which is the frame composited over black. convertToFormat()
+            // returns a deep copy, so the image outlives `r.data` when this
+            // slot is recycled on the next tick.
             const QImage view(
                 reinterpret_cast<const uchar*>(r.data.constData()),
                 r.pixelSize.width(),
                 r.pixelSize.height(),
                 r.pixelSize.width() * 4,
-                QImage::Format_RGBA8888);
-            const QImage bgra = view.convertToFormat(QImage::Format_ARGB32);
+                QImage::Format_RGBA8888_Premultiplied);
+            QImage frame = view.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            // On OpenGL the rows arrive bottom-up. Without this the frame
+            // goes out upside down. Qt's own QSGRhiLayer::toImage does the same.
+            if (m_impl->yUpReadback) frame.flip(Qt::Vertical);
 
-            // Cache for the on-demand keepalive re-send. convertToFormat
-            // returned a deep copy, so lastFrame owns its pixels independently
-            // of the recycled readback slot. Harmless (one ~8 MB frame) when
-            // on-demand is off — it's simply never re-sent.
-            m_impl->lastFrame = bgra;
-            emit frameReady(bgra);
+            // Cache for the on-demand keepalive re-send. lastFrame owns its
+            // pixels independently of the recycled readback slot. Harmless
+            // (one ~8 MB frame) when on-demand is off — it's simply never
+            // re-sent.
+            m_impl->lastFrame = frame;
+            emit frameReady(frame);
         };
 
         batch->readBackTexture(readDesc, result);

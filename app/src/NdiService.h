@@ -32,7 +32,8 @@ class NdiRenderer;
 // `Settings/useHeadlessNdi` (default true):
 //   • Headless (preferred): consume frames from NdiRenderer::frameReady,
 //     which renders ProjectionScene into a QRhiTexture via
-//     QQuickRenderControl and async-reads back BGRA pixels. No OS window
+//     QQuickRenderControl and async-reads back premultiplied B-G-R-A
+//     pixels (sendResolvedFrame makes them straight for BGRA). No OS window
 //     dependency; runs at 60 Hz adaptive (drops to 30 Hz under sustained
 //     paint-cost pressure). See qt/docs/render-pipeline-decouple.md.
 //   • Legacy (fallback): `setSourceWindow(QQuickWindow*)` registers a
@@ -55,7 +56,8 @@ class NdiService : public QObject
     Q_PROPERTY(bool    sending      READ sending      NOTIFY sendingChanged)
     // Blank-the-broadcast flag — session-scoped, defaults false. When true,
     // captureFrame() and onHeadlessFrame() zero the outgoing pixel buffer
-    // before handing it to NDI's send, regardless of which capture pipeline
+    // before handing it to NDI's send (transparent in BGRA; BGRX and UYVY
+    // go out opaque black), regardless of which capture pipeline
     // (legacy grabToImage / headless QRhi) is active and regardless of
     // single/dual output mode. Intercepting at the send boundary makes this
     // bullet-proof: every NDI source path funnels through one of those two
@@ -138,10 +140,13 @@ private:
     // buffer stays valid until next send" contract is honored across
     // both paths.
     void onHeadlessFrame(const QImage& image);
-    // Shared tail of both capture paths: applies the configured resolution
-    // downscale + pixel format (BGRA/BGRX direct, or a UYVY pack) to the
-    // just-filled ping-pong buffer `dst` and issues the async/sync send.
-    // rateN/rateD carry each path's advertised frame rate.
+    // Shared tail of both capture paths. Takes the just-filled ping-pong
+    // buffer `dst` holding premultiplied colour, in any 32-bit premultiplied
+    // format, applies the configured downscale (done premultiplied), then
+    // the pixel format: BGRA unpremultiplies to straight alpha, BGRX keeps
+    // the premultiplied colour (the frame over black) with an opaque 4th
+    // byte, UYVY packs the premultiplied colour. Then issues the
+    // async/sync send. rateN/rateD carry each path's advertised frame rate.
     void sendResolvedFrame(QImage& dst, int rateN, int rateD);
     // Dedicated worker thread body. Sits inside the NDI runtime's
     // blocking get_tally call and posts state changes back to the
