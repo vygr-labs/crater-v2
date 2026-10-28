@@ -181,7 +181,10 @@ NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
     // sync / render / endFrame cycle.
     m_impl->renderControl = new QQuickRenderControl(this);
     m_impl->quickWindow   = new QQuickWindow(m_impl->renderControl);
-    m_impl->quickWindow->setColor(Qt::black);
+    // Transparent, so whatever the theme leaves empty goes out with alpha 0
+    // and a switcher can key it. Opaque black here sent every lower third
+    // as a full-frame black picture.
+    m_impl->quickWindow->setColor(Qt::transparent);
     // Logical size only — the window is headless. Setting size on a
     // window without a native handle gives the scene graph a viewport
     // size for `anchors.fill: parent` to resolve against.
@@ -533,12 +536,19 @@ void NdiRenderer::renderTick()
             // NDIlib_FourCC_video_type_BGRA layout. convertToFormat()
             // returns a deep copy so the new QImage outlives `r.data`
             // even when this slot gets recycled on the next tick.
+            //
+            // The scene graph blends premultiplied, so the texture holds
+            // premultiplied colour. NDI's BGRA is straight alpha, and
+            // converting from the premultiplied format is what divides it
+            // back out. Read as straight, a 94% panel or an antialiased
+            // edge would key darker than it is. The legacy grabToImage path
+            // gets the same conversion in NdiService.
             const QImage view(
                 reinterpret_cast<const uchar*>(r.data.constData()),
                 r.pixelSize.width(),
                 r.pixelSize.height(),
                 r.pixelSize.width() * 4,
-                QImage::Format_RGBA8888);
+                QImage::Format_RGBA8888_Premultiplied);
             const QImage bgra = view.convertToFormat(QImage::Format_ARGB32);
 
             // Cache for the on-demand keepalive re-send. convertToFormat
