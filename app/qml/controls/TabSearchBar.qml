@@ -89,6 +89,15 @@ Item {
     // (verse counts). Invalidated on translation change.
     property var _booksCache:      ({})
     property var _verseCountCache: ({})
+    // A Bible replaced or switched back keeps its code, so these outlive it
+    // unless told.
+    Connections {
+        target: BibleService
+        function onTranslationContentChanged(code) {
+            root._booksCache      = ({})
+            root._verseCountCache = ({})
+        }
+    }
 
     function _booksFor(code) {
         if (!code) return []

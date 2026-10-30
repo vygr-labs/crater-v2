@@ -17,9 +17,25 @@
 #include <QTimer>
 
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <optional>
 #include <thread>
 
 namespace crater {
+
+// One frame handed from the GUI thread to the send thread. `image` holds
+// premultiplied colour in any 32-bit premultiplied format and may share its
+// pixels with the renderer's keepalive copy, so the send thread only reads it.
+struct NdiService::SendJob
+{
+    QImage image;
+    bool   bottomUp  = false;  // rows arrive bottom-up (OpenGL readback)
+    bool   overBlack = true;   // BGRX/UYVY take the colour over black
+    bool   blank     = false;  // send an empty frame instead
+    int    rateN     = 60000;
+    int    rateD     = 1001;
+};
 
 struct NdiService::Impl
 {
@@ -41,7 +57,7 @@ struct NdiService::Impl
     // Q_PROPERTY-backing state.
     bool    available  = false;
     bool    sending    = false;
-    bool    blank      = false;   // when true, captureFrame / onHeadlessFrame zero the outgoing buffer
+    bool    blank      = false;   // when true, the send thread sends an empty frame instead
     QString streamName = QStringLiteral("Crater Live");
     QString diagnostic;
     bool    onProgram  = false;
@@ -74,7 +90,7 @@ struct NdiService::Impl
     // useHeadlessNdi read). fourCC is the direct 32-bit format for the
     // BGRA/BGRX paths; packUyvy switches to the 4:2:2 packer, which writes
     // into uyvyBuffers[activeBuffer] — a second ping-pong pair so the buffer
-    // NDI's async send still references stays alive (dst.bits() is not the
+    // NDI's async send still references stays alive (the frame image is not the
     // UYVY data). targetSize, when valid, downscales each frame before send.
     NDIlib_FourCC_video_type_e ndiFourCC = NDIlib_FourCC_video_type_BGRA;
     bool       packUyvy  = false;
@@ -109,6 +125,19 @@ struct NdiService::Impl
     // fn_send_get_tally(sender) — must exit before sender is freed).
     std::thread       tallyThread;
     std::atomic<bool> tallyStop{false};
+
+    // Send thread. Format conversion, scaling, packing and the NDI send all
+    // run here, off the GUI thread: they cost several ms per 1080p frame, and
+    // with clock_video set the send itself can block to pace the stream.
+    // `pendingJob` is a one-slot mailbox; a frame that arrives while the
+    // previous one is still being converted replaces it, so a slow CPU drops
+    // NDI frames instead of stalling the operator UI. frameBuffers,
+    // uyvyBuffers and activeBuffer belong to this thread while it runs.
+    std::thread             sendThread;
+    std::mutex              sendMutex;
+    std::condition_variable sendCv;
+    std::optional<SendJob>  pendingJob;
+    bool                    sendStop = false;
 };
 
 NdiService::NdiService(QObject* parent)
@@ -312,8 +341,8 @@ bool    NdiService::onPreview() const   { return m_impl->onPreview; }
 void NdiService::setBlank(bool b)
 {
     // Idempotent — no signal storm if the operator rapid-clicks the toggle.
-    // The pixel-zeroing in captureFrame / onHeadlessFrame is gated on this
-    // flag at frame-build time, so flipping it takes effect on the very
+    // captureFrame / onHeadlessFrame stamp this flag on each queued frame
+    // and the send thread empties it, so flipping it takes effect on the very
     // next outgoing frame (within ~16-33 ms depending on path).
     if (m_impl->blank == b) return;
     m_impl->blank = b;
@@ -424,13 +453,24 @@ bool NdiService::start()
         m_impl->targetSize = (res == QStringLiteral("720p")) ? QSize(1280, 720) : QSize();
     }
 
+    // The send thread reads the sender and the format snapshot above, so it
+    // starts only once they are final. stop() joins it before either changes.
+    {
+        std::lock_guard<std::mutex> lock(m_impl->sendMutex);
+        m_impl->sendStop = false;
+        m_impl->pendingJob.reset();
+    }
+    m_impl->sendThread = std::thread([this]() { sendLoop(); });
+
     if (useHeadless) {
         // Subscribe to the renderer's frame stream. The connection handle
         // lets stop() disconnect cleanly without affecting other QObject
         // signal/slot pairs on the same emitter.
         m_impl->frameConnection = connect(
             m_impl->renderer, &NdiRenderer::frameReady,
-            this, [this](const QImage& img) { onHeadlessFrame(img); });
+            this, [this](const QImage& img, bool bottomUp) {
+                onHeadlessFrame(img, bottomUp);
+            });
     } else {
         m_impl->captureTimer.start();
     }
@@ -486,6 +526,18 @@ void NdiService::stop()
     if (m_impl->onPreview) {
         m_impl->onPreview = false;
         emit onPreviewChanged();
+    }
+
+    // Join the send thread BEFORE destroying the sender, for the same reason.
+    // A frame still waiting in the mailbox is dropped.
+    {
+        std::lock_guard<std::mutex> lock(m_impl->sendMutex);
+        m_impl->sendStop = true;
+        m_impl->pendingJob.reset();
+    }
+    m_impl->sendCv.notify_one();
+    if (m_impl->sendThread.joinable()) {
+        m_impl->sendThread.join();
     }
 
     if (m_impl->sender) {
@@ -559,40 +611,47 @@ void NdiService::captureFrame()
         // we'd crash calling into the runtime.
         if (!m_impl->sending || !m_impl->sender) return;
 
-        // Premultiplied (RGBA8888_Premultiplied from the scene graph);
-        // sendResolvedFrame converts it to the output format in one pass.
+        // Premultiplied (RGBA8888_Premultiplied from the scene graph). The
+        // send thread converts and sends it.
         QImage img = result->image();
         if (img.isNull()) return;
 
-        // Toggle FIRST, then assign into the now-free slot. The other
-        // slot is whatever NDI is currently consuming from the previous
-        // send — must not touch.
-        m_impl->activeBuffer ^= 1;
-        QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
-        dst = std::move(img);
-
         // Blank intercept — operator toggled "Blank broadcast" in the
-        // TopBar. Zero the just-assigned buffer: it goes out fully
-        // transparent in BGRA and solid black in BGRX (alpha forced to 255
-        // by sendResolvedFrame) and UYVY. The
-        // grab itself already happened — we eat that cost — but the
-        // outgoing frame is blank. We keep streaming at full cadence so
+        // TopBar. The grab itself already happened — we eat that cost — but
+        // the send thread swaps in an empty frame: fully transparent in BGRA,
+        // solid black in BGRX and UYVY. We keep streaming at full cadence so
         // receivers stay locked on the source instead of timing out.
-        if (m_impl->blank) dst.fill(Qt::transparent);
-
-        // Apply the configured resolution + pixel format and send. 30000/1001
-        // (29.97) is the legacy grab path's advertised rate.
-        sendResolvedFrame(dst, 30000, 1001);
+        //
+        // overBlack=false: this path has always sent BGRX and UYVY the
+        // straight colour (alpha dropped), so a 50% white fill goes out
+        // white. 30000/1001 (29.97) is its advertised rate.
+        queueFrame(std::move(img), /*bottomUp*/ false, /*overBlack*/ false,
+                   30000, 1001);
     }, Qt::SingleShotConnection);
 }
 
-// Pack a 32-bit (little-endian: byte order B,G,R,A) image into UYVY 4:2:2.
-// The alpha byte is ignored. Fed premultiplied, so what goes out is the
-// frame composited over black.
+// The two byte orders the send thread reads: RGBA8888 (R,G,B,A in memory,
+// the renderer's readback) and ARGB32 (B,G,R,A on little-endian). Anything
+// else is converted to ARGB32_Premultiplied first.
+static bool isRgbaOrder(const QImage& img)
+{
+    return img.format() == QImage::Format_RGBA8888_Premultiplied
+        || img.format() == QImage::Format_RGBA8888;
+}
+
+// Source row for output row y, so bottom-up rows read out top-down.
+static const uchar* sourceRow(const QImage& img, int y, bool bottomUp)
+{
+    return img.constScanLine(bottomUp ? img.height() - 1 - y : y);
+}
+
+// Pack a 32-bit image in either byte order into UYVY 4:2:2, flipping rows if
+// bottomUp. The alpha byte is ignored, so premultiplied input goes out as the
+// frame composited over black and straight input as the colour alone.
 // Two horizontal pixels share one U/V pair (averaged); each keeps its own
 // luma. BT.709 limited-range coefficients (video range 16–235 luma), scaled
 // by 256. UYVY byte order per pixel-pair: U, Y0, V, Y1.
-static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
+static void packToUyvy(const QImage& img, bool bottomUp, QByteArray& out)
 {
     const int w = img.width();
     const int h = img.height();
@@ -600,22 +659,24 @@ static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
     const int stride = w * 2;                 // 2 bytes per pixel
     out.resize(stride * h);                   // no-op once capacity is reached
     auto* dstBase = reinterpret_cast<uint8_t*>(out.data());
+    const int rOff = isRgbaOrder(img) ? 0 : 2;
+    const int bOff = 2 - rOff;
 
     auto clamp8 = [](int v) -> uint8_t {
         return uint8_t(v < 0 ? 0 : (v > 255 ? 255 : v));
     };
 
     for (int y = 0; y < h; ++y) {
-        const uchar* src = img.constScanLine(y);
+        const uchar* src = sourceRow(img, y, bottomUp);
         uint8_t* d = dstBase + y * stride;
         for (int x = 0; x < w; x += 2) {
-            const int b0 = src[4 * x + 0];
+            const int r0 = src[4 * x + rOff];
             const int g0 = src[4 * x + 1];
-            const int r0 = src[4 * x + 2];
+            const int b0 = src[4 * x + bOff];
             const int x1 = (x + 1 < w) ? (x + 1) : x;   // clamp odd last column
-            const int b1 = src[4 * x1 + 0];
+            const int r1 = src[4 * x1 + rOff];
             const int g1 = src[4 * x1 + 1];
-            const int r1 = src[4 * x1 + 2];
+            const int b1 = src[4 * x1 + bOff];
 
             const int y0 = clamp8((( 47 * r0 + 157 * g0 + 16 * b0) >> 8) + 16);
             const int y1 = clamp8((( 47 * r1 + 157 * g1 + 16 * b1) >> 8) + 16);
@@ -632,56 +693,128 @@ static void packArgb32ToUyvy(const QImage& img, QByteArray& out)
     }
 }
 
-void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
+// Copy a 32-bit image in either byte order into BGRX memory, which NDI
+// defines as "blue, green, red, 255", flipping rows if bottomUp. One pass.
+// Writes into `out`, reusing its pixels when it is an unshared RGB32 image of
+// the right size (the ping-pong slot NDI has released), so a steady stream
+// doesn't allocate and page in a fresh 8 MB buffer every frame.
+static void toOpaqueBgrx(const QImage& img, bool bottomUp, QImage& out)
 {
-    // `dst` holds premultiplied colour from either capture path: the
-    // headless renderer sends ARGB32_Premultiplied, a grab comes back
-    // RGBA8888_Premultiplied. Every step below writes back into the SAME
-    // ping-pong slot so the pixels p_data points at stay alive until NDI
-    // releases them.
-    //
-    // Only BGRA carries alpha, and NDI's BGRA is straight alpha, so it is
-    // the one format that divides it back out. BGRX and UYVY ignore alpha
-    // and take the premultiplied colour as it is, which is the frame over
-    // black: an antialiased edge fades to black instead of going out at
-    // full brightness.
-    const bool scale = m_impl->targetSize.isValid()
-                    && (dst.width()  != m_impl->targetSize.width()
-                     || dst.height() != m_impl->targetSize.height());
-    const bool straightAlpha = !m_impl->packUyvy
-                            && m_impl->ndiFourCC == NDIlib_FourCC_video_type_BGRA;
-
-    // Premultiplied B-G-R-A for scaling, the UYVY packer and BGRX. Native
-    // BGRA skips this and converts straight to ARGB32 in one pass below.
-    if ((scale || !straightAlpha) && dst.format() != QImage::Format_ARGB32_Premultiplied)
-        dst = dst.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-
-    // Optional downscale. Scaling premultiplied is what filters edges
-    // correctly, and Qt's smooth scaler returns premultiplied anyway.
-    if (scale) {
-        dst = dst.scaled(m_impl->targetSize.width(), m_impl->targetSize.height(),
-                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    }
-
-    if (straightAlpha) {
-        if (dst.format() != QImage::Format_ARGB32)
-            dst = dst.convertToFormat(QImage::Format_ARGB32);
-    } else if (!m_impl->packUyvy) {
-        // NDI defines BGRX memory as "blue, green, red, 255". The colour is
-        // already over black; only the 4th byte has to be made opaque.
-        for (int y = 0; y < dst.height(); ++y) {
-            auto* px = reinterpret_cast<QRgb*>(dst.scanLine(y));
-            for (int x = 0; x < dst.width(); ++x) px[x] |= 0xff000000u;
+    if (out.size() != img.size() || out.format() != QImage::Format_RGB32 || !out.isDetached())
+        out = QImage(img.size(), QImage::Format_RGB32);   // 0xffRRGGBB = B,G,R,255
+    if (out.isNull()) return;
+    const bool rgba = isRgbaOrder(img);
+    const int w = out.width();
+    for (int y = 0; y < out.height(); ++y) {
+        const auto* s = reinterpret_cast<const quint32*>(sourceRow(img, y, bottomUp));
+        auto* d = reinterpret_cast<quint32*>(out.scanLine(y));
+        if (rgba) {
+            // R,G,B,A bytes read little-endian as 0xAABBGGRR: swap R and B.
+            for (int x = 0; x < w; ++x) {
+                const quint32 v = s[x];
+                d[x] = 0xff000000u | ((v & 0xffu) << 16) | (v & 0xff00u) | ((v >> 16) & 0xffu);
+            }
+        } else {
+            for (int x = 0; x < w; ++x) d[x] = s[x] | 0xff000000u;
         }
     }
+}
+
+void NdiService::queueFrame(QImage image, bool bottomUp, bool overBlack,
+                            int rateN, int rateD)
+{
+    SendJob job;
+    job.image     = std::move(image);
+    job.bottomUp  = bottomUp;
+    job.overBlack = overBlack;
+    job.blank     = m_impl->blank;
+    job.rateN     = rateN;
+    job.rateD     = rateD;
+    {
+        std::lock_guard<std::mutex> lock(m_impl->sendMutex);
+        m_impl->pendingJob = std::move(job);   // replaces a frame not yet taken
+    }
+    m_impl->sendCv.notify_one();
+}
+
+void NdiService::sendLoop()
+{
+    for (;;) {
+        SendJob job;
+        {
+            std::unique_lock<std::mutex> lock(m_impl->sendMutex);
+            m_impl->sendCv.wait(lock, [this]() {
+                return m_impl->sendStop || m_impl->pendingJob.has_value();
+            });
+            if (m_impl->sendStop) return;
+            job = std::move(*m_impl->pendingJob);
+            m_impl->pendingJob.reset();
+        }
+        sendResolvedFrame(job);
+    }
+}
+
+void NdiService::sendResolvedFrame(const SendJob& job)
+{
+    // Runs on the send thread. `job.image` holds premultiplied colour and
+    // may share pixels with the renderer's keepalive copy, so nothing here
+    // writes to it: every step produces a new image.
+    //
+    // Only BGRA carries alpha, and NDI's BGRA is straight alpha, so it
+    // divides the alpha back out. BGRX and UYVY ignore alpha. For the
+    // headless renderer (overBlack) they take the premultiplied colour,
+    // which is the frame over black, the same pixels that renderer sent when
+    // it drew on opaque black. The legacy grab (not overBlack) sends them
+    // the straight colour, as it always has.
+    const QSize outSize = m_impl->targetSize.isValid() ? m_impl->targetSize
+                                                       : job.image.size();
+    const bool bgra = !m_impl->packUyvy
+                   && m_impl->ndiFourCC == NDIlib_FourCC_video_type_BGRA;
+    bool bottomUp = job.bottomUp;
+
+    QImage img = job.image;
+    if (job.blank || img.isNull()) {
+        // Zeroed premultiplied pixels: transparent in BGRA, and black once
+        // BGRX/UYVY drop the alpha.
+        img = QImage(outSize, QImage::Format_ARGB32_Premultiplied);
+        img.fill(0);
+        bottomUp = false;
+    } else if (img.size() != outSize) {
+        // Scaling premultiplied is what filters edges correctly, and Qt's
+        // smooth scaler returns premultiplied anyway. The converted copy is
+        // ours, so flip it in place first and the steps below see top-down
+        // rows.
+        img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        if (bottomUp) img.flip(Qt::Vertical);
+        bottomUp = false;
+        img = img.scaled(outSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+    if (img.isNull()) return;   // allocation failed; skip this frame
+
+    if (bgra || !job.overBlack) {
+        // Straight colour: BGRA always, BGRX/UYVY on the legacy path. One
+        // pass from either premultiplied byte order.
+        img = img.convertToFormat(QImage::Format_ARGB32);
+        if (bottomUp) img.flip(Qt::Vertical);   // fresh copy, flips in place
+        bottomUp = false;
+    } else if (!isRgbaOrder(img) && img.format() != QImage::Format_ARGB32_Premultiplied) {
+        img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+    if (img.isNull()) return;
+
+    // Fill the other ping-pong slot so we never overwrite the buffer NDI is
+    // still reading from (the previous send's). NDI releases that one when
+    // we issue this send. activeBuffer only moves once a send is certain, or
+    // a skipped frame would point the next one at the slot NDI still holds.
+    const int slot = m_impl->activeBuffer ^ 1;
 
     NDIlib_video_frame_v2_t frame = {};
-    frame.xres                  = dst.width();
-    frame.yres                  = dst.height();
-    frame.frame_rate_N          = rateN;
-    frame.frame_rate_D          = rateD;
-    frame.picture_aspect_ratio  = dst.height() > 0
-        ? float(dst.width()) / float(dst.height())
+    frame.xres                  = img.width();
+    frame.yres                  = img.height();
+    frame.frame_rate_N          = job.rateN;
+    frame.frame_rate_D          = job.rateD;
+    frame.picture_aspect_ratio  = img.height() > 0
+        ? float(img.width()) / float(img.height())
         : 16.0f / 9.0f;
     frame.frame_format_type     = NDIlib_frame_format_type_progressive;
     frame.timecode              = 0;       // 0 = "synthesise on receive"
@@ -689,19 +822,25 @@ void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
     frame.timestamp             = 0;
 
     if (m_impl->packUyvy) {
-        QByteArray& buf = m_impl->uyvyBuffers[m_impl->activeBuffer];
-        packArgb32ToUyvy(dst, buf);
+        QByteArray& buf = m_impl->uyvyBuffers[slot];
+        packToUyvy(img, bottomUp, buf);
         frame.FourCC               = NDIlib_FourCC_video_type_UYVY;
         frame.p_data               = reinterpret_cast<uint8_t*>(buf.data());
-        frame.line_stride_in_bytes = dst.width() * 2;
+        frame.line_stride_in_bytes = img.width() * 2;
     } else {
-        // BGRA or BGRX — identical 32-bit B,G,R,A layout; only the FourCC
-        // (whether the alpha byte is honored) differs. BGRA is straight
-        // ARGB32 by now, BGRX premultiplied with an opaque 4th byte.
+        // BGRA is straight ARGB32 by now. BGRX gets its colour (over black
+        // on the headless path, straight on the legacy one) with an opaque
+        // 4th byte. Same B,G,R,A memory layout; only the FourCC differs.
+        QImage& dst = m_impl->frameBuffers[slot];
+        if (bgra) dst = img;
+        else      toOpaqueBgrx(img, bottomUp, dst);
+        if (dst.isNull()) return;
         frame.FourCC               = m_impl->ndiFourCC;
-        frame.p_data               = dst.bits();
+        frame.p_data               = const_cast<uint8_t*>(dst.constBits());
         frame.line_stride_in_bytes = dst.bytesPerLine();
     }
+
+    m_impl->activeBuffer = slot;
 
     // Prefer async send when the runtime exposes it (returns after queueing);
     // fall back to sync on older SDKs.
@@ -712,7 +851,7 @@ void NdiService::sendResolvedFrame(QImage& dst, int rateN, int rateD)
     }
 }
 
-void NdiService::onHeadlessFrame(const QImage& image)
+void NdiService::onHeadlessFrame(const QImage& image, bool bottomUp)
 {
     // Recheck guards — flag flipped or stop() ran between the renderer's
     // emit and our slot invocation. The connection itself is disconnected
@@ -720,25 +859,11 @@ void NdiService::onHeadlessFrame(const QImage& image)
     if (!m_impl->sending || !m_impl->sender) return;
     if (image.isNull()) return;
 
-    // Toggle the ping-pong index FIRST so we never overwrite the buffer
-    // NDI is currently sending from (whatever was in the previous
-    // activeBuffer slot is what NDI's previous send_video_async_v2 call
-    // still holds; that ref is released when we issue the new send).
-    m_impl->activeBuffer ^= 1;
-    QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
-    dst = image;   // ARGB32_Premultiplied; sendResolvedFrame converts it
-
-    // Blank intercept — same gate as the legacy captureFrame path. Mirror
-    // the comment there: cost of the headless render is already paid,
-    // but the outgoing pixels go transparent so the broadcast goes dark
-    // without breaking the stream.
-    if (m_impl->blank) dst.fill(Qt::transparent);
-
-    // Apply the configured resolution + pixel format and send. 60000/1001
-    // (≈59.94) is the headless renderer's advertised rate — see below on why
-    // advertising 60 is fine even when adaptive demotion drops delivery to 30.
-    // Receivers handle the gap because clock_video was set true at create.
-    sendResolvedFrame(dst, 60000, 1001);
+    // Blank is applied on the send thread, same as the legacy path.
+    // 60000/1001 (≈59.94) is the headless renderer's advertised rate.
+    // Advertising 60 is fine even when adaptive demotion drops delivery to
+    // 30; receivers handle the gap because clock_video was set true at create.
+    queueFrame(image, bottomUp, /*overBlack*/ true, 60000, 1001);
 }
 
 void NdiService::tallyLoop()

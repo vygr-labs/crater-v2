@@ -142,7 +142,9 @@ Prefetch prefetchAll()
         // Own connection: connections never cross threads.
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             u"BibleService prefetch");
-        db::Statement codes  = conn.prepare(u"SELECT code FROM translations ORDER BY sort_order, code");
+        // An old copy an import replaced is only read if someone opens it.
+        db::Statement codes  = conn.prepare(u"SELECT code FROM translations "
+                                            u"WHERE replaced_from IS NULL ORDER BY sort_order, code");
         db::Statement books  = conn.prepare(booksSql());
         db::Statement verses = conn.prepare(allVersesSql());
         while (codes.step()) {
@@ -194,6 +196,8 @@ struct BibleService::Impl
     QHash<QString, QList<Book>>  books;
     QStringList                  recent;   // most recently used first
     bool                         preloadAll = false;
+    // Uppercased codes libraryChanged() saw while a prefetch was running.
+    QSet<QString>                changedDuringPrefetch;
     QFutureWatcher<Prefetch>     prefetch;
 
     // Operators flip between two or three translations in a service, so
@@ -215,7 +219,7 @@ struct BibleService::Impl
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
-            "SELECT code, name, year, description, source "
+            "SELECT code, name, year, description, source, COALESCE(replaced_from, '') "
             "FROM translations "
             "ORDER BY sort_order, code")))
         , selectBooks(conn.prepare(booksSql()))
@@ -233,7 +237,10 @@ struct BibleService::Impl
             "JOIN verses       v ON v.id = verses_fts.rowid "
             "JOIN books        b ON b.id = v.book_id "
             "JOIN translations t ON t.id = v.translation_id "
-            "WHERE verses_fts MATCH ? "
+            // An old copy an import replaced would double every hit. If
+            // nothing holds its code any more, it's the only copy left.
+            "WHERE verses_fts MATCH ? AND (t.replaced_from IS NULL OR NOT EXISTS ("
+            "    SELECT 1 FROM translations c WHERE upper(c.code) = upper(t.replaced_from))) "
             "ORDER BY score ASC "
             "LIMIT 100")))
         , searchScoped(conn.prepare(QStringLiteral(
@@ -263,6 +270,14 @@ BibleService::BibleService(QObject* parent)
     connect(&m_impl->prefetch, &QFutureWatcher<Prefetch>::finished, this, [this] {
         if (!m_impl->preloadAll) return;
         Prefetch p = m_impl->prefetch.result();
+        // What changed while the worker read it may be the old contents: a
+        // replace keeps the code. It loads again when it's next read.
+        const auto changed = [this](const auto& it) {
+            return m_impl->changedDuringPrefetch.contains(it.key().toUpper());
+        };
+        p.verses.removeIf(changed);
+        p.books.removeIf(changed);
+        m_impl->changedDuringPrefetch.clear();
         // A translation removed while the worker read it stays gone.
         // (An unreadable library lists nothing; keep the preload then.)
         QSet<QString> installed;
@@ -304,6 +319,7 @@ BibleService::~BibleService() = default;
 void BibleService::libraryChanged(const QString& code)
 {
     if (m_impl) {
+        if (m_impl->prefetch.isRunning()) m_impl->changedDuringPrefetch.insert(code.toUpper());
         // Callers aren't consistent about a code's case ("kjv" from the
         // library group), so every spelling goes.
         const auto same = [&code](const QString& key) { return key.compare(code, Qt::CaseInsensitive) == 0; };
@@ -312,6 +328,7 @@ void BibleService::libraryChanged(const QString& code)
         m_impl->books.removeIf([&](const auto& it) { return same(it.key()); });
         m_impl->recent.removeIf(same);
     }
+    emit translationContentChanged(code);
     ++m_translationsRevision;
     emit translationsChanged();
 }
@@ -330,6 +347,7 @@ QList<Translation> BibleService::libraryTranslations()
             t.year        = stmt.columnInt(2);
             t.description = stmt.columnText(3);
             t.source      = stmt.columnText(4);
+            t.replacedFrom = stmt.columnText(5);
             out.append(std::move(t));
         }
         stmt.reset();   // no read cursor left open
@@ -378,8 +396,11 @@ QVariantList BibleService::allTranslations()
             { QStringLiteral("name"),        t.name },
             { QStringLiteral("description"), t.description },
             { QStringLiteral("hidden"),      m_hidden.contains(t.code.toUpper()) },
-            // Added from a file, so it can be removed (BibleImporter).
-            { QStringLiteral("removable"),   t.source == u"file" },
+            // Added from a file, or an old copy an import replaced, so it
+            // can be removed (BibleImporter).
+            { QStringLiteral("removable"),   t.source == u"file" || !t.replacedFrom.isEmpty() },
+            { QStringLiteral("source"),      t.source },
+            { QStringLiteral("replacedFrom"), t.replacedFrom },
         });
     }
     return out;

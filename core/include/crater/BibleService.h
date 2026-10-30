@@ -143,6 +143,10 @@ public:
 
 signals:
     void translationsChanged();
+    // What `code` holds changed: it was added, removed, replaced or switched
+    // back. For a reader that keeps a code's verses or books, which the code
+    // string alone can't tell it. Before translationsChanged.
+    void translationContentChanged(const QString& code);
 
 private:
     // Installed translations in the library's own order (sort_order, code).

@@ -71,17 +71,23 @@ signals:
     void framerateChanged();
 
     // Emitted on the GUI thread after each successful async readback, and
-    // again for the on-demand keepalive. The QImage is
-    // Format_ARGB32_Premultiplied (B-G-R-A bytes on little-endian, colour
-    // premultiplied by alpha) and owns its pixels; the renderer keeps a
-    // shared copy for the keepalive, so consumers that write to it detach.
-    // Straight alpha for NDI's BGRA is the consumer's job (NdiService).
-    void frameReady(const QImage& image);
+    // again for the on-demand keepalive. The QImage is the raw readback,
+    // wrapped without a copy: Format_RGBA8888_Premultiplied (R-G-B-A bytes,
+    // colour premultiplied by alpha), read-only, and shared with the
+    // renderer's keepalive copy, so consumers that write to it detach.
+    // `bottomUp` is true when the rows are stored bottom-up (OpenGL). The
+    // byte swap, flip and straight alpha for NDI's BGRA are the consumer's
+    // job (NdiService, on its send thread).
+    void frameReady(const QImage& image, bool bottomUp);
 
 private slots:
     void renderTick();
 
 private:
+    // Adds one tick's cost to the adaptive scheduler and re-evaluates the
+    // framerate (60 <-> 30 Hz).
+    void recordTickCost(qint64 elapsedMs);
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

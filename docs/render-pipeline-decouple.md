@@ -46,12 +46,16 @@ compositor at all.
    │      (3 × QRhiReadbackResult) │     completion fires on the next
    │                               │     beginFrame() boundary.
    └──────────────┬────────────────┘
-                  │ QImage (ARGB32_Premultiplied, canvas-native 1920×1080)
-                  │ — frameReady signal
+                  │ QImage (raw RGBA8888_Premultiplied readback, no copy,
+                  │ canvas-native 1920×1080) — frameReady signal
    ┌──────────────▼────────────────┐
    │  NdiService                   │
-   │   onHeadlessFrame()           │   ping-pong frame buffer; hands
-   │   → fn_send_video_async_v2    │     dst.bits() to NDI SDK.
+   │   onHeadlessFrame()           │   GUI thread: queues the frame in a
+   │   → queueFrame()              │     one-slot mailbox (latest wins).
+   │   send thread:                │
+   │   sendResolvedFrame()         │   swizzle / flip / scale / straight
+   │   → fn_send_video_async_v2    │     alpha / UYVY pack, ping-pong
+   │                               │     buffer handed to the NDI SDK.
    └──────────────┬────────────────┘
                   │
               NDI network
@@ -100,7 +104,7 @@ oscillate the cadence.
 
 | File | Purpose |
 |------|---------|
-| `qt/app/src/NdiRenderer.h` / `.cpp` | The headless renderer itself. Public API: `start()`, `stop()`, `frameReady(QImage)` signal, `available` / `framerate` Q_PROPERTYs. |
+| `qt/app/src/NdiRenderer.h` / `.cpp` | The headless renderer itself. Public API: `start()`, `stop()`, `frameReady(QImage, bool bottomUp)` signal, `available` / `framerate` Q_PROPERTYs. |
 | `qt/docs/render-pipeline-decouple.md` | This document. |
 
 ### Modified
@@ -109,7 +113,7 @@ oscillate the cadence.
 |------|--------|
 | `qt/core/include/crater/SettingsService.h` + `.cpp` | Added `useHeadlessNdi` Q_PROPERTY (bool, default true). Mirrors the existing `outputMode` plumbing — Q_PROPERTY, `kUseHeadlessNdi` QSettings key, constructor load, setter with equality guard + signal. |
 | `qt/app/qml/dialogs/settings/NdiSection.qml` | Added a `ToggleSwitch` row under "Dual output mode" that binds to `SettingsService.useHeadlessNdi`. User-facing fallback if a particular GPU misbehaves with QRhi readback. |
-| `qt/app/src/NdiService.h` + `.cpp` | Added `setRenderer(NdiRenderer*)`. `start()` now reads `Settings/useHeadlessNdi` via `QSettings` directly and routes through either path; `stop()` tears down whichever path was actually used (tracked in `Impl::usingHeadless`). New private slot `onHeadlessFrame(const QImage&)` mirrors the legacy `captureFrame()` ping-pong-and-send sequence, just sourced from `NdiRenderer::frameReady` instead of `grabToImage`. |
+| `qt/app/src/NdiService.h` + `.cpp` | Added `setRenderer(NdiRenderer*)`. `start()` now reads `Settings/useHeadlessNdi` via `QSettings` directly and routes through either path; `stop()` tears down whichever path was actually used (tracked in `Impl::usingHeadless`). New private slot `onHeadlessFrame(const QImage&, bool bottomUp)` mirrors the legacy `captureFrame()` ping-pong-and-send sequence, just sourced from `NdiRenderer::frameReady` instead of `grabToImage`. |
 | `qt/app/src/main.cpp` | Instantiates `NdiRenderer` (with `&engine`) *after* `engine.loadFromModule("Crater", "Main")` returns — the renderer's inline scene QML does `import Crater`, which requires the module to be registered. Wires it into `ndiService` via `setRenderer()`. |
 | `qt/app/CMakeLists.txt` | Added `src/NdiRenderer.cpp` + `.h` to the executable sources. |
 
@@ -123,13 +127,33 @@ oscillate the cadence.
 
 ## Threading
 
-GUI thread only. `QQuickRenderControl` runs synchronously on the calling
-thread; the render `QTimer` ticks at 16 ms (60 Hz) or 33 ms (30 Hz). All
-QRhi command submission happens on the GUI thread; the GPU side is
-implicitly threaded by the driver. Async readback completion callbacks
-fire from `QRhi::beginFrame()` of the *next* tick — also GUI thread, so
-the `frameReady` signal handler in `NdiService` runs there too without
-any cross-thread coordination.
+Rendering is GUI thread only. `QQuickRenderControl` runs synchronously on
+the calling thread; the render `QTimer` ticks at 16 ms (60 Hz) or 33 ms
+(30 Hz). All QRhi command submission happens on the GUI thread; the GPU
+side is implicitly threaded by the driver. Async readback completion
+callbacks fire from `QRhi::beginFrame()` of the *next* tick — also GUI
+thread, and inside the time the adaptive scheduler measures.
+
+In practice a render-control frame is an *offscreen* frame to QRhi, and
+`endOffscreenFrame()` waits for the GPU and copies any readback out before
+it returns. On an Intel UHD 630 that wait was about 10 ms of a 1080p tick,
+enough on its own to demote to 30 Hz. So on D3D11 the renderer skips QRhi's
+readback: after `endFrame()` it queues a `CopyResource` into one of three
+staging textures of its own and maps it on a later tick with
+`D3D11_MAP_FLAG_DO_NOT_WAIT`, once the GPU is done. Frames reach NDI one
+tick later and nothing waits. A tick that finds all three still unfinished
+counts as over budget, so a theme too heavy for the GPU still demotes.
+Other backends (OpenGL via `QSG_RHI_BACKEND`, macOS, Linux) keep QRhi's
+readback, and so does D3D11 with `CRATER_NDI_QRHI_READBACK=1`.
+
+So the completion callback does no pixel work. It moves the readback
+bytes into a QImage and `NdiService` queues it for its send thread, which
+does the byte swap, OpenGL flip, scaling, pixel-format conversion and the
+NDI send (whose `clock_video` pacing can block). The GUI-thread cost per
+tick is the scene render alone. A frame that arrives while the send
+thread is still busy replaces the queued one, so a slow CPU drops NDI
+frames rather than stalling the operator UI. The legacy grab path queues
+through the same send thread.
 
 Moving render to a worker thread is a known follow-up — see Future phases.
 

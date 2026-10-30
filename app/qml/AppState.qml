@@ -2072,6 +2072,20 @@ QtObject {
             if (!SettingsService.translationOrder.every(notIt))
                 SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
         }
+        // A replaced Bible's code keeps its place in this profile's lists,
+        // and the old copy starts at the end and hidden. Switching back swaps
+        // what the two codes hold, so the same goes for the copy stepping
+        // aside.
+        function _hideOldCopy(retiredCode) {
+            const up = String(retiredCode).toUpperCase()
+            const notIt = function(c) { return String(c).toUpperCase() !== up }
+            if (!SettingsService.translationOrder.every(notIt))
+                SettingsService.translationOrder = SettingsService.translationOrder.filter(notIt)
+            if (SettingsService.hiddenTranslations.every(notIt))
+                SettingsService.hiddenTranslations = SettingsService.hiddenTranslations.concat([up])
+        }
+        function onReplaced(request, code, retiredCode, verses) { _hideOldCopy(retiredCode) }
+        function onSwitchedBack(request, code, retiredCode) { _hideOldCopy(retiredCode) }
         function onRemoved(request, code) {
             const up = String(code).toUpperCase()
             const notIt = function(c) { return String(c).toUpperCase() !== up }

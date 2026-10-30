@@ -112,7 +112,10 @@ Item {
                     CheckRow {
                         Layout.fillWidth: true
                         label: String(translationRow.modelData.code)
-                        detail: String(translationRow.modelData.description || "")
+                        detail: translationRow.modelData.replacedFrom
+                                ? qsTr("Old copy of %1. %2").arg(String(translationRow.modelData.replacedFrom))
+                                                            .arg(String(translationRow.modelData.description || ""))
+                                : String(translationRow.modelData.description || "")
                         checked: !translationRow.modelData.hidden
                         onToggled: {
                             const code = String(translationRow.modelData.code)
@@ -128,14 +131,25 @@ Item {
                             SettingsService.hiddenTranslations = hidden
                         }
                     }
-                    // Only for a Bible someone added from a file. The ones
-                    // Crater ships stay; unticking hides them instead.
+                    // An old copy an import replaced can go back to the code
+                    // it had.
+                    GhostButton {
+                        visible: !!translationRow.modelData.replacedFrom
+                        enabled: root._removeRequest === -1
+                        text: qsTr("Switch back")
+                        onClicked: root.askSwitchBack(String(translationRow.modelData.code),
+                                                      String(translationRow.modelData.replacedFrom))
+                    }
+                    // Only for a Bible someone added from a file, or an old
+                    // copy. The ones Crater ships stay; unticking hides them
+                    // instead.
                     GhostButton {
                         visible: translationRow.modelData.removable === true
                         enabled: root._removeRequest === -1   // one removal at a time
                         text: qsTr("Remove")
                         onClicked: root.askRemove(String(translationRow.modelData.code),
-                                                  String(translationRow.modelData.description || ""))
+                                                  String(translationRow.modelData.description || ""),
+                                                  translationRow.modelData.source === "file")
                     }
                 }
             }
@@ -202,15 +216,27 @@ Item {
     property int    _removeRequest: -1
     property string removeError: ""
 
-    function askRemove(code, name) {
+    function askRemove(code, name, fromFile) {
         if (root._removeRequest !== -1) return
         root._askedCode = code
         root.removeError = ""
         const named = name.replace(/\.+$/, "")
         removeConfirm.title = qsTr("Remove %1?").arg(code)
         removeConfirm.body = (named.length > 0 && named !== code ? named + ". " : "")
-            + qsTr("This removes it from every profile, because they all share one Bible library. Schedules keep the verses they already hold. You can add it again from its file.")
+            + qsTr("This removes it from every profile, because they all share one Bible library. Schedules keep the verses they already hold.")
+            + " " + (fromFile ? qsTr("You can add it again from its file.")
+                              : qsTr("It came with Crater, so there's no file to add it back from."))
         removeConfirm.openConfirm()
+    }
+
+    function askSwitchBack(retiredCode, code) {
+        if (root._removeRequest !== -1) return
+        root._askedCode = retiredCode
+        root.removeError = ""
+        switchBackConfirm.title = qsTr("Switch back to this copy of %1?").arg(code)
+        switchBackConfirm.body = qsTr("%1 becomes %2 again, and the copy using %2 now becomes %1 and is hidden. Nothing is deleted. Schedules keep the verses they already hold, until a layout change rebuilds a passage.")
+                                     .arg(retiredCode).arg(code)
+        switchBackConfirm.openConfirm()
     }
 
     Connections {
@@ -223,6 +249,9 @@ Item {
         function onRemoved(request, code) {
             if (request === root._removeRequest) root._removeRequest = -1
         }
+        function onSwitchedBack(request, code, retiredCode) {
+            if (request === root._removeRequest) root._removeRequest = -1
+        }
     }
 
     ConfirmationOverlay {
@@ -231,6 +260,17 @@ Item {
         confirmLabel: qsTr("Remove")
         onConfirmed: {
             if (root._askedCode.length > 0) root._removeRequest = BibleImporter.remove(root._askedCode)
+            root._askedCode = ""
+        }
+        onCancelled: root._askedCode = ""
+    }
+
+    ConfirmationOverlay {
+        id: switchBackConfirm
+        anchors.fill: parent
+        confirmLabel: qsTr("Switch back")
+        onConfirmed: {
+            if (root._askedCode.length > 0) root._removeRequest = BibleImporter.switchBack(root._askedCode)
             root._askedCode = ""
         }
         onCancelled: root._askedCode = ""

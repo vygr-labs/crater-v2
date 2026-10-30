@@ -17,6 +17,14 @@
 
 #include <rhi/qrhi.h>
 
+#if defined(Q_OS_WIN)
+#include <rhi/qrhi_platform.h>
+#ifndef NOMINMAX
+#define NOMINMAX   // windows.h's min/max macros break std::max below
+#endif
+#include <d3d11.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <numeric>
@@ -57,8 +65,8 @@ constexpr int kPromoteWindow   = 60;
 // re-send the cached last frame every Nth tick so the NDI receiver (vMix,
 // Studio Monitor, …) holds a live source with correct timing rather than
 // timing it out. 6 ticks @ 30 Hz ≈ 5 Hz — a re-send only (no render, no
-// readback). NdiService still converts it to the output format each time,
-// one full-frame pass for BGRA, which at 5 Hz stays cheap.
+// readback). NdiService converts it to the output format on its send thread
+// each time, which at 5 Hz stays cheap.
 constexpr int kKeepaliveEveryNTicks = 6;
 
 // On-demand render burst. A scene change arms this many render ticks. We must
@@ -162,6 +170,133 @@ struct NdiRenderer::Impl
     QString                   backendName;
     // OpenGL reads textures back bottom-up; D3D11 doesn't. Set at start().
     bool                      yUpReadback = false;
+
+#if defined(Q_OS_WIN)
+    // D3D11 readback that never waits. QRhi treats a render-control frame
+    // as an offscreen frame, and endOffscreenFrame() waits for the GPU and
+    // copies the readback out before it returns: about 10 ms of GUI-thread
+    // time per 1080p frame on an Intel UHD 630, enough on its own to trip
+    // the 60→30 Hz demotion. On D3D11 we skip QRhi's readback and copy the
+    // finished frame into a ring of our own staging textures instead, then
+    // map each one a tick later with D3D11_MAP_FLAG_DO_NOT_WAIT, when the
+    // GPU is long done. Frames reach NDI one tick later; nothing waits.
+    // Other backends keep QRhi's readback (the `readbacks` ring above), and
+    // so does D3D11 with CRATER_NDI_QRHI_READBACK=1, to rule this path out
+    // on a machine whose driver misbehaves.
+    bool                                 d3dAsync    = false;
+    ID3D11DeviceContext*                 d3dContext  = nullptr;   // QRhi's, not owned
+    ID3D11Texture2D*                     d3dSource   = nullptr;   // renderTexture's, not owned
+    std::array<ID3D11Texture2D*, 3>      d3dStaging {};           // owned
+    int                                  d3dOldest   = 0;         // FIFO head (next to map)
+    int                                  d3dPending  = 0;         // copies not yet mapped
+    // Frames handed out: the latest sits in lastFrame, one may be queued or
+    // being converted on the send thread, so four covers a steady stream.
+    std::array<QImage, 4>                d3dFramePool;
+    int                                  d3dPoolNext = 0;
+
+    // Set up the staging ring for the current render texture. Returns false
+    // (and leaves QRhi's readback in charge) on any other backend or if a
+    // staging texture can't be made.
+    bool startD3dReadback(QRhi* rhi)
+    {
+        if (rhi->backend() != QRhi::D3D11) return false;
+        const auto* handles = static_cast<const QRhiD3D11NativeHandles*>(rhi->nativeHandles());
+        auto* dev = handles ? static_cast<ID3D11Device*>(handles->dev) : nullptr;
+        d3dContext = handles ? static_cast<ID3D11DeviceContext*>(handles->context) : nullptr;
+        d3dSource  = reinterpret_cast<ID3D11Texture2D*>(renderTexture->nativeTexture().object);
+        if (!dev || !d3dContext || !d3dSource) return false;
+
+        D3D11_TEXTURE2D_DESC desc = {};
+        d3dSource->GetDesc(&desc);
+        desc.Usage          = D3D11_USAGE_STAGING;
+        desc.BindFlags      = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        desc.MiscFlags      = 0;
+        for (auto& tex : d3dStaging) {
+            if (FAILED(dev->CreateTexture2D(&desc, nullptr, &tex))) {
+                tex = nullptr;
+                releaseD3dReadback();
+                return false;
+            }
+        }
+        d3dOldest  = 0;
+        d3dPending = 0;
+        return true;
+    }
+
+    void releaseD3dReadback()
+    {
+        for (auto& tex : d3dStaging) {
+            if (tex) tex->Release();
+            tex = nullptr;
+        }
+        d3dContext = nullptr;
+        d3dSource  = nullptr;
+        d3dPending = 0;
+        for (QImage& img : d3dFramePool) img = QImage();
+    }
+
+    // Queue a GPU copy of the frame endFrame() just submitted. Returns false
+    // when all three staging textures still hold unmapped copies.
+    bool copyD3dFrame()
+    {
+        if (d3dPending >= static_cast<int>(d3dStaging.size())) return false;
+        const int slot = (d3dOldest + d3dPending) % static_cast<int>(d3dStaging.size());
+        d3dContext->CopyResource(d3dStaging[slot], d3dSource);
+        d3dContext->Flush();   // start the copy now rather than with the next frame
+        ++d3dPending;
+        return true;
+    }
+
+    // Map every copy the GPU has finished, without waiting, and return the
+    // newest as a frame (RGBA8888_Premultiplied, top-down). Older ones are
+    // dropped: taking one per tick would let a single late copy raise the
+    // latency for the rest of the broadcast. Null if none is ready.
+    QImage takeD3dFrame()
+    {
+        ID3D11Texture2D* tex = nullptr;
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        while (d3dPending > 0) {
+            ID3D11Texture2D* next = d3dStaging[d3dOldest];
+            D3D11_MAPPED_SUBRESOURCE nextMapped = {};
+            const HRESULT hr = d3dContext->Map(next, 0, D3D11_MAP_READ,
+                                               D3D11_MAP_FLAG_DO_NOT_WAIT, &nextMapped);
+            if (hr == DXGI_ERROR_WAS_STILL_DRAWING) break;
+            d3dOldest = (d3dOldest + 1) % static_cast<int>(d3dStaging.size());
+            --d3dPending;
+            if (FAILED(hr)) continue;   // device trouble; drop this copy
+            if (tex) d3dContext->Unmap(tex, 0);
+            tex = next;
+            mapped = nextMapped;
+        }
+        if (!tex) return {};
+
+        // Copy out row by row (the mapped pitch can be wider than the frame)
+        // into memory the image owns, then hand the staging texture back.
+        // The image comes from a small pool: one nobody else holds any more
+        // (the send thread and lastFrame have let go) is overwritten in
+        // place, so a steady stream doesn't page in a fresh 8 MB per tick.
+        const int w = kRenderWidth, h = kRenderHeight, bpl = w * 4;
+        QImage* pooled = nullptr;
+        for (QImage& img : d3dFramePool) {
+            if (!img.isNull() && img.isDetached()) { pooled = &img; break; }
+        }
+        if (!pooled) {
+            pooled = &d3dFramePool[d3dPoolNext];
+            d3dPoolNext = (d3dPoolNext + 1) % static_cast<int>(d3dFramePool.size());
+            *pooled = QImage(w, h, QImage::Format_RGBA8888_Premultiplied);
+        }
+        // Write through the pool's own (sole) reference so scanLine() doesn't
+        // detach, and only then share it out.
+        if (!pooled->isNull()) {
+            const auto* src = static_cast<const uchar*>(mapped.pData);
+            for (int y = 0; y < h; ++y)
+                memcpy(pooled->scanLine(y), src + size_t(y) * mapped.RowPitch, bpl);
+        }
+        d3dContext->Unmap(tex, 0);
+        return *pooled;
+    }
+#endif
 };
 
 NdiRenderer::NdiRenderer(QQmlEngine* engine, QObject* parent)
@@ -314,9 +449,8 @@ bool NdiRenderer::start()
     }
 
     // Render-target texture. RGBA8 because it's universally supported
-    // across QRhi backends; the readback completion callback (renderTick())
-    // swaps it to premultiplied B-G-R-A, the byte order NDI's 32-bit
-    // formats use.
+    // across QRhi backends; NdiService's send thread swaps the read-back
+    // bytes to the B-G-R-A order NDI's 32-bit formats use.
     m_impl->renderTexture = rhi->newTexture(
         QRhiTexture::RGBA8,
         QSize(kRenderWidth, kRenderHeight),
@@ -341,6 +475,13 @@ bool NdiRenderer::start()
 
     m_impl->quickWindow->setRenderTarget(
         QQuickRenderTarget::fromRhiRenderTarget(m_impl->renderTarget));
+
+#if defined(Q_OS_WIN)
+    m_impl->d3dAsync = qEnvironmentVariableIntValue("CRATER_NDI_QRHI_READBACK") != 1
+                    && m_impl->startD3dReadback(rhi);
+    qInfo().noquote() << "NdiRenderer: readback via"
+                      << (m_impl->d3dAsync ? "D3D11 staging ring (no wait)" : "QRhi");
+#endif
 
     // Reset readback ring — every slot Available, none in flight.
     for (auto& s : m_impl->slotStates) s = Impl::SlotState::Available;
@@ -392,6 +533,10 @@ void NdiRenderer::stop()
     if (!m_impl->running) {
         // Defensive: if start() failed midway, some resources may still
         // exist. Clean them up too.
+#if defined(Q_OS_WIN)
+        m_impl->releaseD3dReadback();
+        m_impl->d3dAsync = false;
+#endif
         delete m_impl->renderTarget;
         m_impl->renderTarget = nullptr;
         delete m_impl->renderPassDescriptor;
@@ -423,6 +568,12 @@ void NdiRenderer::stop()
     }
     for (auto& s : m_impl->slotStates) s = Impl::SlotState::Available;
     m_impl->inFlightCount = 0;
+#if defined(Q_OS_WIN)
+    // GPU is idle after finish(), so the staging copies can go; any not yet
+    // mapped are dropped like the QRhi readbacks above.
+    m_impl->releaseD3dReadback();
+    m_impl->d3dAsync = false;
+#endif
 
     delete m_impl->renderTarget;
     m_impl->renderTarget = nullptr;
@@ -441,8 +592,27 @@ void NdiRenderer::renderTick()
 {
     if (!m_impl->running) return;
 
+    // Wall-clock the GUI-thread work of the tick. This is what the adaptive
+    // scheduler reads back from: if our GUI thread spends >10 ms per tick at
+    // 60 Hz, we're at risk of missing frames, so we demote.
+    QElapsedTimer tickTimer;
+    tickTimer.start();
+
+#if defined(Q_OS_WIN)
+    // Collect the frame an earlier tick copied, if the GPU has finished it.
+    // Done before the on-demand early return so an idle scene still drains
+    // the ring. The image owns its pixels and is already top-down.
+    if (m_impl->d3dAsync) {
+        const QImage frame = m_impl->takeD3dFrame();
+        if (!frame.isNull()) {
+            m_impl->lastFrame = frame;
+            emit frameReady(frame, /*bottomUp*/ false);
+        }
+    }
+#endif
+
     // On-demand: once the render burst from the last scene change is spent,
-    // skip render → readback → swizzle. Re-send the cached last frame every Nth
+    // skip render → readback → convert. Re-send the cached last frame every Nth
     // tick so the NDI receiver keeps the source live (NdiService still converts
     // it to the output format each time). This is the CPU win for static broadcasts (e.g. a dual-output
     // lower-third that only changes on text advance). The budget is re-armed by
@@ -452,29 +622,46 @@ void NdiRenderer::renderTick()
         if (!m_impl->lastFrame.isNull()
             && ++m_impl->idleTicks >= kKeepaliveEveryNTicks) {
             m_impl->idleTicks = 0;
-            emit frameReady(m_impl->lastFrame);
+            emit frameReady(m_impl->lastFrame, m_impl->yUpReadback);
         }
         return;
     }
+
+    bool d3dAsync = false;
+#if defined(Q_OS_WIN)
+    d3dAsync = m_impl->d3dAsync;
+#endif
 
     // Backpressure: if the GPU is more than three frames behind, drop
     // this tick. The next completion will free a slot and we'll resume.
     // Without this guard we'd build an unbounded queue of pending
     // readbacks under sustained pressure.
-    if (m_impl->inFlightCount >= static_cast<int>(m_impl->readbacks.size())) {
-        return;
-    }
-
-    // Pick the first Available slot. Guaranteed to find one given the
-    // check above.
     int slot = -1;
-    for (int i = 0; i < static_cast<int>(m_impl->slotStates.size()); ++i) {
-        if (m_impl->slotStates[i] == Impl::SlotState::Available) {
-            slot = i;
-            break;
+    if (d3dAsync) {
+#if defined(Q_OS_WIN)
+        // The GPU is three frames behind, which the tick's own cost can't
+        // show now that nothing waits for it. Counted as over budget so a
+        // theme too heavy to draw still demotes.
+        if (m_impl->d3dPending >= static_cast<int>(m_impl->d3dStaging.size())) {
+            if (!m_impl->onDemand) recordTickCost(kDemoteAboveMs * 2);
+            return;
         }
+#endif
+    } else {
+        if (m_impl->inFlightCount >= static_cast<int>(m_impl->readbacks.size())) {
+            return;
+        }
+
+        // Pick the first Available slot. Guaranteed to find one given the
+        // check above.
+        for (int i = 0; i < static_cast<int>(m_impl->slotStates.size()); ++i) {
+            if (m_impl->slotStates[i] == Impl::SlotState::Available) {
+                slot = i;
+                break;
+            }
+        }
+        if (slot < 0) return;
     }
-    if (slot < 0) return;
 
     // Committed to rendering this tick — spend one unit of the burst budget.
     // Decrementing here (after the backpressure/slot guards, not at the top)
@@ -483,12 +670,6 @@ void NdiRenderer::renderTick()
     // signals, so nothing is lost.
     if (m_impl->onDemand) --m_impl->renderBudget;
     m_impl->idleTicks = 0;
-
-    // Wall-clock the entire render+submit sequence. This is what the
-    // adaptive scheduler reads back from: if our GUI thread spends >10 ms
-    // per tick at 60 Hz, we're at risk of missing frames, so we demote.
-    QElapsedTimer tickTimer;
-    tickTimer.start();
 
     // polishItems before beginFrame — runs QML layout / sizing logic so
     // the scene graph sees the correct geometry on this frame's render.
@@ -513,9 +694,12 @@ void NdiRenderer::renderTick()
     // commandBuffer() is on QQuickRenderControl, not QQuickWindow — the
     // render control owns the QRhi command buffer for the current
     // frame; the headless window is just the scene-graph host.
+    //
+    // On the D3D11 staging path QRhi gets no readback (it would wait for it
+    // in endFrame); the copy is queued after endFrame below.
     QRhi* rhi = m_impl->quickWindow->rhi();
     QRhiCommandBuffer* cb = m_impl->renderControl->commandBuffer();
-    if (rhi && cb) {
+    if (rhi && cb && !d3dAsync) {
         QRhiResourceUpdateBatch* batch = rhi->nextResourceUpdateBatch();
         QRhiReadbackDescription readDesc(m_impl->renderTexture);
 
@@ -535,32 +719,27 @@ void NdiRenderer::renderTick()
 
             // The texture was rendered as RGBA8, so the bytes are R-G-B-A
             // in order, and the scene graph blends premultiplied, so the
-            // colour is premultiplied. Wrap (don't copy) as
-            // RGBA8888_Premultiplied and swap to ARGB32_Premultiplied: on
-            // little-endian that is B-G-R-A bytes, still premultiplied.
-            // NdiService decides the rest per pixel format after any
-            // scaling: BGRA divides the alpha back out (NDI's BGRA is
-            // straight), while BGRX and UYVY use these bytes as they are,
-            // which is the frame composited over black. convertToFormat()
-            // returns a deep copy, so the image outlives `r.data` when this
-            // slot is recycled on the next tick.
-            const QImage view(
-                reinterpret_cast<const uchar*>(r.data.constData()),
+            // colour is premultiplied. Take the bytes out of the slot
+            // (a move, no copy; QRhi allocates fresh ones on the slot's next
+            // readback) and wrap them read-only as RGBA8888_Premultiplied.
+            // No pixel work happens on this thread: NdiService's send thread
+            // does the swizzle, flip and format conversion. On OpenGL the
+            // rows are bottom-up, which frameReady passes along.
+            auto* bytes = new QByteArray(std::move(r.data));
+            const QImage frame(
+                reinterpret_cast<const uchar*>(bytes->constData()),
                 r.pixelSize.width(),
                 r.pixelSize.height(),
                 r.pixelSize.width() * 4,
-                QImage::Format_RGBA8888_Premultiplied);
-            QImage frame = view.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            // On OpenGL the rows arrive bottom-up. Without this the frame
-            // goes out upside down. Qt's own QSGRhiLayer::toImage does the same.
-            if (m_impl->yUpReadback) frame.flip(Qt::Vertical);
+                QImage::Format_RGBA8888_Premultiplied,
+                [](void* info) { delete static_cast<QByteArray*>(info); },
+                bytes);
 
-            // Cache for the on-demand keepalive re-send. lastFrame owns its
-            // pixels independently of the recycled readback slot. Harmless
-            // (one ~8 MB frame) when on-demand is off — it's simply never
-            // re-sent.
+            // Cache for the on-demand keepalive re-send. It shares the
+            // pixels with the frame just sent, so it costs nothing when
+            // on-demand is off — it's simply never re-sent.
             m_impl->lastFrame = frame;
-            emit frameReady(frame);
+            emit frameReady(frame, m_impl->yUpReadback);
         };
 
         batch->readBackTexture(readDesc, result);
@@ -572,12 +751,23 @@ void NdiRenderer::renderTick()
 
     m_impl->renderControl->endFrame();
 
+#if defined(Q_OS_WIN)
+    // endFrame() has submitted the frame to the immediate context, so a copy
+    // queued now runs after it on the GPU. A later tick maps it.
+    if (d3dAsync) m_impl->copyD3dFrame();
+#endif
+
     // On-demand mode runs at a fixed 30 Hz cap — skip the adaptive scheduler
     // entirely (no demote/promote). Promotion to 60 Hz would otherwise fire
     // here: a static scene renders cheaply, the cost average drops below the
     // promote threshold, and we'd bump back to 60 — defeating the cap.
     if (m_impl->onDemand) return;
 
+    recordTickCost(tickTimer.elapsed());
+}
+
+void NdiRenderer::recordTickCost(qint64 elapsedMs)
+{
     // ── Adaptive cadence ────────────────────────────────────────────────
     // Record paint cost for this tick and re-evaluate the framerate.
     // Demote on a recent-window (kDemoteWindow) average above the
@@ -585,7 +775,6 @@ void NdiRenderer::renderTick()
     // only on a longer-window (kPromoteWindow) average below the lower
     // threshold — slow reaction so we don't flap back to 60 Hz on a
     // single quiet stretch.
-    const qint64 elapsedMs = tickTimer.elapsed();
     m_impl->costSamplesMs[m_impl->costIdx] = elapsedMs;
     m_impl->costIdx = (m_impl->costIdx + 1) % kCostRingSize;
     if (m_impl->costCount < kCostRingSize) ++m_impl->costCount;
