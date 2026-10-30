@@ -32,19 +32,20 @@ class NdiRenderer;
 // `Settings/useHeadlessNdi` (default true):
 //   • Headless (preferred): consume frames from NdiRenderer::frameReady,
 //     which renders ProjectionScene into a QRhiTexture via
-//     QQuickRenderControl and async-reads back premultiplied B-G-R-A
-//     pixels (sendResolvedFrame makes them straight for BGRA). No OS window
-//     dependency; runs at 60 Hz adaptive (drops to 30 Hz under sustained
-//     paint-cost pressure). See qt/docs/render-pipeline-decouple.md.
+//     QQuickRenderControl and async-reads back premultiplied R-G-B-A
+//     pixels. No OS window dependency; runs at 60 Hz adaptive (drops to
+//     30 Hz under sustained paint-cost pressure). See
+//     qt/docs/render-pipeline-decouple.md.
 //   • Legacy (fallback): `setSourceWindow(QQuickWindow*)` registers a
 //     projection window; a 30 Hz QTimer calls grabToImage() on it. Used
 //     when the headless renderer is disabled by setting or when its
 //     start() fails.
 //
-// Threading: all public API is invoked from the QML/UI thread today.
-// grabWindow() is itself synchronous; NDI's send_video_v2 is internally
-// async but requires the frame buffer remain valid until the *next* send,
-// so we hold the previous QImage as a member.
+// Threading: all public API is invoked from the QML/UI thread. Both capture
+// paths hand each frame to a dedicated send thread (queueFrame), which does
+// the pixel-format conversion, scaling and the NDI send off the UI thread.
+// NDI's async send requires the frame buffer remain valid until the *next*
+// send, so the send thread holds the previous buffer as a member.
 class NdiService : public QObject
 {
     Q_OBJECT
@@ -55,13 +56,12 @@ class NdiService : public QObject
     Q_PROPERTY(bool    available    READ available    NOTIFY availableChanged)
     Q_PROPERTY(bool    sending      READ sending      NOTIFY sendingChanged)
     // Blank-the-broadcast flag — session-scoped, defaults false. When true,
-    // captureFrame() and onHeadlessFrame() zero the outgoing pixel buffer
-    // before handing it to NDI's send (transparent in BGRA; BGRX and UYVY
-    // go out opaque black), regardless of which capture pipeline
+    // the send thread replaces each outgoing frame with an empty one
+    // (transparent in BGRA; BGRX and UYVY go out opaque black), regardless
+    // of which capture pipeline
     // (legacy grabToImage / headless QRhi) is active and regardless of
     // single/dual output mode. Intercepting at the send boundary makes this
-    // bullet-proof: every NDI source path funnels through one of those two
-    // methods. Scene-level QML opacity bindings would only catch a subset.
+    // bullet-proof: every NDI source path funnels through queueFrame(). Scene-level QML opacity bindings would only catch a subset.
     Q_PROPERTY(bool    blank        READ blank        WRITE setBlank NOTIFY blankChanged)
     Q_PROPERTY(QString streamName   READ streamName   WRITE setStreamName NOTIFY streamNameChanged)
     // Human-readable status. "NDI Tools not installed", "NDI runtime ready",
@@ -132,22 +132,28 @@ signals:
     void onPreviewChanged();
 
 private:
+    struct SendJob;
+
     void captureFrame();
-    // Headless path: invoked synchronously on NdiRenderer::frameReady.
-    // Stashes the frame into the ping-pong buffer and hands it to the
-    // NDI SDK's send_video_v2/_async_v2 entry. Mirrors the in-flight-
-    // safe handoff used by captureFrame() so NDI's required "previous
-    // buffer stays valid until next send" contract is honored across
-    // both paths.
-    void onHeadlessFrame(const QImage& image);
-    // Shared tail of both capture paths. Takes the just-filled ping-pong
-    // buffer `dst` holding premultiplied colour, in any 32-bit premultiplied
-    // format, applies the configured downscale (done premultiplied), then
-    // the pixel format: BGRA unpremultiplies to straight alpha, BGRX keeps
-    // the premultiplied colour (the frame over black) with an opaque 4th
-    // byte, UYVY packs the premultiplied colour. Then issues the
-    // async/sync send. rateN/rateD carry each path's advertised frame rate.
-    void sendResolvedFrame(QImage& dst, int rateN, int rateD);
+    // Headless path: invoked on NdiRenderer::frameReady. Queues the frame
+    // for the send thread, like captureFrame() does for the legacy grab.
+    void onHeadlessFrame(const QImage& image, bool bottomUp);
+    // GUI thread. Stamps the blank flag on the frame and puts it in the send
+    // thread's one-slot mailbox, replacing a frame not yet taken. `image`
+    // holds premultiplied colour in any 32-bit premultiplied format;
+    // `bottomUp` says its rows are stored bottom-up (OpenGL readback);
+    // `overBlack` picks what BGRX/UYVY get: the colour over black (headless)
+    // or the straight colour (legacy grab, as it always sent). rateN/rateD
+    // carry each path's advertised frame rate.
+    void queueFrame(QImage image, bool bottomUp, bool overBlack,
+                    int rateN, int rateD);
+    // Send thread body: waits for a queued frame and sends it.
+    void sendLoop();
+    // Send thread. Applies the configured downscale (done premultiplied)
+    // and pixel format, then issues the async/sync send. BGRA always goes
+    // out straight alpha; BGRX takes the colour `overBlack` picks with an
+    // opaque 4th byte; UYVY packs it.
+    void sendResolvedFrame(const SendJob& job);
     // Dedicated worker thread body. Sits inside the NDI runtime's
     // blocking get_tally call and posts state changes back to the
     // GUI thread via QMetaObject::invokeMethod with Qt::QueuedConnection.
