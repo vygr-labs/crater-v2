@@ -1028,16 +1028,16 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         while (st.step()) haveCodes.insert(st.columnText(0).toUpper());
     }
     struct T { qint64 id; QString code, name, language, description; bool yearNull; qint64 year; qint64 sort;
-               QString source; };
+               QString source, replacedFrom; };
     QList<T> trans;
     {
         auto st = src.prepare(QStringLiteral(
-            "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order, source "
-            "FROM translations ORDER BY sort_order, id"));
+            "SELECT id, code, name, language, year, COALESCE(description, ''), sort_order, source, "
+            "COALESCE(replaced_from, '') FROM translations ORDER BY sort_order, id"));
         while (st.step())
             trans.append({ st.columnInt64(0), st.columnText(1), st.columnText(2), st.columnText(3),
                            st.columnText(5), st.columnIsNull(4), st.columnInt64(4), st.columnInt64(6),
-                           st.columnText(7) });
+                           st.columnText(7), st.columnText(8) });
     }
     int done = 0;
     for (const T& t : trans) {
@@ -1048,8 +1048,8 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         }
         db::Transaction tx(dst);
         auto insT = dst.prepare(QStringLiteral(
-            "INSERT INTO translations (code, name, language, year, description, sort_order, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)"));
+            "INSERT INTO translations (code, name, language, year, description, sort_order, source, replaced_from) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''))"));
         insT.bind(1, t.code);
         insT.bind(2, t.name);
         insT.bind(3, t.language.isEmpty() ? QStringLiteral("en") : t.language);
@@ -1059,6 +1059,7 @@ BibleMergeResult mergeBibles(const QString& srcPath, const QString& dstPath,
         // A Bible added from a file stays removable on the machine it moves
         // to. Every source has the column by now (db::ensureBibleExtras).
         insT.bind(7, t.source == u"file" ? t.source : QStringLiteral("bundled"));
+        insT.bind(8, t.replacedFrom);
         insT.step();
         const qint64 newT = dst.lastInsertRowId();
 

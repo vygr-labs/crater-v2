@@ -112,24 +112,28 @@ QString suggestCode(const QString& base, db::Connection& conn)
 struct ReplaceTarget
 {
     qint64  id = 0;
-    QString code, name, replacedFrom;
+    QString code, name, source, replacedFrom;
     qint64  sortOrder = 0;
     bool    found = false;
+
+    // Added from a file, or an old copy an import replaced.
+    bool removable() const { return found && (source == u"file" || !replacedFrom.isEmpty()); }
 };
 
 ReplaceTarget replaceTarget(db::Connection& conn, const QString& code)
 {
     ReplaceTarget t;
     auto st = conn.prepare(QStringLiteral(
-        "SELECT id, code, name, COALESCE(replaced_from, ''), sort_order "
+        "SELECT id, code, name, source, COALESCE(replaced_from, ''), sort_order "
         "FROM translations WHERE upper(code) = upper(?)"));
     st.bind(1, code);
     if (st.step()) {
         t.id           = st.columnInt64(0);
         t.code         = st.columnText(1);
         t.name         = st.columnText(2);
-        t.replacedFrom = st.columnText(3);
-        t.sortOrder    = st.columnInt64(4);
+        t.source       = st.columnText(3);
+        t.replacedFrom = st.columnText(4);
+        t.sortOrder    = st.columnInt64(5);
         t.found        = true;
     }
     return t;
@@ -318,10 +322,7 @@ bool BibleImporter::isRemovable(QString code) const
     try {
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             QStringLiteral("BibleImport-check"));
-        auto st = conn.prepare(QStringLiteral(
-            "SELECT source, COALESCE(replaced_from, '') FROM translations WHERE upper(code) = upper(?)"));
-        st.bind(1, code);
-        return st.step() && (st.columnText(0) == u"file" || !st.columnText(1).isEmpty());
+        return replaceTarget(conn, code).removable();
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleImport: isRemovable:" << e.message();
         return false;
@@ -652,26 +653,14 @@ int BibleImporter::remove(QString code)
             // a transaction can it be switched.
             conn.exec(QStringLiteral("PRAGMA foreign_keys = OFF"));
             db::Transaction tx(conn, db::Transaction::Begin::Immediate);
-            qint64 id = 0;
-            QString source;
-            bool oldCopy = false;
-            {
-                auto find = conn.prepare(QStringLiteral(
-                    "SELECT id, code, source, COALESCE(replaced_from, '') FROM translations "
-                    "WHERE upper(code) = upper(?)"));
-                find.bind(1, code);
-                if (find.step()) {
-                    id = find.columnInt64(0);
-                    code = find.columnText(1);
-                    source = find.columnText(2);
-                    oldCopy = !find.columnText(3).isEmpty();
-                }
-            }
-            if (id == 0) {
+            const ReplaceTarget target = replaceTarget(conn, code);
+            const qint64 id = target.id;
+            if (!target.found) {
                 emit failed(request, tr("%1 isn't installed.").arg(code));
                 return;
             }
-            if (source != u"file" && !oldCopy) {
+            code = target.code;
+            if (!target.removable()) {
                 emit failed(request, tr("%1 came with Crater and can't be removed. Untick it to hide it.").arg(code));
                 return;
             }

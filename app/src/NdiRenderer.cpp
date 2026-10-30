@@ -180,7 +180,9 @@ struct NdiRenderer::Impl
     // finished frame into a ring of our own staging textures instead, then
     // map each one a tick later with D3D11_MAP_FLAG_DO_NOT_WAIT, when the
     // GPU is long done. Frames reach NDI one tick later; nothing waits.
-    // Other backends keep QRhi's readback (the `readbacks` ring above).
+    // Other backends keep QRhi's readback (the `readbacks` ring above), and
+    // so does D3D11 with CRATER_NDI_QRHI_READBACK=1, to rule this path out
+    // on a machine whose driver misbehaves.
     bool                                 d3dAsync    = false;
     ID3D11DeviceContext*                 d3dContext  = nullptr;   // QRhi's, not owned
     ID3D11Texture2D*                     d3dSource   = nullptr;   // renderTexture's, not owned
@@ -246,20 +248,28 @@ struct NdiRenderer::Impl
         return true;
     }
 
-    // Map the oldest copy if the GPU has finished it, without waiting.
-    // Returns the frame (RGBA8888_Premultiplied, top-down), or a null image
-    // if it isn't ready yet or nothing is pending.
+    // Map every copy the GPU has finished, without waiting, and return the
+    // newest as a frame (RGBA8888_Premultiplied, top-down). Older ones are
+    // dropped: taking one per tick would let a single late copy raise the
+    // latency for the rest of the broadcast. Null if none is ready.
     QImage takeD3dFrame()
     {
-        if (d3dPending == 0) return {};
-        ID3D11Texture2D* tex = d3dStaging[d3dOldest];
+        ID3D11Texture2D* tex = nullptr;
         D3D11_MAPPED_SUBRESOURCE mapped = {};
-        const HRESULT hr = d3dContext->Map(tex, 0, D3D11_MAP_READ,
-                                           D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
-        if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return {};
-        d3dOldest = (d3dOldest + 1) % static_cast<int>(d3dStaging.size());
-        --d3dPending;
-        if (FAILED(hr)) return {};   // device trouble; drop this copy
+        while (d3dPending > 0) {
+            ID3D11Texture2D* next = d3dStaging[d3dOldest];
+            D3D11_MAPPED_SUBRESOURCE nextMapped = {};
+            const HRESULT hr = d3dContext->Map(next, 0, D3D11_MAP_READ,
+                                               D3D11_MAP_FLAG_DO_NOT_WAIT, &nextMapped);
+            if (hr == DXGI_ERROR_WAS_STILL_DRAWING) break;
+            d3dOldest = (d3dOldest + 1) % static_cast<int>(d3dStaging.size());
+            --d3dPending;
+            if (FAILED(hr)) continue;   // device trouble; drop this copy
+            if (tex) d3dContext->Unmap(tex, 0);
+            tex = next;
+            mapped = nextMapped;
+        }
+        if (!tex) return {};
 
         // Copy out row by row (the mapped pitch can be wider than the frame)
         // into memory the image owns, then hand the staging texture back.
@@ -467,7 +477,8 @@ bool NdiRenderer::start()
         QQuickRenderTarget::fromRhiRenderTarget(m_impl->renderTarget));
 
 #if defined(Q_OS_WIN)
-    m_impl->d3dAsync = m_impl->startD3dReadback(rhi);
+    m_impl->d3dAsync = qEnvironmentVariableIntValue("CRATER_NDI_QRHI_READBACK") != 1
+                    && m_impl->startD3dReadback(rhi);
     qInfo().noquote() << "NdiRenderer: readback via"
                       << (m_impl->d3dAsync ? "D3D11 staging ring (no wait)" : "QRhi");
 #endif
@@ -628,7 +639,13 @@ void NdiRenderer::renderTick()
     int slot = -1;
     if (d3dAsync) {
 #if defined(Q_OS_WIN)
-        if (m_impl->d3dPending >= static_cast<int>(m_impl->d3dStaging.size())) return;
+        // The GPU is three frames behind, which the tick's own cost can't
+        // show now that nothing waits for it. Counted as over budget so a
+        // theme too heavy to draw still demotes.
+        if (m_impl->d3dPending >= static_cast<int>(m_impl->d3dStaging.size())) {
+            if (!m_impl->onDemand) recordTickCost(kDemoteAboveMs * 2);
+            return;
+        }
 #endif
     } else {
         if (m_impl->inFlightCount >= static_cast<int>(m_impl->readbacks.size())) {
@@ -746,6 +763,11 @@ void NdiRenderer::renderTick()
     // promote threshold, and we'd bump back to 60 — defeating the cap.
     if (m_impl->onDemand) return;
 
+    recordTickCost(tickTimer.elapsed());
+}
+
+void NdiRenderer::recordTickCost(qint64 elapsedMs)
+{
     // ── Adaptive cadence ────────────────────────────────────────────────
     // Record paint cost for this tick and re-evaluate the framerate.
     // Demote on a recent-window (kDemoteWindow) average above the
@@ -753,7 +775,6 @@ void NdiRenderer::renderTick()
     // only on a longer-window (kPromoteWindow) average below the lower
     // threshold — slow reaction so we don't flap back to 60 Hz on a
     // single quiet stretch.
-    const qint64 elapsedMs = tickTimer.elapsed();
     m_impl->costSamplesMs[m_impl->costIdx] = elapsedMs;
     m_impl->costIdx = (m_impl->costIdx + 1) % kCostRingSize;
     if (m_impl->costCount < kCostRingSize) ++m_impl->costCount;

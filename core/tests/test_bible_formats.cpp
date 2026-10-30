@@ -1296,9 +1296,17 @@ private slots:
         importer.switchBack(QStringLiteral("RPO"));
         QTRY_COMPARE(failed.size(), 3);
 
-        // With nothing holding the code any more, it simply goes back.
+        // A reader that keeps a code's contents hears about the swap.
+        QSignalSpy content(&bible, &crater::BibleService::translationContentChanged);
+        bible.libraryChanged(QStringLiteral("RPL"));
+        QCOMPARE(content.size(), 1);
+        QCOMPARE(content.first().at(0).toString(), QStringLiteral("RPL"));
+
+        // With nothing holding the code any more, its old copies are the only
+        // ones left, so searching everything finds them again.
         importer.remove(QStringLiteral("RPL"));
         QTRY_COMPARE(removed.size(), 1);
+        QCOMPARE(bible.search(QStringLiteral("replacement")).size(), 2);
         importer.switchBack(QStringLiteral("RPL-OLD2"));
         QTRY_COMPARE(switched.size(), 2);
         QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("replacement sixteen"));

@@ -35,7 +35,8 @@ namespace import { struct ParsedBible; }
 // profile's order, typed references and schedule rows keep working. The old
 // copy isn't deleted: it becomes KJV-OLD, and the profile hides it. It all
 // happens in one transaction, so a file that fails leaves the original as it
-// was. Schedule rows hold their verses inline and keep them.
+// was. Schedule rows hold their verses inline and keep them, until a layout
+// change rebuilds a passage from the library.
 //
 // An imported Bible is stored like a bundled one: canonical English book
 // names (so references and translation switching work unchanged), its verses,

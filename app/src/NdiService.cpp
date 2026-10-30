@@ -802,10 +802,11 @@ void NdiService::sendResolvedFrame(const SendJob& job)
     }
     if (img.isNull()) return;
 
-    // Toggle the ping-pong index FIRST so we never overwrite the buffer NDI
-    // is still reading from (the previous send's). NDI releases that one
-    // when we issue this send.
-    m_impl->activeBuffer ^= 1;
+    // Fill the other ping-pong slot so we never overwrite the buffer NDI is
+    // still reading from (the previous send's). NDI releases that one when
+    // we issue this send. activeBuffer only moves once a send is certain, or
+    // a skipped frame would point the next one at the slot NDI still holds.
+    const int slot = m_impl->activeBuffer ^ 1;
 
     NDIlib_video_frame_v2_t frame = {};
     frame.xres                  = img.width();
@@ -821,7 +822,7 @@ void NdiService::sendResolvedFrame(const SendJob& job)
     frame.timestamp             = 0;
 
     if (m_impl->packUyvy) {
-        QByteArray& buf = m_impl->uyvyBuffers[m_impl->activeBuffer];
+        QByteArray& buf = m_impl->uyvyBuffers[slot];
         packToUyvy(img, bottomUp, buf);
         frame.FourCC               = NDIlib_FourCC_video_type_UYVY;
         frame.p_data               = reinterpret_cast<uint8_t*>(buf.data());
@@ -830,7 +831,7 @@ void NdiService::sendResolvedFrame(const SendJob& job)
         // BGRA is straight ARGB32 by now. BGRX gets its colour (over black
         // on the headless path, straight on the legacy one) with an opaque
         // 4th byte. Same B,G,R,A memory layout; only the FourCC differs.
-        QImage& dst = m_impl->frameBuffers[m_impl->activeBuffer];
+        QImage& dst = m_impl->frameBuffers[slot];
         if (bgra) dst = img;
         else      toOpaqueBgrx(img, bottomUp, dst);
         if (dst.isNull()) return;
@@ -838,6 +839,8 @@ void NdiService::sendResolvedFrame(const SendJob& job)
         frame.p_data               = const_cast<uint8_t*>(dst.constBits());
         frame.line_stride_in_bytes = dst.bytesPerLine();
     }
+
+    m_impl->activeBuffer = slot;
 
     // Prefer async send when the runtime exposes it (returns after queueing);
     // fall back to sync on older SDKs.

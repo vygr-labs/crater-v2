@@ -141,8 +141,10 @@ enough on its own to demote to 30 Hz. So on D3D11 the renderer skips QRhi's
 readback: after `endFrame()` it queues a `CopyResource` into one of three
 staging textures of its own and maps it on a later tick with
 `D3D11_MAP_FLAG_DO_NOT_WAIT`, once the GPU is done. Frames reach NDI one
-tick later and nothing waits. Other backends (OpenGL via
-`QSG_RHI_BACKEND`, macOS, Linux) keep QRhi's readback.
+tick later and nothing waits. A tick that finds all three still unfinished
+counts as over budget, so a theme too heavy for the GPU still demotes.
+Other backends (OpenGL via `QSG_RHI_BACKEND`, macOS, Linux) keep QRhi's
+readback, and so does D3D11 with `CRATER_NDI_QRHI_READBACK=1`.
 
 So the completion callback does no pixel work. It moves the readback
 bytes into a QImage and `NdiService` queues it for its send thread, which

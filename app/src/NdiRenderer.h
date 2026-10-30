@@ -84,6 +84,10 @@ private slots:
     void renderTick();
 
 private:
+    // Adds one tick's cost to the adaptive scheduler and re-evaluates the
+    // framerate (60 <-> 30 Hz).
+    void recordTickCost(qint64 elapsedMs);
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

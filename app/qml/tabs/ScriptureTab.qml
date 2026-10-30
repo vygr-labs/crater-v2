@@ -222,9 +222,20 @@ Item {
 
     // Cache-by-translation: BibleService.allVerses is ~80 ms cold for KJV.
     // The expensive call lives in a binding whose only dependency is the
-    // translation code; keystrokes never re-fetch.
-    readonly property var versesForActiveTranslation:
-        activeTranslation.length > 0 ? BibleService.allVerses(activeTranslation) : []
+    // translation code; keystrokes never re-fetch. A Bible replaced or
+    // switched back keeps its code, so _contentEpoch re-reads that one too.
+    property int _contentEpoch: 0
+    Connections {
+        target: BibleService
+        function onTranslationContentChanged(code) {
+            if (String(code).toUpperCase() === String(activeTranslation).toUpperCase())
+                _contentEpoch++
+        }
+    }
+    readonly property var versesForActiveTranslation: {
+        _contentEpoch
+        return activeTranslation.length > 0 ? BibleService.allVerses(activeTranslation) : []
+    }
 
     // Live result set the ListView renders.
     //
@@ -249,6 +260,7 @@ Item {
             // Empty filter → search every imported translation at once; the
             // hit list then spans versions (each row shows its own chip).
             const scope = AppState.scriptureSearchAllTranslations ? "" : activeTranslation
+            _contentEpoch
             return BibleService.search(_parserQuery, scope)
         }
         return versesForActiveTranslation

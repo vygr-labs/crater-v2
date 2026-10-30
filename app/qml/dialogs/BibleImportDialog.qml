@@ -36,6 +36,7 @@ ModalShell {
     property string importedCode: ""
     property string retiredCode: ""    // the replaced Bible's new code; empty when adding
     property bool   replacing: false
+    property string replaceCode: ""    // the code the operator confirmed replacing
     property int    importedVerses: 0
     property int    progressPercent: 0
     property string progressStage: ""
@@ -124,6 +125,7 @@ ModalShell {
 
     function scan(chosen) {
         root.files = chosen
+        root.replacing = false
         root.phase = "scanning"
         root.request = BibleImporter.analyze(chosen)
     }
@@ -142,6 +144,7 @@ ModalShell {
         const old = BibleImporter.replaceInfo(codeField.text)
         if (!old.code) return
         const incoming = root.info.verses || 0
+        root.replaceCode = old.code
         replaceConfirm.title = qsTr("Replace %1?").arg(old.code)
         replaceConfirm.body = qsTr("%1 has %2 verses. This file has %3.").arg(old.code)
                                   .arg(root.count(old.verses)).arg(root.count(incoming))
@@ -149,18 +152,20 @@ ModalShell {
                ? " " + qsTr("A reference to a verse this file doesn't have won't find anything in %1.").arg(old.code)
                : "")
             + "\n\n"
-            + qsTr("The old copy stays as %1, hidden, and you can switch back in Settings > Scripture. Schedules keep the verses they already hold.")
+            + qsTr("The old copy stays as %1, hidden, and you can switch back in Settings > Scripture. Schedules keep the verses they already hold, until a layout change rebuilds a passage.")
                   .arg(old.retiredCode)
         replaceConfirm.openConfirm()
     }
 
+    // The code from the confirmation, not the field: the field can still take
+    // typing behind the overlay.
     function startReplace() {
-        if (root.phase !== "confirm" || !root.canReplace) return
+        if (root.phase !== "confirm" || root.replaceCode.length === 0) return
         root.progressPercent = 0
         root.progressStage = qsTr("Starting...")
         root.replacing = true
         root.phase = "importing"
-        root.request = BibleImporter.replace(root.files, codeField.text.trim(), nameField.text.trim())
+        root.request = BibleImporter.replace(root.files, root.replaceCode, nameField.text.trim())
     }
 
     function openInScripture() {
@@ -508,7 +513,7 @@ ModalShell {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: (root.replacing ? qsTr("Replacing %1...") : qsTr("Adding %1..."))
-                              .arg(codeField.text.trim().toUpperCase())
+                              .arg(root.replacing ? root.replaceCode : codeField.text.trim().toUpperCase())
                     color: Theme.color.textTitle
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize + 3

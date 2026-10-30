@@ -234,7 +234,7 @@ Item {
         root._askedCode = retiredCode
         root.removeError = ""
         switchBackConfirm.title = qsTr("Switch back to this copy of %1?").arg(code)
-        switchBackConfirm.body = qsTr("%1 becomes %2 again, and the copy using %2 now becomes %1 and is hidden. Nothing is deleted. Schedules keep the verses they already hold.")
+        switchBackConfirm.body = qsTr("%1 becomes %2 again, and the copy using %2 now becomes %1 and is hidden. Nothing is deleted. Schedules keep the verses they already hold, until a layout change rebuilds a passage.")
                                      .arg(retiredCode).arg(code)
         switchBackConfirm.openConfirm()
     }
