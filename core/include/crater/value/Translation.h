@@ -17,6 +17,8 @@ struct Translation
     Q_PROPERTY(QString description  MEMBER description)
     // 'bundled', or 'file' for one the operator added (db/BibleExtras.h).
     Q_PROPERTY(QString source       MEMBER source)
+    // The code this copy held before an import replaced it, or empty.
+    Q_PROPERTY(QString replacedFrom MEMBER replacedFrom)
 
 public:
     QString code;
@@ -24,6 +26,7 @@ public:
     int     year = 0;
     QString description;
     QString source;
+    QString replacedFrom;
 };
 
 }  // namespace crater

@@ -9,7 +9,8 @@ import QtQuick.Controls.Basic
 //   pick      -> choose the file (or a USFM / USX Bible's book files)
 //   scanning  -> BibleImporter.analyze() reads it on a worker thread
 //   confirm   -> what the file holds; name it and pick its code
-//   importing -> BibleImporter.run() with a live progress bar
+//             (a code already in use can be replaced, behind a confirm)
+//   importing -> BibleImporter.run() or replace() with a live progress bar
 //   done      -> ready, with a shortcut to it  |  error -> why not
 //
 // Every BibleImporter call returns a request id its signals carry, and this
@@ -33,6 +34,8 @@ ModalShell {
     property var    files: []
     property var    info: ({})
     property string importedCode: ""
+    property string retiredCode: ""    // the replaced Bible's new code; empty when adding
+    property bool   replacing: false
     property int    importedVerses: 0
     property int    progressPercent: 0
     property string progressStage: ""
@@ -44,6 +47,10 @@ ModalShell {
         phase === "confirm" ? BibleImporter.codeProblem(codeField.text) : ""
     readonly property bool canImport:
         codeProblem.length === 0 && nameField.text.trim().length > 0
+    // The code is taken by a Bible this one can take over.
+    readonly property bool canReplace:
+        codeProblem.length > 0 && nameField.text.trim().length > 0
+        && BibleImporter.canReplace(codeField.text)
 
     function count(n) { return Number(n).toLocaleString(Qt.locale(), "f", 0) }
     function list(items) { return (items || []).join(", ") }
@@ -67,6 +74,14 @@ ModalShell {
             if (request !== root.request) return
             root.importedCode = code
             root.importedVerses = verses
+            root.retiredCode = ""
+            root.phase = "done"
+        }
+        function onReplaced(request, code, retiredCode, verses) {
+            if (request !== root.request) return
+            root.importedCode = code
+            root.importedVerses = verses
+            root.retiredCode = retiredCode
             root.phase = "done"
         }
         function onFailed(request, reason) {
@@ -117,8 +132,35 @@ ModalShell {
         if (root.phase !== "confirm" || !root.canImport) return
         root.progressPercent = 0
         root.progressStage = qsTr("Starting...")
+        root.replacing = false
         root.phase = "importing"
         root.request = BibleImporter.run(root.files, codeField.text.trim(), nameField.text.trim())
+    }
+
+    function askReplace() {
+        if (root.phase !== "confirm" || !root.canReplace) return
+        const old = BibleImporter.replaceInfo(codeField.text)
+        if (!old.code) return
+        const incoming = root.info.verses || 0
+        replaceConfirm.title = qsTr("Replace %1?").arg(old.code)
+        replaceConfirm.body = qsTr("%1 has %2 verses. This file has %3.").arg(old.code)
+                                  .arg(root.count(old.verses)).arg(root.count(incoming))
+            + (incoming < old.verses
+               ? " " + qsTr("A reference to a verse this file doesn't have won't find anything in %1.").arg(old.code)
+               : "")
+            + "\n\n"
+            + qsTr("The old copy stays as %1, hidden, and you can switch back in Settings > Scripture. Schedules keep the verses they already hold.")
+                  .arg(old.retiredCode)
+        replaceConfirm.openConfirm()
+    }
+
+    function startReplace() {
+        if (root.phase !== "confirm" || !root.canReplace) return
+        root.progressPercent = 0
+        root.progressStage = qsTr("Starting...")
+        root.replacing = true
+        root.phase = "importing"
+        root.request = BibleImporter.replace(root.files, codeField.text.trim(), nameField.text.trim())
     }
 
     function openInScripture() {
@@ -372,6 +414,32 @@ ModalShell {
                         text: qsTr("The code is what the Scripture tab shows on its card, and what you type after a reference to use it, as in John 3:16 KJV.")
                     }
 
+                    // The file names a code that's taken, and a free one was
+                    // suggested. Adding a second copy may not be what's wanted.
+                    Row {
+                        width: parent.width
+                        spacing: Theme.space.md
+                        visible: !!root.info.existingCode && root.codeProblem.length === 0
+                                 && String(codeField.text).trim().toUpperCase()
+                                    !== String(root.info.existingCode).toUpperCase()
+                        Note {
+                            width: parent.width - replaceInstead.width - parent.spacing
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Theme.color.textSecondary
+                            text: qsTr("You already have %1, so this would add a second copy.").arg(root.info.existingCode || "")
+                        }
+                        GhostButton {
+                            id: replaceInstead
+                            text: qsTr("Replace %1 instead").arg(root.info.existingCode || "")
+                            onClicked: codeField.text = root.info.existingCode
+                        }
+                    }
+                    Note {
+                        visible: root.canReplace
+                        color: Theme.color.textSecondary
+                        text: qsTr("You can replace it. This Bible takes over the code, so your default version and typed references keep working, and the old copy is kept in case you want it back.")
+                    }
+
                     Note {
                         visible: (root.info.warnings || []).length > 0
                         color: Theme.color.live
@@ -408,12 +476,21 @@ ModalShell {
 
                 GhostButton { text: qsTr("Back"); onClicked: root.resetToStart() }
                 PrimaryButton {
+                    visible: !root.canReplace
                     variant: "brand"
                     inkColor: "#ffffff"
                     iconName: "download"
                     text: qsTr("Add Bible")
                     enabled: root.canImport
                     onClicked: root.startImport()
+                }
+                PrimaryButton {
+                    visible: root.canReplace
+                    variant: "brand"
+                    inkColor: "#ffffff"
+                    iconName: "download"
+                    text: qsTr("Replace %1...").arg(codeField.text.trim().toUpperCase())
+                    onClicked: root.askReplace()
                 }
             }
         }
@@ -430,7 +507,8 @@ ModalShell {
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: qsTr("Adding %1...").arg(codeField.text.trim().toUpperCase())
+                    text: (root.replacing ? qsTr("Replacing %1...") : qsTr("Adding %1..."))
+                              .arg(codeField.text.trim().toUpperCase())
                     color: Theme.color.textTitle
                     font.family: Theme.font.family
                     font.pixelSize: Theme.font.bodySize + 3
@@ -487,8 +565,11 @@ ModalShell {
                 }
                 Body {
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("%1 verses added. It's at the end of the translation list in Scripture.")
-                              .arg(root.count(root.importedVerses))
+                    text: root.retiredCode.length > 0
+                          ? qsTr("%1 verses added. The old copy is now %2, hidden. To switch back, go to Settings > Scripture.")
+                                .arg(root.count(root.importedVerses)).arg(root.retiredCode)
+                          : qsTr("%1 verses added. It's at the end of the translation list in Scripture.")
+                                .arg(root.count(root.importedVerses))
                 }
             }
 
@@ -525,7 +606,7 @@ ModalShell {
                 }
                 Heading {
                     horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("Couldn't add this Bible")
+                    text: root.replacing ? qsTr("Couldn't replace this Bible") : qsTr("Couldn't add this Bible")
                 }
                 Body {
                     horizontalAlignment: Text.AlignHCenter
@@ -546,6 +627,13 @@ ModalShell {
                     onClicked: root.tryAgain()
                 }
             }
+        }
+
+        ConfirmationOverlay {
+            id: replaceConfirm
+            anchors.fill: parent
+            confirmLabel: qsTr("Replace")
+            onConfirmed: root.startReplace()
         }
     }
 }

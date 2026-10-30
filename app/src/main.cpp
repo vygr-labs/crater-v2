@@ -689,11 +689,22 @@ int main(int argc, char* argv[])
                      [&songService](int /*imported*/, int /*skipped*/) {
                          songService.reload();
                      });
-    // Likewise a Bible added or removed: BibleImporter wrote bibles.sqlite
-    // on its own connection, so BibleService drops what it cached for that
-    // code and every translation list re-reads.
+    // Likewise a Bible added, replaced or removed: BibleImporter wrote
+    // bibles.sqlite on its own connection, so BibleService drops what it
+    // cached for that code and every translation list re-reads. A swap
+    // changes what two codes mean.
     QObject::connect(&bibleImporter, &crater::BibleImporter::completed, &bibleService,
                      [&bibleService](int, const QString& code, int) { bibleService.libraryChanged(code); });
+    QObject::connect(&bibleImporter, &crater::BibleImporter::replaced, &bibleService,
+                     [&bibleService](int, const QString& code, const QString& retiredCode, int) {
+                         bibleService.libraryChanged(retiredCode);
+                         bibleService.libraryChanged(code);
+                     });
+    QObject::connect(&bibleImporter, &crater::BibleImporter::switchedBack, &bibleService,
+                     [&bibleService](int, const QString& code, const QString& retiredCode) {
+                         bibleService.libraryChanged(retiredCode);
+                         bibleService.libraryChanged(code);
+                     });
     QObject::connect(&bibleImporter, &crater::BibleImporter::removed, &bibleService,
                      [&bibleService](int, const QString& code) { bibleService.libraryChanged(code); });
 

@@ -215,7 +215,7 @@ struct BibleService::Impl
     explicit Impl(const QString& path)
         : conn(path, db::OpenMode::ReadWriteCreate, QStringLiteral("BibleService"))
         , selectTranslations(conn.prepare(QStringLiteral(
-            "SELECT code, name, year, description, source "
+            "SELECT code, name, year, description, source, COALESCE(replaced_from, '') "
             "FROM translations "
             "ORDER BY sort_order, code")))
         , selectBooks(conn.prepare(booksSql()))
@@ -233,7 +233,8 @@ struct BibleService::Impl
             "JOIN verses       v ON v.id = verses_fts.rowid "
             "JOIN books        b ON b.id = v.book_id "
             "JOIN translations t ON t.id = v.translation_id "
-            "WHERE verses_fts MATCH ? "
+            // An old copy an import replaced would double every hit.
+            "WHERE verses_fts MATCH ? AND t.replaced_from IS NULL "
             "ORDER BY score ASC "
             "LIMIT 100")))
         , searchScoped(conn.prepare(QStringLiteral(
@@ -330,6 +331,7 @@ QList<Translation> BibleService::libraryTranslations()
             t.year        = stmt.columnInt(2);
             t.description = stmt.columnText(3);
             t.source      = stmt.columnText(4);
+            t.replacedFrom = stmt.columnText(5);
             out.append(std::move(t));
         }
         stmt.reset();   // no read cursor left open
@@ -378,8 +380,11 @@ QVariantList BibleService::allTranslations()
             { QStringLiteral("name"),        t.name },
             { QStringLiteral("description"), t.description },
             { QStringLiteral("hidden"),      m_hidden.contains(t.code.toUpper()) },
-            // Added from a file, so it can be removed (BibleImporter).
-            { QStringLiteral("removable"),   t.source == u"file" },
+            // Added from a file, or an old copy an import replaced, so it
+            // can be removed (BibleImporter).
+            { QStringLiteral("removable"),   t.source == u"file" || !t.replacedFrom.isEmpty() },
+            { QStringLiteral("source"),      t.source },
+            { QStringLiteral("replacedFrom"), t.replacedFrom },
         });
     }
     return out;

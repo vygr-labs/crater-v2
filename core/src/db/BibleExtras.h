@@ -17,6 +17,12 @@ class Connection;
 //                               current bundle no longer has (NIV, ESV), and
 //                               removing one could never be undone.
 //
+//   translations.replaced_from  NULL, or the code this copy held before a new
+//                               import replaced it ('KJV' on the row now
+//                               called KJV-OLD). Such a copy can be switched
+//                               back or removed, whatever its source: the
+//                               operator already chose to move on from it.
+//
 //   verses_fts_pending_delete   verses_fts is contentless, so a row leaves it
 //                               only through FTS5's 'delete' command, given
 //                               the exact values it was indexed with. Removing

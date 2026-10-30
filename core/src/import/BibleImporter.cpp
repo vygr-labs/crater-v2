@@ -60,8 +60,8 @@ QString userMessage(const db::Error& e)
 }
 
 // Letters and digits from the file's own code ("KJV"), else the initials
-// of its name ("World English Bible" -> "WEB"), made unique with a number.
-QString suggestCode(const import::ParsedBible& bible, db::Connection& conn)
+// of its name ("World English Bible" -> "WEB").
+QString baseCode(const import::ParsedBible& bible)
 {
     static const QRegularExpression notCode(QStringLiteral("[^A-Za-z0-9]"));
     // OSIS works are often dotted ("Bible.en.kjv"): the last part is the code.
@@ -96,10 +96,55 @@ QString suggestCode(const import::ParsedBible& bible, db::Connection& conn)
     }
     base = base.toUpper().left(8);
     if (base.isEmpty()) base = QStringLiteral("BIBLE");
+    return base;
+}
+
+// baseCode, made unique with a number.
+QString suggestCode(const QString& base, db::Connection& conn)
+{
     QString code = base;
     for (int n = 2; codeTaken(conn, code) && n < 100; ++n)
         code = base.left(8 - QString::number(n).size()) + QString::number(n);
     return code;
+}
+
+// The row a replace would take over.
+struct ReplaceTarget
+{
+    qint64  id = 0;
+    QString code, name, replacedFrom;
+    qint64  sortOrder = 0;
+    bool    found = false;
+};
+
+ReplaceTarget replaceTarget(db::Connection& conn, const QString& code)
+{
+    ReplaceTarget t;
+    auto st = conn.prepare(QStringLiteral(
+        "SELECT id, code, name, COALESCE(replaced_from, ''), sort_order "
+        "FROM translations WHERE upper(code) = upper(?)"));
+    st.bind(1, code);
+    if (st.step()) {
+        t.id           = st.columnInt64(0);
+        t.code         = st.columnText(1);
+        t.name         = st.columnText(2);
+        t.replacedFrom = st.columnText(3);
+        t.sortOrder    = st.columnInt64(4);
+        t.found        = true;
+    }
+    return t;
+}
+
+// KJV-OLD, then KJV-OLD2 and so on, cut to fit the 12 a code may hold. Empty
+// if somehow all of them are taken.
+QString retiredCodeFor(db::Connection& conn, const QString& code)
+{
+    for (int n = 1; n < 100; ++n) {
+        const QString suffix = n == 1 ? QStringLiteral("-OLD") : QStringLiteral("-OLD%1").arg(n);
+        const QString retired = code.left(12 - suffix.size()) + suffix;
+        if (!codeTaken(conn, retired)) return retired;
+    }
+    return {};
 }
 
 int distinctBooks(const import::ParsedBible& bible)
@@ -274,12 +319,50 @@ bool BibleImporter::isRemovable(QString code) const
         db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                             QStringLiteral("BibleImport-check"));
         auto st = conn.prepare(QStringLiteral(
-            "SELECT source FROM translations WHERE upper(code) = upper(?)"));
+            "SELECT source, COALESCE(replaced_from, '') FROM translations WHERE upper(code) = upper(?)"));
         st.bind(1, code);
-        return st.step() && st.columnText(0) == u"file";
+        return st.step() && (st.columnText(0) == u"file" || !st.columnText(1).isEmpty());
     } catch (const db::Error& e) {
         qWarning().noquote() << "BibleImport: isRemovable:" << e.message();
         return false;
+    }
+}
+
+bool BibleImporter::canReplace(QString code) const
+{
+    code = code.trimmed();
+    if (code.isEmpty()) return false;
+    try {
+        db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
+                            QStringLiteral("BibleImport-check"));
+        const ReplaceTarget t = replaceTarget(conn, code);
+        return t.found && t.replacedFrom.isEmpty();
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "BibleImport: canReplace:" << e.message();
+        return false;
+    }
+}
+
+QVariantMap BibleImporter::replaceInfo(QString code) const
+{
+    code = code.trimmed();
+    if (code.isEmpty()) return {};
+    try {
+        db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
+                            QStringLiteral("BibleImport-check"));
+        const ReplaceTarget t = replaceTarget(conn, code);
+        if (!t.found || !t.replacedFrom.isEmpty()) return {};
+        auto count = conn.prepare(QStringLiteral("SELECT COUNT(*) FROM verses WHERE translation_id = ?"));
+        count.bind(1, t.id);
+        return {
+            { QStringLiteral("code"),        t.code },
+            { QStringLiteral("name"),        t.name },
+            { QStringLiteral("verses"),      count.step() ? count.columnInt(0) : 0 },
+            { QStringLiteral("retiredCode"), retiredCodeFor(conn, t.code) },
+        };
+    } catch (const db::Error& e) {
+        qWarning().noquote() << "BibleImport: replaceInfo:" << e.message();
+        return {};
     }
 }
 
@@ -296,10 +379,14 @@ int BibleImporter::analyze(QStringList files)
             }
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadOnly,
                                 QStringLiteral("BibleImport-analyze"));
+            const QString base = baseCode(bible);
+            const ReplaceTarget existing = replaceTarget(conn, base);
             emit analyzed(request, QVariantMap{
                 { QStringLiteral("format"),          bible.format },
                 { QStringLiteral("name"),            bible.name },
-                { QStringLiteral("code"),            suggestCode(bible, conn) },
+                { QStringLiteral("code"),            suggestCode(base, conn) },
+                { QStringLiteral("existingCode"),    existing.found && existing.replacedFrom.isEmpty()
+                                                         ? existing.code : QString() },
                 { QStringLiteral("language"),        bible.language },
                 { QStringLiteral("books"),           distinctBooks(bible) },
                 { QStringLiteral("verses"),          verseCount(bible) },
@@ -321,10 +408,20 @@ int BibleImporter::analyze(QStringList files)
 
 int BibleImporter::run(QStringList files, QString code, QString name)
 {
+    return startImport(std::move(files), std::move(code), std::move(name), false);
+}
+
+int BibleImporter::replace(QStringList files, QString code, QString name)
+{
+    return startImport(std::move(files), std::move(code), std::move(name), true);
+}
+
+int BibleImporter::startImport(QStringList files, QString code, QString name, bool replacing)
+{
     const int request = m_nextRequest++;
     code = code.trimmed().toUpper();
     name = name.trimmed();
-    m_pool.start([this, request, files, code, name, stop = m_stop]() {
+    m_pool.start([this, request, files, code, name, replacing, stop = m_stop]() mutable {
         if (const QString shape = codeShapeProblem(code); !shape.isEmpty()) {
             emit failed(request, shape);
             return;
@@ -344,8 +441,14 @@ int BibleImporter::run(QStringList files, QString code, QString name)
             db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
                                 QStringLiteral("BibleImport"));
             db::Transaction tx(conn, db::Transaction::Begin::Immediate);
-            if (codeTaken(conn, code)) {
+            const ReplaceTarget existing = replaceTarget(conn, code);
+            if (existing.found && !replacing) {
                 emit failed(request, tr("There's already a translation called %1.").arg(code));
+                return;
+            }
+            if (existing.found && !existing.replacedFrom.isEmpty()) {
+                emit failed(request, tr("%1 is an old copy and can't be replaced. Switch it back or remove it first.")
+                                         .arg(existing.code));
                 return;
             }
             emit progress(request, 10, tr("Adding the translation..."));
@@ -355,6 +458,28 @@ int BibleImporter::run(QStringList files, QString code, QString name)
                 auto last = conn.prepare(QStringLiteral(
                     "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM translations"));
                 if (last.step()) sortOrder = last.columnInt64(0);
+            }
+            // The old copy moves aside and to the end of the list, and the
+            // new one takes its code and place. Its rows in the search index
+            // stay valid: search joins through verses for the code, and the
+            // verses aren't touched.
+            QString retiredCode;
+            if (existing.found) {
+                retiredCode = retiredCodeFor(conn, existing.code);
+                if (retiredCode.isEmpty()) {
+                    emit failed(request, tr("There are too many old copies of %1. Remove one first.")
+                                             .arg(existing.code));
+                    return;
+                }
+                auto move = conn.prepare(QStringLiteral(
+                    "UPDATE translations SET code = ?, replaced_from = ?, sort_order = ? WHERE id = ?"));
+                move.bind(1, retiredCode);
+                move.bind(2, existing.code);
+                move.bind(3, sortOrder);
+                move.bind(4, existing.id);
+                move.step();
+                code = existing.code;
+                sortOrder = existing.sortOrder;
             }
             qint64 translationId = 0;
             {
@@ -454,13 +579,59 @@ int BibleImporter::run(QStringList files, QString code, QString name)
                 .arg(bible.skippedBooks.isEmpty() ? QString()
                      : QStringLiteral(", skipped ") + bible.skippedBooks.join(QStringLiteral(", ")));
             emit progress(request, 100, tr("Done"));
-            emit completed(request, code, stored);
+            if (retiredCode.isEmpty()) emit completed(request, code, stored);
+            else emit replaced(request, code, retiredCode, stored);
         } catch (const db::Error& e) {
             qWarning().noquote() << "BibleImport failed:" << e.message();
             emit failed(request, userMessage(e));
         } catch (...) {
             emit failed(request, tr("Something went wrong during the import."));
         }
+    });
+    return request;
+}
+
+int BibleImporter::switchBack(QString retiredCode)
+{
+    const int request = m_nextRequest++;
+    retiredCode = retiredCode.trimmed();
+    m_pool.start([this, request, retiredCode]() {
+        QString code, oldCode;
+        try {
+            db::Connection conn(db::DbPaths::biblesDbPath(), db::OpenMode::ReadWrite,
+                                QStringLiteral("BibleImport-switch"));
+            db::Transaction tx(conn, db::Transaction::Begin::Immediate);
+            const ReplaceTarget old = replaceTarget(conn, retiredCode);
+            if (!old.found || old.replacedFrom.isEmpty()) {
+                emit failed(request, tr("%1 isn't an old copy of another translation.").arg(retiredCode));
+                return;
+            }
+            code = old.replacedFrom;
+            oldCode = old.code;
+            const ReplaceTarget current = replaceTarget(conn, code);
+            auto set = conn.prepare(QStringLiteral(
+                "UPDATE translations SET code = ?, replaced_from = NULLIF(?, ''), sort_order = ? WHERE id = ?"));
+            const auto apply = [&set](const QString& newCode, const QString& from, qint64 order, qint64 id) {
+                set.reset();
+                set.bind(1, newCode);
+                set.bind(2, from);
+                set.bind(3, order);
+                set.bind(4, id);
+                set.step();
+            };
+            // Codes are unique, so the current copy steps out of the way
+            // through a name no code can have.
+            if (current.found) apply(QStringLiteral("~switching"), QString(), current.sortOrder, current.id);
+            apply(code, QString(), current.found ? current.sortOrder : old.sortOrder, old.id);
+            if (current.found) apply(oldCode, code, old.sortOrder, current.id);
+            tx.commit();
+            qInfo().noquote() << "BibleImport: switched" << oldCode << "back to" << code;
+        } catch (const db::Error& e) {
+            qWarning().noquote() << "BibleImport: switching" << retiredCode << "back failed:" << e.message();
+            emit failed(request, userMessage(e));
+            return;
+        }
+        emit switchedBack(request, code, oldCode);
     });
     return request;
 }
@@ -483,21 +654,24 @@ int BibleImporter::remove(QString code)
             db::Transaction tx(conn, db::Transaction::Begin::Immediate);
             qint64 id = 0;
             QString source;
+            bool oldCopy = false;
             {
                 auto find = conn.prepare(QStringLiteral(
-                    "SELECT id, code, source FROM translations WHERE upper(code) = upper(?)"));
+                    "SELECT id, code, source, COALESCE(replaced_from, '') FROM translations "
+                    "WHERE upper(code) = upper(?)"));
                 find.bind(1, code);
                 if (find.step()) {
                     id = find.columnInt64(0);
                     code = find.columnText(1);
                     source = find.columnText(2);
+                    oldCopy = !find.columnText(3).isEmpty();
                 }
             }
             if (id == 0) {
                 emit failed(request, tr("%1 isn't installed.").arg(code));
                 return;
             }
-            if (source != u"file") {
+            if (source != u"file" && !oldCopy) {
                 emit failed(request, tr("%1 came with Crater and can't be removed. Untick it to hide it.").arg(code));
                 return;
             }

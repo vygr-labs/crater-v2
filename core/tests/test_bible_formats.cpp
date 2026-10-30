@@ -1165,6 +1165,167 @@ private slots:
         QTRY_COMPARE(count(u"SELECT count(*) FROM verses_fts_pending_delete"), 0);
     }
 
+    // A new copy takes over a code, and the old one stays until it's dropped.
+    void replaceSwitchBackRemove()
+    {
+        crater::BibleImporter importer;
+        crater::BibleService bible;
+        const auto changed = [&bible](int, const QString& code, const QString& retired) {
+            bible.libraryChanged(retired);
+            bible.libraryChanged(code);
+        };
+        QObject::connect(&importer, &crater::BibleImporter::completed, &bible,
+                         [&bible](int, const QString& code) { bible.libraryChanged(code); });
+        QObject::connect(&importer, &crater::BibleImporter::removed, &bible,
+                         [&bible](int, const QString& code) { bible.libraryChanged(code); });
+        QObject::connect(&importer, &crater::BibleImporter::replaced, &bible,
+                         [changed](int r, const QString& c, const QString& o) { changed(r, c, o); });
+        QObject::connect(&importer, &crater::BibleImporter::switchedBack, &bible, changed);
+
+        const auto zefania = [](const char* id, const char* word) {
+            return QStringLiteral(
+                "<XMLBIBLE biblename=\"Test\"><INFORMATION><identifier>%1</identifier></INFORMATION>"
+                "<BIBLEBOOK bnumber=\"43\" bname=\"John\"><CHAPTER cnumber=\"3\">"
+                "<VERS vnumber=\"16\">%2 sixteen</VERS><VERS vnumber=\"17\">%2 seventeen</VERS>"
+                "</CHAPTER></BIBLEBOOK></XMLBIBLE>").arg(QLatin1String(id), QLatin1String(word)).toUtf8();
+        };
+        const auto text = [&bible](const QString& code) {
+            return bible.verse(code, QStringLiteral("John"), 3, 16).text;
+        };
+        const auto row = [&bible](const QString& code) {
+            for (const QVariant& t : bible.allTranslations())
+                if (t.toMap().value("code").toString() == code) return t.toMap();
+            return QVariantMap();
+        };
+        const auto position = [&bible](const QString& code) {
+            const QVariantList all = bible.allTranslations();
+            for (int i = 0; i < all.size(); ++i)
+                if (all.at(i).toMap().value("code").toString() == code) return i;
+            return -1;
+        };
+        const auto count = [](QStringView sql) {
+            crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
+            auto st = conn.prepare(sql);
+            return st.step() ? st.columnInt(0) : -1;
+        };
+
+        QSignalSpy completed(&importer, &crater::BibleImporter::completed);
+        QSignalSpy replaced(&importer, &crater::BibleImporter::replaced);
+        QSignalSpy switched(&importer, &crater::BibleImporter::switchedBack);
+        QSignalSpy removed(&importer, &crater::BibleImporter::removed);
+        QSignalSpy failed(&importer, &crater::BibleImporter::failed);
+        QSignalSpy analyzed(&importer, &crater::BibleImporter::analyzed);
+
+        importer.run({ write("rep-first.xml", zefania("RPL", "original")) },
+                     QStringLiteral("RPL"), QStringLiteral("First"));
+        importer.run({ write("rep-other.xml", zefania("RPO", "other")) },
+                     QStringLiteral("RPO"), QStringLiteral("Other"));
+        QTRY_COMPARE(completed.size(), 2);
+        QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("original sixteen"));
+        const int place = position(QStringLiteral("RPL"));
+        QVERIFY(place < position(QStringLiteral("RPO")));
+
+        // The dialog hears which code the file named, and still gets a free one.
+        const QStringList newFile = { write("rep-new.xml", zefania("RPL", "replacement")) };
+        importer.analyze(newFile);
+        QTRY_COMPARE(analyzed.size(), 1);
+        QCOMPARE(analyzed.first().at(1).toMap().value("code").toString(), QStringLiteral("RPL2"));
+        QCOMPARE(analyzed.first().at(1).toMap().value("existingCode").toString(), QStringLiteral("RPL"));
+
+        // A file that can't be read leaves the original alone.
+        QVERIFY(importer.canReplace(QStringLiteral("rpl")));
+        QVERIFY(!importer.canReplace(QStringLiteral("NOPE")));
+        importer.replace({ write("rep-bad.xml", "not a bible") }, QStringLiteral("RPL"), QStringLiteral("Bad"));
+        QTRY_COMPARE(failed.size(), 1);
+        QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("original sixteen"));
+        QVERIFY(row(QStringLiteral("RPL-OLD")).isEmpty());
+
+        const QVariantMap info = importer.replaceInfo(QStringLiteral("RPL"));
+        QCOMPARE(info.value("verses").toInt(), 2);
+        QCOMPARE(info.value("retiredCode").toString(), QStringLiteral("RPL-OLD"));
+
+        // The new copy takes the code and its place, the old one goes last.
+        importer.replace(newFile, QStringLiteral("rpl"), QStringLiteral("Second"));
+        QTRY_COMPARE(replaced.size() + failed.size(), 2);
+        QCOMPARE(replaced.first().at(1).toString(), QStringLiteral("RPL"));
+        QCOMPARE(replaced.first().at(2).toString(), QStringLiteral("RPL-OLD"));
+        QCOMPARE(replaced.first().at(3).toInt(), 2);
+        QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("replacement sixteen"));
+        QCOMPARE(text(QStringLiteral("RPL-OLD")), QStringLiteral("original sixteen"));
+        QCOMPARE(position(QStringLiteral("RPL")), place);
+        QCOMPARE(position(QStringLiteral("RPL-OLD")), bible.allTranslations().size() - 1);
+        QCOMPARE(row(QStringLiteral("RPL")).value("replacedFrom").toString(), QString());
+        QCOMPARE(row(QStringLiteral("RPL-OLD")).value("replacedFrom").toString(), QStringLiteral("RPL"));
+
+        // Search finds each under its own code, and only the current one when
+        // searching everything.
+        QCOMPARE(bible.search(QStringLiteral("replacement"), QStringLiteral("RPL")).size(), 2);
+        QCOMPARE(bible.search(QStringLiteral("original"), QStringLiteral("RPL")).size(), 0);
+        QCOMPARE(bible.search(QStringLiteral("original"), QStringLiteral("RPL-OLD")).size(), 2);
+        QCOMPARE(bible.search(QStringLiteral("original")).size(), 0);
+        QCOMPARE(bible.search(QStringLiteral("replacement")).size(), 2);
+
+        // An old copy can't be taken over, but it can be removed, even one
+        // Crater shipped.
+        QVERIFY(!importer.canReplace(QStringLiteral("RPL-OLD")));
+        QVERIFY(importer.replaceInfo(QStringLiteral("RPL-OLD")).isEmpty());
+        importer.replace(newFile, QStringLiteral("RPL-OLD"), QStringLiteral("No"));
+        QTRY_COMPARE(failed.size(), 2);
+
+        // A second replace keeps both earlier copies.
+        importer.replace({ write("rep-third.xml", zefania("RPL", "third")) },
+                         QStringLiteral("RPL"), QStringLiteral("Third"));
+        QTRY_COMPARE(replaced.size(), 2);
+        QCOMPARE(replaced.last().at(2).toString(), QStringLiteral("RPL-OLD2"));
+        QCOMPARE(text(QStringLiteral("RPL-OLD2")), QStringLiteral("replacement sixteen"));
+
+        // Switching back swaps the two, places included.
+        importer.switchBack(QStringLiteral("RPL-OLD"));
+        QTRY_COMPARE(switched.size(), 1);
+        QCOMPARE(switched.first().at(1).toString(), QStringLiteral("RPL"));
+        QCOMPARE(switched.first().at(2).toString(), QStringLiteral("RPL-OLD"));
+        QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("original sixteen"));
+        QCOMPARE(text(QStringLiteral("RPL-OLD")), QStringLiteral("third sixteen"));
+        QCOMPARE(position(QStringLiteral("RPL")), place);
+        QCOMPARE(row(QStringLiteral("RPL")).value("replacedFrom").toString(), QString());
+        QCOMPARE(row(QStringLiteral("RPL-OLD")).value("replacedFrom").toString(), QStringLiteral("RPL"));
+        QCOMPARE(bible.search(QStringLiteral("original")).size(), 2);
+        QCOMPARE(bible.search(QStringLiteral("third")).size(), 0);
+
+        // Only an old copy can be switched back.
+        importer.switchBack(QStringLiteral("RPO"));
+        QTRY_COMPARE(failed.size(), 3);
+
+        // With nothing holding the code any more, it simply goes back.
+        importer.remove(QStringLiteral("RPL"));
+        QTRY_COMPARE(removed.size(), 1);
+        importer.switchBack(QStringLiteral("RPL-OLD2"));
+        QTRY_COMPARE(switched.size(), 2);
+        QCOMPARE(text(QStringLiteral("RPL")), QStringLiteral("replacement sixteen"));
+
+        // A shipped Bible: replaced, its old copy can then be removed.
+        {
+            crater::db::Connection conn(crater::db::DbPaths::biblesDbPath());
+            conn.exec(u"INSERT INTO translations (code, name) VALUES ('SHP', 'Shipped')");
+        }
+        QVERIFY(!importer.isRemovable(QStringLiteral("SHP")));
+        QVERIFY(importer.canReplace(QStringLiteral("SHP")));
+        importer.replace(newFile, QStringLiteral("SHP"), QStringLiteral("Shipped, corrected"));
+        QTRY_COMPARE(replaced.size(), 3);
+        QVERIFY(importer.isRemovable(QStringLiteral("SHP-OLD")));
+        QVERIFY(importer.isRemovable(QStringLiteral("SHP")));
+
+        // Everything added here goes, and the index ends up empty: rows
+        // indexed under a code that has since changed still delete cleanly.
+        for (const char* code : { "RPL", "RPL-OLD", "RPO", "SHP", "SHP-OLD" })
+            importer.remove(QLatin1String(code));
+        QTRY_COMPARE(removed.size(), 6);
+        QCOMPARE(failed.size(), 3);
+        QTRY_COMPARE(count(u"SELECT count(*) FROM verses_fts_pending_delete"), 0);
+        QTRY_COMPARE(count(u"SELECT count(*) FROM verses_fts"), 0);
+        QCOMPARE(bible.search(QStringLiteral("replacement")).size(), 0);
+    }
+
     // Removal clean-up a quit cut short is finished by the next import or
     // removal (or ten seconds after launch).
     void pendingCleanupResumes()

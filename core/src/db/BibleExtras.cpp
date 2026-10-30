@@ -8,11 +8,11 @@ namespace crater::db {
 
 namespace {
 
-bool hasSourceColumn(Connection& conn)
+bool hasColumn(Connection& conn, QStringView name)
 {
     auto info = conn.prepare(QStringLiteral("PRAGMA table_info(translations)"));
     while (info.step())
-        if (info.columnText(1) == u"source") return true;
+        if (info.columnText(1) == name) return true;
     return false;
 }
 
@@ -28,13 +28,15 @@ bool hasPendingTable(Connection& conn)
 void ensureBibleExtras(Connection& conn)
 {
     // Nothing to write, so no write lock: this runs at every startup.
-    if (hasSourceColumn(conn) && hasPendingTable(conn)) return;
+    if (hasColumn(conn, u"source") && hasColumn(conn, u"replaced_from") && hasPendingTable(conn)) return;
     Transaction tx(conn, Transaction::Begin::Immediate);
     // Asked again under the lock: another Crater starting at the same moment
     // may have added the column first, and adding it twice fails.
-    if (!hasSourceColumn(conn))
+    if (!hasColumn(conn, u"source"))
         conn.exec(QStringLiteral(
             "ALTER TABLE translations ADD COLUMN source TEXT NOT NULL DEFAULT 'bundled'"));
+    if (!hasColumn(conn, u"replaced_from"))
+        conn.exec(QStringLiteral("ALTER TABLE translations ADD COLUMN replaced_from TEXT"));
     conn.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS verses_fts_pending_delete ("
         "    verse_id         INTEGER PRIMARY KEY,"   // the verses_fts rowid
