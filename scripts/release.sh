@@ -347,7 +347,11 @@ if [[ $SKIP_DMG -eq 0 ]]; then
     # block for create-dmg (https://github.com/create-dmg/create-dmg).
     DMG_STAGE=$(mktemp -d)
     trap 'rm -rf "$DMG_STAGE"' EXIT
-    cp -R "$APP_BUNDLE" "$DMG_STAGE/"
+    # ditto rather than cp: codesign keeps the signatures of the databases
+    # in Contents/MacOS/legacy as extended attributes, and a copy that drops
+    # them leaves the DMG's app reading as damaged.
+    ditto "$APP_BUNDLE" "$DMG_STAGE/crater.app"
+    codesign --verify --deep --strict "$DMG_STAGE/crater.app"
     ln -s /Applications "$DMG_STAGE/Applications"
     # Defensively detach any pre-existing volume with the same name —
     # otherwise hdiutil errors out with "Resource busy" on the second run
