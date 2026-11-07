@@ -172,11 +172,13 @@ Item {
     // under. A save, favorite toggle or import rebuilds filteredSongs under the
     // same filter, and the list has to stay on the same SONG through that: the
     // fluid index is a row number, so a new song sorting above it would
-    // otherwise move the highlight onto a different song.
+    // otherwise move the highlight onto a different song. Sort is left out of
+    // the key: a new order holds the same songs, so the highlight follows its
+    // song there too.
     property var _fluidSongId: null
     property string _filterKey: ""
     function _currentFilterKey() {
-        return [_debouncedQuery, mode, group, sortMode].join("\u0001")
+        return [_debouncedQuery, mode, group].join("\u0001")
     }
     // The first list is built before any change handler runs, so seed both.
     Component.onCompleted: {
@@ -198,8 +200,25 @@ Item {
     // rebuild the highlighted song was scrolled out of sight and only came
     // back by searching for it. Deferred so the view has taken the new model.
     function _showFluidRow() {
+        _syncCurrent()
         if (fluidIndex >= 0 && fluidIndex < list.count)
             list.positionViewAtIndex(fluidIndex, ListView.Contain)
+    }
+    // A model swap resets list.currentIndex to 0 inside ListView. The Binding
+    // only re-pushes when fluidIndex changes, so when the song keeps its row
+    // (favorite toggle, a sort that leaves it in place) the drawn highlight
+    // sat on row 0 while Enter and Preview used the real row.
+    function _syncCurrent() {
+        if (fluidIndex >= 0 && fluidIndex < list.count && list.currentIndex !== fluidIndex)
+            list.currentIndex = fluidIndex
+    }
+    // Standalone, so _syncCurrent's write can't remove it (an inline
+    // `currentIndex: root.fluidIndex` would be broken by that assignment).
+    Binding {
+        target: list
+        property: "currentIndex"
+        value: root.fluidIndex
+        restoreMode: Binding.RestoreBindingOrValue
     }
 
     // Bounds-clamp fluid index when the list shrinks (e.g. query change).
@@ -219,7 +238,7 @@ Item {
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         else _rememberFluidSong()
         refreshPreviewFor(idx)
-        if (reload) Qt.callLater(_showFluidRow)
+        Qt.callLater(reload ? _showFluidRow : _syncCurrent)
     }
 
     // When the operator switches into this tab, restore the preview to the
@@ -776,7 +795,8 @@ Item {
         cacheBuffer: 400
         spacing: 0
         boundsBehavior: Flickable.StopAtBounds
-        currentIndex: root.fluidIndex
+        // currentIndex comes from the Binding below the list, not an inline
+        // binding: see _syncCurrent.
         // Qt's own scroll-to-current, on only while the arrow keys should
         // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
         highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
@@ -1206,6 +1226,8 @@ Item {
         // A search or a Favorites/collection view that hides the new song is
         // cleared first, or the operator would not see what they just made.
         function onSongCreated(songId) {
+            // Duplicate returns 0 when it fails: nothing was made, keep the view.
+            if (!(songId > 0)) return
             if (root._indexOfSong(songId) < 0) {
                 if (root.query.length > 0) AppState.setSearch(root.tabKey, "")
                 // Skip the typing debounce so the list rebuilds right now.
