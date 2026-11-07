@@ -168,18 +168,58 @@ Item {
 
     readonly property int fluidIndex: AppState.libraryFluidIndex.songs
 
+    // The song the fluid row points at, and the filter the list was built
+    // under. A save, favorite toggle or import rebuilds filteredSongs under the
+    // same filter, and the list has to stay on the same SONG through that: the
+    // fluid index is a row number, so a new song sorting above it would
+    // otherwise move the highlight onto a different song.
+    property var _fluidSongId: null
+    property string _filterKey: ""
+    function _currentFilterKey() {
+        return [_debouncedQuery, mode, group, sortMode].join("\u0001")
+    }
+    // The first list is built before any change handler runs, so seed both.
+    Component.onCompleted: {
+        _filterKey = _currentFilterKey()
+        _rememberFluidSong()
+    }
+    onFluidIndexChanged: _rememberFluidSong()
+    function _rememberFluidSong() {
+        const row = (fluidIndex >= 0 && fluidIndex < filteredSongs.length)
+                    ? filteredSongs[fluidIndex] : null
+        _fluidSongId = row ? row.id : null
+    }
+    function _indexOfSong(songId) {
+        for (let i = 0; i < filteredSongs.length; i++)
+            if (filteredSongs[i].id === songId) return i
+        return -1
+    }
+    // Replacing the model array resets the ListView to the top, so after a
+    // rebuild the highlighted song was scrolled out of sight and only came
+    // back by searching for it. Deferred so the view has taken the new model.
+    function _showFluidRow() {
+        if (fluidIndex >= 0 && fluidIndex < list.count)
+            list.positionViewAtIndex(fluidIndex, ListView.Contain)
+    }
+
     // Bounds-clamp fluid index when the list shrinks (e.g. query change).
     // Only push preview when this tab is the active one — otherwise we'd
     // override a preview the operator deliberately set from another tab.
     onFilteredSongsChanged: {
+        const key = _currentFilterKey()
+        const reload = key === _filterKey
+        _filterKey = key
         const n = filteredSongs.length
         if (n === 0) {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
             return
         }
-        const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
+        let idx = reload && _fluidSongId !== null ? _indexOfSong(_fluidSongId) : -1
+        if (idx < 0) idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
+        else _rememberFluidSong()
         refreshPreviewFor(idx)
+        if (reload) Qt.callLater(_showFluidRow)
     }
 
     // When the operator switches into this tab, restore the preview to the
@@ -1162,6 +1202,16 @@ Item {
                     break
                 }
             }
+        }
+        // The song editor saved a song. Land on it and preview it, so a new
+        // song is in view instead of somewhere down a long library. Nothing
+        // happens when the active search or group filters it out.
+        function onSongSaved(songId) {
+            const i = root._indexOfSong(songId)
+            if (i < 0) return
+            AppState.setLibraryFluid(root.tabKey, i)
+            root.pushPreviewFor(i)
+            Qt.callLater(root._showFluidRow)
         }
     }
 }
