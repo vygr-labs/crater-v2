@@ -418,14 +418,14 @@ ModalShell {
         _isSaving = true
         _saveError = ""
         let ok = false
-        let savedId = _songId
         if (_isEditMode) {
             ok = SongService.update(_songId, t, _author.trim(), _ccli.trim(), _themeId,
                                     _sections, _copyright.trim())
         } else {
-            savedId = SongService.createWithSections(t, _author.trim(), _ccli.trim(),
-                                                     _themeId, _sections, _copyright.trim())
-            ok = savedId > 0
+            const newId = SongService.createWithSections(t, _author.trim(), _ccli.trim(),
+                                                         _themeId, _sections, _copyright.trim())
+            ok = newId > 0
+            if (ok) AppState.songCreated(newId)
         }
         _isSaving = false
         if (ok) {
@@ -433,7 +433,6 @@ ModalShell {
             // prompt about unsaved changes after a successful save.
             _history = [_clone(_sections)]
             _historyIndex = 0
-            AppState.songSaved(savedId)
             AppState.closeModal()
         } else {
             // Surface the failure: log to the Qt console for diagnosis, and

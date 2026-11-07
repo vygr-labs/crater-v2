@@ -597,7 +597,7 @@ Item {
                                     AppState.openModal("songEditor", { songId: focusedSong.id })
                                 }})
                             items.push({ label: qsTr("Duplicate Song"), iconName: "copy",
-                                action: function() { SongService.duplicate(focusedSong.id) }})
+                                action: function() { AppState.songCreated(SongService.duplicate(focusedSong.id)) }})
                             items.push({ separator: true })
                             items.push({ label: qsTr("Delete Song"), iconName: "trash",
                                 destructive: true,
@@ -1046,7 +1046,7 @@ Item {
                           AppState.openModal("songEditor", { songId: modelData.id })
                       } },
                     { label: qsTr("Duplicate Song"), iconName: "copy",
-                      action: function() { SongService.duplicate(modelData.id) } },
+                      action: function() { AppState.songCreated(SongService.duplicate(modelData.id)) } },
                     { separator: true },
                     { label: qsTr("Add to Schedule"), iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
@@ -1195,22 +1195,20 @@ Item {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if ((root.mode === "all" || root.mode === "lyrics") && root.query.length > 0) return
             if (!songId) return
-            for (let i = 0; i < root.filteredSongs.length; i++) {
-                if (root.filteredSongs[i].id === songId) {
-                    list.positionViewAtIndex(i, ListView.Contain)
-                    AppState.setLibraryFluid(root.tabKey, i)
-                    break
-                }
-            }
+            const i = root._indexOfSong(songId)
+            if (i < 0) return
+            list.positionViewAtIndex(i, ListView.Contain)
+            AppState.setLibraryFluid(root.tabKey, i)
         }
-        // The song editor saved a song. Land on it and preview it, so a new
-        // song is in view instead of somewhere down a long library. Nothing
-        // happens when the active search or group filters it out.
-        function onSongSaved(songId) {
+        // A song was created (editor or Duplicate). Land on it so it is in
+        // view instead of somewhere down a long library. Preview follows only
+        // when the library already owns it, so a staged schedule row stays.
+        // Nothing happens when the active search or group filters it out.
+        function onSongCreated(songId) {
             const i = root._indexOfSong(songId)
             if (i < 0) return
             AppState.setLibraryFluid(root.tabKey, i)
-            root.pushPreviewFor(i)
+            root.refreshPreviewFor(i)
             Qt.callLater(root._showFluidRow)
         }
     }

@@ -2545,9 +2545,9 @@ QtObject {
     // regardless of whether the schedule item carries it as int or string.
     signal syncSongFromSchedule(var songId)
 
-    // The song editor saved a song (new or edited). SongsTab moves the
-    // highlight onto it and previews it, since the save rebuilt the list.
-    signal songSaved(var songId)
+    // A song was created (song editor or Duplicate). SongsTab moves the
+    // highlight onto it, since the new row can sort anywhere in the list.
+    signal songCreated(var songId)
 
     // Translation dblclick → push live: double-clicking a translation row in
     // the sidebar should push the currently focused verse Live in the new
