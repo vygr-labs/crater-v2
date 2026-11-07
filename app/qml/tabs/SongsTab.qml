@@ -1203,8 +1203,16 @@ Item {
         // A song was created (editor or Duplicate). Land on it so it is in
         // view instead of somewhere down a long library. Preview follows only
         // when the library already owns it, so a staged schedule row stays.
-        // Nothing happens when the active search or group filters it out.
+        // A search or a Favorites/collection view that hides the new song is
+        // cleared first, or the operator would not see what they just made.
         function onSongCreated(songId) {
+            if (root._indexOfSong(songId) < 0) {
+                if (root.query.length > 0) AppState.setSearch(root.tabKey, "")
+                // Skip the typing debounce so the list rebuilds right now.
+                root._debouncedQuery = ""
+                if (root._indexOfSong(songId) < 0 && root.group !== "all-songs")
+                    AppState.setLibraryGroup(root.tabKey, "all-songs")
+            }
             const i = root._indexOfSong(songId)
             if (i < 0) return
             AppState.setLibraryFluid(root.tabKey, i)
