@@ -169,12 +169,9 @@ Item {
     readonly property int fluidIndex: AppState.libraryFluidIndex.songs
 
     // The song the fluid row points at, and the filter the list was built
-    // under. A save, favorite toggle or import rebuilds filteredSongs under the
-    // same filter, and the list has to stay on the same SONG through that: the
-    // fluid index is a row number, so a new song sorting above it would
-    // otherwise move the highlight onto a different song. Sort is left out of
-    // the key: a new order holds the same songs, so the highlight follows its
-    // song there too.
+    // under. The fluid index is a row number, so a rebuild looks the song up
+    // again instead of trusting the row (see onFilteredSongsChanged for the
+    // rules). Sort is left out of the key: a new order holds the same songs.
     property var _fluidSongId: null
     property string _filterKey: ""
     function _currentFilterKey() {
@@ -186,10 +183,12 @@ Item {
         _rememberFluidSong()
     }
     onFluidIndexChanged: _rememberFluidSong()
+    // Only overwritten when the row exists: a search that briefly matches
+    // nothing (fluid -1) keeps the song, so it is found again once the search
+    // widens.
     function _rememberFluidSong() {
-        const row = (fluidIndex >= 0 && fluidIndex < filteredSongs.length)
-                    ? filteredSongs[fluidIndex] : null
-        _fluidSongId = row ? row.id : null
+        if (fluidIndex >= 0 && fluidIndex < filteredSongs.length)
+            _fluidSongId = filteredSongs[fluidIndex].id
     }
     function _indexOfSong(songId) {
         for (let i = 0; i < filteredSongs.length; i++)
@@ -221,9 +220,16 @@ Item {
         restoreMode: Binding.RestoreBindingOrValue
     }
 
-    // Bounds-clamp fluid index when the list shrinks (e.g. query change).
-    // Only push preview when this tab is the active one — otherwise we'd
-    // override a preview the operator deliberately set from another tab.
+    // Where the highlight goes when the list is rebuilt:
+    //  - same filter (save, favorite toggle, delete, sort): stay on the song,
+    //    or on its row when the song is gone so the next one takes its place.
+    //  - a new search: the top result, even when the old song still matches,
+    //    so typing and pressing Enter sends the best match.
+    //  - search cleared, or a new group with no search: stay on the song if
+    //    it is listed, otherwise the top row.
+    // A row number from the old list means nothing in the new one. Preview
+    // only follows when this tab is the active one, so a preview set from
+    // another tab is left alone.
     onFilteredSongsChanged: {
         const key = _currentFilterKey()
         const reload = key === _filterKey
@@ -233,12 +239,13 @@ Item {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
             return
         }
-        let idx = reload && _fluidSongId !== null ? _indexOfSong(_fluidSongId) : -1
-        if (idx < 0) idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
+        const follow = reload || _debouncedQuery.length === 0
+        let idx = follow && _fluidSongId !== null ? _indexOfSong(_fluidSongId) : -1
+        if (idx < 0) idx = reload && fluidIndex >= 0 && fluidIndex < n ? fluidIndex : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         else _rememberFluidSong()
         refreshPreviewFor(idx)
-        Qt.callLater(reload ? _showFluidRow : _syncCurrent)
+        Qt.callLater(_showFluidRow)
     }
 
     // When the operator switches into this tab, restore the preview to the
