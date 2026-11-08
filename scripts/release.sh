@@ -294,22 +294,31 @@ for entry in "${STRONGS_DBS[@]}"; do
 done
 done_msg "Strong's databases staged to $LEGACY_DIR"
 
-# ── Optional codesign ──────────────────────────────────────────────────────
+# ── Codesign ───────────────────────────────────────────────────────────────
+# Signing runs last, after every file has been staged into the bundle.
+# macdeployqt rewrites the binaries and the steps above add databases and
+# licenses, so any signature from before this point no longer matches the
+# bundle. A downloaded app in that state is reported by macOS 15 as
+# "damaged and can't be opened", with no way past it in the UI.
+#
 # If APPLE_DEVELOPER_ID is set (full identity string from `security
 # find-identity -v -p codesigning`, e.g. "Developer ID Application: Acme
-# (ABCD1234)"), sign the bundle. Without this, Gatekeeper still lets users
-# run the app but they have to right-click → Open the first time.
-# Notarization (xcrun notarytool submit) is a separate step deliberately
-# left out of this script; add it once a real Apple Developer account is in
-# play and the team is ready to manage notarization secrets.
+# (ABCD1234)"), the bundle gets a Developer ID signature. Otherwise it is
+# signed ad hoc. That doesn't pass Gatekeeper, but the operator gets "Open
+# Anyway" in System Settings > Privacy & Security instead of a dead end.
+# Notarization (xcrun notarytool submit) is still left out on purpose.
 if [[ -n "${APPLE_DEVELOPER_ID:-}" ]]; then
     step "Codesigning with identity: $APPLE_DEVELOPER_ID"
     codesign --force --deep --options runtime --timestamp \
         --sign "$APPLE_DEVELOPER_ID" "$APP_BUNDLE"
-    codesign --verify --strict --verbose=2 "$APP_BUNDLE"
 else
-    warn 'APPLE_DEVELOPER_ID not set — producing an unsigned bundle. Users will see a Gatekeeper warning on first launch.'
+    warn 'APPLE_DEVELOPER_ID not set, signing ad hoc. Users will need Open Anyway in Privacy & Security on first launch.'
+    step 'Codesigning ad hoc'
+    codesign --force --deep --sign - "$APP_BUNDLE"
 fi
+# A bundle that fails this would show up as "damaged" on the user's Mac.
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+done_msg 'Signature verified'
 
 # ── ZIP ────────────────────────────────────────────────────────────────────
 if [[ $SKIP_ZIP -eq 0 ]]; then
@@ -338,7 +347,11 @@ if [[ $SKIP_DMG -eq 0 ]]; then
     # block for create-dmg (https://github.com/create-dmg/create-dmg).
     DMG_STAGE=$(mktemp -d)
     trap 'rm -rf "$DMG_STAGE"' EXIT
-    cp -R "$APP_BUNDLE" "$DMG_STAGE/"
+    # ditto rather than cp: codesign keeps the signatures of the databases
+    # in Contents/MacOS/legacy as extended attributes, and a copy that drops
+    # them leaves the DMG's app reading as damaged.
+    ditto "$APP_BUNDLE" "$DMG_STAGE/crater.app"
+    codesign --verify --deep --strict "$DMG_STAGE/crater.app"
     ln -s /Applications "$DMG_STAGE/Applications"
     # Defensively detach any pre-existing volume with the same name —
     # otherwise hdiutil errors out with "Resource busy" on the second run
