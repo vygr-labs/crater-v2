@@ -39,9 +39,9 @@ on:
 jobs:
   build:
     name: Build, package
-    # macos-14 = Apple Silicon (M1). Qt's clang_64 kit is universal so the
+    # macos-15 = Apple Silicon. GitHub retired the macos-14 image. Qt's clang_64 kit is universal so the
     # produced .app runs on Intel too.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     steps:
