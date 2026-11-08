@@ -52,6 +52,16 @@ Item {
         onTriggered: root._debouncedQuery = root.query
     }
     onQueryChanged: queryDebounce.restart()
+    // A key that acts on the list (Enter, the arrows, Ctrl+T, Ctrl+A) can
+    // arrive inside the debounce, while the list still holds the previous
+    // search. Run the pending search first so the key acts on what was typed:
+    // without this, typing a title and pressing Enter quickly sent the old
+    // highlighted song live.
+    function _flushQuery() {
+        if (!queryDebounce.running) return
+        queryDebounce.stop()
+        _debouncedQuery = query
+    }
 
     readonly property string mode:   AppState.librarySearchMode.songs || "all"
     // Sort dimension is independent of filter mode — picking "Sort by Newest"
@@ -168,18 +178,85 @@ Item {
 
     readonly property int fluidIndex: AppState.libraryFluidIndex.songs
 
-    // Bounds-clamp fluid index when the list shrinks (e.g. query change).
-    // Only push preview when this tab is the active one — otherwise we'd
-    // override a preview the operator deliberately set from another tab.
+    // The song the fluid row points at, and the filter the list was built
+    // under. The fluid index is a row number, so a rebuild looks the song up
+    // again instead of trusting the row (see onFilteredSongsChanged for the
+    // rules). Sort is left out of the key: a new order holds the same songs.
+    property var _fluidSongId: null
+    property string _filterKey: ""
+    function _currentFilterKey() {
+        return [_debouncedQuery, mode, group].join("\u0001")
+    }
+    // The first list is built before any change handler runs, so seed both.
+    Component.onCompleted: {
+        _filterKey = _currentFilterKey()
+        _rememberFluidSong()
+    }
+    onFluidIndexChanged: _rememberFluidSong()
+    // Only overwritten when the row exists: a search that briefly matches
+    // nothing (fluid -1) keeps the song, so it is found again once the search
+    // widens.
+    function _rememberFluidSong() {
+        if (fluidIndex >= 0 && fluidIndex < filteredSongs.length)
+            _fluidSongId = filteredSongs[fluidIndex].id
+    }
+    function _indexOfSong(songId) {
+        for (let i = 0; i < filteredSongs.length; i++)
+            if (filteredSongs[i].id === songId) return i
+        return -1
+    }
+    // Replacing the model array resets the ListView to the top, so after a
+    // rebuild the highlighted song was scrolled out of sight and only came
+    // back by searching for it. Deferred so the view has taken the new model.
+    function _showFluidRow() {
+        _syncCurrent()
+        if (fluidIndex >= 0 && fluidIndex < list.count)
+            list.positionViewAtIndex(fluidIndex, ListView.Contain)
+    }
+    // A model swap resets list.currentIndex to 0 inside ListView. The Binding
+    // only re-pushes when fluidIndex changes, so when the song keeps its row
+    // (favorite toggle, a sort that leaves it in place) the drawn highlight
+    // sat on row 0 while Enter and Preview used the real row.
+    function _syncCurrent() {
+        if (fluidIndex >= 0 && fluidIndex < list.count && list.currentIndex !== fluidIndex)
+            list.currentIndex = fluidIndex
+    }
+    // Standalone, so _syncCurrent's write can't remove it (an inline
+    // `currentIndex: root.fluidIndex` would be broken by that assignment).
+    Binding {
+        target: list
+        property: "currentIndex"
+        value: root.fluidIndex
+        restoreMode: Binding.RestoreBindingOrValue
+    }
+
+    // Where the highlight goes when the list is rebuilt:
+    //  - same filter (save, favorite toggle, delete, sort): stay on the song,
+    //    or on its row when the song is gone so the next one takes its place.
+    //  - a new search: the top result, even when the old song still matches,
+    //    so typing and pressing Enter sends the best match.
+    //  - search cleared, or a new group with no search: stay on the song if
+    //    it is listed, otherwise the top row.
+    // A row number from the old list means nothing in the new one. Preview
+    // only follows when this tab is the active one, so a preview set from
+    // another tab is left alone.
     onFilteredSongsChanged: {
+        const key = _currentFilterKey()
+        const reload = key === _filterKey
+        _filterKey = key
         const n = filteredSongs.length
         if (n === 0) {
             if (fluidIndex !== -1) AppState.setLibraryFluid(tabKey, -1)
             return
         }
-        const idx = (fluidIndex >= 0 && fluidIndex < n) ? fluidIndex : 0
+        const follow = reload || _debouncedQuery.length === 0
+        let idx = follow && _fluidSongId !== null ? _indexOfSong(_fluidSongId) : -1
+        // Clamped so deleting the last row lands on the new last row.
+        if (idx < 0) idx = reload && fluidIndex >= 0 ? Math.min(fluidIndex, n - 1) : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
+        else _rememberFluidSong()
         refreshPreviewFor(idx)
+        Qt.callLater(_showFluidRow)
     }
 
     // When the operator switches into this tab, restore the preview to the
@@ -557,7 +634,7 @@ Item {
                                     AppState.openModal("songEditor", { songId: focusedSong.id })
                                 }})
                             items.push({ label: qsTr("Duplicate Song"), iconName: "copy",
-                                action: function() { SongService.duplicate(focusedSong.id) }})
+                                action: function() { AppState.songCreated(SongService.duplicate(focusedSong.id)) }})
                             items.push({ separator: true })
                             items.push({ label: qsTr("Delete Song"), iconName: "trash",
                                 destructive: true,
@@ -736,7 +813,8 @@ Item {
         cacheBuffer: 400
         spacing: 0
         boundsBehavior: Flickable.StopAtBounds
-        currentIndex: root.fluidIndex
+        // currentIndex comes from the Binding below the list, not an inline
+        // binding: see _syncCurrent.
         // Qt's own scroll-to-current, on only while the arrow keys should
         // follow (Settings > Scrolling). Clicks scroll in onCurrentIndexChanged.
         highlightFollowsCurrentItem: SettingsService.autoScrollLibrary
@@ -1006,7 +1084,7 @@ Item {
                           AppState.openModal("songEditor", { songId: modelData.id })
                       } },
                     { label: qsTr("Duplicate Song"), iconName: "copy",
-                      action: function() { SongService.duplicate(modelData.id) } },
+                      action: function() { AppState.songCreated(SongService.duplicate(modelData.id)) } },
                     { separator: true },
                     { label: qsTr("Add to Schedule"), iconName: "plus",
                       action: function() { root.addToScheduleFor(index) } },
@@ -1120,6 +1198,7 @@ Item {
         target: AppState
         function onLibraryNavigateDown() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.filteredSongs.length === 0) return
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.filteredSongs.length - 1)
@@ -1128,6 +1207,7 @@ Item {
         }
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.filteredSongs.length === 0) return
             const next = Math.max(root.fluidIndex - 1, 0)
             root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
@@ -1135,14 +1215,17 @@ Item {
         }
         function onLibraryActivate() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
         }
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
         }
         function onLibrarySelectAll() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             selection.selectAll()
         }
         // Schedule → library sync. When the operator clicks a song row in the
@@ -1155,13 +1238,31 @@ Item {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
             if ((root.mode === "all" || root.mode === "lyrics") && root.query.length > 0) return
             if (!songId) return
-            for (let i = 0; i < root.filteredSongs.length; i++) {
-                if (root.filteredSongs[i].id === songId) {
-                    list.positionViewAtIndex(i, ListView.Contain)
-                    AppState.setLibraryFluid(root.tabKey, i)
-                    break
-                }
+            const i = root._indexOfSong(songId)
+            if (i < 0) return
+            list.positionViewAtIndex(i, ListView.Contain)
+            AppState.setLibraryFluid(root.tabKey, i)
+        }
+        // A song was created (editor or Duplicate). Land on it so it is in
+        // view instead of somewhere down a long library. Preview follows only
+        // when the library already owns it, so a staged schedule row stays.
+        // A search or a Favorites/collection view that hides the new song is
+        // cleared first, or the operator would not see what they just made.
+        function onSongCreated(songId) {
+            // Duplicate returns 0 when it fails: nothing was made, keep the view.
+            if (!(songId > 0)) return
+            if (root._indexOfSong(songId) < 0) {
+                if (root.query.length > 0) AppState.setSearch(root.tabKey, "")
+                // Skip the typing debounce so the list rebuilds right now.
+                root._debouncedQuery = ""
+                if (root._indexOfSong(songId) < 0 && root.group !== "all-songs")
+                    AppState.setLibraryGroup(root.tabKey, "all-songs")
             }
+            const i = root._indexOfSong(songId)
+            if (i < 0) return
+            AppState.setLibraryFluid(root.tabKey, i)
+            root.refreshPreviewFor(i)
+            Qt.callLater(root._showFluidRow)
         }
     }
 }

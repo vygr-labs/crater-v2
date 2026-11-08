@@ -425,6 +425,7 @@ ModalShell {
             const newId = SongService.createWithSections(t, _author.trim(), _ccli.trim(),
                                                          _themeId, _sections, _copyright.trim())
             ok = newId > 0
+            if (ok) AppState.songCreated(newId)
         }
         _isSaving = false
         if (ok) {
