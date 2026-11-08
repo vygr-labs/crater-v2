@@ -52,6 +52,16 @@ Item {
         onTriggered: root._debouncedQuery = root.query
     }
     onQueryChanged: queryDebounce.restart()
+    // A key that acts on the list (Enter, the arrows, Ctrl+T, Ctrl+A) can
+    // arrive inside the debounce, while the list still holds the previous
+    // search. Run the pending search first so the key acts on what was typed:
+    // without this, typing a title and pressing Enter quickly sent the old
+    // highlighted song live.
+    function _flushQuery() {
+        if (!queryDebounce.running) return
+        queryDebounce.stop()
+        _debouncedQuery = query
+    }
 
     readonly property string mode:   AppState.librarySearchMode.songs || "all"
     // Sort dimension is independent of filter mode — picking "Sort by Newest"
@@ -241,7 +251,8 @@ Item {
         }
         const follow = reload || _debouncedQuery.length === 0
         let idx = follow && _fluidSongId !== null ? _indexOfSong(_fluidSongId) : -1
-        if (idx < 0) idx = reload && fluidIndex >= 0 && fluidIndex < n ? fluidIndex : 0
+        // Clamped so deleting the last row lands on the new last row.
+        if (idx < 0) idx = reload && fluidIndex >= 0 ? Math.min(fluidIndex, n - 1) : 0
         if (idx !== fluidIndex) AppState.setLibraryFluid(tabKey, idx)
         else _rememberFluidSong()
         refreshPreviewFor(idx)
@@ -1187,6 +1198,7 @@ Item {
         target: AppState
         function onLibraryNavigateDown() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.filteredSongs.length === 0) return
             const next = Math.min((root.fluidIndex < 0 ? -1 : root.fluidIndex) + 1,
                                   root.filteredSongs.length - 1)
@@ -1195,6 +1207,7 @@ Item {
         }
         function onLibraryNavigateUp() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.filteredSongs.length === 0) return
             const next = Math.max(root.fluidIndex - 1, 0)
             root._keyMove(function() { AppState.setLibraryFluid(root.tabKey, next) })
@@ -1202,14 +1215,17 @@ Item {
         }
         function onLibraryActivate() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.fluidIndex >= 0) root.pushLiveFor(root.fluidIndex)
         }
         function onLibraryAddToSchedule() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             if (root.fluidIndex >= 0) root.addToScheduleFor(root.fluidIndex)
         }
         function onLibrarySelectAll() {
             if (AppState.tabKeys[AppState.activeTab] !== root.tabKey) return
+            root._flushQuery()
             selection.selectAll()
         }
         // Schedule → library sync. When the operator clicks a song row in the
