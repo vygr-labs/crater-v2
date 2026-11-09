@@ -5,7 +5,8 @@ import QtQuick.Layouts
 // something goes wrong. The log upload is user-initiated: nothing leaves the
 // machine without the explicit button press below. The one automatic report,
 // sent only after a launch that failed before the console appeared, has its
-// own switch at the bottom (ARCHITECTURE.md §11). Wired to LogReportService.
+// own switch, and so do the opt-in usage numbers (ARCHITECTURE.md §11).
+// Wired to LogReportService and UsageService.
 Item {
     id: root
 
@@ -136,6 +137,34 @@ Item {
                     value: SettingsService.reportStartupFailures
                     onToggled: SettingsService.reportStartupFailures = !SettingsService.reportStartupFailures
                 }
+            }
+
+            // Off until switched on here (ARCHITECTURE.md §11). The
+            // description is the consent surface, so it names everything a
+            // report holds. Wired to UsageService.
+            SettingsSectionHeader { title: qsTr("Usage numbers") }
+
+            SettingRow {
+                title: qsTr("Share anonymous usage")
+                description: qsTr("Helps the Crater team see how many churches use it and what to work on. Sends your Crater version, operating system and language, how often Crater opens, and how often songs, verses and media go live. Never song titles, verses, file names or anything that says who you are.")
+                ToggleSwitch {
+                    value: UsageService.share
+                    onToggled: UsageService.share = !UsageService.share
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: UsageService.share
+                text: {
+                    const when = UsageService.lastSent
+                    return (!when || isNaN(when.getTime()))
+                        ? qsTr("Nothing sent yet.")
+                        : qsTr("Last sent %1").arg(Qt.formatDateTime(when, "d MMM yyyy, h:mm ap"))
+                }
+                color: Theme.color.textTertiary
+                font.family: Theme.font.family
+                font.pixelSize: Theme.font.microSize
             }
 
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }

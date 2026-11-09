@@ -94,6 +94,17 @@ Item {
                 }
             }
 
+            // A page on the website, so nothing in Crater collects an email.
+            SettingRow {
+                title: qsTr("Stay in touch")
+                description: qsTr("Tell the Crater team where you use it, and hear about new versions")
+                GhostButton {
+                    iconName: "external-link"
+                    text: qsTr("Open form")
+                    onClicked: Qt.openUrlExternally(HelpLinks.website + "stay-in-touch")
+                }
+            }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
     }
