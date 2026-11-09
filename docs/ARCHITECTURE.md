@@ -503,6 +503,16 @@ format's complexity *out* of the runtime hot path.
   (app/src/StartupGuard.h). A failed start leaves the operator nothing to
   press, and it is the failure we otherwise never hear about. A launch that
   works never sends anything, and Settings > Diagnostics turns it off.
+  The third path is `UsageService`, anonymous usage numbers for
+  getcrater.org/api/usage. It is off until the operator switches on "Share
+  anonymous usage" in Settings > Diagnostics, whose description lists
+  everything a report holds: a random install id made at opt-in, a random
+  report id (so a retried report is not counted twice), version, OS and
+  its version, CPU architecture, system locale, launch count and per-kind
+  go-live counts. The server derives a country and keeps no IP. No
+  titles, text, paths or schedule contents. Switching it off forgets the id
+  and anything unsent. Emails are never collected in the app. The website's
+  stay-in-touch form does that, and Settings > Help links to it.
 
 ---
 

@@ -43,6 +43,7 @@
 #include "TextContextMenu.h"
 #include "LogReportService.h"
 #include "UpdateService.h"
+#include "UsageService.h"
 #include "MediaPlaybackService.h"
 #include "MediaTransport.h"
 #include "NdiRenderer.h"
@@ -566,6 +567,13 @@ int main(int argc, char* argv[])
     // but QSettings; the first network request is armed further down, after
     // the UI is up, and only when a check is actually due.
     crater::UpdateService     updateService;
+    // Anonymous usage numbers, only once the operator switches them on in
+    // Settings > Diagnostics (ARCHITECTURE.md §11). Counts each go-live by kind.
+    crater::UsageService      usageService;
+    QObject::connect(&projectionService, &crater::ProjectionService::wentLive,
+                     &usageService, [&] {
+                         usageService.noteWentLive(projectionService.currentItem());
+                     });
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for
     // the on-disk layout. Must come after mediaService is constructed.
@@ -654,6 +662,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "HelpLinks",             &helpLinks);
     qmlRegisterSingletonInstance("Crater", 1, 0, "UpdateService",         &updateService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "UsageService",          &usageService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "VideoThumbnailer",      &videoThumbnailer);
     qmlRegisterSingletonInstance("Crater", 1, 0, "MediaPlaybackService",  &mediaPlaybackService);
     // Per-URL transport view (position / duration / play state) for the Live
@@ -879,6 +888,8 @@ int main(int argc, char* argv[])
     // timer — the request itself fires well after startup so it never
     // competes with migrations or the first QML load (docs/auto-update.md).
     updateService.armStartupCheck();
+    // Does nothing unless usage sharing is on.
+    usageService.armStartupReport();
 
     crater::startup::mark("event loop");
     return app.exec();
