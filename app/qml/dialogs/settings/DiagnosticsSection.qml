@@ -146,7 +146,7 @@ Item {
 
             SettingRow {
                 title: qsTr("Share anonymous usage")
-                description: qsTr("Helps the Crater team see how many churches use it and what to work on. Sends your Crater version, operating system and language, how often Crater opens, and how often songs, verses and media go live. Never song titles, verses, file names or anything that says who you are.")
+                description: qsTr("Helps the Crater team see how many churches use it and what to work on. Sends a random ID made for this, your Crater version, your operating system and its version, the processor type, your computer's language and region setting, how often Crater opens, and how often songs, verses and media go live. The website also works out your country from the connection, and keeps no IP address. Never song titles, verses, file names or anything that says who you are.")
                 ToggleSwitch {
                     value: UsageService.share
                     onToggled: UsageService.share = !UsageService.share

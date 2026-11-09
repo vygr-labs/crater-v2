@@ -572,7 +572,7 @@ int main(int argc, char* argv[])
     crater::UsageService      usageService;
     QObject::connect(&projectionService, &crater::ProjectionService::wentLive,
                      &usageService, [&] {
-                         usageService.noteWentLive(projectionService.contentKind());
+                         usageService.noteWentLive(projectionService.currentItem());
                      });
     // VideoThumbnailer takes &mediaService — it queries allMedia(), writes
     // probed durations back via setVideoMeta(), and uses thumbsDir() for

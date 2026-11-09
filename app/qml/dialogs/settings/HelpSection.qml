@@ -101,7 +101,7 @@ Item {
                 GhostButton {
                     iconName: "external-link"
                     text: qsTr("Open form")
-                    onClicked: Qt.openUrlExternally(HelpLinks.website + "stay-in-touch")
+                    onClicked: Qt.openUrlExternally(HelpLinks.stayInTouch)
                 }
             }
 

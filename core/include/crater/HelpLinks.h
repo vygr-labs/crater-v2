@@ -7,7 +7,7 @@
 namespace crater {
 
 // Every web address Crater links to for help: the tutorial channel, its
-// playlists, and the docs site. Kept in this one file so a renamed or
+// playlists, the docs site and the website's stay-in-touch form. Kept in this one file so a renamed or
 // replaced playlist is a one-line change. The labels the operator sees live
 // in QML (HelpSection.qml), keyed by the playlist ids below, so they go
 // through the normal translation pass.
@@ -20,6 +20,7 @@ class HelpLinks : public QObject
     Q_PROPERTY(QString channel READ channel CONSTANT)
     Q_PROPERTY(QString docs    READ docs    CONSTANT)
     Q_PROPERTY(QString website READ website CONSTANT)
+    Q_PROPERTY(QString stayInTouch READ stayInTouch CONSTANT)
     Q_PROPERTY(QStringList playlistIds READ playlistIds CONSTANT)
 
 public:
@@ -28,6 +29,7 @@ public:
     QString channel() const;
     QString docs() const;
     QString website() const;
+    QString stayInTouch() const;
 
     // Playlist ids in the order the tutorials are meant to be watched.
     QStringList playlistIds() const;
