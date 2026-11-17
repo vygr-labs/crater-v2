@@ -55,8 +55,8 @@
               "opacity": 1,
               "color": "#f29cac",
               "fontFamily": "Funnel Sans",
-              "fontPixelSize": 40,
-              "fontWeight": 600,
+              "fontPixelSize": 43,
+              "fontWeight": 800,
               "letterSpacing": 5,
               "lineHeightMultiplier": 1.2,
               "textTransform": "uppercase",
@@ -70,35 +70,19 @@
             }
           },
           {
-            "id": "rule",
-            "kind": "container",
-            "style": {
-              "x": 9,
-              "y": 20.5,
-              "width": 3.75,
-              "height": 0.4,
-              "z": 2,
-              "opacity": 1,
-              "backgroundColor": "#f29cac"
-            },
-            "data": {
-              "layerName": "Accent rule"
-            }
-          },
-          {
             "id": "verse",
             "kind": "text",
             "style": {
               "x": 9,
-              "y": 26,
+              "y": 21,
               "width": 80,
-              "height": 64,
+              "height": 71,
               "z": 2,
               "opacity": 1,
               "color": "#fcf3f5",
               "fontFamily": "Funnel Sans",
               "fontPixelSize": 72,
-              "fontWeight": 500,
+              "fontWeight": 600,
               "lineHeightMultiplier": 1.26,
               "textAlign": "left",
               "verticalAlign": "start"
@@ -107,7 +91,7 @@
               "layerName": "Verse",
               "linkage": "scriptureText",
               "autoResize": true,
-              "maxFontSize": 96,
+              "maxFontSize": 120,
               "verseNumberColor": "#f29cac"
             }
           }
