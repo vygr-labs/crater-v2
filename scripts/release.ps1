@@ -272,6 +272,11 @@ Copy-Item (Join-Path $QtRoot 'LICENSE'), (Join-Path $QtRoot 'THIRD_PARTY_NOTICES
 # --qmldir lets windeployqt's import-scanner read our QML and ship only the
 # QML modules we actually use. Without it we'd drop the entire Qt QML tree
 # into the stage (~400MB instead of ~50MB).
+# --no-compiler-runtime: in an MSVC shell windeployqt otherwise copies
+# vc_redist.x64.exe into the stage, so every install carried an 18 MB
+# installer in Program Files that nothing runs. Setup ran into it locked
+# by antivirus mid-update (DeleteFile code 32). The runtime DLLs are staged
+# below, and the installer runs its own redist from {tmp}.
 Write-Step 'Running windeployqt'
 $QmlDir = Join-Path $QtRoot 'app\qml'
 & $WindeployQt `
@@ -280,6 +285,7 @@ $QmlDir = Join-Path $QtRoot 'app\qml'
     --no-translations `
     --no-system-d3d-compiler `
     --no-opengl-sw `
+    --no-compiler-runtime `
     (Join-Path $AppStage 'crater.exe')
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed (exit $LASTEXITCODE)" }
 

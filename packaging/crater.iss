@@ -87,6 +87,13 @@ FinishedLabelNoIcons=[name/ver] is ready.
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
+[InstallDelete]
+; Releases up to 0.7.15 left a copy of the VC++ redist installer in {app}
+; (windeployqt staged it). Nothing runs it. Clear it before the files go in,
+; so an upgrade has nothing there to collide with. A failed delete here does
+; not stop the install.
+Type: files; Name: "{app}\vc_redist.x64.exe"
+
 [Files]
 Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#VcRedist}"; DestDir: "{tmp}"; Flags: deleteafterinstall
