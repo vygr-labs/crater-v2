@@ -25,6 +25,10 @@ qt_add_executable(crater
     # crater-core links. See docs/auto-update.md.
     src/UpdateService.cpp
     src/UpdateService.h
+    # Opt-in anonymous usage numbers (Settings > Diagnostics). Network, so
+    # app layer like the two above.
+    src/UsageService.cpp
+    src/UsageService.h
     src/VideoThumbnailer.cpp
     src/VideoThumbnailer.h
     src/MediaPlaybackService.cpp

@@ -28,12 +28,14 @@ constexpr Playlist kPlaylists[] = {
 constexpr const char* kChannel = "https://www.youtube.com/@craterbibleproject";
 constexpr const char* kDocs    = "https://getcrater.org/docs/";
 constexpr const char* kWebsite = "https://getcrater.org/";
+constexpr const char* kStayInTouch = "https://getcrater.org/stay-in-touch";
 
 }  // namespace
 
 QString HelpLinks::channel() const { return QString::fromLatin1(kChannel); }
 QString HelpLinks::docs() const    { return QString::fromLatin1(kDocs); }
 QString HelpLinks::website() const { return QString::fromLatin1(kWebsite); }
+QString HelpLinks::stayInTouch() const { return QString::fromLatin1(kStayInTouch); }
 
 QStringList HelpLinks::playlistIds() const
 {
