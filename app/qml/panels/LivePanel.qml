@@ -717,6 +717,14 @@ Rectangle {
                 active: AppState.showLogo
                 visible: AppState.showLogo
             }
+
+            // And the timers and messages overlay, which sits above the logo
+            // on the audience screen too. Without it a solid countdown could
+            // cover the projector while this monitor still showed the slide.
+            LiveOverlayLayer {
+                anchors.fill: parent
+                anchors.margins: 1.5
+            }
         }
     }
 

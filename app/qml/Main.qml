@@ -950,6 +950,19 @@ ApplicationWindow {
     // (ScriptureTab / SongsTab / MediaTab) handles via its
     // onLibraryAddToSchedule listener; tabs without schedule items do nothing.
     Shortcut { sequence: "Ctrl+T"; enabled: AppState.consoleShortcutsActive; onActivated: AppState.libraryAddToSchedule() }
+    // Ctrl+Shift+M = open or close the timers and messages dialog. Plain
+    // Ctrl+M is taken: it mutes live video here and switches views in the
+    // song and schedule item editors. Gated like Ctrl+K so it never stacks
+    // on another dialog or a workspace, and a second press closes it.
+    Shortcut {
+        sequence: "Ctrl+Shift+M"
+        enabled: AppState.workspaceMode === ""
+              && (AppState.activeModal === "" || AppState.activeModal === "liveMessages")
+        onActivated: {
+            if (AppState.activeModal === "liveMessages") AppState.closeModal()
+            else                                         AppState.openModal("liveMessages", {})
+        }
+    }
 
     // Save the working schedule. Updates the currently loaded saved row if
     // there is one; otherwise prompts the operator for a name (Save As).
