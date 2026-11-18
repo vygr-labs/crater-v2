@@ -133,7 +133,7 @@ Rectangle {
     }
 
     // Selection indices are positional; when rows go away by some path that
-    // doesn't fix them up itself (single-row Remove, clear, loading a saved
+    // doesn't fix them up itself (clearing, or loading a saved
     // schedule), drop the ones now past the end so no action can act on a
     // row that no longer exists.
     Connections {
@@ -625,7 +625,7 @@ Rectangle {
                                   title: qsTr("Remove item?"),
                                   body:  qsTr("Remove \"") + (item.title || "") + qsTr("\" from the schedule?"),
                                   confirmText: qsTr("Remove"),
-                                  onConfirm: function() { ScheduleService.removeAt(index) }
+                                  onConfirm: function() { AppState.removeScheduleIndex(index) }
                               })
                           } }
                     // PopoverMenu has no `visible` in its row schema (only

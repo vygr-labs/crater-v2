@@ -15,7 +15,6 @@ There are almost no TODO, FIXME or "not sure why" comments in Crater's own code 
 ## Who owns what
 
 - **Clear and logo are kept twice.** `AppState.isClear` and `showLogo` (`AppState.qml:97-98`) shadow `ProjectionService.isClear` and `showLogo`. Every writer today goes through AppState (`AppState.qml:1647-1651,1681-1682`, `Main.qml:110`, `PreviewPanel.qml:801`), so they agree. But `ProjectionService::toggleLogo()` (`ProjectionService.cpp:165`) is invokable and unused, and anything that calls the service directly, like a phone remote, would leave the console's Logo and Clear buttons showing the wrong state. *Settle:* have AppState read the service's properties rather than keep its own.
-- **The live schedule row after a single remove.** Bug, #142.
 - **Song section kind is guessed and never read.** `SongService.cpp:43` and `EasyWorshipImporter.cpp:251` are two copies of the same label-to-kind guess. Anything starting "pre" becomes a pre-chorus ("Prayer", "Prelude"), and labels in other languages ("Coro", "Estrofa") become "other". The comment says the kind feeds "downstream styling", but nothing in `app/` or `core/` reads a section's kind. *Settle:* confirm it is unused and stop storing a guess, or share one function with tests before anything starts depending on it.
 
 ## Linux and macOS
