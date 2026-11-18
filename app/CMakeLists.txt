@@ -8,6 +8,10 @@ qt_add_executable(crater
     src/ClipboardService.h
     src/FileDialogService.cpp
     src/FileDialogService.h
+    # What the console draws with, for Settings > Diagnostics and the notice
+    # after a GPU driver crash moved it to OpenGL (StartupGuard.h).
+    src/GraphicsStatus.cpp
+    src/GraphicsStatus.h
     src/LogReportService.cpp
     src/LogReportService.h
     src/SingleInstance.cpp

@@ -135,6 +135,23 @@ target_link_libraries(test_checksums PRIVATE
 
 add_test(NAME checksums COMMAND test_checksums)
 
+# -- Graphics ladder -- app/src/StartupGuard.h, issue #155 ----------------
+# Which backend a launch uses after the previous one failed or crashed in
+# the GPU driver. Nobody can watch it happen without a real driver crash,
+# so the decision is pinned here from traces written the way the guard
+# writes them.
+qt_add_executable(test_graphics_ladder
+    test_graphics_ladder.cpp
+)
+
+target_link_libraries(test_graphics_ladder PRIVATE
+    Qt6::Core
+    Qt6::Test
+    crater-core
+)
+
+add_test(NAME graphics_ladder COMMAND test_graphics_ladder)
+
 # -- Theme layouts (tokens v3) -- crater/ThemeTokens.h ------------------
 # Pure token-shape logic behind presentation layouts: which design a slide
 # renders with, and what happens when the theme underneath it changes. No
