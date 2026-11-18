@@ -1088,9 +1088,8 @@ ApplicationWindow {
     // schedule has keyboard focus. With library focus, Delete falls through
     // (a future "delete song" / "delete theme" path will own it then).
     //
-    // Multi-select aware: removal is done in descending index order so each
-    // removeAt() call doesn't shift the indices of items still pending
-    // deletion.
+    // Both branches go through AppState so the live pointer follows the
+    // live row instead of staying on an index another row slides into.
     Shortcut {
         sequence: "Delete"
         // activeFocusPanel only reaches "schedule" through a deliberate
@@ -1111,7 +1110,7 @@ ApplicationWindow {
                     title:       qsTr("Remove item?"),
                     body:        qsTr("Remove \"") + (item ? item.title : "") + qsTr("\" from the schedule?"),
                     confirmText: qsTr("Remove"),
-                    onConfirm:   function() { ScheduleService.removeAt(i) }
+                    onConfirm:   function() { AppState.removeScheduleIndex(i) }
                 })
             } else {
                 AppState.openModal("confirm", {

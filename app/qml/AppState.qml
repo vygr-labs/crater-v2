@@ -1507,6 +1507,33 @@ QtObject {
         return removed
     }
 
+    // Single-row Remove (Delete key with one row selected, the row menu).
+    // Carries the live pointer past the removed row like the batch path,
+    // but keeps the selection instead of clearing it: rows below move up
+    // with their items, and removing the selected row leaves the row that
+    // slid into its place selected, as single Remove always did.
+    function removeScheduleIndex(i) {
+        const n = ScheduleService.currentItems.length
+        if (i < 0 || i >= n) return
+        const live = liveScheduleIndex
+        const sel = selectedScheduleIndices.slice()
+        const primary = selectedScheduleIndex
+        ScheduleService.removeAt(i)
+
+        const left = n - 1
+        const shift = function(k) { return k > i ? k - 1 : k }
+        if (live >= 0) liveScheduleIndex = (live === i) ? -1 : shift(live)
+        const kept = []
+        for (let s = 0; s < sel.length; s++) {
+            const k = shift(sel[s])
+            if (k < left && kept.indexOf(k) < 0) kept.push(k)
+        }
+        selectedScheduleIndices = kept
+        const p = primary >= 0 ? shift(primary) : -1
+        selectedScheduleIndex = (p >= 0 && p < left) ? p
+                              : kept.length > 0 ? kept[kept.length - 1] : -1
+    }
+
     // Append a copy of each row, in schedule order. Like the single-row
     // Duplicate, the selection stays where it is; the last copy is
     // scrolled into view.
