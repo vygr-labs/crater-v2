@@ -20,7 +20,8 @@ namespace crater::profile {
 //
 // Per-profile settings are the content preferences EasyWorship keeps per
 // profile: what a slide shows (CCLI, verse numbers, authors), scripture
-// and song behaviour, the default media fit, search presentation. Plus
+// and song behaviour, the default media fit, search presentation, which
+// Bible translations are listed and in what order. Plus
 // each output's pinned themes, because theme ids only mean something
 // inside one profile's database.
 //
@@ -62,6 +63,15 @@ int writeProfilePreferences(const QString& root, const QVariantMap& values);
 // profile root to another. Used when duplicating a profile, where theme ids
 // stay valid because the database is copied whole.
 void copyProfileSettings(const QString& fromRoot, const QString& toRoot);
+
+// Translation order and hidden translations used to be machine-wide, so
+// every profile showed the Default profile's lists. The first time a profile
+// is opened, this copies those machine-wide lists into its own store where
+// it has none, then marks the store so it never copies again: from then on
+// the Default profile's lists and this one's are independent, and a reset
+// leaves it showing every translation. Returns whether anything was copied.
+// Not for the Default profile, whose store is the machine-wide one.
+bool inheritMachineWideLists(const QSettings& machine, QSettings& store);
 
 // Remove every per-profile value, output theme pins included, from the
 // profile at `root`, so it reads the built-in defaults again. Used by a

@@ -10,7 +10,6 @@ There are almost no TODO, FIXME or "not sure why" comments in Crater's own code 
 - **Two CCLI switches.** Appearance's "Show CCLI badges" (`AppearanceSection.qml:234`, "Display copyright info next to songs") only adds the number to the library list (`SongsTab.qml:964`). The credit on the projected slide is the Song page's `showSongCcli` (`AppState.qml:302,338`). An operator turning on the first expecting the second sees nothing change on screen. *Settle:* rename the Appearance one ("Show CCLI numbers in the song list") or fold it into the Song page.
 - **Render resolution is stored but not used.** `SettingsService.h:60-65`, issue #18. The row is already hidden. Listed so the stored key isn't mistaken for a working one.
 - **Global settings are opened five different ways.** By name in `SettingsService.cpp:53`, `OutputService.cpp:153`, `UpdateService.cpp:113`, `NdiRenderer.cpp:351` and `StartupGuard.cpp:302`; default-constructed in `NdiService.cpp:366` and `WindowChrome.cpp:109,173`, which depends on `setOrganizationName` in `main.cpp:286` having run; and through `profile::openGlobalSettings()`. They reach the same store in a normal run. In test mode only the last one is redirected to an ini file, so a test that constructs SettingsService or OutputService would write the real registry. None does today. *Settle:* route every reader through `openGlobalSettings()`.
-- **Hidden and reordered translations are shared by every profile.** Bug, #143.
 
 ## Who owns what
 

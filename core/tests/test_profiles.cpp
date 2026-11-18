@@ -266,6 +266,9 @@ Seeded seedProfile(const QString& root)
     profile::writeProfilePreferences(root, QVariantMap{
         { QStringLiteral("Settings/showCcli"), false },
         { QStringLiteral("Settings/autoAdvanceDelaySeconds"), 42 },
+        { QStringLiteral("Settings/translationOrder"),
+          QStringList{ QStringLiteral("NKJV"), QStringLiteral("KJV") } },
+        { QStringLiteral("Settings/hiddenTranslations"), QStringList{ QStringLiteral("MSG") } },
         // Not a per-profile key: must never be written from an archive.
         { QStringLiteral("Settings/language"), QStringLiteral("es") },
     });
@@ -361,6 +364,150 @@ private slots:
         QVERIFY(!back.contains(QStringLiteral("Settings/themeMode")));
         QVERIFY(profile::isPerProfileSettingKey(u"Settings/showCcli"));
         QVERIFY(!profile::isPerProfileSettingKey(u"Settings/language"));
+    }
+
+    // Translation order and hidden translations are lists of codes. An
+    // archive brings them as JSON arrays (QVariantList); a one-code list
+    // comes back out of the INI file as a plain string.
+    void testTranslationListsArePerProfile()
+    {
+        QVERIFY(profile::isPerProfileSettingKey(u"Settings/translationOrder"));
+        QVERIFY(profile::isPerProfileSettingKey(u"Settings/hiddenTranslations"));
+
+        const QString r = root(QStringLiteral("translation-lists"));
+        QDir().mkpath(r);
+        QCOMPARE(profile::writeProfilePreferences(r, QVariantMap{
+                     { QStringLiteral("Settings/translationOrder"),
+                       QVariantList{ QStringLiteral("NKJV"), QStringLiteral("KJV") } },
+                     { QStringLiteral("Settings/hiddenTranslations"),
+                       QStringList{ QStringLiteral("MSG") } },
+                 }), 2);
+        QVariantMap back = profile::readProfilePreferences(r);
+        QCOMPARE(back.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("NKJV"), QStringLiteral("KJV") }));
+        QCOMPARE(back.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("MSG") });
+
+        // Anything that isn't a list of codes is refused and the stored
+        // value stays.
+        const QVariant bad[] = {
+            QStringLiteral("KJV"),                          // a string, not a list
+            QVariantList{ QStringLiteral("KJV"), 7 },       // a non-string entry
+            QVariantList{ QStringLiteral("K/JV") },         // not a code
+        };
+        for (const QVariant& v : bad)
+            QCOMPARE(profile::writeProfilePreferences(r, QVariantMap{
+                         { QStringLiteral("Settings/translationOrder"), v } }), 0);
+        back = profile::readProfilePreferences(r);
+        QCOMPARE(back.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("NKJV"), QStringLiteral("KJV") }));
+
+        // Showing every translation again stores an empty list. It must stay
+        // stored (so the profile never takes the machine-wide list again)
+        // and read back empty, not as one empty code.
+        QCOMPARE(profile::writeProfilePreferences(r, QVariantMap{
+                     { QStringLiteral("Settings/hiddenTranslations"), QStringList{} } }), 1);
+        back = profile::readProfilePreferences(r);
+        QVERIFY(back.contains(QStringLiteral("Settings/hiddenTranslations")));
+        QCOMPARE(back.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(), QStringList{});
+
+        // The same lists as they come out of an archive's settings.json.
+        const QJsonObject json = QJsonDocument::fromJson(
+            R"({"Settings/translationOrder":["ESV","KJV"],"Settings/hiddenTranslations":[7]})").object();
+        QCOMPARE(profile::writeProfilePreferences(r, json.toVariantMap()), 1);
+        back = profile::readProfilePreferences(r);
+        QCOMPARE(back.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("ESV"), QStringLiteral("KJV") }));
+        QCOMPARE(back.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(), QStringList{});
+    }
+
+    // Before the lists were per profile every profile read the machine-wide
+    // ones. A profile opened for the first time since takes them over, once:
+    // later changes on either side stay on that side.
+    void testProfileInheritsMachineWideTranslationLists()
+    {
+        QSettings machine(root(QStringLiteral("machine-lists.ini")), QSettings::IniFormat);
+        machine.setValue(QStringLiteral("Settings/translationOrder"),
+                         QStringList{ QStringLiteral("NIV"), QStringLiteral("KJV") });
+        machine.setValue(QStringLiteral("Settings/hiddenTranslations"), QStringList{ QStringLiteral("MSG") });
+
+        const QString a = root(QStringLiteral("inherit-a"));
+        const QString b = root(QStringLiteral("inherit-b"));
+        QDir().mkpath(a);
+        QDir().mkpath(b);
+        // Profile B already has its own hidden list (from an import, say):
+        // only the order is taken over.
+        QCOMPARE(profile::writeProfilePreferences(b, QVariantMap{
+                     { QStringLiteral("Settings/hiddenTranslations"), QStringList{ QStringLiteral("AMP") } } }), 1);
+        {
+            auto sa = profile::openProfileSettingsAt(a);
+            auto sb = profile::openProfileSettingsAt(b);
+            QVERIFY(profile::inheritMachineWideLists(machine, *sa));
+            QVERIFY(profile::inheritMachineWideLists(machine, *sb));
+        }
+        QVariantMap pa = profile::readProfilePreferences(a);
+        QCOMPARE(pa.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("NIV"), QStringLiteral("KJV") }));
+        QCOMPARE(pa.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("MSG") });
+        const QVariantMap pb = profile::readProfilePreferences(b);
+        QCOMPARE(pb.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("NIV"), QStringLiteral("KJV") }));
+        QCOMPARE(pb.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("AMP") });
+
+        // Hiding a translation in A leaves B and the machine-wide list alone.
+        profile::writeProfilePreferences(a, QVariantMap{
+            { QStringLiteral("Settings/hiddenTranslations"),
+              QStringList{ QStringLiteral("MSG"), QStringLiteral("KJV") } } });
+        QCOMPARE(profile::readProfilePreferences(b).value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("AMP") });
+        QCOMPARE(machine.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("MSG") });
+
+        // A machine-wide change after A took the lists over does not reach
+        // A, and opening A again copies nothing.
+        machine.setValue(QStringLiteral("Settings/hiddenTranslations"), QStringList{ QStringLiteral("ESV") });
+        {
+            auto sa = profile::openProfileSettingsAt(a);
+            QVERIFY(!profile::inheritMachineWideLists(machine, *sa));
+        }
+        QCOMPARE(profile::readProfilePreferences(a).value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 (QStringList{ QStringLiteral("MSG"), QStringLiteral("KJV") }));
+
+        // A copy of A has its own lists too and takes nothing either.
+        const QString dupA = root(QStringLiteral("inherit-a-copy"));
+        QDir().mkpath(dupA);
+        profile::copyProfileSettings(a, dupA);
+        {
+            auto sd = profile::openProfileSettingsAt(dupA);
+            QVERIFY(!profile::inheritMachineWideLists(machine, *sd));
+        }
+        QCOMPARE(profile::readProfilePreferences(dupA).value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 (QStringList{ QStringLiteral("MSG"), QStringLiteral("KJV") }));
+
+        // A reset shows every translation again rather than taking the
+        // machine-wide lists a second time.
+        profile::clearProfileSettings(a);
+        {
+            auto sa = profile::openProfileSettingsAt(a);
+            QVERIFY(!profile::inheritMachineWideLists(machine, *sa));
+        }
+        pa = profile::readProfilePreferences(a);
+        QVERIFY(!pa.contains(QStringLiteral("Settings/translationOrder")));
+        QVERIFY(!pa.contains(QStringLiteral("Settings/hiddenTranslations")));
+
+        // Nothing machine-wide to take: the profile is still marked, so a
+        // list set machine-wide later stays out of it.
+        const QString c = root(QStringLiteral("inherit-c"));
+        QDir().mkpath(c);
+        QSettings empty(root(QStringLiteral("machine-empty.ini")), QSettings::IniFormat);
+        {
+            auto sc = profile::openProfileSettingsAt(c);
+            QVERIFY(!profile::inheritMachineWideLists(empty, *sc));
+            QVERIFY(!profile::inheritMachineWideLists(machine, *sc));
+        }
+        QVERIFY(profile::readProfilePreferences(c).isEmpty());
     }
 
     // ── Layer 2: zip additions ──────────────────────────────────────────
@@ -514,6 +661,10 @@ private slots:
         const QVariantMap prefs = profile::readProfilePreferences(dst);
         QCOMPARE(prefs.value(QStringLiteral("Settings/showCcli")).toBool(), false);
         QCOMPARE(prefs.value(QStringLiteral("Settings/autoAdvanceDelaySeconds")).toInt(), 42);
+        QCOMPARE(prefs.value(QStringLiteral("Settings/translationOrder")).toStringList(),
+                 (QStringList{ QStringLiteral("NKJV"), QStringLiteral("KJV") }));
+        QCOMPARE(prefs.value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("MSG") });
         QSettings ini(QDir(dst).filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
         QVERIFY(!ini.contains(QStringLiteral("Settings/language")));
 
@@ -759,6 +910,8 @@ private slots:
         Connection songs(DbPaths::songsDbPathIn(dup), crater::db::OpenMode::ReadOnly);
         QCOMPARE(scalar(songs, QStringLiteral("SELECT count(*) FROM songs")), 1);
         QCOMPARE(profile::readProfilePreferences(dup).value(QStringLiteral("Settings/autoAdvanceDelaySeconds")).toInt(), 42);
+        QCOMPARE(profile::readProfilePreferences(dup).value(QStringLiteral("Settings/hiddenTranslations")).toStringList(),
+                 QStringList{ QStringLiteral("MSG") });
 
         // Removing the copy's file leaves the original alone.
         QVERIFY(QFile::remove(path));
