@@ -40,6 +40,7 @@
 #include "BrowserCastService.h"  // BrowserCast (removable feature)
 #include "ClipboardService.h"
 #include "FileDialogService.h"
+#include "GraphicsStatus.h"
 #include "TextContextMenu.h"
 #include "LogReportService.h"
 #include "UpdateService.h"
@@ -334,10 +335,17 @@ int main(int argc, char* argv[])
     qInfo().noquote() << "──────── Crater" << crater::versionString() << "starting ────────";
     qInfo().noquote() << "Log file:" << logPath;
     qInfo().noquote() << "Graphics level:" << crater::startup::graphicsLevel()
-                      << "(0 hardware, 1 Direct3D software, 2 Qt Quick software)";
+                      << "(0 hardware, 1 Direct3D software, 2 Qt Quick software)"
+                      << (crater::startup::graphicsChosenByHand()
+                              ? "with the backend set by environment"
+                              : crater::startup::graphicsMode() == crater::graphics::Mode::OpenGl
+                                    ? "with OpenGL after a graphics driver crash"
+                                    : "");
     // The last launch died before the console appeared: send what it left.
     // Only then; a healthy launch never reports anything.
     crater::startup::reportPreviousFailure(logPath);
+    // The last session crashed after the console was up (mid-service).
+    crater::startup::logPreviousCrash();
 
     // ─── Startup cost breakdown ─────────────────────────────────────────
     // The pre-main() figure is the OS loader cost — see loaderMsBeforeMain().
@@ -561,6 +569,9 @@ int main(int argc, char* argv[])
     // operator action (Settings > Diagnostics) — see ARCHITECTURE.md §11. It
     // takes the path main.cpp logs to so it reports the exact file in use.
     crater::LogReportService  logReportService(logPath);
+    // What the console draws with (StartupGuard.h), for Settings >
+    // Diagnostics and the notice after a driver crash moved it to OpenGL.
+    crater::GraphicsStatus    graphicsStatus;
     // Tutorial, docs and website addresses for Settings > Help.
     crater::HelpLinks         helpLinks;
     // In-app updates (docs/auto-update.md). Constructing it touches nothing
@@ -660,6 +671,7 @@ int main(int argc, char* argv[])
     qmlRegisterSingletonInstance("Crater", 1, 0, "TextContextMenu",       &textContextMenu);
     qmlRegisterSingletonInstance("Crater", 1, 0, "ClipboardService",      &clipboardService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "LogReportService",      &logReportService);
+    qmlRegisterSingletonInstance("Crater", 1, 0, "GraphicsStatus",        &graphicsStatus);
     qmlRegisterSingletonInstance("Crater", 1, 0, "HelpLinks",             &helpLinks);
     qmlRegisterSingletonInstance("Crater", 1, 0, "UpdateService",         &updateService);
     qmlRegisterSingletonInstance("Crater", 1, 0, "UsageService",          &usageService);

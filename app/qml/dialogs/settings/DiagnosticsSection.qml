@@ -167,6 +167,53 @@ Item {
                 font.pixelSize: Theme.font.microSize
             }
 
+            // What the console draws with. Crater moves off the default by
+            // itself after a launch that can't start its display, or a
+            // crash in the graphics driver during a service (StartupGuard.h),
+            // and this is where the operator sees that and undoes it. The
+            // change holds for the running session, so a reset only says
+            // what the next launch will do.
+            SettingsSectionHeader { title: qsTr("Graphics") }
+
+            SettingRow {
+                id: graphicsRow
+                readonly property string mode: GraphicsStatus.mode
+                readonly property bool onDefault: mode === "direct3d"
+                title: {
+                    if (GraphicsStatus.chosenByHand) return qsTr("Set by an environment variable")
+                    switch (mode) {
+                    case "opengl":   return qsTr("OpenGL")
+                    case "warp":     return qsTr("Direct3D software rendering")
+                    case "software": return qsTr("Software rendering")
+                    }
+                    return Qt.platform.os === "windows" ? qsTr("Direct3D")
+                                                        : qsTr("Default")
+                }
+                description: {
+                    if (GraphicsStatus.chosenByHand)
+                        return qsTr("QSG_RHI_BACKEND or QT_QUICK_BACKEND picks how Crater draws on this computer. Crater leaves that choice alone.")
+                    if (GraphicsStatus.resetPending)
+                        return qsTr("Crater goes back to the default the next time it opens.")
+                    switch (mode) {
+                    case "opengl":
+                        return qsTr("Crater switched to OpenGL after the graphics driver crashed during a service%1. Switch back if the driver was updated or the crash had another cause.")
+                            .arg(GraphicsStatus.driverCrash.length > 0
+                                 ? " (" + GraphicsStatus.driverCrash.split("+")[0] + ")" : "")
+                    case "warp":
+                        return qsTr("Crater could not start its display on the graphics card, so it draws on the processor. Video may play less smoothly.")
+                    case "software":
+                        return qsTr("Crater could not start its display on the graphics card, so it uses its simplest renderer. Video and effects may play less smoothly.")
+                    }
+                    return qsTr("Crater draws with the graphics card, the default.")
+                }
+                GhostButton {
+                    visible: !graphicsRow.onDefault && !GraphicsStatus.chosenByHand
+                             && !GraphicsStatus.resetPending
+                    text: qsTr("Switch back to the default")
+                    onClicked: GraphicsStatus.resetToDefault()
+                }
+            }
+
             Item { Layout.fillWidth: true; Layout.preferredHeight: Theme.space.xl }
         }
     }

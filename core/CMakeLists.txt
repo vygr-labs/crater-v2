@@ -50,6 +50,9 @@ add_library(crater-core STATIC
     src/Version.cpp
     src/HelpLinks.cpp
     src/Checksums.cpp
+    # Startup graphics choice (app/src/StartupGuard.h): the ladder and the
+    # switch to OpenGL after a GPU driver crash. Standard library only.
+    src/GraphicsLadder.cpp
     src/BibleService.cpp
     src/StrongsService.cpp
     src/SongService.cpp
@@ -117,6 +120,7 @@ add_library(crater-core STATIC
     include/crater/LyricsService.h
     include/crater/HelpLinks.h
     include/crater/TransparentVideo.h
+    include/crater/GraphicsLadder.h
 )
 
 target_include_directories(crater-core

@@ -6,8 +6,12 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
+#include <QFileInfo>
 #include <QFutureWatcher>
+#include <QMediaFormat>
+#include <QMediaMetaData>
 #include <QMediaPlayer>
+#include <QSize>
 #include <QThreadPool>
 #include <QtAudio>
 #include <QtConcurrent>
@@ -129,8 +133,23 @@ int MediaPlaybackService::acquire(QString sourceUrl, bool wantsAudio, bool loop)
         // stops on someone's machine: did it reach the end without looping,
         // stall in the decoder, or fail.
         QMediaPlayer* player = e->player;
+        // Also what it opened, once: a crash mid-service with a big clip on a
+        // weak PC needs the clip's size and codec, and the log had neither.
         connect(player, &QMediaPlayer::mediaStatusChanged, this,
-                [player, urlCopy](QMediaPlayer::MediaStatus status) {
+                [player, urlCopy, logged = false](QMediaPlayer::MediaStatus status) mutable {
+                    if (status == QMediaPlayer::LoadedMedia && !logged) {
+                        logged = true;
+                        const QMediaMetaData md = player->metaData();
+                        const QSize size = md.value(QMediaMetaData::Resolution).toSize();
+                        qInfo().noquote()
+                            << "MediaPlayback:" << QUrl(urlCopy).fileName() << "opened"
+                            << QStringLiteral("%1x%2").arg(size.width()).arg(size.height())
+                            << QMediaFormat::videoCodecName(
+                                   md.value(QMediaMetaData::VideoCodec).value<QMediaFormat::VideoCodec>())
+                            << md.value(QMediaMetaData::VideoFrameRate).toDouble() << "fps"
+                            << player->duration() << "ms"
+                            << QFileInfo(QUrl(urlCopy).toLocalFile()).size() / (1024 * 1024) << "MB";
+                    }
                     if (status == QMediaPlayer::EndOfMedia || status == QMediaPlayer::StalledMedia
                         || status == QMediaPlayer::InvalidMedia)
                         qInfo().noquote() << "MediaPlayback:" << QUrl(urlCopy).fileName()

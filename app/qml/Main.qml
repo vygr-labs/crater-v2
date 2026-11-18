@@ -221,6 +221,62 @@ ApplicationWindow {
         visible: root._consoleVisible
     }
 
+    // ── Graphics notice ─────────────────────────────────────────────────
+    // Shown on the one launch after a crash in the graphics driver moved
+    // this PC to OpenGL (StartupGuard.h), until the operator closes it. A
+    // strip above the panels rather than a dialog, so nothing covers the
+    // console of an operator who is restarting in the middle of a service.
+    // Collapses to zero height otherwise, which keeps mainArea anchored to it.
+    Rectangle {
+        id: graphicsNotice
+        objectName: "graphicsNotice"
+        readonly property bool active: GraphicsStatus.noticeVisible && root._consoleVisible
+        anchors.top: topBar.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin:  root._maxFix
+        anchors.rightMargin: root._maxFix
+        visible: active
+        height: active ? Theme.d(36) : 0
+        color: Theme.color.brandSubtle
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.space.md
+            anchors.right: graphicsNoticeButtons.left
+            anchors.rightMargin: Theme.space.md
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Crater switched to OpenGL after a graphics driver crash. You can switch back in Settings > Diagnostics.")
+            elide: Text.ElideRight
+            color: Theme.color.textPrimary
+            font.family: Theme.font.family
+            font.pixelSize: Theme.font.smallSize
+        }
+
+        Row {
+            id: graphicsNoticeButtons
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.space.sm
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Theme.space.xs
+
+            GhostButton {
+                implicitHeight: Theme.d(26)
+                text: qsTr("Diagnostics")
+                onClicked: {
+                    GraphicsStatus.dismissNotice()
+                    AppState.settingsSection = "diagnostics"
+                    AppState.openModal("settings", {})
+                }
+            }
+            GhostButton {
+                implicitHeight: Theme.d(26)
+                text: qsTr("OK")
+                onClicked: GraphicsStatus.dismissNotice()
+            }
+        }
+    }
+
     // ── Main work surface ───────────────────────────────────────────────
     Item {
         id: mainArea
@@ -248,7 +304,7 @@ ApplicationWindow {
         }
 
         visible: root._consoleVisible
-        anchors.top: topBar.bottom
+        anchors.top: graphicsNotice.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
