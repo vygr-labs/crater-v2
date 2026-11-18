@@ -565,7 +565,7 @@ that runs after every service has been destroyed. A launch with
 | UI theme, UI scale, reduce motion, UI language | Media library and its display options         |
 | Updates, logs, drop-in translations            | Presentations, saved and working schedules    |
 | The profile list itself                        | Installed Bibles                              |
-|                                                | Content preferences (`ProfileSettings.cpp`): CCLI / author lines, verse numbers, scripture footer and highlight, default Bible, auto-advance, default media fit, search presentation, global-search actions |
+|                                                | Content preferences (`ProfileSettings.cpp`): CCLI / author lines, verse numbers, scripture footer and highlight, default Bible, auto-advance, default media fit, search presentation, global-search actions, which Bible translations are listed and in what order |
 |                                                | Each output's pinned themes (theme ids are per database) |
 
 The rule: if it describes the room's hardware or the operator's chair, it
@@ -574,6 +574,10 @@ is shown, it is per profile. The Default profile keeps its per-profile
 preferences in the registry under the same keys as before; other profiles
 keep them in `settings.ini`. `SettingsService` and `OutputService` route
 each key to the right store, so no setter knows profiles exist.
+Translation order and hidden translations used to be machine-wide. Any
+other profile copies the machine-wide lists into its own store the first
+time it opens (`profile::inheritMachineWideLists`) and is independent of
+the Default profile from then on.
 
 ### 12.3 The `.craterprofile` archive
 

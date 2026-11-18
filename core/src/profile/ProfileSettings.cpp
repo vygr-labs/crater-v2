@@ -12,7 +12,7 @@ namespace crater::profile {
 
 namespace {
 
-enum class Kind { Bool, Int, String };
+enum class Kind { Bool, Int, String, StringList };
 
 struct KeySpec {
     const char* key;
@@ -43,6 +43,9 @@ const QList<KeySpec>& specs()
         { "Settings/highlightSongMatches",      Kind::Bool   },
         { "Settings/highlightScriptureMatches", Kind::Bool   },
         { "Settings/highlightStrongsMatches",   Kind::Bool   },
+        // This profile's view of the shared Bible library: translation codes.
+        { "Settings/translationOrder",          Kind::StringList },
+        { "Settings/hiddenTranslations",        Kind::StringList },
     };
     return s;
 }
@@ -52,6 +55,15 @@ const KeySpec* specFor(QStringView key)
     for (const KeySpec& s : specs())
         if (key == QLatin1String(s.key)) return &s;
     return nullptr;
+}
+
+// Set in a profile's own store once it has taken over the translation
+// lists from the machine-wide store (inheritMachineWideLists). Not a
+// preference: never exported, and a reset keeps it.
+const QString& listsInheritedKey()
+{
+    static const QString k = QStringLiteral("Profile/translationListsInherited");
+    return k;
 }
 
 bool isDefaultRoot(const QString& root)
@@ -69,6 +81,9 @@ QVariant typed(const KeySpec& s, const QVariant& v)
     case Kind::Bool:   return QVariant(v.toBool());
     case Kind::Int:    return QVariant(v.toInt());
     case Kind::String: return QVariant(v.toString());
+    // An INI file stores a one-code list as a plain string; toStringList
+    // turns that back into a list.
+    case Kind::StringList: return QVariant(v.toStringList());
     }
     return {};
 }
@@ -99,6 +114,18 @@ bool acceptable(const KeySpec& s, const QVariant& v)
             static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9 ._-]{1,32}$"));
             return re.match(str).hasMatch();
         }
+        return true;
+    }
+    case Kind::StringList: {
+        // JSON arrays arrive as QVariantList. Every entry must look like a
+        // translation code, the same rule defaultScriptureVersion follows.
+        if (t != QMetaType::QStringList && t != QMetaType::QVariantList) return false;
+        const QVariantList list = v.toList();
+        if (list.size() > 500) return false;
+        static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9 ._-]{1,32}$"));
+        for (const QVariant& e : list)
+            if (e.metaType().id() != QMetaType::QString || !re.match(e.toString()).hasMatch())
+                return false;
         return true;
     }
     }
@@ -187,6 +214,9 @@ void copyProfileSettings(const QString& fromRoot, const QString& toRoot)
         const QString k = QString::fromLatin1(s.key);
         if (from->contains(k)) to->setValue(k, typed(s, from->value(k)));
     }
+    // A copy of a profile that already took the machine-wide lists over has
+    // its own, so it must not take them again.
+    if (from->contains(listsInheritedKey())) to->setValue(listsInheritedKey(), true);
     // Output theme pins. The output list itself is machine-wide, so walk it
     // from the global store.
     const auto global = openGlobalSettings();
@@ -196,6 +226,21 @@ void copyProfileSettings(const QString& fromRoot, const QString& toRoot)
         if (from->contains(k)) to->setValue(k, from->value(k));
     }
     to->sync();
+}
+
+bool inheritMachineWideLists(const QSettings& machine, QSettings& store)
+{
+    if (store.contains(listsInheritedKey())) return false;
+    bool copied = false;
+    for (const char* key : { "Settings/translationOrder", "Settings/hiddenTranslations" }) {
+        const QString k = QString::fromLatin1(key);
+        if (store.contains(k) || !machine.contains(k)) continue;
+        store.setValue(k, typed(*specFor(k), machine.value(k)));
+        copied = true;
+    }
+    store.setValue(listsInheritedKey(), true);
+    store.sync();
+    return copied;
 }
 
 void clearProfileSettings(const QString& root)

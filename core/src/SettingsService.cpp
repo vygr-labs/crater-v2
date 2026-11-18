@@ -1,5 +1,6 @@
 #include "crater/SettingsService.h"
 
+#include "db/DbPaths.h"
 #include "profile/ProfileSettings.h"
 
 #include <QJsonDocument>
@@ -278,6 +279,12 @@ SettingsService::SettingsService(QObject* parent)
         m_impl->scriptureInputMode = QStringLiteral("crater");
     m_impl->preloadTranslations = m_impl->get(Impl::kPreloadTranslations, m_impl->preloadTranslations).toBool();
     m_impl->reportStartupFailures = m_impl->get(Impl::kReportStartupFailures, m_impl->reportStartupFailures).toBool();
+    // Translation order and hidden translations were machine-wide before
+    // they were per profile. A profile opened for the first time since takes
+    // the machine-wide lists over, so the upgrade shows it what it showed
+    // before. The Default profile's store is the machine-wide one already.
+    if (!db::DbPaths::isDefaultDataDir())
+        profile::inheritMachineWideLists(m_impl->settings, *m_impl->profileStore);
     m_impl->translationOrder    = m_impl->get(Impl::kTranslationOrder, QStringList()).toStringList();
     m_impl->hiddenTranslations  = m_impl->get(Impl::kHiddenTranslations, QStringList()).toStringList();
     m_impl->showSongAuthor = m_impl->get(Impl::kShowSongAuth, m_impl->showSongAuthor).toBool();
