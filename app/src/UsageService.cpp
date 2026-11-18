@@ -38,6 +38,11 @@ constexpr int kRequestTimeoutMs = 30 * 1000;
 // Starts this close together are one sitting: a profile switch, a graphics
 // fallback restart, or closing and reopening. Same gap as UpdateService.
 constexpr qint64 kMinLaunchGapSecs = 10 * 60;
+// Days kept while reports can't go out. The website keeps a report's newest
+// 60 days and refuses one over 16 KB, which a booth offline for a few months
+// would pass, and a refused report is dropped whole. So the oldest days go
+// here first, and a report always fits.
+constexpr int kMaxDays = 60;
 
 const QString kShare      = QStringLiteral("Usage/share");
 const QString kId         = QStringLiteral("Usage/id");
@@ -81,12 +86,14 @@ QString today()
     return QDate::currentDate().toString(Qt::ISODate);
 }
 
-// days[today][event] += 1
+// days[today][event] += 1, keeping the newest kMaxDays days. The keys are
+// ISO dates, so the map's order is oldest first.
 void bump(QVariantMap& days, const QString& event)
 {
     QVariantMap day = days.value(today()).toMap();
     day[event] = day.value(event).toInt() + 1;
     days[today()] = day;
+    while (days.size() > kMaxDays) days.erase(days.begin());
 }
 
 QString newUuid()
