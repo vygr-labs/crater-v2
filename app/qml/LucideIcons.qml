@@ -119,6 +119,7 @@ QtObject {
         "bookmark":        "\ue060",
         "book":            "\ue05e",
         "refresh-cw":      "\ue145",
+        "message-square":  "\ue117",
 
         // Library tab additions (added when porting Electron UX) — these use
         // the \uXXXX escape form rather than literal PUA chars so they are

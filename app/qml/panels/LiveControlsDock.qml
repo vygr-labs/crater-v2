@@ -447,6 +447,7 @@ Item {
                                 active: AppState.showLogo
                                 visible: AppState.showLogo
                             }
+                            LiveOverlayLayer { anchors.fill: parent }
                         }
                     }
                 }

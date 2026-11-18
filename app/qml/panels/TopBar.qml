@@ -512,6 +512,17 @@ Rectangle {
             }
         }
 
+        // Timers and messages on the audience screen. Opens the control
+        // dialog. Lit while something is on screen, so the operator can tell
+        // at a glance without opening it.
+        GhostButton {
+            anchors.verticalCenter: parent.verticalCenter
+            iconName: "message-square"
+            text: qsTr("Messages")
+            active: LiveMessages.active
+            onClicked: AppState.openModal("liveMessages", {})
+        }
+
         GhostButton {
             anchors.verticalCenter: parent.verticalCenter
             iconName: "image"

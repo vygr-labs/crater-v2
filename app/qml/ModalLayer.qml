@@ -125,6 +125,13 @@ Item {
         sourceComponent: ShortcutsDialog { }
     }
 
+    // ── Timers, clock & live messages ───────────────────────────────────
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "liveMessages"
+        sourceComponent: LiveMessagesDialog { }
+    }
+
     // ── Schedule dropdown popover (anchored under TopBar) ───────────────
     Loader {
         anchors.fill: parent

@@ -311,10 +311,18 @@ auto-advance → *Scripture & Song settings* (§🟡).
       sponsor bugs, "baby in the nursery" banners — without disturbing what's
       live. New always-on output layer in `ProjectionScene.qml` + a Props
       library/tab; distinct from the theme/content layer.
-- [ ] **Timers, clocks & live messages.** Countdown-to-service loops, count-up
-      timers, wall clocks, and free-text messages pushed to the projection /
-      stage screens on the fly. The stage display has its own service timer and
-      countdown (`StageTimer`); the audience overlay is still open (PR #8).
+- [x] **Timers, clocks & live messages.** A live overlay on the audience
+      output (projector, mirror outputs and NDI): countdown by duration or to a
+      time of day, count-up with pause and resume, wall clock, and free-text
+      messages with quick presets. Position top / center / bottom, background
+      none / dim / solid. It sits above the content and the logo, so it stays
+      through clear, logo and slide changes. `LiveMessages` (state) and
+      `LiveOverlayLayer` (in `ProjectionScene`), opened from the TopBar
+      **Messages** button or **Ctrl+Shift+M**. The stage display keeps its own
+      `StageTimer`.
+  - [ ] Follow-ups: remember the operator's own message presets and look
+        across restarts; show the overlay on the stage display too; per-output
+        targeting (audience only, NDI only).
 
 ### Tier 2 — strong differentiators
 - [ ] **Live video input as a source.** Bring a camera / NDI / Syphon feed in as

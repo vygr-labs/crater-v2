@@ -36,6 +36,7 @@ ModalShell {
         { title: qsTr("Live output"), rows: [
             { keys: ["Ctrl+L"],                    label: qsTr("Show or hide the logo") },
             { keys: ["Ctrl+C", "Ctrl+."],          label: qsTr("Clear the projected text") },
+            { keys: ["Ctrl+Shift+M"],              label: qsTr("Open timers and messages") },
             { keys: ["Esc"],                       label: qsTr("In the projector window, close it, or send it behind the console in same-screen mode") },
             { keys: ["Esc"],                       label: qsTr("In an extra output window, turn it off") }
         ] },

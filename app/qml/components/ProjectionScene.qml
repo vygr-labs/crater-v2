@@ -595,6 +595,17 @@ Item {
                     }
                 }
             }
+
+            // ── Live overlay: timers, clock and messages ──────────────
+            // On top of the content and the logo, so a message or a
+            // countdown is never hidden. It reads LiveMessages, not the live
+            // item, so going live, changing slide, clear and the logo leave
+            // it where it is. Being inside the stage puts it on every output
+            // that renders this scene, NDI included.
+            LiveOverlayLayer {
+                id: liveOverlay
+                anchors.fill: parent
+            }
         }
     }
 }
