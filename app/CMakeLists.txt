@@ -165,6 +165,7 @@ qt_add_qml_module(crater
         qml/components/StageScene.qml
         qml/components/ProjectionContentLayer.qml
         qml/components/ThemedNodeGraph.qml
+        qml/components/NodeMotion.qml
         qml/components/NodeRenderer.qml
         qml/components/GradientFill.qml
         qml/components/CroppableMediaPreview.qml
@@ -206,6 +207,7 @@ qt_add_qml_module(crater
         qml/workspaces/editor/TransformProperties.qml
         qml/workspaces/editor/TextPropertiesContent.qml
         qml/workspaces/editor/ContainerPropertiesContent.qml
+        qml/workspaces/editor/MotionProperties.qml
         qml/workspaces/editor/inputs/NumericInput.qml
         qml/workspaces/editor/inputs/SimpleSlider.qml
         qml/workspaces/editor/inputs/SegmentedControl.qml

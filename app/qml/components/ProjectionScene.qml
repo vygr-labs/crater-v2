@@ -77,6 +77,15 @@ Item {
     // aren't guaranteed to have updated when the handler runs.
     readonly property bool   _showLogo: ProjectionService.showLogo
     readonly property bool   _isClear:  ProjectionService.isClear
+    // Whether Clear takes the whole output off (backgrounds, bars, pictures)
+    // or only the theme's text. Per output, so NDI can clear to nothing for
+    // the switcher while the projector keeps its background. The layers do
+    // the hiding, so a theme with motion can play its exit instead of
+    // fading as a block.
+    readonly property bool   _clearAll: {
+        OutputService.outputs  // dep
+        return OutputService.clearScope(outputKind) === "all"
+    }
 
     // ── Theme-revision dependency forwarded to the layers ──────────────
     // Each layer's `theme` is reactive on this counter; we bump it for any
@@ -273,6 +282,15 @@ Item {
             return
         }
 
+        // A theme with motion that stays up for the next verse or lyric:
+        // only its text changes, with the swap fade its text nodes play
+        // (ThemedNodeGraph). The bar, the strip and the rest don't move, so
+        // nothing replays its entry for every verse.
+        if (_canSwapInPlace(item, kind, page)) {
+            _setContent(currentLayer, item, kind, page, crop)
+            return
+        }
+
         // The incoming kind picks the type. Going to nothing uses the type
         // of what is leaving.
         const type = _typeForKind(kind) || _typeForKind(currentLayer.layerKind) || "lyrics"
@@ -286,6 +304,9 @@ Item {
 
         transitionParallel.stop()
         transitionSequence.stop()
+        motionRun.stop()
+        outFade.stop()
+        inFade.stop()
 
         // Mid-transition there are two layers on screen and only two layers,
         // so one of them has to take the new content. Replace whichever
@@ -298,6 +319,7 @@ Item {
             // Still mostly the old content: keep it as the outgoing layer
             // and swap what is fading in. The fade carries on from where it
             // got to. The old content keeps the sound until then.
+            currentLayer.shown = false
             _setContent(currentLayer, item, kind, page, crop)
             currentLayer.audioEnabled  = false
             previousLayer.audioEnabled = true
@@ -311,6 +333,9 @@ Item {
             inc.opacity = 0
             inc.z = 1
             inc.audioEnabled = false
+            // A motion theme starts with its nodes out, and comes in when
+            // its transition runs.
+            inc.shown = false
             _setContent(inc, item, kind, page, crop)
             _aIsCurrent = !_aIsCurrent
             _aIsShown   = !_aIsCurrent
@@ -369,6 +394,13 @@ Item {
         // Interrupted in the black half of a fade through black: the old
         // content is already gone, so skip straight to fading in.
         _skipFadeOut = previousLayer.opacity <= 0.001
+        const inMotion  = currentLayer.hasMotion
+        const outMotion = previousLayer.hasMotion && !_skipFadeOut
+        if (inMotion || outMotion) {
+            _runMotion(inMotion, outMotion)
+            return
+        }
+        currentLayer.shown = true
         if (_runStyle === "cut" || _runMs <= 0) {
             currentLayer.opacity = 1
             _finishTransition()
@@ -376,6 +408,93 @@ Item {
         }
         if (_runStyle === "fadeBlack") transitionSequence.restart()
         else                           transitionParallel.restart()
+    }
+
+    // -- Theme motion ------------------------------------------------------
+    // When either side has motion, each side moves its own way: a theme
+    // with motion plays its nodes' entry or exit, a side without fades its
+    // whole layer with the output's transition, as it always did. Fade
+    // through black keeps its order (the old side goes, then the new one
+    // comes); every other style runs both sides together. A Cut is a cut
+    // for the side without motion, and the motion side still plays, since
+    // that motion is part of how its theme was designed. Reduce Motion
+    // turns theme motion off altogether (ProjectionContentLayer).
+    property int  _mInDelay: 0
+    property int  _mInMs: 0
+    property int  _mTotal: 0
+    property bool _mInMotion: false
+
+    function _runMotion(inMotion, outMotion) {
+        const out = previousLayer
+        const inc = currentLayer
+        const seq = _runStyle === "fadeBlack"
+        const fadeMs = (_runStyle === "cut") ? 0 : _runMs
+
+        let outMs = 0
+        if (outMotion) {
+            outMs = out.exitMs()
+            out.shown = false
+        } else if (!_skipFadeOut) {
+            outMs = seq ? fadeMs / 2 : fadeMs
+            _fade(outFade, out, 0, outMs, seq ? Easing.InOutCubic : Easing.InQuad)
+        }
+
+        _mInMotion = inMotion
+        _mInDelay  = seq ? outMs : 0
+        if (inMotion) {
+            // On top at full opacity with every node still out, so nothing
+            // shows until the nodes play in.
+            inc.opacity = 1
+            _mInMs = inc.entryMs()
+        } else {
+            _mInMs = seq ? fadeMs / 2 : fadeMs
+        }
+        _mTotal = Math.max(outMs, _mInDelay + _mInMs)
+        motionRun.restart()
+    }
+
+    function _motionStartIn() {
+        currentLayer.shown = true
+        if (!_mInMotion)
+            _fade(inFade, currentLayer, 1, _mInMs,
+                  _runStyle === "fadeBlack" ? Easing.InOutCubic : Easing.OutQuad)
+    }
+
+    function _fade(anim, target, to, ms, easingType) {
+        anim.stop()
+        if (ms <= 0) { target.opacity = to; return }
+        anim.target = target
+        anim.to = to
+        anim.duration = ms
+        anim.easing.type = easingType
+        anim.start()
+    }
+
+    SequentialAnimation {
+        id: motionRun
+        onFinished: scene._finishTransition()
+        PauseAnimation { duration: scene._mInDelay }
+        ScriptAction   { script: scene._motionStartIn() }
+        PauseAnimation { duration: Math.max(0, scene._mTotal - scene._mInDelay) }
+    }
+    NumberAnimation { id: outFade; property: "opacity" }
+    NumberAnimation { id: inFade;  property: "opacity" }
+
+    // Can the next slide go into the layer that's on screen? Only for a
+    // theme with motion, between songs, scripture and Strong's (a picture
+    // or a deck slide always gets its own layer), and only when the next
+    // slide resolves to the same theme and the same layout.
+    function _canSwapInPlace(item, kind, page) {
+        const L = currentLayer
+        if (!L.hasMotion) return false
+        const textKinds = { song: true, scripture: true, strongs: true }
+        if (!textKinds[kind] || !textKinds[L.layerKind]) return false
+        const th = AppState.resolveItemTheme(item, outputKind)
+        const id = (th && th.id) ? th.id : 0
+        if (id === 0) return false
+        const pages = (item && item.pages) ? item.pages : []
+        const p = pages.length > 0 ? pages[Math.min(page, pages.length - 1)] : null
+        return L.designKey === id + "|" + ((p && p.layout) || "")
     }
 
     // Empty the outgoing layer once it is fully covered. Until this existed
@@ -526,6 +645,7 @@ Item {
                     outputKind:    scene.outputKind
                     themeRevision: scene._themeRevision
                     passiveFadeMs: scene._clearMs
+                    clearAll:      scene._clearAll
                     opacity:       1
                 }
                 ProjectionContentLayer {
@@ -534,6 +654,7 @@ Item {
                     outputKind:    scene.outputKind
                     themeRevision: scene._themeRevision
                     passiveFadeMs: scene._clearMs
+                    clearAll:      scene._clearAll
                     opacity:       0
                 }
             }
@@ -571,9 +692,9 @@ Item {
             // ordering). active gates the video decoder; opacity drives
             // the fade so the decoder doesn't bounce on every fade tick.
             //
-            // Logo visibility is independent of isClear — clearing only
-            // hides text, so a logo toggled on stays visible through a
-            // clear.
+            // Logo visibility is independent of isClear: Clear hides text
+            // (or every layer, with Clear hides: Everything), never the
+            // logo, so a logo toggled on stays visible through a clear.
             LogoView {
                 id: logoView
                 anchors.fill: parent

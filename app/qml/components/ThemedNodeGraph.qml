@@ -45,6 +45,53 @@ Item {
     property int  passiveFadeMs: 280
     property bool dimHidden: false
 
+    // ── Motion (data.motion, see NodeMotion.qml) ────────────────────────
+    // motionEnabled: play the nodes' entry / exit specs. Off for thumbnails;
+    //   the live output turns it on unless Reduce Motion is set.
+    // shown: whether the theme is up. Only read when the theme has motion:
+    //   the scene flips it to bring a motion theme in and take it out node
+    //   by node, where a theme without motion is faded as one layer.
+    // clearAll: Clear takes every node off, not only text (Settings >
+    //   Projection > Clear hides).
+    // swapText: a text change on a node that's in place fades the old text
+    //   out and the new one in, instead of the whole layer crossfading. Only
+    //   the live output sets it; the editor changes text as you type.
+    property bool motionEnabled: false
+    property bool shown: true
+    property bool clearAll: false
+    property bool swapText: false
+
+    readonly property bool hasMotion: motionEnabled && _anyMotion(_sortedNodes)
+    function _anyMotion(ns) {
+        for (let i = 0; i < ns.length; i++) {
+            const mo = ns[i].data && ns[i].data.motion
+            if (mo && (mo.in || mo.out)) return true
+        }
+        return false
+    }
+
+    // How long the theme takes to come in or go out: the slowest node,
+    // delays included. The scene waits this long before it calls a
+    // transition done.
+    function entryMs() { return _slowest(true) }
+    function exitMs()  { return _slowest(false) }
+    function _slowest(entry) {
+        let ms = 0
+        for (let i = 0; i < nodeRepeater.count; i++) {
+            const it = nodeRepeater.itemAt(i)
+            if (it) ms = Math.max(ms, it.motionItem.phaseMs(entry))
+        }
+        return ms
+    }
+
+    // Theme editor preview: play every node's entry (or exit) from the start.
+    function replay(entry) {
+        for (let i = 0; i < nodeRepeater.count; i++) {
+            const it = nodeRepeater.itemAt(i)
+            if (it) it.motionItem.replay(entry)
+        }
+    }
+
     function resolveText(node) {
         return root.resolveTextFn ? root.resolveTextFn(node) : ""
     }
@@ -335,11 +382,18 @@ Item {
             readonly property var    _myLayout: _groupParent ? root._memberLayoutOf(_nodeId) : null
 
             // The CONTENT rect other nodes hug / stack against (containers
-            // expose their whole box). See _rectOf.
+            // expose their whole box). See _rectOf. A card exposes the box
+            // it hugs to, and a card member the slot the card gave it, so an
+            // accent bar that hugs the card, or a label stacked above a
+            // member, follows the card as its text grows.
             readonly property real contentTop:
-                measuredPx <= 0 ? _effTop : _effTop + _ctRel
+                groupComp ? groupComp.top
+              : _myLayout ? _myLayout.y
+              : measuredPx <= 0 ? _effTop : _effTop + _ctRel
             readonly property real contentBottom:
-                measuredPx <= 0 ? _effTop + _effHeight : contentTop + measuredPx
+                groupComp ? groupComp.top + groupComp.height
+              : _myLayout ? _myLayout.y + measuredPx
+              : measuredPx <= 0 ? _effTop + _effHeight : contentTop + measuredPx
 
             onYChanged:          _publishBox()
             onHeightChanged:     _publishBox()
@@ -347,6 +401,7 @@ Item {
             onXChanged:          _publishBox()
             onWidthChanged:      _publishBox()
             Component.onCompleted: {
+                _displayText = _resolved
                 if (_nodeId) {
                     root._itemsById[_nodeId] = nodeWrap
                     root._itemsRev++
@@ -388,34 +443,91 @@ Item {
                                      0,   0,   0, 1)
             }
 
-            // Per-node clear fade — drops to 0 only when this node is a
-            // TEXT node AND the projection is cleared (clearActive). Non-text
-            // nodes (image backgrounds, decorative shapes) stay visible during
-            // a clear. Separated from the outer Item's opacity so theme-editor
-            // edits to style.opacity continue to snap (no Behavior there), while
-            // clear is animated. Duration follows the scene's passive-fade so a
-            // cut style yields an instant clear.
-            Item {
-                anchors.fill: parent
-                opacity: (root.clearActive && nodeWrap.node.kind === "text") ? 0 : 1
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: root.passiveFadeMs
-                        easing.type: Easing.InOutCubic
-                    }
+            // ── Verse swap ──────────────────────────────────────────────
+            // With swapText on a motion theme, new text on a node that's in
+            // place fades the old text out and the new text in (motion.swap,
+            // default 160 ms out and 260 ms in) while the rest of the theme
+            // stays put. Otherwise the text just lands, which is all a
+            // theme without motion ever did here (its layer crossfades).
+            readonly property string _resolved: root.resolveText(node)
+            // Not bound to _resolved: a binding would show the new text
+            // before the old one had faded out.
+            property string _displayText: ""
+            readonly property var _swapSpec: (_data.motion && _data.motion.swap) || ({})
+            on_ResolvedChanged: {
+                if (root.swapText && root.hasMotion && node.kind === "text"
+                        && motionItem.settled && _displayText !== _resolved) {
+                    swapAnim.restart()
+                } else {
+                    swapAnim.stop()
+                    swapLayer.opacity = 1
+                    _displayText = _resolved
                 }
+            }
+            SequentialAnimation {
+                id: swapAnim
+                NumberAnimation {
+                    target: swapLayer; property: "opacity"; to: 0
+                    duration: Math.max(0, nodeWrap._swapSpec.out !== undefined ? nodeWrap._swapSpec.out : 160)
+                    easing.type: Easing.InCubic
+                }
+                ScriptAction { script: nodeWrap._displayText = nodeWrap._resolved }
+                NumberAnimation {
+                    target: swapLayer; property: "opacity"; to: 1
+                    duration: Math.max(0, nodeWrap._swapSpec.in !== undefined ? nodeWrap._swapSpec.in : 260)
+                    easing.type: Easing.OutCubic
+                }
+            }
 
-                NodeRenderer {
-                    id: renderer
+            // A card that changes height when its verse swaps eases to the
+            // new size instead of jumping, and its members ride along. Only
+            // once the theme is in place, so the first layout never slides.
+            readonly property bool _smoothLayout: root.swapText && root.hasMotion
+                && (groupComp !== null || _myLayout !== null || _ah !== null || _ap !== null)
+                && motionItem.settled
+            Behavior on y      { enabled: nodeWrap._smoothLayout; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on height { enabled: nodeWrap._smoothLayout; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+            property alias motionItem: motionItem
+
+            // Whether this node should be on screen. Clear takes text off,
+            // or every node when clearAll is set. On a motion theme the
+            // scene's `shown` brings the whole theme in and out as well.
+            //
+            // The fade or motion sits in its own Item, apart from the outer
+            // Item's opacity, so theme-editor edits to style.opacity still
+            // snap while Clear and motion animate. A node without a motion
+            // spec fades over the scene's Clear duration, so a Cut gives an
+            // instant clear.
+            NodeMotion {
+                id: motionItem
+                anchors.fill: parent
+                spec: nodeWrap._data.motion || null
+                motionOn: root.motionEnabled
+                fallbackMs: root.passiveFadeMs
+                // Reads the node list, not root.hasMotion: the Repeater makes
+                // a new theme's delegates before hasMotion has caught up, and
+                // a node that read the stale value would start in place
+                // instead of waiting to play its entry.
+                wantIn: (!(root.motionEnabled && root._anyMotion(root._sortedNodes)) || root.shown)
+                        && !(root.clearActive && (root.clearAll || nodeWrap.node.kind === "text"))
+
+                Item {
+                    id: swapLayer
                     anchors.fill: parent
-                    node: nodeWrap.node
-                    resolvedText: root.resolveText(nodeWrap.node)
-                    suppressAnimations: root.suppressAnimations
-                    autoPlayVideos: root.autoPlayVideos
-                    // In a card, the member's box is its hugged content height,
-                    // so auto-fit must measure against its OWN configured height
-                    // instead (its max region) — else fit↔box would loop.
-                    fitHeightOverride: nodeWrap._myLayout ? nodeWrap._baseH : 0
+
+                    NodeRenderer {
+                        id: renderer
+                        anchors.fill: parent
+                        node: nodeWrap.node
+                        resolvedText: nodeWrap._displayText
+                        suppressAnimations: root.suppressAnimations
+                        autoPlayVideos: root.autoPlayVideos
+                        // In a card, the member's box is its hugged content height,
+                        // so auto-fit must measure against its OWN configured height
+                        // instead (its max region) — else fit↔box would loop.
+                        fitHeightOverride: nodeWrap._myLayout ? nodeWrap._baseH : 0
+                    }
                 }
             }
         }

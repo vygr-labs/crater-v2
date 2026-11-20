@@ -279,6 +279,11 @@ Rectangle {
     // misses is one Ctrl+Z away and never reaches the themes list. The
     // dialog validates the paste with ThemeService before calling this, so
     // anything arriving here is already known to survive Save.
+    // Motion > Play entry / Play exit: run the design's motion on the canvas.
+    function previewMotion(entry) {
+        editorCanvas.paintGraph.replay(entry)
+    }
+
     function openAiDesign() {
         AppState.openModal("aiDesign", {
             kind:          workspace.themeKind,

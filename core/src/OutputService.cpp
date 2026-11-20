@@ -61,6 +61,14 @@ QString normalizedContentMode(const QString& mode)
     return QStringLiteral("mirror");
 }
 
+// An unknown clear scope falls back to clearing text only, which is what
+// Clear did on every output before the setting existed.
+QString normalizedClearScope(const QString& scope)
+{
+    if (scope == QStringLiteral("all")) return QStringLiteral("all");
+    return QStringLiteral("text");
+}
+
 // The mode a freshly-seeded or newly-registered output starts in. Derived
 // from role rather than stored as a second default, so "register a stage
 // output" cannot produce a stage output that mirrors.
@@ -548,6 +556,8 @@ void OutputService::loadOutputsFromSettings()
         b.contentMode          = normalizedContentMode(
             s.value(p + QStringLiteral("contentMode"),
                     contentModeForRole(b.role)).toString());
+        b.clearScope           = normalizedClearScope(
+            s.value(p + QStringLiteral("clearScope")).toString());
         loaded.append(std::move(b));
     }
     m_impl->outputs = std::move(loaded);
@@ -588,6 +598,7 @@ void OutputService::persistOutput(const OutputBinding& b)
     s.setValue(p + QStringLiteral("screenIndex"),          b.screenIndex);
     s.setValue(p + QStringLiteral("screenName"),           b.screenName);
     s.setValue(p + QStringLiteral("contentMode"),          b.contentMode);
+    s.setValue(p + QStringLiteral("clearScope"),           b.clearScope);
 }
 
 void OutputService::runLegacyMigration()
@@ -913,6 +924,29 @@ void OutputService::setContentMode(const QString& outputId, const QString& mode)
         if (b.id != outputId) continue;
         if (b.contentMode == m) return;
         b.contentMode = m;
+        persistOutput(b);
+        emit outputsChanged();
+        return;
+    }
+}
+
+QString OutputService::clearScope(const QString& outputId) const
+{
+    if (!m_impl) return QStringLiteral("text");
+    for (const auto& b : m_impl->outputs) {
+        if (b.id == outputId) return b.clearScope;
+    }
+    return QStringLiteral("text");
+}
+
+void OutputService::setClearScope(const QString& outputId, const QString& scope)
+{
+    if (!m_impl) return;
+    const QString c = normalizedClearScope(scope);
+    for (auto& b : m_impl->outputs) {
+        if (b.id != outputId) continue;
+        if (b.clearScope == c) return;
+        b.clearScope = c;
         persistOutput(b);
         emit outputsChanged();
         return;

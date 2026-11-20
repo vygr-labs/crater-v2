@@ -188,6 +188,9 @@ Item {
                 nodes: { root.workspace.layoutRev; return root._wt.nodes || [] }
                 resolveTextFn: node => root.workspace.resolveText(node)
                 dimHidden: true
+                // Only plays when asked (Motion > Play entry / Play exit):
+                // nothing on the canvas is ever cleared or taken down.
+                motionEnabled: true
             }
 
             // Chrome — pre-sorted by z so hit-testing matches paint order.

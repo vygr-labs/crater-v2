@@ -160,6 +160,11 @@ public:
     Q_INVOKABLE QString contentMode(const QString& outputId) const;
     Q_INVOKABLE void    setContentMode(const QString& outputId, const QString& mode);
 
+    // "text" (Clear fades only the theme's text) | "all" (Clear fades the
+    // whole output). Anything else normalizes to "text", the old behavior.
+    Q_INVOKABLE QString clearScope(const QString& outputId) const;
+    Q_INVOKABLE void    setClearScope(const QString& outputId, const QString& scope);
+
     // Operator-facing rename. Empty names are ignored rather than stored,
     // so an accidental clear can't produce an unlabelled row.
     Q_INVOKABLE void    setDisplayName(const QString& outputId, const QString& name);

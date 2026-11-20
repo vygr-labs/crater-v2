@@ -1,0 +1,188 @@
+{
+  "name": "Slate Lower Third",
+  "kind": "scripture",
+  "tokens": {
+    "version": 3,
+    "canvas": {
+      "width": 1920,
+      "height": 1080
+    },
+    "layouts": [
+      {
+        "id": "content",
+        "name": "Content",
+        "default": true,
+        "nodes": [
+          {
+            "id": "card",
+            "kind": "container",
+            "style": {
+              "x": 4.5,
+              "y": 50,
+              "width": 62,
+              "height": 44,
+              "z": 1,
+              "opacity": 1,
+              "backgroundColor": "#eb12161c",
+              "borderTopLeftRadius": 4,
+              "borderTopRightRadius": 4,
+              "borderBottomLeftRadius": 4,
+              "borderBottomRightRadius": 4
+            },
+            "data": {
+              "layerName": "Card",
+              "group": {
+                "members": [
+                  "reference",
+                  "body"
+                ],
+                "gap": 0.8,
+                "padTop": 2.4,
+                "padBottom": 2.8,
+                "padX": 2.6,
+                "anchor": "bottom"
+              },
+              "motion": {
+                "in": {
+                  "type": "slide",
+                  "edge": "bottom",
+                  "distance": 36,
+                  "duration": 520,
+                  "easing": "smooth"
+                },
+                "out": {
+                  "type": "slide",
+                  "edge": "bottom",
+                  "distance": 18,
+                  "duration": 320,
+                  "delay": 90,
+                  "easing": "in"
+                }
+              }
+            }
+          },
+          {
+            "id": "edge",
+            "kind": "container",
+            "style": {
+              "x": 4.5,
+              "y": 50,
+              "width": 0.32,
+              "height": 44,
+              "z": 2,
+              "opacity": 1,
+              "backgroundColor": "#f2b84b"
+            },
+            "data": {
+              "layerName": "Edge bar",
+              "autoHeight": {
+                "source": "card",
+                "padTop": 0,
+                "padBottom": 0
+              },
+              "motion": {
+                "in": {
+                  "type": "grow",
+                  "edge": "bottom",
+                  "duration": 420,
+                  "delay": 160,
+                  "easing": "smooth"
+                },
+                "out": {
+                  "type": "fade",
+                  "duration": 200,
+                  "easing": "in"
+                }
+              }
+            }
+          },
+          {
+            "id": "reference",
+            "kind": "text",
+            "style": {
+              "x": 7.1,
+              "y": 60,
+              "width": 56.8,
+              "height": 4.4,
+              "z": 3,
+              "opacity": 1,
+              "color": "#f2b84b",
+              "fontFamily": "Funnel Sans",
+              "fontPixelSize": 26,
+              "fontWeight": 600,
+              "letterSpacing": 2,
+              "lineHeightMultiplier": 1.15,
+              "textTransform": "uppercase",
+              "textAlign": "left",
+              "verticalAlign": "start"
+            },
+            "data": {
+              "layerName": "Reference",
+              "linkage": "scriptureRef",
+              "autoResize": true,
+              "maxFontSize": 26,
+              "motion": {
+                "in": {
+                  "type": "slide",
+                  "edge": "left",
+                  "distance": 24,
+                  "duration": 420,
+                  "delay": 200,
+                  "easing": "smooth"
+                },
+                "out": {
+                  "type": "fade",
+                  "duration": 180,
+                  "easing": "in"
+                }
+              }
+            }
+          },
+          {
+            "id": "body",
+            "kind": "text",
+            "style": {
+              "x": 7.1,
+              "y": 66,
+              "width": 56.8,
+              "height": 24,
+              "z": 3,
+              "opacity": 1,
+              "color": "#f5f7fa",
+              "fontFamily": "Funnel Sans",
+              "fontPixelSize": 44,
+              "fontWeight": 500,
+              "lineHeightMultiplier": 1.24,
+              "textAlign": "left",
+              "verticalAlign": "start"
+            },
+            "data": {
+              "layerName": "Verse",
+              "linkage": "scriptureText",
+              "autoResize": true,
+              "maxFontSize": 46,
+              "motion": {
+                "in": {
+                  "type": "fade",
+                  "duration": 380,
+                  "delay": 260,
+                  "easing": "out"
+                },
+                "out": {
+                  "type": "fade",
+                  "duration": 180,
+                  "easing": "in"
+                },
+                "swap": {
+                  "out": 160,
+                  "in": 260
+                }
+              },
+              "verseNumberColor": "#f2b84b"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
