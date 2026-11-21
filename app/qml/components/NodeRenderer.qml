@@ -44,6 +44,15 @@ Item {
     // content — without the split, fit↔box would feed back and loop.
     property real fitHeightOverride: 0
 
+    // Auto-fit's own answer (the largest size that fits the box), and an
+    // optional ceiling on the size actually used. The two columns of a split
+    // screen slide cap each other at the other's natural size, so both read
+    // at the same size (ThemedNodeGraph pairs them). The natural size never
+    // depends on the cap, so the pair can't feed back.
+    readonly property int naturalFitPx:
+        (_isText && textLoader.item) ? textLoader.item._naturalFit : 0
+    property int fitCap: 0
+
     // ─── Container delegate ──────────────────────────────────────────────
     // Uniform radius for v1 — Qt 6's Rectangle.radius is a single value. The
     // 4 stored corner fields are averaged here; true per-corner rendering
@@ -174,6 +183,13 @@ Item {
                 // before the binary search converges to the real fit.
                 property bool _fitted: false
 
+                // What the binary search found before any cap (nodeRoot.fitCap).
+                property int _naturalFit: 0
+                function _applyCap() {
+                    _fittedSize = nodeRoot.fitCap > 0 ? Math.min(_naturalFit, nodeRoot.fitCap)
+                                                      : _naturalFit
+                }
+
                 // Hidden probe — mirrors layout-affecting properties of
                 // visibleText so paintedHeight/Width report accurate metrics
                 // at each trial pixelSize during binary search.
@@ -226,7 +242,8 @@ Item {
                 function _refit() {
                     if (!_data.autoResize) {
                         // Track user-set pixel size when auto-resize is off.
-                        _fittedSize = _style.fontPixelSize || 48
+                        _naturalFit = _style.fontPixelSize || 48
+                        _fittedSize = _naturalFit
                         _fitted = true
                         return
                     }
@@ -248,7 +265,8 @@ Item {
                             hi = mid - 1
                         }
                     }
-                    _fittedSize = best
+                    _naturalFit = best
+                    _applyCap()
                     _fitted = true
                 }
 
@@ -271,6 +289,8 @@ Item {
                     target: nodeRoot
                     // A changed fit-height override (card re-allotment) re-fits.
                     function onFitHeightOverrideChanged() { refitTimer.restart() }
+                    // A new cap only changes which size is used, not the fit.
+                    function onFitCapChanged() { if (textHost._fitted && textHost._data.autoResize) textHost._applyCap() }
                     // Node-property changes (style, data) can burst during a
                     // drag-resize in the editor — keep these debounced.
                     function onNodeChanged()         { refitTimer.restart() }

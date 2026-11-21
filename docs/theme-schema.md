@@ -219,6 +219,8 @@ shows a picture.
   several pages.
 - `strongsPage` → where that page is in the entry ("1 / 3"). Empty for a
   one-page entry.
+- `scriptureRefRight` / `scriptureTextRight` → the right-hand passage of a split
+  screen slide (§9, "Split screen"). A theme rarely binds these itself.
 - `custom` → the literal `data.text`.
 
 A `strongs` theme is what the Strong's tab projects (its own kind since app
@@ -505,6 +507,30 @@ would offer a field that renders nowhere, or hide one the design needs.
 
 **Speaker notes** are on every design and are not in the table. They have no
 linkage at all — see the note in §4.
+
+### Split screen (scripture)
+
+A split screen slide puts two passages side by side, or one passage in two
+translations. Its pages ask for the layout id `split`. A scripture theme may
+define a `split` design binding `scriptureRef` / `scriptureText` for the left
+passage and `scriptureRefRight` / `scriptureTextRight` for the right one, but it
+doesn't have to: when the theme has no `split` design, Crater derives one from
+its default design (`crater::tokens::deriveSplitNodes`).
+
+The derived design draws the **passage column** twice. The column is every text
+node bound to `scriptureRef` or `scriptureText`, the card they sit in and that
+card's members, anything hugging or stacked on them (`autoHeight` /
+`autoPosition`), and any smaller decoration lying inside the column (an accent
+rule). The left copy keeps its ids. The right copy gets `-right` ids, binds the
+`...Right` linkages, and has its card members and layout sources renamed to
+match. The column keeps its left margin, mirrored on the right, with a 4% gutter
+in the middle: a full-screen passage at 9–91% becomes 9–48% and 52–91%, and a
+lower third at 4.5–66.5% becomes two lower thirds, 4.5–48% and 52–95.5%.
+Anything outside the column (the background, a logo) is drawn once.
+
+A long verse is broken into parts for a split slide rather than shrunk until it
+fits half the width. That happens when the slides are built (AppState
+`buildSplitItem`), not in the theme.
 
 ---
 

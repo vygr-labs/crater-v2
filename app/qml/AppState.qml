@@ -693,6 +693,211 @@ QtObject {
         return buildScriptureItem(verses, code)
     }
 
+    // ─── Split screen scripture ─────────────────────────────────────────
+    // Two passages side by side, or one passage in two translations, on the
+    // scripture theme's split design (ThemeTokens::deriveSplitNodes makes
+    // one from the theme's own when it has none). The item is an ordinary
+    // scripture item to everything that reads one: `scriptureRef`, `title`
+    // and the schedule tooling see the LEFT passage first. `splitRight`
+    // holds the right one, and every page carries both sides:
+    //   { layout: "split", label, ref, content, refRight, contentRight }
+    //
+    // Each side shows one verse at a time, whatever Highlight current verse
+    // says: half the width can't hold a whole passage. A verse longer than
+    // splitPartChars breaks into parts, at a sentence or clause end where
+    // it can, each part ending (and the next starting) with an ellipsis,
+    // and Next steps through the parts before moving to the next verse.
+    // When one side has fewer verses or parts, it holds its last one.
+    readonly property int splitPartChars: 180
+
+    function isSplitItem(item) {
+        return !!item && item.kind === "scripture" && !!item.splitRight
+    }
+
+    // The verses a scripture item (or a bare scriptureRef) holds, read from
+    // the Bible in `code`, its own translation when empty. Empty when any
+    // verse can't be read, so a translation missing a verse never makes a
+    // half-built split.
+    function passageVerses(itemOrRef, code) {
+        const r = itemOrRef && (itemOrRef.scriptureRef || itemOrRef)
+        if (!r || !r.book) return []
+        const c = String(code || r.translationCode || "")
+        let refs = (r.verses && r.verses.length > 0) ? r.verses : null
+        if (!refs) {
+            const start = parseInt(String(r.verseStart !== undefined ? r.verseStart : r.verse), 10)
+            let end = parseInt(String(r.verseEnd !== undefined ? r.verseEnd : start), 10)
+            if (isNaN(start)) return []
+            if (isNaN(end) || end < start) end = start
+            refs = []
+            for (let n = start; n <= Math.min(end, start + 199); n++)
+                refs.push({ book: r.book, chapter: r.chapter, verse: n })
+        }
+        const out = []
+        for (let i = 0; i < refs.length; i++) {
+            const v = BibleService.verse(c, String(refs[i].book), Number(refs[i].chapter),
+                                         Number(refs[i].verse))
+            if (!v || !v.text) return []
+            // A paragraph row (The Message) answers for every number it spans.
+            const p = out.length > 0 ? out[out.length - 1] : null
+            if (p && p.book === v.book && p.chapter === v.chapter && p.verse === v.verse) continue
+            out.push(v)
+        }
+        return out
+    }
+
+    // One verse's text in parts of at most splitPartChars. Each cut aims at
+    // an even share of what is left, so a verse just over the limit splits
+    // in two halves rather than a full part and a scrap, and lands on the
+    // last sentence end, else clause end, else space near that aim.
+    function splitVerseParts(text) {
+        const limit = splitPartChars
+        let rest = String(text || "").replace(/\s+/g, " ").trim()
+        const parts = []
+        while (rest.length > limit) {
+            const count = Math.ceil(rest.length / limit)
+            const aim = Math.ceil(rest.length / count)
+            const lo = Math.floor(aim * 0.6)
+            const hi = Math.min(limit, Math.floor(aim * 1.25))
+            let cut = -1
+            const tries = [/[.;:!?]["'”’)]?\s/g, /[,—–]\s/g, /\s/g]
+            for (let t = 0; t < tries.length && cut < 0; t++) {
+                let m
+                while ((m = tries[t].exec(rest)) !== null) {
+                    const end = m.index + m[0].length
+                    if (end > hi + 1) break
+                    if (end >= lo) cut = end
+                }
+            }
+            if (cut < 0) cut = hi
+            parts.push(rest.slice(0, cut).trim())
+            rest = rest.slice(cut).trim()
+        }
+        parts.push(rest)
+        return parts
+    }
+
+    // Per verse: its label and its parts as slide markup. A passage numbers
+    // its verses the way buildScriptureItem does; a single verse doesn't.
+    function _splitSide(verses) {
+        const numbered = verses.length > 1
+        return verses.map(function(v) {
+            const parts = splitVerseParts(v.text)
+            const n = parts.length
+            return {
+                label: v.book + " " + v.chapter + ":" + verseSpan(v),
+                parts: parts.map(function(p, j) {
+                    let s = (j > 0 ? "…" : "") + p + (j < n - 1 ? "…" : "")
+                    if (numbered && j === 0)
+                        s = "{color=verse}**" + verseSpan(v) + ".**{/color} " + s
+                    return s
+                })
+            }
+        })
+    }
+
+    // A split item from two single-passage scripture items. Null when
+    // either side has no readable verses.
+    function buildSplitItem(left, right) {
+        if (!left || !right || left.kind !== "scripture" || right.kind !== "scripture")
+            return null
+        const L = _splitSide(passageVerses(left))
+        const R = _splitSide(passageVerses(right))
+        if (L.length === 0 || R.length === 0) return null
+        const pages = []
+        const verses = Math.max(L.length, R.length)
+        for (let i = 0; i < verses; i++) {
+            const a = L[Math.min(i, L.length - 1)]
+            const b = R[Math.min(i, R.length - 1)]
+            const parts = Math.max(a.parts.length, b.parts.length)
+            for (let j = 0; j < parts; j++) {
+                pages.push({
+                    layout:       "split",
+                    label:        (i < L.length ? a.label : b.label)
+                                  + (parts > 1 ? " · " + (j + 1) + "/" + parts : ""),
+                    ref:          left.title,
+                    content:      a.parts[Math.min(j, a.parts.length - 1)],
+                    refRight:     right.title,
+                    contentRight: b.parts[Math.min(j, b.parts.length - 1)]
+                })
+            }
+        }
+        return {
+            kind:         "scripture",
+            title:        left.title + " · " + right.title,
+            subtitle:     "",
+            copyText:     [left.copyText, right.copyText].filter(function(t) { return !!t }).join("\n\n"),
+            pages:        pages,
+            scriptureRef: left.scriptureRef,
+            splitRight:   { title: right.title, scriptureRef: right.scriptureRef,
+                            copyText: right.copyText || "" },
+            splitLeft:    { title: left.title, copyText: left.copyText || "" }
+        }
+    }
+
+    // The two sides of a split item as single-passage items (the left one
+    // is the item itself when it isn't split). Built fresh from the Bible,
+    // so they follow the current Highlight current verse setting.
+    function splitSides(item) {
+        if (!item || item.kind !== "scripture" || !item.scriptureRef) return null
+        const leftCode = String(item.scriptureRef.translationCode || "")
+        const left = buildScriptureItem(passageVerses(item), leftCode)
+        if (!isSplitItem(item)) return { left: left, right: null }
+        const rr = item.splitRight.scriptureRef
+        const right = buildScriptureItem(passageVerses(rr), String(rr.translationCode || ""))
+        return { left: left, right: right }
+    }
+
+    // The previewed passage next to itself in another translation.
+    function splitWithTranslation(item, code) {
+        const sides = splitSides(item)
+        if (!sides || !sides.left) return null
+        const right = buildScriptureItem(passageVerses(sides.left, code), code)
+        return buildSplitItem(sides.left, right)
+    }
+
+    // The previewed passage next to another one, typed as a reference
+    // ("Romans 5:8", "Gen 1:1-3 NIV"). Same translation as the left side
+    // unless the reference names one.
+    function splitWithPassage(item, text) {
+        const sides = splitSides(item)
+        if (!sides || !sides.left) return null
+        const right = scripturePassageFromText(text, sides.left.scriptureRef.translationCode)
+        return buildSplitItem(sides.left, right)
+    }
+
+    function swapSplitSides(item) {
+        const sides = splitSides(item)
+        return (sides && sides.left && sides.right) ? buildSplitItem(sides.right, sides.left) : null
+    }
+
+    function unsplitItem(item) {
+        const sides = splitSides(item)
+        return sides ? sides.left : null
+    }
+
+    // Put a rebuilt version of the previewed item where the previewed one
+    // came from: the library preview, or the selected schedule row (which
+    // keeps its id, theme and any name the operator gave it).
+    function replacePreviewedItem(next) {
+        if (!next) return false
+        if (libraryPreviewItem !== null) {
+            pushLibraryPreview(next, 0)
+            return true
+        }
+        const items = ScheduleService.currentItems
+        if (selectedScheduleIndex < 0 || selectedScheduleIndex >= items.length) return false
+        const old = items[selectedScheduleIndex]
+        const row = Object.assign({}, next, { id: old.id })
+        if (old.themeId) row.themeId = old.themeId
+        if (old.titleOverride) {
+            row.title = old.title
+            row.titleOverride = true
+        }
+        ScheduleService.replaceItem(selectedScheduleIndex, row)
+        previewSubIndex = 0
+        return true
+    }
+
     // Step the live scripture passage to the verse after its last verse
     // (dir > 0) or before its first (dir < 0), crossing chapter and book
     // boundaries. Goes live through pushLibraryLive, the same path a
@@ -702,21 +907,34 @@ QtObject {
     function stepLiveScripture(dir) {
         const it = liveItem
         if (!it || it.kind !== "scripture" || !it.scriptureRef) return false
-        const r = it.scriptureRef
+        // A split steps both sides, each to its own next verse.
+        if (isSplitItem(it)) {
+            const left  = _steppedVerse(it.scriptureRef, dir)
+            const right = _steppedVerse(it.splitRight.scriptureRef, dir)
+            const next  = (left && right) ? buildSplitItem(left, right) : null
+            if (!next) return false
+            pushLibraryLive(next, 0)
+            return true
+        }
+        const item = _steppedVerse(it.scriptureRef, dir)
+        if (!item) return false
+        pushLibraryLive(item, 0)
+        return true
+    }
+
+    // The single verse after (dir > 0) or before (dir < 0) the passage
+    // `r` points at, as a scripture item. Null at either end of the Bible.
+    function _steppedVerse(r, dir) {
         // Global-search items spell the opening verse `verse`, schedule and
         // tab items `verseStart` / `verseEnd`.
         const start = parseInt(String(r.verseStart !== undefined ? r.verseStart : r.verse), 10)
         const end   = parseInt(String(r.verseEnd   !== undefined ? r.verseEnd   : start), 10)
         const code  = String(r.translationCode || "")
-        if (code.length === 0 || isNaN(start)) return false
+        if (code.length === 0 || isNaN(start)) return null
 
         const v = _adjacentVerse(code, String(r.book || ""), Number(r.chapter),
                                  dir > 0 ? (isNaN(end) ? start : end) : start, dir)
-        if (!v) return false
-        const item = buildScriptureItem([v], code)
-        if (!item) return false
-        pushLibraryLive(item, 0)
-        return true
+        return v ? buildScriptureItem([v], code) : null
     }
 
     // The verse next to `verse` in reading order. Walks the chapter list
@@ -953,7 +1171,7 @@ QtObject {
         let changed = false
         for (let i = 0; i < items.length; i++) {
             const row = items[i]
-            if (!row || row.kind !== "scripture" || row.contentOverride) continue
+            if (!row || row.kind !== "scripture" || row.contentOverride || isSplitItem(row)) continue
             const rebuilt = _rebuildScripturePassage(row)
             // A single verse, or a layout that came out the same, is
             // skipped, so it neither dirties nor re-saves the schedule.
@@ -978,7 +1196,7 @@ QtObject {
     // was already rebuilt by _relayoutScheduleScripture.
     function relayoutLiveScripture() {
         const cur = ProjectionService.currentItem
-        if (!cur || cur.kind !== "scripture" || cur.contentOverride) return
+        if (!cur || cur.kind !== "scripture" || cur.contentOverride || isSplitItem(cur)) return
         const rebuilt = _rebuildScripturePassage(cur)
         if (!rebuilt) return
 
@@ -1209,6 +1427,11 @@ QtObject {
     // both shapes are spelled out verse by verse before comparing.
     function _scripturePassageKey(item) {
         if (!item || item.kind !== "scripture" || !item.scriptureRef) return ""
+        if (isSplitItem(item)) {
+            const left = _scripturePassageKey({ kind: "scripture", scriptureRef: item.scriptureRef })
+            const right = _scripturePassageKey({ kind: "scripture", scriptureRef: item.splitRight.scriptureRef })
+            return left && right ? left + "||" + right : ""
+        }
         const r = item.scriptureRef
         let verses = []
         if (r.verses && r.verses.length > 0) {
@@ -1292,8 +1515,10 @@ QtObject {
         switch (item.kind || "") {
             // Text rows edit their own pages, so a library id is no longer
             // required — only something to edit.
-            case "song":
-            case "scripture": return !!(item.pages && item.pages.length > 0)
+            case "song":      return !!(item.pages && item.pages.length > 0)
+            // The row editor edits one column of text. A split row has two,
+            // and editing would drop the right side.
+            case "scripture": return !!(item.pages && item.pages.length > 0) && !isSplitItem(item)
             case "image":
             case "video":
             case "pdf":       return Number(item.mediaId || 0) > 0

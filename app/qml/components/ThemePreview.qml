@@ -56,6 +56,9 @@ Item {
     readonly property string mockStrongsText: "Definition: love, goodwill\nUsage: love, benevolence, good will; plural: love-feasts."
     readonly property string mockStrongsPage: "1 / 2"
     readonly property bool _strongsKind: !!theme && theme.kind === "strongs"
+    // The right-hand passage of a split screen slide.
+    readonly property string mockScriptureRefRight:  "Romans 5:8 (KJV)"
+    readonly property string mockScriptureTextRight: "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us."
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
@@ -73,6 +76,8 @@ Item {
             case "strongsPartOfSpeech": return mockStrongsPartOfSpeech
             case "strongsText":         return mockStrongsText
             case "strongsPage":         return mockStrongsPage
+            case "scriptureRefRight":  return mockScriptureRefRight
+            case "scriptureTextRight": return mockScriptureTextRight
             case "custom":            return data.text || ""
         }
         return data.text || ""

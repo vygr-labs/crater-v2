@@ -92,10 +92,165 @@ QVariantMap resolveLayout(const QVariantMap& tokens, const QString& layoutId)
     return all.first().toMap();
 }
 
+namespace {
+
+double num(const QVariantMap& m, const char* key, double fallback = 0)
+{
+    const QVariant v = m.value(QString::fromLatin1(key));
+    bool ok = false;
+    const double d = v.toDouble(&ok);
+    return ok ? d : fallback;
+}
+
+bool isScriptureTextLinkage(const QString& linkage)
+{
+    return linkage == QLatin1String("scriptureRef") || linkage == QLatin1String("scriptureText");
+}
+
+// Every node id another node in the column points at through a layout
+// rule: a card's members, and the source of autoHeight / autoPosition.
+QStringList layoutRefs(const QVariantMap& data)
+{
+    QStringList out;
+    for (const QVariant& m : data.value(QStringLiteral("group")).toMap()
+                                 .value(QStringLiteral("members")).toList())
+        out << m.toString();
+    const QVariantMap ah = data.value(QStringLiteral("autoHeight")).toMap();
+    for (const char* k : { "source", "from", "to" })
+        if (ah.contains(QLatin1String(k))) out << ah.value(QLatin1String(k)).toString();
+    const QVariantMap ap = data.value(QStringLiteral("autoPosition")).toMap();
+    if (ap.contains(QStringLiteral("source"))) out << ap.value(QStringLiteral("source")).toString();
+    return out;
+}
+
+}  // namespace
+
+QVariantList deriveSplitNodes(const QVariantList& nodes)
+{
+    constexpr double kGutter = 4.0;
+    const QString suffix = QStringLiteral("-right");
+
+    // 1. The passage column: the scripture text...
+    QSet<QString> column;
+    for (const QVariant& v : nodes) {
+        const QVariantMap n = v.toMap();
+        if (n.value(QStringLiteral("kind")).toString() == QLatin1String("text")
+            && isScriptureTextLinkage(n.value(QStringLiteral("data")).toMap()
+                                           .value(QStringLiteral("linkage")).toString()))
+            column.insert(n.value(QStringLiteral("id")).toString());
+    }
+    if (column.isEmpty()) return nodes;
+
+    // ...plus whatever is tied to it by a layout rule, either way round: the
+    // card it sits in and the card's other members, a bar hugging the card,
+    // a label stacked on the verse. Repeated until nothing new joins.
+    for (bool grew = true; grew;) {
+        grew = false;
+        for (const QVariant& v : nodes) {
+            const QVariantMap n = v.toMap();
+            const QString id = n.value(QStringLiteral("id")).toString();
+            const QStringList refs = layoutRefs(n.value(QStringLiteral("data")).toMap());
+            const bool inColumn = column.contains(id);
+            bool touches = false;
+            for (const QString& r : refs) touches = touches || column.contains(r);
+            if (!inColumn && touches) { column.insert(id); grew = true; }
+            if (inColumn && n.value(QStringLiteral("data")).toMap().contains(QStringLiteral("group"))) {
+                for (const QString& r : refs)
+                    if (!column.contains(r)) { column.insert(r); grew = true; }
+            }
+        }
+    }
+
+    // 2. Its horizontal extent, in percent of the canvas.
+    double x0 = 100, x1 = 0;
+    for (const QVariant& v : nodes) {
+        const QVariantMap n = v.toMap();
+        if (!column.contains(n.value(QStringLiteral("id")).toString())) continue;
+        const QVariantMap st = n.value(QStringLiteral("style")).toMap();
+        x0 = qMin(x0, num(st, "x"));
+        x1 = qMax(x1, num(st, "x") + num(st, "width"));
+    }
+
+    // 3. Decorations inside the column (an accent rule under the reference)
+    //    go with it. Full-width pieces are the background, drawn once.
+    for (const QVariant& v : nodes) {
+        const QVariantMap n = v.toMap();
+        const QString id = n.value(QStringLiteral("id")).toString();
+        if (column.contains(id)) continue;
+        const QVariantMap st = n.value(QStringLiteral("style")).toMap();
+        const double x = num(st, "x"), w = num(st, "width");
+        if (w < 90 && x >= x0 - 0.5 && x + w <= x1 + 0.5) column.insert(id);
+    }
+
+    // 4. The two halves. The column keeps its left margin, mirrored on the
+    //    right. A column that starts past the middle (an odd design) falls
+    //    back to a 5% margin.
+    if (x0 > 50 - kGutter / 2 - 10) x0 = 5;
+    const double half  = 50 - kGutter / 2 - x0;
+    const double width = qMax(1.0, x1 - x0);
+    const double scale = half / width;
+    const double rightStart = 50 + kGutter / 2;
+
+    const auto renamed = [&](const QString& id) {
+        return column.contains(id) ? id + suffix : id;
+    };
+    const auto place = [&](QVariantMap n, double start) {
+        QVariantMap st = n.value(QStringLiteral("style")).toMap();
+        st.insert(QStringLiteral("x"),     start + (num(st, "x") - x0) * scale);
+        st.insert(QStringLiteral("width"), num(st, "width") * scale);
+        n.insert(QStringLiteral("style"), st);
+        return n;
+    };
+
+    QVariantList out;
+    for (const QVariant& v : nodes) {
+        const QVariantMap n = v.toMap();
+        const QString id = n.value(QStringLiteral("id")).toString();
+        if (!column.contains(id)) { out.append(n); continue; }
+
+        out.append(place(n, x0));
+
+        QVariantMap r = place(n, rightStart);
+        r.insert(QStringLiteral("id"), id + suffix);
+        QVariantMap data = r.value(QStringLiteral("data")).toMap();
+        const QString linkage = data.value(QStringLiteral("linkage")).toString();
+        if (isScriptureTextLinkage(linkage))
+            data.insert(QStringLiteral("linkage"), linkage + QStringLiteral("Right"));
+        if (data.contains(QStringLiteral("layerName")))
+            data.insert(QStringLiteral("layerName"),
+                        data.value(QStringLiteral("layerName")).toString() + QStringLiteral(" (right)"));
+        if (data.contains(QStringLiteral("group"))) {
+            QVariantMap g = data.value(QStringLiteral("group")).toMap();
+            QVariantList members;
+            for (const QVariant& m : g.value(QStringLiteral("members")).toList())
+                members << renamed(m.toString());
+            g.insert(QStringLiteral("members"), members);
+            data.insert(QStringLiteral("group"), g);
+        }
+        for (const char* rule : { "autoHeight", "autoPosition" }) {
+            const QString key = QString::fromLatin1(rule);
+            if (!data.contains(key)) continue;
+            QVariantMap m = data.value(key).toMap();
+            for (const char* k : { "source", "from", "to" }) {
+                const QString kk = QString::fromLatin1(k);
+                if (m.contains(kk)) m.insert(kk, renamed(m.value(kk).toString()));
+            }
+            data.insert(key, m);
+        }
+        r.insert(QStringLiteral("data"), data);
+        out.append(r);
+    }
+    return out;
+}
+
 QVariantList layoutNodes(const QVariantMap& tokens,
                          const QString&     layoutId,
                          qint64             slideMediaId)
 {
+    // A split slide on a theme with no split design of its own.
+    if (layoutId == QLatin1String(kLayoutSplit) && !hasLayout(tokens, layoutId))
+        return deriveSplitNodes(resolveLayout(tokens, QString()).value(QStringLiteral("nodes")).toList());
+
     QVariantList nodes =
         resolveLayout(tokens, layoutId).value(QStringLiteral("nodes")).toList();
     if (slideMediaId <= 0) return nodes;

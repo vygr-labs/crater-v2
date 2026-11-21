@@ -490,6 +490,22 @@ Item {
 
             property alias motionItem: motionItem
 
+            // The other column of a split screen slide (ThemeTokens
+            // deriveSplitNodes): the same text on the other side, bound to
+            // the ...Right linkage or back from it. Null for everything else.
+            readonly property int naturalFitPx: renderer.naturalFitPx
+            readonly property var _splitPartner: {
+                root._itemsRev   // dep: partners register as they're built
+                const l = (node && node.kind === "text" && _data.linkage) || ""
+                let other = ""
+                if (l === "scriptureText" || l === "scriptureRef") other = _nodeId + "-right"
+                else if ((l === "scriptureTextRight" || l === "scriptureRefRight") && _nodeId.endsWith("-right"))
+                    other = _nodeId.slice(0, -6)
+                if (!other) return null
+                const p = root._itemsById[other]
+                return (p && p.node && p.node.kind === "text") ? p : null
+            }
+
             // Whether this node should be on screen. Clear takes text off,
             // or every node when clearAll is set. On a motion theme the
             // scene's `shown` brings the whole theme in and out as well.
@@ -527,6 +543,9 @@ Item {
                         // so auto-fit must measure against its OWN configured height
                         // instead (its max region) — else fit↔box would loop.
                         fitHeightOverride: nodeWrap._myLayout ? nodeWrap._baseH : 0
+                        // The two columns of a split screen slide read at one
+                        // size: each is capped at the other's natural fit.
+                        fitCap: nodeWrap._splitPartner ? nodeWrap._splitPartner.naturalFitPx : 0
                     }
                 }
             }
