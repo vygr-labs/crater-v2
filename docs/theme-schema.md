@@ -165,6 +165,27 @@ stock image means a `.craterheme` bundle.)
 Anything other than `presentationImage` is rejected on import rather than
 ignored: a typo here leaves an author staring at a picture design that never
 shows a picture.
+
+### The dynamic background
+
+The operator can put a picture or video behind any theme from the Media tab
+(for the rest of the service, or for one schedule item). It paints through the
+theme's **dynamic background** container, which only has its `data.mediaId`
+swapped, so everything else on that container (position, size, opacity,
+`bgOpacity`, corners, rotation) shapes how the operator's media looks.
+
+```jsonc
+"data": { "dynamicBackground": true }
+```
+
+Which containers take it, per layout:
+
+1. every container with `dynamicBackground: true`, or when none is marked
+2. the base background: the lowest-`z` container covering the whole canvas,
+   unless it carries `dynamicBackground: false` (the theme opts out).
+
+A picture placeholder is never a dynamic background. Rule 2 is why themes made
+before this field existed work with no edits.
 > `#00000000` = transparent, `#000000` = opaque black, `#e6000000` = ~90% black.
 
 ---

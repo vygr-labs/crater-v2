@@ -437,6 +437,7 @@ Item {
                                 anchors.fill: parent
                                 item: AppState.liveItem
                                 pageIndex: AppState.liveSubIndex
+                                backgroundMediaId: AppState.liveBackgroundStamp
                                 muted: true
                                 isClear: AppState.isClear
                                 showLogo: AppState.showLogo
