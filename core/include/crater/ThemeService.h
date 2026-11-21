@@ -53,7 +53,7 @@ public:
     Q_INVOKABLE crater::Theme theme(qint64 id);
 
     // Returns the user-selected default theme for a content kind ("song",
-    // "scripture", "presentation"). Falls back to the first built-in of that
+    // "scripture", "presentation", "strongs"). Falls back to the first built-in of that
     // kind if no explicit default is set.
     Q_INVOKABLE crater::Theme defaultFor(QString kind);
 
@@ -207,7 +207,7 @@ public:
 
     // Imports a plain-JSON theme — the format a designer (or Claude) authors
     // by hand. The file is a single JSON object:
-    //   { "name": "...", "kind": "song"|"scripture"|"presentation",
+    //   { "name": "...", "kind": "song"|"scripture"|"presentation"|"strongs",
     //     "tokens": { "version": 2, "canvas": {...}, "nodes": [...] } }
     // Validates the tokens and inserts a new non-builtin theme with a
     // collision-safe name. Returns the new id, or 0 on failure — see

@@ -90,6 +90,12 @@ Item {
     }
     readonly property string _refText:
         _hasItem ? (item.title || item.reference || "") : ""
+    // "1 / 3" for an item over several pages (a long Strong's entry).
+    readonly property string _pageCounter: {
+        const pages = (_hasItem && item.pages) || []
+        if (pages.length < 2) return ""
+        return (Math.max(0, Math.min(pageIndex, pages.length - 1)) + 1) + " / " + pages.length
+    }
 
     // Presentation slide heading. Mirrors _pageText, reading `title` off the
     // same page map, so the Preview and Live mini-monitors show exactly what
@@ -127,6 +133,10 @@ Item {
             case "presentationSubtitle":  return _slideSubtitle
             case "presentationBodyRight": return _slideBodyRight
             case "songCredits":       return AppState.songCreditsText(item)
+            case "strongsWord":         return _refText
+            case "strongsPartOfSpeech": return (_hasItem && item.subtitle) || ""
+            case "strongsText":         return _pageText
+            case "strongsPage":         return _pageCounter
             case "custom":            return data.text || ""
         }
         return data.text || ""

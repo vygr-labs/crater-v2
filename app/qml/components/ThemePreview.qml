@@ -48,19 +48,31 @@ Item {
     readonly property string mockSlideSubtitle:   "Luke 15"
     readonly property string mockSlideBodyRight:  "The elder son stayed home and was just as lost."
     readonly property string mockSongCredits:     "John Newton · CCLI 22025"
+    // A Strong's entry, for the strongs* slots and for a Strong's theme's
+    // reference / verse slots (an upgraded install's Strong's theme is a
+    // copy of a scripture theme, and should preview as a Strong's entry).
+    readonly property string mockStrongsWord: "G26 · ἀγάπη (agápē)"
+    readonly property string mockStrongsPartOfSpeech: "Noun, feminine"
+    readonly property string mockStrongsText: "Definition: love, goodwill\nUsage: love, benevolence, good will; plural: love-feasts."
+    readonly property string mockStrongsPage: "1 / 2"
+    readonly property bool _strongsKind: !!theme && theme.kind === "strongs"
 
     function resolveText(node) {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":      return mockScriptureRef
-            case "scriptureText":     return mockScriptureText
+            case "scriptureRef":      return _strongsKind ? mockStrongsWord : mockScriptureRef
+            case "scriptureText":     return _strongsKind ? mockStrongsText : mockScriptureText
             case "lyric":             return mockLyric
             case "presentationTitle": return mockSlideTitle
             case "presentationBody":  return mockSlideBody
             case "presentationSubtitle":  return mockSlideSubtitle
             case "presentationBodyRight": return mockSlideBodyRight
             case "songCredits":       return mockSongCredits
+            case "strongsWord":         return mockStrongsWord
+            case "strongsPartOfSpeech": return mockStrongsPartOfSpeech
+            case "strongsText":         return mockStrongsText
+            case "strongsPage":         return mockStrongsPage
             case "custom":            return data.text || ""
         }
         return data.text || ""

@@ -26,6 +26,14 @@ QString kindIntro(const QString& kind)
             "together with its reference. Verses vary wildly in length, from a\n"
             "handful of words to several lines, so the design has to hold both.\n");
     }
+    if (kind == QLatin1String("strongs")) {
+        return QStringLiteral(
+            "This is a STRONG'S theme. It renders one entry of the Strong's\n"
+            "concordance at a time while a preacher explains a Hebrew or Greek\n"
+            "word: the word itself, its part of speech, and one page of the\n"
+            "entry (original word, definition, usage). A long entry runs over\n"
+            "several pages, and a page runs from a few words to a paragraph.\n");
+    }
     return QStringLiteral(
         "This is a PRESENTATION theme. It renders sermon-notes slides: a\n"
         "heading, body lines, sometimes a subtitle, a second column or a\n"
@@ -51,6 +59,17 @@ QString linkageTable(const QString& kind)
             "  \"scriptureText\" the verse body. This is the main content.\n"
             "  \"scriptureRef\"  the reference label, e.g. \"John 3:16\".\n"
             "  \"custom\"        literal text you supply in data.text.\n");
+    }
+    if (kind == QLatin1String("strongs")) {
+        return QStringLiteral(
+            "  \"strongsText\"         the current page of the entry. This is\n"
+            "                        the main content.\n"
+            "  \"strongsWord\"         the number, the original word and its\n"
+            "                        transliteration, e.g. \"G26 · ἀγάπη (agápē)\".\n"
+            "  \"strongsPage\"         where this page is, e.g. \"1 / 3\". Empty\n"
+            "                        for a one-page entry. Keep it small.\n"
+            "  \"strongsPartOfSpeech\" e.g. \"Noun, feminine\". Can be empty.\n"
+            "  \"custom\"              literal text you supply in data.text.\n");
     }
     return QStringLiteral(
         "  \"presentationTitle\"     the slide heading.\n"
@@ -79,6 +98,20 @@ QString sampleContent(const QString& kind)
             "A stanza is normally two to four lines. Four-line stanzas are the\n"
             "case that hurts, so make sure the lyric box is tall enough that\n"
             "four lines still read large.\n");
+    }
+    if (kind == QLatin1String("strongs")) {
+        return QStringLiteral(
+            "Design against this sample content:\n"
+            "  word           : \"G26 · ἀγάπη (agápē)\"\n"
+            "  part of speech : \"Noun, feminine\"\n"
+            "  page           : \"1 / 2\"\n"
+            "  text           : \"Definition: love, goodwill\n"
+            "                    Usage: love, benevolence, good will; plural:\n"
+            "                    love-feasts.\"\n"
+            "\n"
+            "Hebrew words read right to left, so the word line must be wide\n"
+            "enough for either script. A page can run to a long paragraph, so\n"
+            "the text box must shrink it gracefully.\n");
     }
     if (kind == QLatin1String("scripture")) {
         return QStringLiteral(
@@ -178,7 +211,7 @@ QString designPrompt(const QString&     kind,
 {
     const QString safeKind =
         (kind == QLatin1String("song") || kind == QLatin1String("scripture")
-         || kind == QLatin1String("presentation"))
+         || kind == QLatin1String("presentation") || kind == QLatin1String("strongs"))
             ? kind
             : QStringLiteral("presentation");
 

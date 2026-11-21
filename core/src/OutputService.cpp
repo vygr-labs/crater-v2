@@ -116,6 +116,7 @@ QString themesToJson(const OutputThemeSlots& s)
     o.insert(QStringLiteral("song"),         s.song);
     o.insert(QStringLiteral("scripture"),    s.scripture);
     o.insert(QStringLiteral("presentation"), s.presentation);
+    o.insert(QStringLiteral("strongs"),      s.strongs);
     return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 
@@ -129,6 +130,7 @@ OutputThemeSlots themesFromJson(const QString& text)
     s.song         = o.value(QStringLiteral("song"))        .toInt(0);
     s.scripture    = o.value(QStringLiteral("scripture"))   .toInt(0);
     s.presentation = o.value(QStringLiteral("presentation")).toInt(0);
+    s.strongs      = o.value(QStringLiteral("strongs"))     .toInt(0);
     return s;
 }
 
@@ -140,6 +142,7 @@ void assignByKind(OutputThemeSlots& s, const QString& kind, int themeId)
 {
     if (kind == QStringLiteral("scripture"))    { s.scripture    = themeId; return; }
     if (kind == QStringLiteral("presentation")) { s.presentation = themeId; return; }
+    if (kind == QStringLiteral("strongs"))      { s.strongs      = themeId; return; }
     s.song = themeId;
 }
 
@@ -697,6 +700,7 @@ int OutputService::themeIdFor(const QString& outputId, const QString& kind) cons
         if (b.id != outputId) continue;
         if (kind == QStringLiteral("scripture"))    return b.themes.scripture;
         if (kind == QStringLiteral("presentation")) return b.themes.presentation;
+        if (kind == QStringLiteral("strongs"))      return b.themes.strongs;
         if (kind == QStringLiteral("song"))         return b.themes.song;
         return 0;
     }
@@ -711,6 +715,7 @@ void OutputService::setThemeIdFor(const QString& outputId, const QString& kind, 
         const auto before = b.themes;
         if      (kind == QStringLiteral("scripture"))    b.themes.scripture    = themeId;
         else if (kind == QStringLiteral("presentation")) b.themes.presentation = themeId;
+        else if (kind == QStringLiteral("strongs"))      b.themes.strongs      = themeId;
         else if (kind == QStringLiteral("song"))         b.themes.song         = themeId;
         else return;
         if (b.themes == before) return;

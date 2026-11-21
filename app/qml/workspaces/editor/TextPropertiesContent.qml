@@ -41,6 +41,10 @@ Column {
         { label: qsTr("Slide body"),        value: "presentationBody"      },
         { label: qsTr("Slide right column"), value: "presentationBodyRight" },
         { label: qsTr("Song credits"),      value: "songCredits"           },
+        { label: qsTr("Strong's word"),     value: "strongsWord"           },
+        { label: qsTr("Strong's part of speech"), value: "strongsPartOfSpeech" },
+        { label: qsTr("Strong's text"),     value: "strongsText"           },
+        { label: qsTr("Strong's page (1 / 3)"), value: "strongsPage"       },
         { label: qsTr("Custom text"),       value: "custom"                }
     ]
     readonly property string _linkageLabel: {

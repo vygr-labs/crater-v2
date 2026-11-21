@@ -62,7 +62,8 @@ QString mapVerticalAlign(const QString& v1)
 }
 
 // Returns the default text linkage for a theme kind. song -> lyric,
-// scripture -> scriptureText, presentation -> presentationBody.
+// scripture -> scriptureText, presentation -> presentationBody,
+// strongs -> strongsText.
 //
 // Presentation used to default to `custom` (a literal string baked into
 // the theme) because there was no presentation CONTENT for a linkage to
@@ -74,6 +75,7 @@ QString defaultLinkageFor(const QString& kind)
     if (kind == QLatin1String("song"))      return QStringLiteral("lyric");
     if (kind == QLatin1String("scripture")) return QStringLiteral("scriptureText");
     if (kind == QLatin1String("presentation")) return QStringLiteral("presentationBody");
+    if (kind == QLatin1String("strongs"))   return QStringLiteral("strongsText");
     return QStringLiteral("custom");
 }
 
@@ -139,6 +141,7 @@ QVariantMap buildV2FromV1(const QString& kind, const QVariantMap& v1)
     textData["layerName"]   = (kind == QLatin1String("song"))         ? QStringLiteral("Lyric")
                             : (kind == QLatin1String("scripture"))    ? QStringLiteral("Verse")
                             : (kind == QLatin1String("presentation")) ? QStringLiteral("Body")
+                            : (kind == QLatin1String("strongs"))      ? QStringLiteral("Definition")
                                                                       : QStringLiteral("Text");
     textData["linkage"]     = defaultLinkageFor(kind);
     textData["autoResize"]  = true;
@@ -314,10 +317,18 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
     // songCredits is a song's author / CCLI line. Its text follows Settings >
     // Song > Show author / Show CCLI number, and a theme that carries one
     // replaces the projector's fallback credits line.
+    //
+    // strongs* bind a Strong's entry: the word ("G26 · ἀγάπη (agápē)"), its
+    // part of speech, the page of the entry that is up and where that page
+    // is in the entry ("1 / 3", empty for a one-page entry). Cross-kind like
+    // the rest.
     static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric",
                                          "presentationTitle", "presentationBody",
                                          "presentationSubtitle", "presentationBodyRight",
-                                         "songCredits", "custom" };
+                                         "songCredits",
+                                         "strongsWord", "strongsPartOfSpeech",
+                                         "strongsPage", "strongsText",
+                                         "custom" };
     if (!data.contains("linkage") || !linkages.contains(data.value("linkage").toString()))
         errs << QStringLiteral("nodes[%1].data.linkage must be scriptureRef|scriptureText|lyric|"
                                "presentationTitle|presentationBody|presentationSubtitle|"
@@ -1716,7 +1727,7 @@ ThemeImportReport ThemeService::importThemeFile(QString filePath)
         m_lastImportError = report.errorMessage;
         return report;
     }
-    static const QSet<QString> validKinds{ "song", "scripture", "presentation" };
+    static const QSet<QString> validKinds{ "song", "scripture", "presentation", "strongs" };
     const QString kind = manifest.value(QStringLiteral("themeKind")).toString();
     if (!validKinds.contains(kind)) {
         report.errorMessage = QStringLiteral("Unknown themeKind '%1'").arg(kind);
@@ -2138,8 +2149,9 @@ qint64 ThemeService::importThemeJsonFile(QString filePath)
     }
     if (kind != QLatin1String("song")
         && kind != QLatin1String("scripture")
-        && kind != QLatin1String("presentation")) {
-        m_lastImportError = QStringLiteral("\"kind\" must be song, scripture or presentation");
+        && kind != QLatin1String("presentation")
+        && kind != QLatin1String("strongs")) {
+        m_lastImportError = QStringLiteral("\"kind\" must be song, scripture, presentation or strongs");
         return 0;
     }
 

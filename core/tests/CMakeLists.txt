@@ -105,6 +105,26 @@ target_include_directories(test_motion_themes PRIVATE
 )
 
 add_test(NAME motion_themes COMMAND test_motion_themes)
+
+# Strong's themes: V015's 'strongs' kind and Lexicon, and the Strong's
+# default on a fresh install (Lexicon) and an upgrade (a copy of the
+# scripture default, so the screen looks the same).
+qt_add_executable(test_strongs_themes
+    test_strongs_themes.cpp
+)
+
+target_link_libraries(test_strongs_themes PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_strongs_themes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME strongs_themes COMMAND test_strongs_themes)
 # -- Version ordering -- docs/auto-update.md ----------------------------
 # Pure string comparison behind the updater's "is this an upgrade?"
 # decision. No network, no database, no Gui: crater::compareVersions is

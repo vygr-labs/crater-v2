@@ -720,7 +720,8 @@ ExportResult exportImpl(const QString& sourceRoot, const QString& profileName,
                 if (parts & PartThemes) {
                     c.exec(QStringLiteral(
                         "DELETE FROM kv WHERE key NOT IN ('default_song_theme_id', "
-                        "'default_scripture_theme_id', 'default_presentation_theme_id')"));
+                        "'default_scripture_theme_id', 'default_presentation_theme_id', "
+                        "'default_strongs_theme_id')"));
                 } else {
                     c.exec(QStringLiteral("DELETE FROM kv"));
                     c.exec(QStringLiteral("DELETE FROM themes"));
@@ -1768,7 +1769,8 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                         "SELECT id, kind, name, tokens_json, is_builtin, tokens_version, created_at, updated_at "
                         "FROM themes ORDER BY id"));
                     static const QSet<QString> kinds{ QStringLiteral("song"), QStringLiteral("scripture"),
-                                                      QStringLiteral("presentation") };
+                                                      QStringLiteral("presentation"),
+                                                      QStringLiteral("strongs") };
                     while (st.step()) {
                         const qint64  id      = st.columnInt64(0);
                         const QString kind    = st.columnText(1);
@@ -1844,7 +1846,8 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                     if (targetIsNew) {
                         auto sel = appSrc->prepare(QStringLiteral(
                             "SELECT key, value FROM kv WHERE key IN ('default_song_theme_id', "
-                            "'default_scripture_theme_id', 'default_presentation_theme_id')"));
+                            "'default_scripture_theme_id', 'default_presentation_theme_id', "
+                            "'default_strongs_theme_id')"));
                         auto put = dst.prepare(QStringLiteral(
                             "INSERT INTO kv (key, value) VALUES (?, ?) "
                             "ON CONFLICT(key) DO UPDATE SET value = excluded.value"));
