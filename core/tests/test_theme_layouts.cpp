@@ -107,6 +107,39 @@ QStringList idsOf(const QVariantList& layouts)
     return out;
 }
 
+QVariantMap boxNode(const QString& id, const QString& kind, double x, double w,
+                           const QVariantMap& data = {})
+{
+    return QVariantMap{
+        { QStringLiteral("id"),    id },
+        { QStringLiteral("kind"),  kind },
+        { QStringLiteral("style"), QVariantMap{ { QStringLiteral("x"), x }, { QStringLiteral("y"), 10 },
+                                                { QStringLiteral("width"), w }, { QStringLiteral("height"), 10 } } },
+        { QStringLiteral("data"),  data },
+    };
+}
+
+QVariantMap tokensOf(const QVariantList& nodes)
+{
+    return QVariantMap{ { QStringLiteral("version"), 3 },
+                        { QStringLiteral("layouts"), QVariantList{ QVariantMap{
+                              { QStringLiteral("id"), QStringLiteral("content") },
+                              { QStringLiteral("default"), true },
+                              { QStringLiteral("nodes"), nodes } } } } };
+}
+
+QVariantMap byId(const QVariantList& nodes, const QString& id)
+{
+    for (const QVariant& v : nodes)
+        if (v.toMap().value(QStringLiteral("id")).toString() == id) return v.toMap();
+    return {};
+}
+
+double styleOf(const QVariantMap& n, const char* key)
+{
+    return n.value(QStringLiteral("style")).toMap().value(QLatin1String(key)).toDouble();
+}
+
 }  // namespace
 
 class TestThemeLayouts : public QObject
@@ -301,6 +334,88 @@ private slots:
     {
         QCOMPARE(tk::defaultLayoutName(QStringLiteral("myDesign")),
                  QStringLiteral("myDesign"));
+    }
+
+    // ── Split screen (kLayoutSplit) ─────────────────────────────────────
+    // A theme with no split design of its own gets one derived from its
+    // default design: the passage column twice, everything else once.
+
+    void splitDerivesTwoColumnsFromAFullScreenDesign()
+    {
+        // Plum & Rose's shape: background, reference, accent rule, verse.
+        const QVariantList nodes{
+            boxNode("bg", "container", 0, 100),
+            boxNode("reference", "text", 9, 82, { { "linkage", "scriptureRef" } }),
+            boxNode("rule", "container", 9, 3.75),
+            boxNode("verse", "text", 9, 80, { { "linkage", "scriptureText" }, { "layerName", "Verse" } }),
+        };
+        const QVariantList out = tk::layoutNodes(tokensOf(nodes), QStringLiteral("split"));
+        QCOMPARE(out.size(), 7);   // bg once, three pieces twice
+
+        QVERIFY(byId(out, "bg-right").isEmpty());
+        const QVariantMap l = byId(out, "verse"), r = byId(out, "verse-right");
+        QCOMPARE(r.value("data").toMap().value("linkage").toString(), QStringLiteral("scriptureTextRight"));
+        QCOMPARE(byId(out, "reference-right").value("data").toMap().value("linkage").toString(),
+                 QStringLiteral("scriptureRefRight"));
+        QCOMPARE(r.value("data").toMap().value("layerName").toString(), QStringLiteral("Verse (right)"));
+        QCOMPARE(l.value("data").toMap().value("linkage").toString(), QStringLiteral("scriptureText"));
+
+        // The column (9..91) keeps its 9% margin on both sides with a 4%
+        // gutter: left 9..48, right 52..91.
+        QCOMPARE(styleOf(byId(out, "reference"), "x"), 9.0);
+        QVERIFY(qAbs(styleOf(byId(out, "reference"), "x") + styleOf(byId(out, "reference"), "width") - 48.0) < 0.01);
+        QVERIFY(qAbs(styleOf(byId(out, "reference-right"), "x") - 52.0) < 0.01);
+        QVERIFY(qAbs(styleOf(byId(out, "reference-right"), "x")
+                     + styleOf(byId(out, "reference-right"), "width") - 91.0) < 0.01);
+        // The accent rule goes with the column, scaled with it.
+        QVERIFY(!byId(out, "rule-right").isEmpty());
+        QVERIFY(styleOf(byId(out, "rule-right"), "width") < 3.75);
+    }
+
+    void splitCarriesACardAndWhatHugsIt()
+    {
+        // Slate's shape: a card holding the reference and the verse, and an
+        // edge bar whose height follows the card.
+        const QVariantList nodes{
+            boxNode("card", "container", 4.5, 62, { { "group", QVariantMap{
+                { "members", QVariantList{ "reference", "body" } } } } }),
+            boxNode("edge", "container", 4.5, 0.32, { { "autoHeight", QVariantMap{ { "source", "card" } } } }),
+            boxNode("reference", "text", 7.1, 56.8, { { "linkage", "scriptureRef" } }),
+            boxNode("body", "text", 7.1, 56.8, { { "linkage", "scriptureText" } }),
+        };
+        const QVariantList out = tk::layoutNodes(tokensOf(nodes), QStringLiteral("split"));
+        QCOMPARE(out.size(), 8);
+        const QVariantMap card = byId(out, "card-right");
+        QCOMPARE(card.value("data").toMap().value("group").toMap().value("members").toList(),
+                 (QVariantList{ QStringLiteral("reference-right"), QStringLiteral("body-right") }));
+        QCOMPARE(byId(out, "edge-right").value("data").toMap().value("autoHeight").toMap()
+                     .value("source").toString(), QStringLiteral("card-right"));
+        // The left copies still point at the left ones.
+        QCOMPARE(byId(out, "edge").value("data").toMap().value("autoHeight").toMap()
+                     .value("source").toString(), QStringLiteral("card"));
+        // A lower third becomes two across the frame: 4.5..48 and 52..95.5.
+        QVERIFY(qAbs(styleOf(card, "x") - 52.0) < 0.01);
+        QVERIFY(qAbs(styleOf(card, "x") + styleOf(card, "width") - 95.5) < 0.01);
+    }
+
+    void splitUsesTheThemesOwnDesignWhenItHasOne()
+    {
+        QVariantMap tokens = tokensOf({ boxNode("verse", "text", 9, 80, { { "linkage", "scriptureText" } }) });
+        QVariantList layouts = tokens.value("layouts").toList();
+        layouts << QVariantMap{ { "id", "split" },
+                                { "nodes", QVariantList{ boxNode("mine", "text", 0, 50,
+                                                                 { { "linkage", "scriptureTextRight" } }) } } };
+        tokens.insert("layouts", layouts);
+        const QVariantList out = tk::layoutNodes(tokens, QStringLiteral("split"));
+        QCOMPARE(out.size(), 1);
+        QCOMPARE(out.first().toMap().value("id").toString(), QStringLiteral("mine"));
+    }
+
+    void splitLeavesADesignWithoutScriptureAlone()
+    {
+        const QVariantList nodes{ boxNode("bg", "container", 0, 100),
+                                  boxNode("lyric", "text", 5, 90, { { "linkage", "lyric" } }) };
+        QCOMPARE(tk::deriveSplitNodes(nodes), nodes);
     }
 };
 

@@ -322,7 +322,13 @@ void validateTextNode(const QVariantMap& n, int idx, QStringList& errs)
     // part of speech, the page of the entry that is up and where that page
     // is in the entry ("1 / 3", empty for a one-page entry). Cross-kind like
     // the rest.
+    //
+    // scriptureRefRight / scriptureTextRight are the right-hand passage of
+    // a split screen slide (ThemeTokens.h, kLayoutSplit). A theme rarely
+    // names them itself: the split design derived from its one-passage
+    // design binds them.
     static const QSet<QString> linkages{ "scriptureRef", "scriptureText", "lyric",
+                                         "scriptureRefRight", "scriptureTextRight",
                                          "presentationTitle", "presentationBody",
                                          "presentationSubtitle", "presentationBodyRight",
                                          "songCredits",

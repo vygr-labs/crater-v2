@@ -220,6 +220,9 @@ Item {
         if (pages.length < 2) return ""
         return (Math.min(layerPage, pages.length - 1) + 1) + " / " + pages.length
     }
+    // A split screen page names each side's passage itself (AppState
+    // .buildSplitItem); the item title holds both.
+    readonly property string _pageRef: _slideField("ref") || _refText
 
     // A presentation slide's heading, read off the SAME pages array every
     // other kind uses -- pages[i].title alongside pages[i].content. Nothing
@@ -291,8 +294,10 @@ Item {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":      return _refText
+            case "scriptureRef":      return _pageRef
             case "scriptureText":     return _pageText
+            case "scriptureRefRight":  return _slideField("refRight")
+            case "scriptureTextRight": return _slideField("contentRight")
             case "lyric":             return _pageText
             case "presentationTitle": return _slideTitle
             case "presentationBody":  return _pageText

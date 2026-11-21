@@ -60,6 +60,13 @@ inline constexpr auto kLayoutQuote     = "quote";       // large body, title as 
 inline constexpr auto kLayoutPicture   = "picture";     // picture with heading / caption
 inline constexpr auto kLayoutBlank     = "blank";       // background only
 
+// Split screen scripture: two passages, or one passage in two translations,
+// side by side. Not one of the standard deck designs above. A scripture
+// theme may define it, and when it doesn't, layoutNodes() derives one from
+// the theme's default design (see deriveSplitNodes), so every scripture
+// theme can show a split without anyone redesigning it.
+inline constexpr auto kLayoutSplit     = "split";
+
 // The standard ids in the order a picker should offer them. Ordering is
 // deliberate and matches the order a deck is usually built: title first,
 // then dividers and content, with blank last.
@@ -114,6 +121,17 @@ QVariantList layoutNodes(const QVariantMap& tokens,
 // to mark a slide whose design is not available under the current theme,
 // rather than silently showing the fallback as though it were chosen.
 bool hasLayout(const QVariantMap& tokens, const QString& layoutId);
+
+// The split screen design made from a one-passage design. The passage
+// column (the reference and verse text, the card they sit in, anything
+// hugging or stacked on them, and decorations inside the column) is drawn
+// twice: the left copy keeps its ids, the right copy gets "-right" ids and
+// binds scriptureRefRight / scriptureTextRight. The column's left margin is
+// kept, mirrored on the right, with a 4% gutter between the halves, so a
+// lower third becomes two lower thirds across the frame and a full-screen
+// passage becomes two columns. Everything outside the column (backgrounds,
+// logos) is drawn once. Nodes with no scripture text return unchanged.
+QVariantList deriveSplitNodes(const QVariantList& nodes);
 
 // ── Derived slots ──────────────────────────────────────────────────────
 

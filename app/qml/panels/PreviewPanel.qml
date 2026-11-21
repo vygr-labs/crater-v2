@@ -13,6 +13,77 @@ Rectangle {
     // line per slide, label inline).
     readonly property string _cardMode: SettingsService.previewCardMode
     readonly property bool   _cardsFull: _cardMode !== "compact" && _cardMode !== "lines"
+    // ── Split screen scripture ──────────────────────────────────────────
+    // The Preview header's split button: put the previewed passage next to
+    // itself in another translation, or next to another passage, for
+    // analysis. The result replaces what is previewed (the library preview
+    // or the selected schedule row), ready to go live. See AppState
+    // .buildSplitItem for how the slides are built.
+    function _splitMenu() {
+        const item = root.selectedItem
+        const split = AppState.isSplitItem(item)
+        const leftCode = String(item.scriptureRef.translationCode || "").toUpperCase()
+        const rightCode = split
+            ? String(item.splitRight.scriptureRef.translationCode || "").toUpperCase() : ""
+        const trs = BibleService.translations()
+        const compare = []
+        for (let i = 0; i < trs.length; i++) {
+            const code = String(trs[i].code)
+            if (code.toUpperCase() === leftCode) continue
+            compare.push({
+                label: code + "  ·  " + trs[i].name,
+                iconName: code.toUpperCase() === rightCode ? "check" : "",
+                action: function() {
+                    AppState.replacePreviewedItem(AppState.splitWithTranslation(root.selectedItem, code))
+                }
+            })
+        }
+        const menu = []
+        if (compare.length > 0)
+            menu.push({ label: qsTr("Compare with"), iconName: "book-open", submenu: compare })
+        menu.push({ label: qsTr("Next to another passage…"), iconName: "columns-2",
+                    action: function() { root._askSplitPassage("") } })
+        if (split) {
+            menu.push({ label: qsTr("Swap sides"), iconName: "arrow-left-right",
+                        action: function() {
+                            AppState.replacePreviewedItem(AppState.swapSplitSides(root.selectedItem))
+                        } })
+            menu.push({ label: qsTr("Show one passage"), iconName: "x",
+                        action: function() {
+                            AppState.replacePreviewedItem(AppState.unsplitItem(root.selectedItem))
+                        } })
+        }
+        return menu
+    }
+
+    // A reference typed for the right side. One that doesn't resolve asks
+    // again with the text kept, so a typo costs a keystroke, not a retype.
+    function _askSplitPassage(seed) {
+        const item = root.selectedItem
+        Qt.callLater(function() {
+            AppState.openModal("naming", {
+                title:        seed.length > 0 ? qsTr("No passage found. Try again")
+                                              : qsTr("Passage for the right side"),
+                placeholder:  qsTr("e.g. Romans 5:8 or Gen 1:1-3 NIV"),
+                confirmText:  qsTr("Split"),
+                initialValue: seed,
+                onConfirm: function(text) {
+                    const next = AppState.splitWithPassage(item, text)
+                    if (next) AppState.replacePreviewedItem(next)
+                    else root._askSplitPassage(text)
+                }
+            })
+        })
+    }
+
+    // A card's text. A split screen page shows its right side under the
+    // left one, so both passages read at a glance.
+    function _cardBody(page) {
+        const left = (page && page.content) || ""
+        if (!page || !page.contentRight) return left
+        return left + "\n" + page.contentRight
+    }
+
     function _cardViewMenu() {
         const opts = [
             { mode: "full",    label: qsTr("Full") },
@@ -156,6 +227,25 @@ Rectangle {
             }
         }
 
+        // Split screen: the previewed passage next to another translation
+        // or another passage (root._splitMenu).
+        IconButton {
+            id: splitBtn
+            anchors.right: copyBtn.visible ? copyBtn.left : settingsBtn.left
+            anchors.rightMargin: Theme.space.xs
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.selectedItem !== null
+                     && root.selectedItem.kind === "scripture"
+                     && !!root.selectedItem.scriptureRef
+            iconName: "columns-2"
+            iconSize: Theme.icon.sm
+            tooltip: qsTr("Split screen")
+            // Brand-tinted while the previewed passage is split.
+            tint: AppState.isSplitItem(root.selectedItem) ? Theme.color.brand : Theme.color.textSecondary
+            onClicked: AppState.openContextMenuAt(splitBtn, splitBtn.width, splitBtn.height + 4,
+                                                  root._splitMenu(), { dx: -240 })
+        }
+
         // Copy the previewed scripture to the clipboard — same "quote +
         // attribution" format the Scripture tab produces. Only shown for
         // scripture items: songs/media carry no copyText, so the slot stays
@@ -287,10 +377,15 @@ Rectangle {
                 // Translation badge — only rendered when the parent item is
                 // a scripture verse with a translationCode. Songs/media omit
                 // the slot entirely so absence doesn't perform itself.
-                readonly property string translationCode:
-                    (root.selectedItem && root.selectedItem.scriptureRef && root.selectedItem.scriptureRef.translationCode)
-                        ? String(root.selectedItem.scriptureRef.translationCode)
-                        : ""
+                // A split screen item names both sides ("KJV · WEB").
+                readonly property string translationCode: {
+                    const it = root.selectedItem
+                    const left = (it && it.scriptureRef && it.scriptureRef.translationCode)
+                        ? String(it.scriptureRef.translationCode) : ""
+                    if (!AppState.isSplitItem(it)) return left
+                    const right = String(it.splitRight.scriptureRef.translationCode || "")
+                    return right.length > 0 && right !== left ? left + "  ·  " + right : left
+                }
                 // Header band hides entirely (height collapses to 0) when
                 // there's nothing to render in it — songs without section
                 // labels and any other pages whose `label` is empty. Saves
@@ -456,9 +551,9 @@ Rectangle {
                         text: root._cardMode === "lines"
                               ? ((card.headLabel.length > 0
                                     ? "<b>" + card.headLabel.toUpperCase() + "</b>&nbsp;&nbsp;" : "")
-                                 + LyricsService.dslToHtml(AppState.withVerseNumberSetting(modelData.content)
+                                 + LyricsService.dslToHtml(AppState.withVerseNumberSetting(root._cardBody(modelData))
                                                                .split("\n").join(" / ")))
-                              : LyricsService.dslToHtml(AppState.withVerseNumberSetting(modelData.content))
+                              : LyricsService.dslToHtml(AppState.withVerseNumberSetting(root._cardBody(modelData)))
                         maximumLineCount: root._cardMode === "lines" ? 1 : 100000
                         clip: root._cardMode === "lines"
                         color:          Theme.color.textPrimary

@@ -32,6 +32,9 @@ QtObject {
         "rewind":          "\ue147",
         "fast-forward":    "\ue0bd",
         "repeat":          "\ue146",
+        // Split screen scripture (Preview header)
+        "columns-2":       "\ue098",
+        "arrow-left-right": "\ue24a",
         "volume-2":        "\ue1ab",
         "volume-1":        "\ue1aa",
         "volume-x":        "\ue1ac",

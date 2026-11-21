@@ -96,6 +96,8 @@ Item {
         if (pages.length < 2) return ""
         return (Math.max(0, Math.min(pageIndex, pages.length - 1)) + 1) + " / " + pages.length
     }
+    // A split screen page names each side's passage itself.
+    readonly property string _pageRef: _slideField("ref") || _refText
 
     // Presentation slide heading. Mirrors _pageText, reading `title` off the
     // same page map, so the Preview and Live mini-monitors show exactly what
@@ -125,8 +127,10 @@ Item {
         if (!node || node.kind !== "text") return ""
         const data = node.data || {}
         switch (data.linkage) {
-            case "scriptureRef":      return _refText
+            case "scriptureRef":      return _pageRef
             case "scriptureText":     return _pageText
+            case "scriptureRefRight":  return _slideField("refRight")
+            case "scriptureTextRight": return _slideField("contentRight")
             case "lyric":             return _pageText
             case "presentationTitle": return _slideTitle
             case "presentationBody":  return _pageText
