@@ -330,6 +330,13 @@ still work for one-off layouts, but the **group** is the recommended path for
 cards: it owns the layout, so alignment is exact and there's nothing to
 cross-link.
 
+A card can itself be the `source` of either one. It then stands for the box
+the card hugs to, not its configured box, so an accent bar with
+`"autoHeight": {"source": "card"}` is always exactly as tall as the card. A
+card member works the same way: it stands for the slot the card gave it, so
+a label with `"autoPosition": {"place": "above", "source": "<member>"}` rides
+along as the card grows.
+
 ---
 
 ## 8. Worked examples
@@ -488,7 +495,72 @@ linkage at all — see the note in §4.
 
 ---
 
-## 10. Checklist before importing
+## 10. Motion
+
+Any node can carry `data.motion`: how it comes in, how it goes out, and for
+text, how a new verse or lyric replaces the old one. It's built for lower
+thirds on a stream, where the theme stays up over a vMix or OBS key and its
+motion is what the viewers see.
+
+```jsonc
+"data": {
+  "motion": {
+    "in":   { "type": "slide", "edge": "bottom", "distance": 36,
+              "duration": 520, "delay": 0, "easing": "smooth" },
+    "out":  { "type": "slide", "edge": "bottom", "distance": 18,
+              "duration": 320, "delay": 90, "easing": "in" },
+    "swap": { "out": 160, "in": 260 }      // text nodes only
+  }
+}
+```
+
+| Field      | Type / range | Notes |
+|------------|--------------|-------|
+| `type`     | `fade` \| `slide` \| `wipe` \| `grow` | Required in a phase |
+| `edge`     | `bottom` \| `top` \| `left` \| `right`, and `center` for `grow` | Where it comes from or goes to. Default `bottom` for slide, `left` otherwise |
+| `distance` | number `0..2000`, canvas px | `slide` only. Default 28 in, 16 out |
+| `duration` | number `0..5000`, ms | Default 500 in, 320 out |
+| `delay`    | number `0..5000`, ms | Default 0 |
+| `easing`   | `smooth` \| `out` \| `in` \| `inOut` \| `linear` \| `back`, or `[x1, y1, x2, y2]` | A CSS cubic-bezier, x in 0..1. `smooth` is `[0.2, 0.8, 0.2, 1]`. Default `smooth` in, `in` out |
+| `swap.out`, `swap.in` | number `0..2000`, ms | Default 160 and 260 |
+
+What each type does:
+
+- **fade**: opacity.
+- **slide**: opacity plus `distance` px from `edge`. An entry from the
+  bottom rises, an exit to the bottom sinks.
+- **wipe**: a reveal from `edge`. Nothing fades.
+- **grow**: a scale from `edge`. Left, right and center stretch across, top
+  and bottom stretch down and up. Text inside a grow stretches with it, so
+  it suits bars and rules.
+
+How it plays on an output:
+
+- **Going live** on a theme with motion plays every node's `in`. Delays
+  stagger them: a bar first, then its label, then the text.
+- **The next verse or lyric** on the same theme and layout only swaps the
+  text (`swap`) and eases the card to its new height. Nothing replays its
+  entry.
+- **Going to something else** plays the `out` of what's leaving. The other
+  side, if it has no motion, fades with the output's transition. Fade
+  through black keeps its order, out first and then in.
+- **Clear** plays the `out` of the text, or of every node with Settings >
+  Projection > Clear hides set to Everything. Lifting the Clear plays the
+  `in` again.
+- A node with no `in` or `out` fades over the output's Clear duration.
+- **Reduce Motion** turns all of it off, and the theme fades as a block
+  like any other.
+
+A theme where no node has motion behaves exactly as it did before motion
+existed. The theme editor's Motion section sets all of this per layer, and
+Play entry / Play exit run the whole design on the canvas.
+
+`scripture-slate-lower-third.theme.json` and `song-slate-lower-third.theme.json`
+are the built-in Slate Lower Third, a worked example of all of the above.
+
+---
+
+## 11. Checklist before importing
 
 - [ ] `version` is `3` with a non-empty `layouts` (or `2` with a non-empty
       `nodes`); `canvas.width`/`height` > 0.
@@ -500,3 +572,4 @@ linkage at all — see the note in §4.
 - [ ] Colors are `#rrggbb` or `#aarrggbb`; gradients have 2–6 stops.
 - [ ] `z` orders: background (low) → scrim → text (high).
 - [ ] No `data.mediaId` / imported `fontFamily` — JSON themes are vector + system-font only.
+- [ ] Any `data.motion` phase has a `type`, and durations and delays are in ms.

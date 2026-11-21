@@ -367,6 +367,99 @@ void validateContainerNode(const QVariantMap& n, int idx, QStringList& errs)
     }
 }
 
+// data.motion: how a node comes in, goes out and swaps its text. All of it
+// is optional and a theme without it renders as before (see NodeMotion.qml
+// for what each field does on screen). Checked strictly because a typo in a
+// motion type or easing would otherwise play as a plain cut on a live
+// stream, which nobody would think to trace back to the theme file.
+void validateMotionPhase(const QVariant& v, int idx, const char* phase, QStringList& errs)
+{
+    if (v.isNull()) return;   // "in": null is the same as leaving it out
+    const QString at = QStringLiteral("nodes[%1].data.motion.%2").arg(idx).arg(QLatin1String(phase));
+    if (v.typeId() != QMetaType::QVariantMap) {
+        errs << at + QStringLiteral(" must be an object");
+        return;
+    }
+    const QVariantMap m = v.toMap();
+
+    static const QSet<QString> types{ "fade", "slide", "wipe", "grow" };
+    const QString type = m.value("type").toString();
+    if (!types.contains(type)) {
+        errs << at + QStringLiteral(".type must be fade|slide|wipe|grow");
+        return;
+    }
+
+    if (m.contains("edge")) {
+        static const QSet<QString> edges{ "bottom", "top", "left", "right" };
+        const QString edge = m.value("edge").toString();
+        const bool ok = edges.contains(edge)
+                        || (type == QLatin1String("grow") && edge == QLatin1String("center"));
+        if (!ok)
+            errs << at + (type == QLatin1String("grow")
+                              ? QStringLiteral(".edge must be bottom|top|left|right|center")
+                              : QStringLiteral(".edge must be bottom|top|left|right"));
+    }
+
+    const auto number = [&](const char* field, double lo, double hi) {
+        if (!m.contains(field)) return;
+        if (!isFiniteNumber(m.value(field)) || !inRange(m.value(field).toDouble(), lo, hi))
+            errs << at + QStringLiteral(".%1 must be %2..%3").arg(QLatin1String(field)).arg(lo).arg(hi);
+    };
+    number("distance", 0.0, 2000.0);
+    number("duration", 0.0, 5000.0);
+    number("delay",    0.0, 5000.0);
+
+    if (m.contains("easing")) {
+        const QVariant e = m.value("easing");
+        static const QSet<QString> named{ "smooth", "out", "in", "inOut", "linear", "back" };
+        bool ok = false;
+        if (e.typeId() == QMetaType::QString) {
+            ok = named.contains(e.toString());
+        } else if (e.canConvert<QVariantList>()) {
+            // A CSS cubic-bezier(x1, y1, x2, y2). The x values have to stay
+            // in 0..1 or the curve doesn't describe time moving forward.
+            const QVariantList c = e.toList();
+            ok = c.size() == 4;
+            for (int i = 0; ok && i < 4; ++i) {
+                ok = isFiniteNumber(c[i]);
+                if (ok && (i % 2) == 0) ok = inRange(c[i].toDouble(), 0.0, 1.0);
+            }
+        }
+        if (!ok)
+            errs << at + QStringLiteral(".easing must be smooth|out|in|inOut|linear|back "
+                                        "or [x1, y1, x2, y2] with x in 0..1");
+    }
+}
+
+void validateMotion(const QVariantMap& data, int idx, QStringList& errs)
+{
+    if (!data.contains("motion")) return;
+    const QVariant v = data.value("motion");
+    if (v.isNull()) return;
+    if (v.typeId() != QMetaType::QVariantMap) {
+        errs << QStringLiteral("nodes[%1].data.motion must be an object").arg(idx);
+        return;
+    }
+    const QVariantMap m = v.toMap();
+    validateMotionPhase(m.value("in"),  idx, "in",  errs);
+    validateMotionPhase(m.value("out"), idx, "out", errs);
+
+    const QVariant swap = m.value("swap");
+    if (!swap.isNull() && m.contains("swap")) {
+        if (swap.typeId() != QMetaType::QVariantMap) {
+            errs << QStringLiteral("nodes[%1].data.motion.swap must be an object").arg(idx);
+        } else {
+            const QVariantMap s = swap.toMap();
+            for (const char* f : { "out", "in" }) {
+                if (s.contains(f) && (!isFiniteNumber(s.value(f))
+                                      || !inRange(s.value(f).toDouble(), 0.0, 2000.0)))
+                    errs << QStringLiteral("nodes[%1].data.motion.swap.%2 must be 0..2000")
+                                .arg(idx).arg(QLatin1String(f));
+            }
+        }
+    }
+}
+
 // One layout's worth of nodes. Node ids are unique WITHIN this list, not
 // across the theme: duplicating a design is how a template is actually
 // authored ("Title + content", duplicate, shrink the title -> "Section
@@ -398,6 +491,7 @@ QStringList validateNodeList(const QVariantList& nodes)
         validateStyleCommon(n.value("style").toMap(), i, errs);
         if (kind == QLatin1String("text"))      validateTextNode(n, i, errs);
         if (kind == QLatin1String("container")) validateContainerNode(n, i, errs);
+        validateMotion(n.value("data").toMap(), i, errs);
     }
     return errs;
 }

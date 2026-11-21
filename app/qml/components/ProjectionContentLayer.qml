@@ -66,6 +66,23 @@ Item {
     // tile).
     property int    passiveFadeMs: 280
 
+    // Settings > Projection > Clear hides: Everything. Clear then takes the
+    // whole layer off (theme nodes, pictures, video), not only the text.
+    property bool   clearAll: false
+
+    // ── Motion ──────────────────────────────────────────────────────────
+    // A theme whose nodes carry data.motion brings itself in and takes
+    // itself out node by node. The scene drives `shown` and asks how long
+    // each takes; for a theme without motion `shown` does nothing and the
+    // scene fades this layer as one piece, as it always has.
+    property bool   shown: true
+    readonly property bool hasMotion: !_isMediaItem && graph.hasMotion
+    function entryMs() { return graph.entryMs() }
+    function exitMs()  { return graph.exitMs() }
+    // Which design is on screen: the theme and the slide's layout. Two
+    // slides with the same key can swap their text in place.
+    readonly property string designKey: (theme && theme.id ? theme.id : 0) + "|" + _slideLayout
+
     // ── Readiness ───────────────────────────────────────────────────────
     // True once everything this layer shows has something to paint: the
     // PDF page has rasterized, and every picture and video in the layer
@@ -309,6 +326,12 @@ Item {
                || root.outputKind !== "primary"
                || !OutputService.projectionOpen
                || (root.layerItem && root.layerItem.muted === true)
+               || (ProjectionService.isClear && root.clearAll)
+        // Clear hides: Everything takes a live picture or video off too, and
+        // its sound with it. Opacity, not visible, so the video keeps its
+        // place and picks up where it is when Clear lifts.
+        opacity: (ProjectionService.isClear && root.clearAll) ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 
     // ── PDF page renderer ───────────────────────────────────────────────
@@ -342,6 +365,8 @@ Item {
                  + "&ch="   + c.height
         }
         fillMode: Image.PreserveAspectFit
+        opacity: (ProjectionService.isClear && root.clearAll) ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: root.passiveFadeMs; easing.type: Easing.InOutCubic } }
     }
 
     // ── Themed node graph (shared with ThemePreview) ────────────────────
@@ -355,11 +380,17 @@ Item {
     // node list in that case. resolveText maps each text node's linkage to the
     // current live content; clearActive drives the per-text clear fade.
     ThemedNodeGraph {
+        id: graph
         anchors.fill: parent
         nodes:          root._isMediaItem ? [] : root._nodes
         resolveTextFn:  node => root.resolveText(node)
         clearActive:    ProjectionService.isClear
+        clearAll:       root.clearAll
         passiveFadeMs:  root.passiveFadeMs
+        // Reduce Motion turns theme motion off along with the transitions.
+        motionEnabled:  !SettingsService.reduceMotion
+        shown:          root.shown
+        swapText:       true
         // Live output runs full motion (gradients animate, videos play).
         autoPlayVideos: true
     }

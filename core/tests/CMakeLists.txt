@@ -86,6 +86,25 @@ target_include_directories(test_song_themes PRIVATE
 )
 
 add_test(NAME song_themes COMMAND test_song_themes)
+
+# Theme motion: V014's lower thirds (added, never made a default) and the
+# validator for data.motion.
+qt_add_executable(test_motion_themes
+    test_motion_themes.cpp
+)
+
+target_link_libraries(test_motion_themes PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Test
+    crater-core
+)
+
+target_include_directories(test_motion_themes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
+add_test(NAME motion_themes COMMAND test_motion_themes)
 # -- Version ordering -- docs/auto-update.md ----------------------------
 # Pure string comparison behind the updater's "is this an upgrade?"
 # decision. No network, no database, no Gui: crater::compareVersions is

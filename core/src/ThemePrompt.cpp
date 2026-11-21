@@ -397,6 +397,31 @@ Anything you want to sit still, such as a rule or a logo, must be its own
 fixed node and NOT a card member. A card re-centres per slide, so decoration
 placed inside it drifts with the content length.
 
+## Motion (optional)
+
+Any node may carry "motion" in its data: how it comes in when the theme goes
+live, and how it goes out on Clear or when something else goes live. Leave it
+out unless the theme is a lower third for a stream. A theme with no motion
+fades in and out as one piece.
+
+"data": {
+  "motion": {
+    "in":  { "type": "slide", "edge": "bottom", "distance": 36,
+             "duration": 520, "delay": 0, "easing": "smooth" },
+    "out": { "type": "fade", "duration": 200, "easing": "in" }
+  }
+}
+
+  type      fade, slide, wipe or grow
+  edge      bottom, top, left or right (grow also takes center)
+  distance  slide only, canvas px
+  duration  and delay in ms, 0 to 5000
+  easing    smooth, out, in, inOut, linear or back
+
+Stagger with delay: the panel first, then the label, then the text. Keep a
+whole entry under about 800 ms. On the next verse only the text swaps, so
+nothing has to be designed for that.
+
 )PROMPT")
         + layoutsSection(safeKind)
         + QStringLiteral(R"PROMPT(

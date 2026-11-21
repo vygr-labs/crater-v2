@@ -273,6 +273,11 @@ Rectangle {
         return { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
     }
 
+    // Motion > Play entry / Play exit: run the design's motion on the canvas.
+    function previewMotion(entry) {
+        editorCanvas.paintGraph.replay(entry)
+    }
+
     // ── Design with AI ──────────────────────────────────
     // Opens the copy-a-prompt / paste-the-reply dialog. What comes back
     // lands in the WORKING copy as a single undo step, so a design that

@@ -86,6 +86,11 @@ Item {
         ]
     }
 
+    readonly property var _clearScopes: [
+        { label: qsTr("Text only"),  value: "text" },
+        { label: qsTr("Everything"), value: "all" },
+    ]
+
     // Combobox shows its value as-is, so the pickers below hold labels and
     // these map them to and from the stored values.
     function _labelOf(opts, v) {
@@ -355,6 +360,26 @@ Item {
                                                                        parseInt(root._valueOf(root._durationOptions, v)))
                             }
                         }
+                    }
+                }
+            }
+
+            // What Clear takes off the picked output. Sits under the Clear
+            // fade above it since both answer "what does Clear do here".
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+            SettingRow {
+                title: qsTr("Clear hides")
+                description: qsTr("Everything also takes off backgrounds, pictures and lower third bars, so an NDI feed clears to nothing")
+                Combobox {
+                    width: 170
+                    searchable: false
+                    options: root._labels(root._clearScopes)
+                    value: {
+                        OutputService.outputs  // dep
+                        return root._labelOf(root._clearScopes, OutputService.clearScope(root._transitionOutput))
+                    }
+                    onValueSelected: function(v) {
+                        OutputService.setClearScope(root._transitionOutput, root._valueOf(root._clearScopes, v))
                     }
                 }
             }

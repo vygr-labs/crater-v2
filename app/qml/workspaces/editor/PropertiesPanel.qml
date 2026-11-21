@@ -138,6 +138,24 @@ Rectangle {
                     : (root.localNode.kind === "text" ? textComp : containerComp)
             }
 
+            // Motion (shared). Last in the panel so its lists open over
+            // nothing. Collapsed unless the layer already has motion, so a
+            // design without any keeps the panel as short as before.
+            AccordionSection {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: !!root.localNode
+                title: qsTr("Motion")
+                expanded: !!(root.localNode && root.localNode.data && root.localNode.data.motion)
+                MotionProperties {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: Theme.space.md
+                    workspace: root.workspace
+                    node: root.localNode
+                }
+            }
+
             Component {
                 id: textComp
                 TextPropertiesContent {

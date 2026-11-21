@@ -79,6 +79,7 @@ struct OutputBinding
     Q_PROPERTY(int              screenIndex         MEMBER screenIndex)
     Q_PROPERTY(QString          screenName          MEMBER screenName)
     Q_PROPERTY(QString          contentMode         MEMBER contentMode)
+    Q_PROPERTY(QString          clearScope          MEMBER clearScope)
 
 public:
     QString          id;
@@ -97,6 +98,12 @@ public:
     int              screenIndex          = -1;
     QString          screenName;
     QString          contentMode          = QStringLiteral("mirror");
+    // What Clear takes off this output:
+    //   "text" — only the theme's text nodes fade; backgrounds, scrims and
+    //            pictures stay up. What Clear always did.
+    //   "all"  — the whole content stack fades, so a lower-third bar sent
+    //            over NDI leaves nothing behind for the switcher to key.
+    QString          clearScope           = QStringLiteral("text");
 
     bool operator==(const OutputBinding&) const = default;
 };
