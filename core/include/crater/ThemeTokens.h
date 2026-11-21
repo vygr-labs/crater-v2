@@ -127,10 +127,12 @@ bool hasLayout(const QVariantMap& tokens, const QString& layoutId);
 // hugging or stacked on them, and decorations inside the column) is drawn
 // twice: the left copy keeps its ids, the right copy gets "-right" ids and
 // binds scriptureRefRight / scriptureTextRight. The column's left margin is
-// kept, mirrored on the right, with a 4% gutter between the halves, so a
+// kept, mirrored on the right, with a 6% gutter between the halves, so a
 // lower third becomes two lower thirds across the frame and a full-screen
-// passage becomes two columns. Everything outside the column (backgrounds,
-// logos) is drawn once. Nodes with no scripture text return unchanged.
+// passage becomes two columns. A design without a card also gets a thin
+// "split-divider" line down the middle. Everything outside the column
+// (backgrounds, logos) is drawn once. Nodes with no scripture text return
+// unchanged.
 QVariantList deriveSplitNodes(const QVariantList& nodes);
 
 // ── Derived slots ──────────────────────────────────────────────────────

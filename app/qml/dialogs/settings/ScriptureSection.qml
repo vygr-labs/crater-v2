@@ -105,6 +105,15 @@ Item {
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 
             SettingRow {
+                title: qsTr("Split screen divider")
+                description: qsTr("A thin line between the two passages, on themes without a card behind the text")
+                ToggleSwitch {
+                    value: SettingsService.splitDivider
+                    onToggled: SettingsService.splitDivider = !SettingsService.splitDivider }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            SettingRow {
                 title: qsTr("Show book:chapter in footer")
                 description: qsTr("Render a reference line at the bottom of the slide")
                 ToggleSwitch {

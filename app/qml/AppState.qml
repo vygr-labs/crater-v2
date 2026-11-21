@@ -712,6 +712,18 @@ QtObject {
     // changing it re-splits what's already built (resplitScripture).
     readonly property int splitPartChars: SettingsService.splitPartChars
 
+    // The save picker for a schedule file, named after the loaded schedule.
+    // Empty when cancelled; otherwise ends in .craterschedule.
+    function chooseScheduleFilePath() {
+        const suggested = ProfileService.suggestedScheduleFileName(
+            ScheduleService.loadedScheduleName || qsTr("Schedule"))
+        let path = FileDialogService.chooseSaveFile(qsTr("Save schedule"), suggested,
+                                                    [qsTr("Crater Schedule (*.craterschedule)")])
+        if (!path || path.length === 0) return ""
+        if (!path.toLowerCase().endsWith(".craterschedule")) path += ".craterschedule"
+        return path
+    }
+
     function isSplitItem(item) {
         return !!item && item.kind === "scripture" && !!item.splitRight
     }

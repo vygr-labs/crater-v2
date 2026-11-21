@@ -161,6 +161,7 @@ struct SettingsService::Impl
     bool    autoAdvance      = false;
     int     autoAdvanceDelay = 20;
     int     splitPartChars   = 180;
+    bool    splitDivider     = true;
     bool    autoAdvanceLoop  = false;
     // "contain" (letterbox) is the safe default — it never crops content the
     // operator might not know is being clipped. Cover/stretch are opt-in.
@@ -231,6 +232,7 @@ struct SettingsService::Impl
     static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
     static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
     static constexpr const char* kSplitPartChars   = "Settings/splitPartChars";
+    static constexpr const char* kSplitDivider     = "Settings/splitDivider";
     static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
     static constexpr const char* kMediaDefaultFit = "Settings/mediaDefaultFit";
     static constexpr const char* kMediaVolume     = "Settings/mediaVolume";
@@ -294,6 +296,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->autoAdvance      = m_impl->get(Impl::kAutoAdvance, m_impl->autoAdvance).toBool();
     m_impl->autoAdvanceDelay = m_impl->get(Impl::kAutoAdvanceDelay, m_impl->autoAdvanceDelay).toInt();
     m_impl->splitPartChars   = qBound(80, m_impl->get(Impl::kSplitPartChars, m_impl->splitPartChars).toInt(), 500);
+    m_impl->splitDivider     = m_impl->get(Impl::kSplitDivider, m_impl->splitDivider).toBool();
     m_impl->autoAdvanceLoop  = m_impl->get(Impl::kAutoAdvanceLoop, m_impl->autoAdvanceLoop).toBool();
     m_impl->mediaDefaultFit = m_impl->get(Impl::kMediaDefaultFit, m_impl->mediaDefaultFit).toString();
     m_impl->mediaVolume     = qBound(0.0, m_impl->get(Impl::kMediaVolume, m_impl->mediaVolume).toDouble(), 1.0);
@@ -366,6 +369,7 @@ QString SettingsService::defaultScriptureVersion() const { return m_impl->defaul
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
 int     SettingsService::splitPartChars() const    { return m_impl->splitPartChars; }
+bool    SettingsService::splitDivider() const      { return m_impl->splitDivider; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 QString SettingsService::scriptureInputMode() const { return m_impl->scriptureInputMode; }
@@ -729,6 +733,14 @@ void SettingsService::setSplitPartChars(int v)
     m_impl->splitPartChars = clamped;
     m_impl->put(Impl::kSplitPartChars, clamped);
     emit splitPartCharsChanged();
+}
+
+void SettingsService::setSplitDivider(bool v)
+{
+    if (m_impl->splitDivider == v) return;
+    m_impl->splitDivider = v;
+    m_impl->put(Impl::kSplitDivider, v);
+    emit splitDividerChanged();
 }
 
 void SettingsService::setAutoAdvanceDelaySeconds(int v)

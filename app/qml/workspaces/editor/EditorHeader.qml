@@ -95,11 +95,10 @@ Rectangle {
         }
 
         PrimaryButton {
-            text: qsTr("Save Theme")
-            enabled: workspace.themeName.length > 0
-                  && !workspace._isBuiltin
+            text: workspace._isBuiltin ? qsTr("Duplicate and save") : qsTr("Save Theme")
+            enabled: workspace._isBuiltin || workspace.themeName.length > 0
             anchors.verticalCenter: parent.verticalCenter
-            onClicked: workspace.saveTheme()
+            onClicked: workspace._isBuiltin ? workspace.saveAsCopy() : workspace.saveTheme()
         }
     }
 }

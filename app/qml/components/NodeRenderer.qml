@@ -53,6 +53,12 @@ Item {
         (_isText && textLoader.item) ? textLoader.item._naturalFit : 0
     property int fitCap: 0
 
+    // When set, auto-fit sizes the text for THIS text instead of what is
+    // shown. A split screen passage passes its longest part, so every slide
+    // of it reads at one size and nothing jumps when the operator steps
+    // through (ThemedNodeGraph.splitFitText).
+    property string fitText: ""
+
     // ─── Container delegate ──────────────────────────────────────────────
     // Uniform radius for v1 — Qt 6's Rectangle.radius is a single value. The
     // 4 stored corner fields are averaged here; true per-corner rendering
@@ -163,8 +169,12 @@ Item {
                 // at render time, so flipping it reaches a passage that is
                 // already live without re-sending it (see
                 // AppState.withVerseNumberSetting).
-                readonly property string _renderedText: {
-                    let t = AppState.withVerseNumberSetting(nodeRoot.resolvedText)
+                readonly property string _renderedText: _html(nodeRoot.resolvedText)
+                // What auto-fit measures: the fit text when one is set.
+                readonly property string _fitHtml:
+                    nodeRoot.fitText.length > 0 ? _html(nodeRoot.fitText) : _renderedText
+                function _html(raw) {
+                    let t = AppState.withVerseNumberSetting(raw)
                     const vc = _data.verseNumberColor
                     if (vc) t = t.split("{color=verse}").join("{color=" + vc + "}")
                     return LyricsService.dslToHtml(t, _style.textTransform || "")
@@ -205,7 +215,7 @@ Item {
                     id: probe
                     visible: false
                     textFormat:         Text.RichText
-                    text:               visibleText.text
+                    text:               textHost._fitHtml
                     font.family:        visibleText.font.family
                     font.weight:        visibleText.font.weight
                     font.italic:        visibleText.font.italic
@@ -290,6 +300,7 @@ Item {
                     // A changed fit-height override (card re-allotment) re-fits.
                     function onFitHeightOverrideChanged() { refitTimer.restart() }
                     // A new cap only changes which size is used, not the fit.
+                    function onFitTextChanged() { textHost._refit() }
                     function onFitCapChanged() { if (textHost._fitted && textHost._data.autoResize) textHost._applyCap() }
                     // Node-property changes (style, data) can burst during a
                     // drag-resize in the editor — keep these debounced.

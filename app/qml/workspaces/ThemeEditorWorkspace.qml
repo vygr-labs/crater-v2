@@ -357,6 +357,34 @@ Rectangle {
         }
     }
 
+    // Duplicate and save: the design as it is now, as a new theme, leaving
+    // the one being edited alone. The only way to keep edits to a built-in,
+    // and a quick variant of one of your own. A name left as it was gets
+    // " copy" so the two don't share a name in the Themes tab.
+    function saveAsCopy() {
+        const tokens = workingTheme.toTokens()
+        const errs = ThemeService.validateTokens(tokens)
+        if (errs.length > 0) {
+            saveError = errs.join(" · ")
+            saveErrorClearTimer.restart()
+            return
+        }
+        const original = ThemeService.theme(themeId)
+        let name = (themeName || "").trim()
+        if (name.length === 0 || (original && original.name === name))
+            name = qsTr("%1 copy").arg(name.length > 0 ? name : qsTr("Untitled"))
+        const newId = ThemeService.create(themeKind, name, tokens)
+        if (newId > 0) {
+            workspace.themeId = newId
+            workspace.themeName = name
+            workspace.savedIndex = workspace.historyIndex
+            AppState.closeThemeEditor()
+        } else {
+            saveError = qsTr("Could not save theme. Check the log for details.")
+            saveErrorClearTimer.restart()
+        }
+    }
+
     Timer {
         id: saveErrorClearTimer
         interval: 8000

@@ -134,7 +134,7 @@ Rectangle {
             Text {
                 visible: workspace._isBuiltin
                 anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Built-in themes can't be edited. Duplicate one to customize it.")
+                text: qsTr("Built-in themes can't be changed. Duplicate and save keeps your edits as a new theme.")
                 color: Theme.color.warning
                 font.family: Theme.font.family
                 font.pixelSize: Theme.font.smallSize
@@ -152,11 +152,19 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 onClicked: workspace.requestClose()
             }
-            PrimaryButton {
-                text: qsTr("Save Theme")
-                enabled: workspace.themeName.length > 0 && !workspace._isBuiltin
+            // A saved theme can also be kept as a new one. On a built-in it
+            // is the only way to save, so it takes Save's place.
+            GhostButton {
+                visible: !workspace._isNew && !workspace._isBuiltin
+                text: qsTr("Duplicate and save")
                 anchors.verticalCenter: parent.verticalCenter
-                onClicked: workspace.saveTheme()
+                onClicked: workspace.saveAsCopy()
+            }
+            PrimaryButton {
+                text: workspace._isBuiltin ? qsTr("Duplicate and save") : qsTr("Save Theme")
+                enabled: workspace._isBuiltin || workspace.themeName.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: workspace._isBuiltin ? workspace.saveAsCopy() : workspace.saveTheme()
             }
         }
     }

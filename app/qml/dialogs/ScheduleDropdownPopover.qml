@@ -363,9 +363,19 @@ Item {
                 visible: ScheduleService.currentItems.length > 0
                 iconName: "download"
                 label: qsTr("Save to file…")
+                // With nothing to leave out, there's nothing to ask: straight
+                // to the file picker, and the dialog only shows the result.
                 onTriggered: {
                     root.close()
-                    Qt.callLater(function() { AppState.openModal("scheduleFile", { mode: "save" }) })
+                    Qt.callLater(function() {
+                        if (ProfileService.scheduleMediaSize(ScheduleService.currentItems).count > 0) {
+                            AppState.openModal("scheduleFile", { mode: "save" })
+                            return
+                        }
+                        const path = AppState.chooseScheduleFilePath()
+                        if (path.length > 0)
+                            AppState.openModal("scheduleFile", { mode: "save", path: path })
+                    })
                 }
             }
             ActionItem {

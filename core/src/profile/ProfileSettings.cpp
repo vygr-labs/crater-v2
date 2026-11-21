@@ -31,6 +31,7 @@ const QList<KeySpec>& specs()
         { "Settings/showVerseNumbers",          Kind::Bool   },
         { "Settings/highlightCurrentVerse",     Kind::Bool   },
         { "Settings/splitPartChars",            Kind::Int    },
+        { "Settings/splitDivider",              Kind::Bool   },
         { "Settings/showScriptureFooter",       Kind::Bool   },
         { "Settings/showStrongsTab",            Kind::Bool   },
         { "Settings/showSongAuthor",            Kind::Bool   },
