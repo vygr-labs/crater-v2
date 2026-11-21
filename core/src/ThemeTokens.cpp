@@ -127,7 +127,7 @@ QStringList layoutRefs(const QVariantMap& data)
 
 QVariantList deriveSplitNodes(const QVariantList& nodes)
 {
-    constexpr double kGutter = 4.0;
+    constexpr double kGutter = 6.0;
     const QString suffix = QStringLiteral("-right");
 
     // 1. The passage column: the scripture text...
@@ -202,6 +202,49 @@ QVariantList deriveSplitNodes(const QVariantList& nodes)
         return n;
     };
 
+    // A thin line down the middle of the gutter, for a design whose passage
+    // sits straight on the background. A design with a card has none: the
+    // two cards already read as two. Same colour as the verse text at about
+    // a quarter strength, as tall as the passage column.
+    QVariantMap divider;
+    {
+        bool hasCard = false;
+        double top = 100, bottom = 0, z = 0;
+        QString color;
+        for (const QVariant& v : nodes) {
+            const QVariantMap n = v.toMap();
+            const QVariantMap st = n.value(QStringLiteral("style")).toMap();
+            const QVariantMap data = n.value(QStringLiteral("data")).toMap();
+            z = qMax(z, num(st, "z"));
+            if (!column.contains(n.value(QStringLiteral("id")).toString())) continue;
+            if (data.contains(QStringLiteral("group"))) hasCard = true;
+            if (n.value(QStringLiteral("kind")).toString() != QLatin1String("text")) continue;
+            top = qMin(top, num(st, "y"));
+            bottom = qMax(bottom, num(st, "y") + num(st, "height"));
+            if (data.value(QStringLiteral("linkage")).toString() == QLatin1String("scriptureText"))
+                color = st.value(QStringLiteral("color")).toString();
+        }
+        // #rgb / #rrggbb / #aarrggbb -> #40rrggbb
+        QString rgb = color.startsWith(QLatin1Char('#')) ? color.mid(1) : QString();
+        if (rgb.size() == 3) rgb = QString(rgb[0]) + rgb[0] + rgb[1] + rgb[1] + rgb[2] + rgb[2];
+        if (rgb.size() == 8) rgb = rgb.mid(2);
+        if (rgb.size() != 6) rgb = QStringLiteral("ffffff");
+        if (!hasCard && bottom > top) {
+            constexpr double kWidth = 0.12;
+            divider = QVariantMap{
+                { QStringLiteral("id"),    QStringLiteral("split-divider") },
+                { QStringLiteral("kind"),  QStringLiteral("container") },
+                { QStringLiteral("style"), QVariantMap{
+                      { QStringLiteral("x"), 50 - kWidth / 2 }, { QStringLiteral("y"), top },
+                      { QStringLiteral("width"), kWidth }, { QStringLiteral("height"), bottom - top },
+                      { QStringLiteral("z"), z }, { QStringLiteral("opacity"), 1 },
+                      { QStringLiteral("backgroundColor"), QStringLiteral("#40") + rgb } } },
+                { QStringLiteral("data"),  QVariantMap{
+                      { QStringLiteral("layerName"), QStringLiteral("Split divider") } } },
+            };
+        }
+    }
+
     QVariantList out;
     for (const QVariant& v : nodes) {
         const QVariantMap n = v.toMap();
@@ -240,6 +283,7 @@ QVariantList deriveSplitNodes(const QVariantList& nodes)
         r.insert(QStringLiteral("data"), data);
         out.append(r);
     }
+    if (!divider.isEmpty()) out.append(divider);
     return out;
 }
 

@@ -30,8 +30,12 @@ Rectangle {
         for (let i = 0; i < trs.length; i++) {
             const code = String(trs[i].code)
             if (code.toUpperCase() === leftCode) continue
+            // Name only when it says more than the code: many imported
+            // Bibles are named after their code ("AMPC", "MSG 2").
+            const name = String(trs[i].name || "")
+            const same = name.replace(/\s+/g, "").toUpperCase() === code.replace(/\s+/g, "").toUpperCase()
             compare.push({
-                label: code + "  ·  " + trs[i].name,
+                label: (same || name.length === 0) ? code : code + "  ·  " + name,
                 iconName: code.toUpperCase() === rightCode ? "check" : "",
                 action: function() {
                     AppState.replacePreviewedItem(AppState.splitWithTranslation(root.selectedItem, code))

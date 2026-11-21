@@ -223,6 +223,28 @@ Item {
     // A split screen page names each side's passage itself (AppState
     // .buildSplitItem); the item title holds both.
     readonly property string _pageRef: _slideField("ref") || _refText
+    // A split screen item's longest verse part, either side, any slide:
+    // the verse text is sized for it so the size holds across the slides.
+    readonly property string _splitFitText: {
+        const it = layerItem
+        if (!it || !it.splitRight || !it.pages) return ""
+        let best = "", bestLen = -1
+        for (let i = 0; i < it.pages.length; i++) {
+            const p = it.pages[i]
+            const sides = [p.content || "", p.contentRight || ""]
+            for (let j = 0; j < 2; j++) {
+                const n = sides[j].replace(/\{[^}]*\}|\*\*/g, "").length
+                if (n > bestLen) { best = sides[j]; bestLen = n }
+            }
+        }
+        return best
+    }
+    // Settings > Scripture > Split screen divider: the derived split design's
+    // centre line (ThemeTokens deriveSplitNodes) is dropped when it's off.
+    function _withoutDivider(nodes) {
+        if (SettingsService.splitDivider || !nodes) return nodes
+        return nodes.filter(function(n) { return n.id !== "split-divider" })
+    }
 
     // A presentation slide's heading, read off the SAME pages array every
     // other kind uses -- pages[i].title alongside pages[i].content. Nothing
@@ -398,8 +420,9 @@ Item {
     ThemedNodeGraph {
         id: graph
         anchors.fill: parent
-        nodes:          root._isMediaItem ? [] : root._nodes
+        nodes:          root._isMediaItem ? [] : root._withoutDivider(root._nodes)
         resolveTextFn:  node => root.resolveText(node)
+        splitFitText:   root._splitFitText
         clearActive:    ProjectionService.isClear
         clearAll:       root.clearAll
         passiveFadeMs:  root.passiveFadeMs

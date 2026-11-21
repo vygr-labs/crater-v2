@@ -8,9 +8,12 @@ import Crater
 //
 // Opened from the schedule dropdown:
 //   AppState.openModal("scheduleFile", { mode: "save" })
+//   AppState.openModal("scheduleFile", { mode: "save", path: <picked file> })
 //   AppState.openModal("scheduleFile", { mode: "open", path: <picked file> })
-// Open picks its file before the dialog shows, so a cancelled picker never
-// flashes a dialog, and starts straight away.
+// The only choice the save view offers is leaving pictures and videos out,
+// so a schedule without any skips it: the dropdown picks the file first and
+// the dialog only shows the progress and the result. Open works the same
+// way. A cancelled picker never flashes a dialog.
 ModalShell {
     id: root
 
@@ -21,7 +24,7 @@ ModalShell {
     readonly property string _mode: AppState.modalProps.mode || "save"
 
     // "choose" -> "running" -> "done". Open starts at "running".
-    property string _phase: _mode === "open" ? "running" : "choose"
+    property string _phase: (_mode === "open" || !!AppState.modalProps.path) ? "running" : "choose"
     property bool   _includeMedia: true
     property bool   _ok: false
     property string _message: ""
@@ -55,11 +58,11 @@ ModalShell {
     }
 
     function _save() {
-        const suggested = ProfileService.suggestedScheduleFileName(root._scheduleName || qsTr("Schedule"))
-        let path = FileDialogService.chooseSaveFile(qsTr("Save schedule"), suggested,
-                                                    [qsTr("Crater Schedule (*.craterschedule)")])
-        if (!path || path.length === 0) return
-        if (!path.toLowerCase().endsWith(".craterschedule")) path += ".craterschedule"
+        const path = AppState.chooseScheduleFilePath()
+        if (path.length > 0) _saveTo(path)
+    }
+
+    function _saveTo(path) {
         // An untitled schedule takes the file's name, so it opens on the
         // other computer under the name it was saved as.
         let name = root._scheduleName
@@ -93,6 +96,7 @@ ModalShell {
     Component.onCompleted: {
         AppState.modalCloseOwner = root
         if (root._mode === "open") root._open()
+        else if (AppState.modalProps.path) root._saveTo(AppState.modalProps.path)
     }
 
     Connections {

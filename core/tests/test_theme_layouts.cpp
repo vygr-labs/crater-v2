@@ -350,7 +350,7 @@ private slots:
             boxNode("verse", "text", 9, 80, { { "linkage", "scriptureText" }, { "layerName", "Verse" } }),
         };
         const QVariantList out = tk::layoutNodes(tokensOf(nodes), QStringLiteral("split"));
-        QCOMPARE(out.size(), 7);   // bg once, three pieces twice
+        QCOMPARE(out.size(), 8);   // bg once, three pieces twice, a divider
 
         QVERIFY(byId(out, "bg-right").isEmpty());
         const QVariantMap l = byId(out, "verse"), r = byId(out, "verse-right");
@@ -360,16 +360,22 @@ private slots:
         QCOMPARE(r.value("data").toMap().value("layerName").toString(), QStringLiteral("Verse (right)"));
         QCOMPARE(l.value("data").toMap().value("linkage").toString(), QStringLiteral("scriptureText"));
 
-        // The column (9..91) keeps its 9% margin on both sides with a 4%
-        // gutter: left 9..48, right 52..91.
+        // The column (9..91) keeps its 9% margin on both sides with a 6%
+        // gutter: left 9..47, right 53..91.
         QCOMPARE(styleOf(byId(out, "reference"), "x"), 9.0);
-        QVERIFY(qAbs(styleOf(byId(out, "reference"), "x") + styleOf(byId(out, "reference"), "width") - 48.0) < 0.01);
-        QVERIFY(qAbs(styleOf(byId(out, "reference-right"), "x") - 52.0) < 0.01);
+        QVERIFY(qAbs(styleOf(byId(out, "reference"), "x") + styleOf(byId(out, "reference"), "width") - 47.0) < 0.01);
+        QVERIFY(qAbs(styleOf(byId(out, "reference-right"), "x") - 53.0) < 0.01);
         QVERIFY(qAbs(styleOf(byId(out, "reference-right"), "x")
                      + styleOf(byId(out, "reference-right"), "width") - 91.0) < 0.01);
         // The accent rule goes with the column, scaled with it.
         QVERIFY(!byId(out, "rule-right").isEmpty());
         QVERIFY(styleOf(byId(out, "rule-right"), "width") < 3.75);
+        // A divider down the middle, as tall as the passage column.
+        const QVariantMap d = byId(out, "split-divider");
+        QVERIFY(!d.isEmpty());
+        QVERIFY(qAbs(styleOf(d, "x") + styleOf(d, "width") / 2 - 50.0) < 0.01);
+        QCOMPARE(styleOf(d, "y"), 10.0);
+        QCOMPARE(styleOf(d, "height"), 10.0);
     }
 
     void splitCarriesACardAndWhatHugsIt()
@@ -384,7 +390,8 @@ private slots:
             boxNode("body", "text", 7.1, 56.8, { { "linkage", "scriptureText" } }),
         };
         const QVariantList out = tk::layoutNodes(tokensOf(nodes), QStringLiteral("split"));
-        QCOMPARE(out.size(), 8);
+        QCOMPARE(out.size(), 8);   // no divider: the cards already read as two
+        QVERIFY(byId(out, "split-divider").isEmpty());
         const QVariantMap card = byId(out, "card-right");
         QCOMPARE(card.value("data").toMap().value("group").toMap().value("members").toList(),
                  (QVariantList{ QStringLiteral("reference-right"), QStringLiteral("body-right") }));
@@ -393,8 +400,8 @@ private slots:
         // The left copies still point at the left ones.
         QCOMPARE(byId(out, "edge").value("data").toMap().value("autoHeight").toMap()
                      .value("source").toString(), QStringLiteral("card"));
-        // A lower third becomes two across the frame: 4.5..48 and 52..95.5.
-        QVERIFY(qAbs(styleOf(card, "x") - 52.0) < 0.01);
+        // A lower third becomes two across the frame: 4.5..47 and 53..95.5.
+        QVERIFY(qAbs(styleOf(card, "x") - 53.0) < 0.01);
         QVERIFY(qAbs(styleOf(card, "x") + styleOf(card, "width") - 95.5) < 0.01);
     }
 

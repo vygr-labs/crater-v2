@@ -523,10 +523,15 @@ card's members, anything hugging or stacked on them (`autoHeight` /
 `autoPosition`), and any smaller decoration lying inside the column (an accent
 rule). The left copy keeps its ids. The right copy gets `-right` ids, binds the
 `...Right` linkages, and has its card members and layout sources renamed to
-match. The column keeps its left margin, mirrored on the right, with a 4% gutter
-in the middle: a full-screen passage at 9–91% becomes 9–48% and 52–91%, and a
-lower third at 4.5–66.5% becomes two lower thirds, 4.5–48% and 52–95.5%.
-Anything outside the column (the background, a logo) is drawn once.
+match. The column keeps its left margin, mirrored on the right, with a 6% gutter
+in the middle: a full-screen passage at 9–91% becomes 9–47% and 53–91%, and a
+lower third at 4.5–66.5% becomes two lower thirds, 4.5–47% and 53–95.5%.
+Anything outside the column (the background, a logo) is drawn once. A design
+whose passage sits straight on the background (no card) also gets a thin
+`split-divider` line down the middle in the verse colour at about a quarter
+strength; Settings > Scripture > Split screen divider turns it off. Every slide
+of a split is sized for the passage's longest part, so the text size holds from
+slide to slide.
 
 A long verse is broken into parts for a split slide rather than shrunk until it
 fits half the width. That happens when the slides are built (AppState

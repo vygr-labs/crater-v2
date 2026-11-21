@@ -177,6 +177,9 @@ private:
     // screen. Clamped to 80..500; default 180. Changing it re-splits the
     // split passages in the schedule and on screen (Main.qml).
     Q_PROPERTY(int     splitPartChars READ splitPartChars WRITE setSplitPartChars NOTIFY splitPartCharsChanged)
+    // Split screen: the thin line between the two passages on a design that
+    // has no card (ThemeTokens deriveSplitNodes). Default on.
+    Q_PROPERTY(bool    splitDivider READ splitDivider WRITE setSplitDivider NOTIFY splitDividerChanged)
     // Render a reference line (book chapter:verse) at the bottom of scripture
     // slides. A render-time overlay in ProjectionContentLayer honors this
     // regardless of whether the active theme authored its own reference node,
@@ -320,6 +323,7 @@ public:
     bool    showVerseNumbers() const;
     bool    highlightCurrentVerse() const;
     int     splitPartChars() const;
+    bool    splitDivider() const;
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
     QString scriptureInputMode() const;
@@ -372,6 +376,7 @@ public:
     void setShowVerseNumbers(bool v);
     void setHighlightCurrentVerse(bool v);
     void setSplitPartChars(int v);
+    void setSplitDivider(bool v);
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
     void setScriptureInputMode(const QString& mode);
@@ -438,6 +443,7 @@ signals:
     void showVerseNumbersChanged();
     void highlightCurrentVerseChanged();
     void splitPartCharsChanged();
+    void splitDividerChanged();
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
     void scriptureInputModeChanged();

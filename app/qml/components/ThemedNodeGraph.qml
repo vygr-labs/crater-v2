@@ -61,6 +61,11 @@ Item {
     property bool clearAll: false
     property bool swapText: false
 
+    // A split screen passage's longest part (ProjectionContentLayer). Its
+    // verse text on both sides is sized for this, so the size holds from
+    // slide to slide. Empty for everything else.
+    property string splitFitText: ""
+
     readonly property bool hasMotion: motionEnabled && _anyMotion(_sortedNodes)
     function _anyMotion(ns) {
         for (let i = 0; i < ns.length; i++) {
@@ -546,6 +551,10 @@ Item {
                         // The two columns of a split screen slide read at one
                         // size: each is capped at the other's natural fit.
                         fitCap: nodeWrap._splitPartner ? nodeWrap._splitPartner.naturalFitPx : 0
+                        fitText: (root.splitFitText.length > 0
+                                  && (nodeWrap._data.linkage === "scriptureText"
+                                      || nodeWrap._data.linkage === "scriptureTextRight"))
+                                 ? root.splitFitText : ""
                     }
                 }
             }
