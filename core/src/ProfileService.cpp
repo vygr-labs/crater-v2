@@ -840,6 +840,137 @@ bool ProfileService::importArchive(QString path, QVariantMap parts, bool asNewPr
     return true;
 }
 
+namespace {
+
+QString safeFileBase(QString base, const QString& fallback)
+{
+    base.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1F]")), QStringLiteral(" "));
+    base = base.simplified();
+    return base.isEmpty() ? fallback : base;
+}
+
+}  // namespace
+
+bool ProfileService::exportSchedule(QString path, QString name, QVariantList items,
+                                    bool includeMedia)
+{
+    m_impl->lastError.clear();
+    if (m_impl->busy) { m_impl->lastError = QStringLiteral("Another profile task is still running."); return false; }
+    if (path.startsWith(QStringLiteral("file:"))) path = QUrl(path).toLocalFile();
+    if (path.isEmpty()) { m_impl->lastError = QStringLiteral("Choose where to save the file."); return false; }
+    if (items.isEmpty()) { m_impl->lastError = QStringLiteral("The schedule is empty."); return false; }
+
+    profile::ScheduleExport sched;
+    sched.name = name.trimmed().isEmpty() ? QStringLiteral("Schedule") : name.trimmed();
+    sched.itemsJson = QString::fromUtf8(
+        QJsonDocument(QJsonArray::fromVariantList(items)).toJson(QJsonDocument::Compact));
+    sched.includeMedia = includeMedia;
+
+    const QString source  = Impl::rootFor(m_impl->currentId);
+    const QString staging = stagingParent();
+    setBusy(true);
+    setProgress(0, QStringLiteral("Preparing the schedule"));
+    auto progress = makeProgress(this, [this](qreal f, QString t) { if (m_impl->busy) setProgress(f, t); });
+
+    QtConcurrent::run([source, sched, path, staging, progress]() -> WorkResult {
+        WorkResult r;
+        try {
+            const profile::ExportResult x = profile::exportSchedule(source, sched, path, staging, progress);
+            r.ok = x.ok;
+            r.error = x.error;
+            r.details.insert(QStringLiteral("warnings"), x.warnings);
+        } catch (const std::exception& e) {
+            qWarning() << "ProfileService::exportSchedule:" << e.what();
+            r.error = QStringLiteral("Saving the schedule failed.");
+        }
+        return r;
+    }).then(this, [this, path](WorkResult r) {
+        r.details.insert(QStringLiteral("path"), path);
+        setBusy(false);
+        emit operationFinished(QStringLiteral("scheduleExport"), r.ok, r.error, r.details);
+    });
+    return true;
+}
+
+QVariantMap ProfileService::scheduleMediaSize(QVariantList items) const
+{
+    qint64 count = 0, bytes = 0;
+    QSet<QString> seen;
+    for (const QVariant& v : items) {
+        const QVariantMap it = v.toMap();
+        const QString kind = it.value(QStringLiteral("kind")).toString();
+        if (kind != QLatin1String("image") && kind != QLatin1String("video")
+            && kind != QLatin1String("pdf"))
+            continue;
+        const QString p = it.value(QStringLiteral("mediaPath")).toString();
+        if (p.isEmpty() || seen.contains(p)) continue;
+        seen.insert(p);
+        ++count;
+        bytes += QFileInfo(p).size();
+    }
+    return { { QStringLiteral("count"), count }, { QStringLiteral("bytes"), bytes } };
+}
+
+bool ProfileService::openScheduleFile(QString path)
+{
+    m_impl->lastError.clear();
+    if (m_impl->busy) { m_impl->lastError = QStringLiteral("Another profile task is still running."); return false; }
+    if (path.startsWith(QStringLiteral("file:"))) path = QUrl(path).toLocalFile();
+    if (path.isEmpty()) { m_impl->lastError = QStringLiteral("Choose a schedule file."); return false; }
+
+    const QString root    = Impl::rootFor(m_impl->currentId);
+    const QString staging = stagingParent();
+    setBusy(true);
+    setProgress(0, QStringLiteral("Opening the schedule"));
+    auto progress = makeProgress(this, [this](qreal f, QString t) { if (m_impl->busy) setProgress(f, t); });
+
+    QtConcurrent::run([path, root, staging, progress]() -> WorkResult {
+        WorkResult r;
+        try {
+            const profile::ArchiveInfo info = profile::inspectArchive(path);
+            if (!info.ok) {
+                r.error = info.error;
+                return r;
+            }
+            // A whole profile opens from Settings > Profiles, where the
+            // operator picks what to bring in. Merging one in from here would
+            // add a whole library without asking.
+            if (!info.isSchedule) {
+                r.error = QStringLiteral("This is a profile file, not a schedule. "
+                                         "Profiles are imported from Settings > Profiles.");
+                return r;
+            }
+            const profile::ImportResult x = profile::importArchive(
+                path, profile::kSchedulePartMask, root, false, staging, progress);
+            r.ok = x.ok && !x.scheduleIds.isEmpty();
+            r.error = x.ok ? (r.ok ? QString() : QStringLiteral("This schedule file has no schedule in it."))
+                           : x.error;
+            r.details.insert(QStringLiteral("added"), x.added);
+            r.details.insert(QStringLiteral("skipped"), x.skipped);
+            r.details.insert(QStringLiteral("warnings"), x.warnings);
+            r.details.insert(QStringLiteral("scheduleName"), info.scheduleName);
+            if (!x.scheduleIds.isEmpty())
+                r.details.insert(QStringLiteral("scheduleId"), x.scheduleIds.first());
+        } catch (const std::exception& e) {
+            qWarning() << "ProfileService::openScheduleFile:" << e.what();
+            r.error = QStringLiteral("Opening the schedule failed.");
+        }
+        return r;
+    }).then(this, [this](WorkResult r) {
+        setBusy(false);
+        // Anything added is on disk even when the schedule itself failed,
+        // so the libraries re-read either way.
+        emit librariesChanged();
+        emit operationFinished(QStringLiteral("scheduleOpen"), r.ok, r.error, r.details);
+    });
+    return true;
+}
+
+QString ProfileService::suggestedScheduleFileName(QString name) const
+{
+    return safeFileBase(name, QStringLiteral("Schedule")) + QStringLiteral(".craterschedule");
+}
+
 QString ProfileService::suggestedExportName() const
 {
     QString base = currentProfileName();

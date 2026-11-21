@@ -110,6 +110,12 @@ Item {
         active: AppState.activeModal === "profilePicker"
         sourceComponent: ProfilePickerDialog { }
     }
+    // Save the schedule to a .craterschedule file, or open one.
+    Loader {
+        anchors.fill: parent
+        active: AppState.activeModal === "scheduleFile"
+        sourceComponent: ScheduleFileDialog { }
+    }
 
     // ── Design with AI (theme editor) ───────────────────────────────────
     Loader {

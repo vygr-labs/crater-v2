@@ -82,6 +82,11 @@ public:
 
     Q_INVOKABLE void destroy(qint64 id);
 
+    // Re-read the library after another connection wrote to it (opening a
+    // schedule file merges its themes, media, songs and decks into this
+    // profile's databases from a worker thread; see ProfileService).
+    void reload();
+
 signals:
     void presentationsChanged();
 

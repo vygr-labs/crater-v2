@@ -404,4 +404,11 @@ void PresentationService::destroy(qint64 id)
     }
 }
 
+void PresentationService::reload()
+{
+    // presentations() reads the table on every call; only the views need
+    // telling.
+    emit presentationsChanged();
+}
+
 }  // namespace crater

@@ -82,6 +82,12 @@ public:
     // paths in the project behave (operator's call to make).
     Q_INVOKABLE bool removeFont(qint64 id);
 
+    // Re-read the library after another connection wrote to it (opening a
+    // schedule file merges its themes, media, songs and decks into this
+    // profile's databases from a worker thread; see ProfileService).
+    // Also registers any font row this session has not loaded yet.
+    void reload();
+
 signals:
     void allFontsChanged();
 

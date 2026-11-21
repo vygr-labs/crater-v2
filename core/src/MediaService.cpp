@@ -1189,4 +1189,9 @@ void MediaService::prewarmPdf()
     renderPdfPage(pdfId, 0, QSize(256, 256), QRectF(0, 0, 1, 1));
 }
 
+void MediaService::reload()
+{
+    invalidateCache();
+}
+
 }  // namespace crater

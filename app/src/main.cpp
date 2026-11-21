@@ -493,6 +493,17 @@ int main(int argc, char* argv[])
     // authoritative for the duration of the sweep. Idempotent: empty
     // libraries are a no-op.
     mediaService.sweepOrphans();
+    // Opening a schedule file merges its themes, media, songs, decks and
+    // fonts into this profile from a worker thread. Re-read them so the
+    // schedule it loads finds everything without a restart.
+    QObject::connect(&profileService, &crater::ProfileService::librariesChanged, &app, [&] {
+        fontService.reload();
+        themeService.reload();
+        mediaService.reload();
+        songService.reload();
+        presentationService.reload();
+        scheduleService.reload();
+    });
     crater::OutputService     outputService;
     // Hand OutputService a ThemeService reference so its one-shot legacy
     // migration (Settings/themeIdFor* → Outputs/<id>/themes) can look up

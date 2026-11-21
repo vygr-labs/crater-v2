@@ -5,6 +5,8 @@ import QtQuick
 // icons on each row, then a set of action items at the bottom:
 //   - "Save" (only when a schedule is loaded; updates that row)
 //   - "Save as new…" / "Save current as…" (always; creates a new row)
+//   - "Save to file…" (when the schedule has items) / "Open from file…"
+//     (.craterschedule, see ScheduleFileDialog)
 //   - "Close loaded schedule" (only when a schedule is loaded)
 //   - "New empty schedule" (clears working items + loaded pointer)
 //
@@ -350,6 +352,33 @@ Item {
                                 }
                             }
                         })
+                    })
+                }
+            }
+
+            // ── Schedule files (.craterschedule) ─────────────────────────
+            // For moving a service plan to another computer: the file
+            // carries what the schedule uses (ScheduleFileDialog).
+            ActionItem {
+                visible: ScheduleService.currentItems.length > 0
+                iconName: "download"
+                label: qsTr("Save to file…")
+                onTriggered: {
+                    root.close()
+                    Qt.callLater(function() { AppState.openModal("scheduleFile", { mode: "save" }) })
+                }
+            }
+            ActionItem {
+                iconName: "upload"
+                label: qsTr("Open from file…")
+                onTriggered: {
+                    root.close()
+                    Qt.callLater(function() {
+                        const path = FileDialogService.chooseOpenFile(
+                            qsTr("Open schedule"), [qsTr("Crater Schedule (*.craterschedule)")],
+                            "scheduleFile")
+                        if (path && path.length > 0)
+                            AppState.openModal("scheduleFile", { mode: "open", path: path })
                     })
                 }
             }

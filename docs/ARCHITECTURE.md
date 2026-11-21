@@ -619,6 +619,19 @@ schedules by title plus content. Running the same import twice adds
 nothing the second time. Files are moved into place before their rows are
 written and removed again if that transaction fails.
 
+A schedule file (`.craterschedule`, `profile::exportSchedule`) is the
+same archive cut down to one schedule and what it uses: the songs, decks
+and per-row themes its items name, the themes those songs and decks use,
+the pictures those themes and decks show, and the user fonts the kept
+themes name. Its manifest adds `contents: "schedule"` and the schedule's
+name. With pictures and videos left out, the schedule's own media rows
+stay in the database but their files don't, and `linkedMedia` lists each
+by size and hash so opening the file can match a copy already in that
+media library. A row whose picture can't be matched is dropped. Opening
+merges into the current profile with the matching above, then
+`ProfileService::librariesChanged` has each library service reload, so
+the schedule loads without a restart.
+
 "Import as a new profile" creates the folder with a `.incomplete` marker,
 runs the same import into it, and registers it only on success. A folder
 still carrying the marker at startup is the only kind of profile folder

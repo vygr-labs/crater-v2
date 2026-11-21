@@ -254,6 +254,7 @@ qt_add_qml_module(crater
         qml/dialogs/AiDesignDialog.qml
         qml/dialogs/ShortcutsDialog.qml
         qml/dialogs/ProfileExportDialog.qml
+        qml/dialogs/ScheduleFileDialog.qml
         qml/dialogs/ProfileImportDialog.qml
         qml/dialogs/ProfilePickerDialog.qml
         qml/dialogs/LiveMessagesDialog.qml
