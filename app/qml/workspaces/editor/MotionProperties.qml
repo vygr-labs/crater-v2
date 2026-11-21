@@ -47,6 +47,14 @@ Column {
         // A custom curve from a theme file ([x1, y1, x2, y2]).
         return Array.isArray(v) ? qsTr("Custom curve") : String(v)
     }
+    // The lists show labels and hold labels as their value, the way the
+    // settings pickers do, so the open list highlights the current pick.
+    function _valueOf(opts, label) {
+        for (let i = 0; i < opts.length; i++)
+            if (opts[i].label === label) return opts[i].value
+        return label
+    }
+    function _labels(opts) { return opts.map(function(o) { return o.label }) }
 
     // ── Reading and writing data.motion ─────────────────────────────────
     function _motion() {
@@ -134,9 +142,9 @@ Column {
             anchors.left: parent.left
             anchors.right: parent.right
             searchable: false
-            options: pe.editor._typeOptions
+            options: pe.editor._labels(pe.editor._typeOptions)
             value: pe.editor._labelOf(pe.editor._typeOptions, pe.type)
-            onValueSelected: function(v) { pe.editor._setType(pe.key, v) }
+            onValueSelected: function(v) { pe.editor._setType(pe.key, pe.editor._valueOf(pe.editor._typeOptions, v)) }
         }
         Combobox {
             id: edgeBox
@@ -144,10 +152,10 @@ Column {
             anchors.left: parent.left
             anchors.right: parent.right
             searchable: false
-            options: pe.type === "grow" ? pe.editor._growEdgeOptions : pe.editor._edgeOptions
+            options: pe.editor._labels(pe.type === "grow" ? pe.editor._growEdgeOptions : pe.editor._edgeOptions)
             value: pe.editor._labelOf(pe.editor._growEdgeOptions,
                                  (pe.phase && pe.phase.edge) || (pe.type === "slide" ? "bottom" : "left"))
-            onValueSelected: function(v) { pe.editor._setField(pe.key, "edge", v, true) }
+            onValueSelected: function(v) { pe.editor._setField(pe.key, "edge", pe.editor._valueOf(pe.editor._growEdgeOptions, v), true) }
         }
         NumericInput {
             visible: pe.type === "slide"
@@ -188,11 +196,11 @@ Column {
             anchors.left: parent.left
             anchors.right: parent.right
             searchable: false
-            options: pe.editor._easingOptions
+            options: pe.editor._labels(pe.editor._easingOptions)
             value: pe.editor._labelOf(pe.editor._easingOptions,
                                  (pe.phase && pe.phase.easing !== undefined) ? pe.phase.easing
                                                                             : (pe.key === "in" ? "smooth" : "in"))
-            onValueSelected: function(v) { pe.editor._setField(pe.key, "easing", v, true) }
+            onValueSelected: function(v) { pe.editor._setField(pe.key, "easing", pe.editor._valueOf(pe.editor._easingOptions, v), true) }
         }
     }
 
