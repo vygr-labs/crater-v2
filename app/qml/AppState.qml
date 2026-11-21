@@ -708,7 +708,9 @@ QtObject {
     // it can, each part ending (and the next starting) with an ellipsis,
     // and Next steps through the parts before moving to the next verse.
     // When one side has fewer verses or parts, it holds its last one.
-    readonly property int splitPartChars: 180
+    // splitPartChars is Settings > Scripture > Split screen part length;
+    // changing it re-splits what's already built (resplitScripture).
+    readonly property int splitPartChars: SettingsService.splitPartChars
 
     function isSplitItem(item) {
         return !!item && item.kind === "scripture" && !!item.splitRight
@@ -1215,6 +1217,65 @@ QtObject {
             previewSubIndex    = page
         }
         ProjectionService.goLive(next, page)
+    }
+
+    // Split screen part length changed (Main.qml): every split passage in
+    // the schedule, in the Preview and on screen re-breaks its verses. A
+    // schedule that had no unsaved changes is saved again, the same rule
+    // _relayoutScheduleScripture follows. The live one stays on the verse
+    // it was showing, at that verse's first part.
+    function resplitScripture() {
+        const wasClean = !ScheduleService.isDirty
+        const items = ScheduleService.currentItems
+        let changed = false
+        for (let i = 0; i < items.length; i++) {
+            const row = items[i]
+            if (!isSplitItem(row)) continue
+            const next = _resplit(row)
+            if (!next || JSON.stringify(next.pages) === JSON.stringify(row.pages)) continue
+            ScheduleService.replaceItem(i, Object.assign({}, row, { pages: next.pages }))
+            changed = true
+        }
+        if (changed && wasClean && ScheduleService.loadedScheduleId > 0)
+            ScheduleService.saveCurrent()
+        const sel = (selectedScheduleIndex >= 0 && selectedScheduleIndex < ScheduleService.currentItems.length)
+                        ? ScheduleService.currentItems[selectedScheduleIndex] : null
+        if (changed && isSplitItem(sel) && !libraryPreviewItem)
+            previewSubIndex = 0
+
+        const cur = ProjectionService.currentItem
+        let liveNext = null
+        if (isSplitItem(cur)) {
+            const n = _resplit(cur)
+            if (n && JSON.stringify(n.pages) !== JSON.stringify(cur.pages)) {
+                liveNext = Object.assign({}, cur, { pages: n.pages })
+                const was = cur.pages[Math.min(ProjectionService.pageIndex, cur.pages.length - 1)]
+                const verse = String((was && was.label) || "").split(" · ")[0]
+                let page = 0
+                for (let i = 0; i < liveNext.pages.length; i++) {
+                    if (String(liveNext.pages[i].label).split(" · ")[0] === verse) { page = i; break }
+                }
+                liveSubIndex = page
+                if (libraryLiveActive && libraryPreviewItem && libraryPreviewItem.title === cur.title) {
+                    libraryPreviewItem = liveNext
+                    previewSubIndex    = page
+                }
+                ProjectionService.goLive(liveNext, page)
+            }
+        }
+        // A split staged in the Preview from the library, not live.
+        if (isSplitItem(libraryPreviewItem) && libraryPreviewItem !== liveNext) {
+            const n = _resplit(libraryPreviewItem)
+            if (n && JSON.stringify(n.pages) !== JSON.stringify(libraryPreviewItem.pages)) {
+                libraryPreviewItem = Object.assign({}, libraryPreviewItem, { pages: n.pages })
+                previewSubIndex = 0
+            }
+        }
+    }
+
+    function _resplit(item) {
+        const sides = splitSides(item)
+        return (sides && sides.left && sides.right) ? buildSplitItem(sides.left, sides.right) : null
     }
 
     // The passage `item` holds, rebuilt under the current settings, from the

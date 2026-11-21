@@ -30,6 +30,7 @@ const QList<KeySpec>& specs()
         { "Settings/defaultScriptureVersion",   Kind::String },
         { "Settings/showVerseNumbers",          Kind::Bool   },
         { "Settings/highlightCurrentVerse",     Kind::Bool   },
+        { "Settings/splitPartChars",            Kind::Int    },
         { "Settings/showScriptureFooter",       Kind::Bool   },
         { "Settings/showStrongsTab",            Kind::Bool   },
         { "Settings/showSongAuthor",            Kind::Bool   },

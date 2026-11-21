@@ -171,6 +171,12 @@ private:
     // time (it bakes the per-verse pages), so a change applies to the next
     // projected passage. Default off (it changes multi-verse nav granularity).
     Q_PROPERTY(bool    highlightCurrentVerse READ highlightCurrentVerse WRITE setHighlightCurrentVerse NOTIFY highlightCurrentVerseChanged)
+    // Split screen scripture: the longest a verse part may be, in
+    // characters, before the verse breaks into another part with an
+    // ellipsis (AppState.splitVerseParts). Shorter parts read larger on
+    // screen. Clamped to 80..500; default 180. Changing it re-splits the
+    // split passages in the schedule and on screen (Main.qml).
+    Q_PROPERTY(int     splitPartChars READ splitPartChars WRITE setSplitPartChars NOTIFY splitPartCharsChanged)
     // Render a reference line (book chapter:verse) at the bottom of scripture
     // slides. A render-time overlay in ProjectionContentLayer honors this
     // regardless of whether the active theme authored its own reference node,
@@ -313,6 +319,7 @@ public:
     QString defaultScriptureVersion() const;
     bool    showVerseNumbers() const;
     bool    highlightCurrentVerse() const;
+    int     splitPartChars() const;
     bool    showScriptureFooter() const;
     bool    showStrongsTab() const;
     QString scriptureInputMode() const;
@@ -364,6 +371,7 @@ public:
     void setDefaultScriptureVersion(const QString& code);
     void setShowVerseNumbers(bool v);
     void setHighlightCurrentVerse(bool v);
+    void setSplitPartChars(int v);
     void setShowScriptureFooter(bool v);
     void setShowStrongsTab(bool v);
     void setScriptureInputMode(const QString& mode);
@@ -429,6 +437,7 @@ signals:
     void defaultScriptureVersionChanged();
     void showVerseNumbersChanged();
     void highlightCurrentVerseChanged();
+    void splitPartCharsChanged();
     void showScriptureFooterChanged();
     void showStrongsTabChanged();
     void scriptureInputModeChanged();

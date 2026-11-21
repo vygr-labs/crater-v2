@@ -160,6 +160,7 @@ struct SettingsService::Impl
     // Auto-advance defaults: off, 20 s between slides, no looping.
     bool    autoAdvance      = false;
     int     autoAdvanceDelay = 20;
+    int     splitPartChars   = 180;
     bool    autoAdvanceLoop  = false;
     // "contain" (letterbox) is the safe default — it never crops content the
     // operator might not know is being clipped. Cover/stretch are opt-in.
@@ -229,6 +230,7 @@ struct SettingsService::Impl
     static constexpr const char* kShowSongCcli   = "Settings/showSongCcli";
     static constexpr const char* kAutoAdvance      = "Settings/autoAdvance";
     static constexpr const char* kAutoAdvanceDelay = "Settings/autoAdvanceDelaySeconds";
+    static constexpr const char* kSplitPartChars   = "Settings/splitPartChars";
     static constexpr const char* kAutoAdvanceLoop  = "Settings/autoAdvanceLoop";
     static constexpr const char* kMediaDefaultFit = "Settings/mediaDefaultFit";
     static constexpr const char* kMediaVolume     = "Settings/mediaVolume";
@@ -291,6 +293,7 @@ SettingsService::SettingsService(QObject* parent)
     m_impl->showSongCcli   = m_impl->get(Impl::kShowSongCcli, m_impl->showSongCcli).toBool();
     m_impl->autoAdvance      = m_impl->get(Impl::kAutoAdvance, m_impl->autoAdvance).toBool();
     m_impl->autoAdvanceDelay = m_impl->get(Impl::kAutoAdvanceDelay, m_impl->autoAdvanceDelay).toInt();
+    m_impl->splitPartChars   = qBound(80, m_impl->get(Impl::kSplitPartChars, m_impl->splitPartChars).toInt(), 500);
     m_impl->autoAdvanceLoop  = m_impl->get(Impl::kAutoAdvanceLoop, m_impl->autoAdvanceLoop).toBool();
     m_impl->mediaDefaultFit = m_impl->get(Impl::kMediaDefaultFit, m_impl->mediaDefaultFit).toString();
     m_impl->mediaVolume     = qBound(0.0, m_impl->get(Impl::kMediaVolume, m_impl->mediaVolume).toDouble(), 1.0);
@@ -362,6 +365,7 @@ bool    SettingsService::ndiStartOnLaunch() const  { return m_impl->ndiStartOnLa
 QString SettingsService::defaultScriptureVersion() const { return m_impl->defaultScriptureVersion; }
 bool    SettingsService::showVerseNumbers() const  { return m_impl->showVerseNums; }
 bool    SettingsService::highlightCurrentVerse() const { return m_impl->highlightVerse; }
+int     SettingsService::splitPartChars() const    { return m_impl->splitPartChars; }
 bool    SettingsService::showScriptureFooter() const { return m_impl->showScriptureFooter; }
 bool    SettingsService::showStrongsTab() const    { return m_impl->showStrongs; }
 QString SettingsService::scriptureInputMode() const { return m_impl->scriptureInputMode; }
@@ -714,6 +718,17 @@ void SettingsService::setAutoAdvance(bool v)
     m_impl->autoAdvance = v;
     m_impl->put(Impl::kAutoAdvance, v);
     emit autoAdvanceChanged();
+}
+
+void SettingsService::setSplitPartChars(int v)
+{
+    // Below 80 a part is a phrase and a verse runs to a dozen pages; above
+    // 500 the longest verses stop breaking at all.
+    const int clamped = qBound(80, v, 500);
+    if (m_impl->splitPartChars == clamped) return;
+    m_impl->splitPartChars = clamped;
+    m_impl->put(Impl::kSplitPartChars, clamped);
+    emit splitPartCharsChanged();
 }
 
 void SettingsService::setAutoAdvanceDelaySeconds(int v)

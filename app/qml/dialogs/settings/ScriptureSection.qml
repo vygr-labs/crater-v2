@@ -11,7 +11,14 @@ Item {
 
     // All rows read/write SettingsService directly (defaultScriptureVersion,
     // showVerseNumbers, highlightCurrentVerse, showScriptureFooter,
-    // showStrongsTab).
+    // showStrongsTab, splitPartChars).
+
+    // Split screen part length presets, in characters. A value set some
+    // other way (a profile import) still shows, as its own label.
+    readonly property var _splitLengths: [100, 140, 180, 220, 260, 320, 400]
+    function _splitLabel(n) {
+        return n === 180 ? qsTr("%1 characters (default)").arg(n) : qsTr("%1 characters").arg(n)
+    }
 
     Flickable {
         anchors.fill: parent
@@ -73,6 +80,27 @@ Item {
                 ToggleSwitch {
                     value: SettingsService.highlightCurrentVerse
                     onToggled: SettingsService.highlightCurrentVerse = !SettingsService.highlightCurrentVerse }
+            }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
+
+            // Split screen: how long a verse part may get before the verse
+            // breaks into another part. Presets rather than a slider, since
+            // every change re-splits the schedule (AppState.resplitScripture).
+            SettingRow {
+                title: qsTr("Split screen part length")
+                description: qsTr("How much of a long verse each side shows before it continues on the next slide. Shorter parts read larger")
+                Combobox {
+                    width: 200
+                    searchable: false
+                    options: root._splitLengths.map(function(n) { return root._splitLabel(n) })
+                    value: root._splitLabel(SettingsService.splitPartChars)
+                    // By position, not by parsing the label: a translated
+                    // label may not start with the number.
+                    onValueSelected: function(v) {
+                        const i = options.indexOf(v)
+                        if (i >= 0) SettingsService.splitPartChars = root._splitLengths[i]
+                    }
+                }
             }
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.color.borderSubtle }
 

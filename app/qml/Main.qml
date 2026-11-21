@@ -69,6 +69,10 @@ ApplicationWindow {
         function onHighlightCurrentVerseChanged() {
             AppState.relayoutScripture()
         }
+        // Split passages re-break their verses at the new part length.
+        function onSplitPartCharsChanged() {
+            AppState.resplitScripture()
+        }
     }
 
     // ── SongService → AppState glue ─────────────────────────────────────
