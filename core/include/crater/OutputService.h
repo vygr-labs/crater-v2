@@ -102,7 +102,7 @@ public:
     // with an empty id — callers can spot the miss by checking id.isEmpty().
     Q_INVOKABLE crater::OutputBinding output(const QString& id) const;
 
-    // Per-kind theme pin. kind ∈ {"song","scripture","presentation"};
+    // Per-kind theme pin. kind ∈ {"song","scripture","presentation","strongs"};
     // unknown kinds read/write as 0 (no override). themeId = 0 clears the
     // pin so the resolver falls through to ThemeService::defaultFor(kind).
     Q_INVOKABLE int  themeIdFor(const QString& outputId, const QString& kind) const;

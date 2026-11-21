@@ -257,6 +257,7 @@ ModalShell {
     function themeKindLabel(kind) {
         if (kind === "song")      return qsTr("Song theme")
         if (kind === "scripture") return qsTr("Scripture theme")
+        if (kind === "strongs")   return qsTr("Strong's theme")
         return qsTr("Presentation theme")
     }
 

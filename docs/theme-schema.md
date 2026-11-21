@@ -34,7 +34,7 @@ it reads as a theme with exactly one layout.
 ```jsonc
 {
   "name": "Aurora Scripture",                 // required, non-empty
-  "kind": "scripture",                        // required: song | scripture | presentation
+  "kind": "scripture",                        // required: song | scripture | presentation | strongs
   "tokens": {
     "version": 3,                             // required, exactly 3
     "canvas": { "width": 1920, "height": 1080 },   // required, both > 0
@@ -196,7 +196,7 @@ shows a picture.
 
 | Field        | Required | Type / values                                          |
 |--------------|----------|--------------------------------------------------------|
-| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `presentationTitle` \| `presentationSubtitle` \| `presentationBody` \| `presentationBodyRight` \| `custom` |
+| `linkage`    | **yes**  | `scriptureRef` \| `scriptureText` \| `lyric` \| `presentationTitle` \| `presentationSubtitle` \| `presentationBody` \| `presentationBodyRight` \| `songCredits` \| `strongsWord` \| `strongsPartOfSpeech` \| `strongsText` \| `strongsPage` \| `custom` |
 | `text`       | when `custom` | string (the literal text to show)                 |
 | `autoResize` | no       | boolean — binary-search shrink-to-fit the box          |
 | `maxFontSize`| no       | integer `> 0` — cap when `autoResize` is true          |
@@ -211,7 +211,20 @@ shows a picture.
 - `presentationSubtitle` → the slide's subtitle. A title slide's second line.
 - `presentationBody` → the current slide's body text.
 - `presentationBodyRight` → the slide's second column, for a two-column design.
+- `songCredits` → a song's author and CCLI line, per Settings > Song.
+- `strongsWord` → a Strong's entry's number, original word and transliteration
+  ("G26 · ἀγάπη (agápē)").
+- `strongsPartOfSpeech` → the entry's part of speech ("Noun, feminine"). Can be empty.
+- `strongsText` → the page of the entry on screen. A long entry runs over
+  several pages.
+- `strongsPage` → where that page is in the entry ("1 / 3"). Empty for a
+  one-page entry.
 - `custom` → the literal `data.text`.
+
+A `strongs` theme is what the Strong's tab projects (its own kind since app
+schema v15). Its `scriptureRef` and `scriptureText` resolve to the word and the
+page text, the same as `strongsWord` and `strongsText`, so a scripture design
+copied into a Strong's theme renders an entry as it did before the kind existed.
 
 > Which of these a layout binds is what decides **which fields the slide editor
 > offers** for a slide on that design. That is derived by scanning the layout's

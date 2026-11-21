@@ -81,13 +81,6 @@ Item {
     property string selRef: ""    // "H430" / "G2424"
     readonly property var selEntry: selRef.length > 0 ? StrongsService.lookup(selRef) : null
 
-    function _themeId() {
-        var t = ThemeService.defaultFor("strongs")
-        if (t && t.id) return t.id
-        var s = ThemeService.defaultFor("scripture")
-        return (s && s.id) ? s.id : 0
-    }
-
     function buildItemForWord(ref) {
         var e = StrongsService.lookup(ref)
         if (!e.valid) return null
@@ -102,7 +95,6 @@ Item {
             title:      e.title,
             subtitle:   e.partOfSpeech || "",
             pages:      pages,
-            themeId:    root._themeId(),
             strongsRef: { word: e.word }
         }
     }

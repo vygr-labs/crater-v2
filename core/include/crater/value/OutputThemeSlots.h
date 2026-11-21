@@ -21,11 +21,13 @@ struct OutputThemeSlots
     Q_PROPERTY(int song         MEMBER song)
     Q_PROPERTY(int scripture    MEMBER scripture)
     Q_PROPERTY(int presentation MEMBER presentation)
+    Q_PROPERTY(int strongs      MEMBER strongs)
 
 public:
     int song         = 0;
     int scripture    = 0;
     int presentation = 0;
+    int strongs      = 0;
 
     bool operator==(const OutputThemeSlots&) const = default;
 };

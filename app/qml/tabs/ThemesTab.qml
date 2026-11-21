@@ -20,9 +20,15 @@ Item {
 
     // ── Filter + defaults state ─────────────────────────────────────────
     // kindFilter narrows the grid to a single kind ("song" | "scripture" |
-    // "presentation") or shows everything ("all"). Local to the tab; resets
-    // on app restart.
+    // "presentation" | "strongs") or shows everything ("all"). Local to the
+    // tab; resets on app restart.
     property string kindFilter: "all"
+
+    // Strong's themes only matter to someone who uses Strong's. With the
+    // Strong's tab turned off (Settings > General) they stay out of the
+    // grid, the chips and the New theme menu.
+    readonly property bool _showStrongs: SettingsService.showStrongsTab
+    on_ShowStrongsChanged: if (!_showStrongs && kindFilter === "strongs") kindFilter = "all"
 
     // Mirror of the per-kind default theme id, cached so each tile's PRIMARY
     // badge rebinds on ThemeService.defaultsChanged without polling
@@ -31,13 +37,14 @@ Item {
     // is labelled PRIMARY and the flyout's "Primary HDMI" option writes it.
     // Also refreshed on allThemesChanged because deleting the active default
     // shifts the resolver to the next theme of that kind.
-    property var _defaultIds: ({ song: 0, scripture: 0, presentation: 0 })
+    property var _defaultIds: ({ song: 0, scripture: 0, presentation: 0, strongs: 0 })
 
     function _refreshDefaults() {
         _defaultIds = {
             song:         ThemeService.defaultFor("song").id         || 0,
             scripture:    ThemeService.defaultFor("scripture").id    || 0,
-            presentation: ThemeService.defaultFor("presentation").id || 0
+            presentation: ThemeService.defaultFor("presentation").id || 0,
+            strongs:      ThemeService.defaultFor("strongs").id      || 0
         }
     }
 
@@ -59,7 +66,9 @@ Item {
         const all  = ThemeService.allThemes
         const q    = _searchQuery
         const kind = kindFilter
+        const strongs = _showStrongs
         return all.filter(function(t) {
+            if (!strongs && t.kind === "strongs") return false
             if (kind !== "all" && t.kind !== kind) return false
             if (q.length > 0 && t.name.toLowerCase().indexOf(q) < 0) return false
             return true
@@ -264,6 +273,13 @@ Item {
             active: root.kindFilter === "presentation"
             onClicked: root.kindFilter = "presentation"
         }
+        GhostButton {
+            visible: root._showStrongs
+            text: qsTr("Strong's")
+            iconName: Theme.scheduleKindIcon("strongs")
+            active: root.kindFilter === "strongs"
+            onClicked: root.kindFilter = "strongs"
+        }
     }
 
     Row {
@@ -399,7 +415,11 @@ Item {
                         { label: qsTr("Presentation theme"),
                           iconName: Theme.scheduleKindIcon("presentation"),
                           action: function() { AppState.openThemeEditor(-1, "presentation") } }
-                    ],
+                    ].concat(root._showStrongs ? [
+                        { label: qsTr("Strong's theme"),
+                          iconName: Theme.scheduleKindIcon("strongs"),
+                          action: function() { AppState.openThemeEditor(-1, "strongs") } }
+                    ] : []),
                     { dx: -220 })
             }
         }

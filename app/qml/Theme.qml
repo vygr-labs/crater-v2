@@ -1160,6 +1160,7 @@ QtObject {
             case "video":        return color.typeVideo
             case "pdf":          return color.typeSermon   // PDFs commonly carry sermon notes — share the sermon tint
             case "presentation": return color.typeSermon
+            case "strongs":      return color.typeScripture
             default:             return color.textSecondary
         }
     }
@@ -1174,6 +1175,7 @@ QtObject {
             case "video":        return "video"
             case "pdf":          return "file-text"
             case "presentation": return "presentation"
+            case "strongs":      return "book-text"
             default:             return "list"
         }
     }

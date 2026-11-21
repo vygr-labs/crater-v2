@@ -213,6 +213,13 @@ Item {
         if (!layerItem) return ""
         return layerItem.title || layerItem.reference || ""
     }
+    // Where the page on screen sits in the item ("1 / 3"), for a Strong's
+    // entry that runs over several pages. Empty for a one-page item.
+    readonly property string _pageCounter: {
+        const pages = (layerItem && layerItem.pages) || []
+        if (pages.length < 2) return ""
+        return (Math.min(layerPage, pages.length - 1) + 1) + " / " + pages.length
+    }
 
     // A presentation slide's heading, read off the SAME pages array every
     // other kind uses -- pages[i].title alongside pages[i].content. Nothing
@@ -292,6 +299,10 @@ Item {
             case "presentationSubtitle":  return _slideSubtitle
             case "presentationBodyRight": return _slideBodyRight
             case "songCredits":       return _songCreditsText
+            case "strongsWord":         return _refText
+            case "strongsPartOfSpeech": return (layerItem && layerItem.subtitle) || ""
+            case "strongsText":         return _pageText
+            case "strongsPage":         return _pageCounter
             case "custom":            return data.text || ""
         }
         return data.text || ""

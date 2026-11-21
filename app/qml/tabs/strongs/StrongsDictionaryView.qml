@@ -43,15 +43,9 @@ Item {
         (selIndex >= 0 && selIndex < results.length) ? results[selIndex] : null
 
     // ── Item building (projectable strongs slides) ──────────────────────
-    // strongs has no dedicated theme kind yet, so fall back to the scripture
-    // default — its reference node renders the word title, its body node the
-    // definition text. A future dedicated "strongs" theme is picked up first.
-    function _themeId() {
-        var t = ThemeService.defaultFor("strongs")
-        if (t && t.id) return t.id
-        var s = ThemeService.defaultFor("scripture")
-        return (s && s.id) ? s.id : 0
-    }
+    // No per-item theme: a Strong's entry resolves like any other item
+    // (AppState.resolveItemTheme), to the output's Strong's theme or the
+    // Strong's default.
 
     function buildItem(entry) {
         if (!entry || !entry.valid) return null
@@ -66,7 +60,6 @@ Item {
             title:      entry.title,
             subtitle:   entry.partOfSpeech || "",
             pages:      pages,
-            themeId:    root._themeId(),
             strongsRef: { word: entry.word }
         }
     }
