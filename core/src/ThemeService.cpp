@@ -2176,4 +2176,9 @@ qint64 ThemeService::importThemeJsonFile(QString filePath)
     }
 }
 
+void ThemeService::reload()
+{
+    invalidateCache();
+}
+
 }  // namespace crater

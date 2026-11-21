@@ -230,6 +230,11 @@ public:
     // Returns the new id, or 0 on failure.
     Q_INVOKABLE qint64 duplicateTheme(qint64 id, QString newName);
 
+    // Re-read the library after another connection wrote to it (opening a
+    // schedule file merges its themes, media, songs and decks into this
+    // profile's databases from a worker thread; see ProfileService).
+    void reload();
+
 signals:
     void allThemesChanged();
     // Fires when a default-for-kind selection changes. Separate from

@@ -151,6 +151,11 @@ public:
     // signals: the UI is being torn down. Returns true when it cleared.
     bool clearWorkingOnShutdown();
 
+    // Re-read the library after another connection wrote to it (opening a
+    // schedule file merges its themes, media, songs and decks into this
+    // profile's databases from a worker thread; see ProfileService).
+    void reload();
+
 signals:
     void currentItemsChanged();
     void savedSchedulesChanged();

@@ -651,4 +651,11 @@ void ScheduleService::writeHistoryBackup()
     }
 }
 
+void ScheduleService::reload()
+{
+    if (!m_impl) return;
+    m_impl->savedCache.reset();
+    emit savedSchedulesChanged();
+}
+
 }  // namespace crater

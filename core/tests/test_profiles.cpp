@@ -292,6 +292,79 @@ private:
         return p;
     }
 
+    // ── Schedule files (.craterschedule) ────────────────────────────────
+    // A source profile with things the schedule uses and things it does
+    // not, and the items of a schedule over it.
+    struct SchedSource {
+        Seeded     s;
+        qint64     deckId = 0;
+        qint64     photoId = 0;      // a picture only the schedule shows
+        QByteArray photoBytes;
+        QJsonArray items;
+    };
+    SchedSource seedScheduleSource(const QString& src)
+    {
+        SchedSource x;
+        x.s = seedProfile(src);
+        x.photoBytes = fakePng("photo-only-in-schedule");
+        const QString photoPath = QDir(DbPaths::mediaDirIn(src)).filePath("photo.png");
+        writeFile(photoPath, x.photoBytes);
+        const QString unusedPath = QDir(DbPaths::mediaDirIn(src)).filePath("unused.png");
+        writeFile(unusedPath, fakePng("never-in-a-schedule"));
+        {
+            Connection app(DbPaths::appDbPathIn(src));
+            auto m = app.prepare(QStringLiteral(
+                "INSERT INTO media (path, title, type, is_favorite, added_at, page_count, fit_mode) "
+                "VALUES (?, ?, 'image', 0, 1000, 1, 'cover')"));
+            m.bind(1, photoPath); m.bind(2, QStringLiteral("Photo")); m.step();
+            x.photoId = app.lastInsertRowId();
+            m.reset();
+            m.bind(1, unusedPath); m.bind(2, QStringLiteral("Unused")); m.step();
+            app.exec(QStringLiteral(
+                "INSERT INTO themes (kind, name, tokens_json, is_builtin, tokens_version, created_at, updated_at) "
+                "VALUES ('scripture', 'Unused Theme', '{\"version\":2,\"canvas\":{\"width\":1920,\"height\":1080},\"nodes\":[]}', 0, 2, 1, 1)"));
+            x.deckId = scalar(app, QStringLiteral("SELECT id FROM presentations WHERE title = 'Welcome deck'"));
+        }
+        {
+            Connection songs(DbPaths::songsDbPathIn(src));
+            songs.exec(QStringLiteral(
+                "INSERT INTO songs (title, author, is_favorite, created_at, updated_at) "
+                "VALUES ('Unused Song', '', 0, 1, 1)"));
+        }
+        const QJsonArray onePage{ QJsonObject{ { "label", "" }, { "content", "" } } };
+        x.items = QJsonArray{
+            QJsonObject{ { "kind", "song" }, { "title", "Amazing Grace" }, { "songId", x.s.songId },
+                         { "themeId", x.s.themeId },
+                         { "pages", QJsonArray{ QJsonObject{ { "label", "Verse 1" }, { "content", "x" } } } } },
+            QJsonObject{ { "kind", "presentation" }, { "title", "Welcome deck" },
+                         { "presentationId", x.deckId }, { "pages", onePage } },
+            QJsonObject{ { "kind", "image" }, { "title", "Photo" }, { "mediaId", x.photoId },
+                         { "mediaPath", photoPath }, { "pages", onePage } },
+            QJsonObject{ { "kind", "image" }, { "title", "Sunrise" }, { "mediaId", x.s.mediaId },
+                         { "mediaPath", x.s.mediaPath }, { "pages", onePage } },
+        };
+        return x;
+    }
+
+    profile::ExportResult exportSched(const QString& src, const QJsonArray& items,
+                                      bool includeMedia, const QString& dest)
+    {
+        profile::ScheduleExport e;
+        e.name = QStringLiteral("Sunday PM");
+        e.itemsJson = QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact));
+        e.includeMedia = includeMedia;
+        return profile::exportSchedule(src, e, dest, staging());
+    }
+
+    static QJsonArray scheduleItems(Connection& c, qint64 id)
+    {
+        auto st = c.prepare(QStringLiteral("SELECT items_json FROM schedules WHERE id = ?"));
+        st.bind(1, id);
+        const QString json = st.step() ? st.columnText(0) : QString();
+        st.reset();
+        return QJsonDocument::fromJson(json.toUtf8()).array();
+    }
+
 private slots:
     void initTestCase()
     {
@@ -893,6 +966,146 @@ private slots:
         }
         // Done once: nothing left to merge.
         QCOMPARE(profile::consolidateProfileBibles(), 0);
+    }
+
+    void testScheduleFileCarriesOnlyWhatItUses()
+    {
+        const QString src = root(QStringLiteral("sched-src"));
+        const SchedSource x = seedScheduleSource(src);
+        const QString file = root(QStringLiteral("sunday.craterschedule"));
+        const auto ex = exportSched(src, x.items, true, file);
+        QVERIFY2(ex.ok, qPrintable(ex.error));
+
+        const profile::ArchiveInfo info = profile::inspectArchive(file);
+        QVERIFY2(info.ok, qPrintable(info.error));
+        QVERIFY(info.isSchedule);
+        QCOMPARE(info.scheduleName, QStringLiteral("Sunday PM"));
+        // A plain profile export is not a schedule file.
+        const QString prof = root(QStringLiteral("whole.craterprofile"));
+        QVERIFY(profile::exportArchive(src, QStringLiteral("P"), profile::kAllParts, prof, staging()).ok);
+        QVERIFY(!profile::inspectArchive(prof).isSchedule);
+
+        const QString dst = root(QStringLiteral("sched-dst"));
+        QString err;
+        QVERIFY2(profile::initProfileRoot(dst, &err), qPrintable(err));
+        const auto kvNow = [&]() {
+            Connection c(DbPaths::appDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+            return scalarText(c, QStringLiteral("SELECT group_concat(key || '=' || value, ';') FROM "
+                                                "(SELECT key, value FROM kv ORDER BY key)"));
+        };
+        const QString kvBefore = kvNow();
+        const auto im = profile::importArchive(file, profile::kSchedulePartMask, dst, false, staging());
+        QVERIFY2(im.ok, qPrintable(im.error));
+        QCOMPARE(im.scheduleIds.size(), 1);
+
+        Connection app(DbPaths::appDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+        Connection songs(DbPaths::songsDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+        // Only what the schedule uses came across.
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM themes WHERE is_builtin = 0")), 1);
+        QCOMPARE(scalarText(app, QStringLiteral("SELECT name FROM themes WHERE is_builtin = 0")),
+                 QStringLiteral("Sunrise Theme"));
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM media")), 2);   // photo + sunrise
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM media WHERE title = 'Unused'")), 0);
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM presentations")), 1);
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM schedules")), 1);
+        QCOMPARE(scalarText(app, QStringLiteral("SELECT name FROM schedules")), QStringLiteral("Sunday PM"));
+        QCOMPARE(scalar(songs, QStringLiteral("SELECT count(*) FROM songs")), 1);
+        QCOMPARE(scalar(songs, QStringLiteral("SELECT count(*) FROM collections")), 0);
+        // This profile's defaults are untouched.
+        QCOMPARE(kvNow(), kvBefore);
+
+        // Every id in the items points at the row it became here.
+        const QJsonArray items = scheduleItems(app, im.scheduleIds.first());
+        QCOMPARE(items.size(), 4);
+        const qint64 songId  = scalar(songs, QStringLiteral("SELECT id FROM songs"));
+        const qint64 themeId = scalar(app, QStringLiteral("SELECT id FROM themes WHERE name = 'Sunrise Theme'"));
+        const qint64 deckId  = scalar(app, QStringLiteral("SELECT id FROM presentations"));
+        const qint64 photoId = scalar(app, QStringLiteral("SELECT id FROM media WHERE title = 'Photo'"));
+        QCOMPARE(items[0].toObject().value("songId").toVariant().toLongLong(), songId);
+        QCOMPARE(items[0].toObject().value("themeId").toVariant().toLongLong(), themeId);
+        QCOMPARE(items[1].toObject().value("presentationId").toVariant().toLongLong(), deckId);
+        QCOMPARE(items[2].toObject().value("mediaId").toVariant().toLongLong(), photoId);
+        const QString photoPath = items[2].toObject().value("mediaPath").toString();
+        QCOMPARE(readFile(DbPaths::relocate(photoPath, DbPaths::mediaDirIn(dst))), x.photoBytes);
+    }
+
+    void testScheduleFileWithoutMediaMatchesOrDrops()
+    {
+        const QString src = root(QStringLiteral("sched-src2"));
+        const SchedSource x = seedScheduleSource(src);
+        const QString file = root(QStringLiteral("small.craterschedule"));
+        QVERIFY(exportSched(src, x.items, false, file).ok);
+
+        // The photo's bytes stay out of the file. Sunrise stays in: the
+        // theme and the deck show it.
+        {
+            ZipReader zip(file);
+            int media = 0;
+            for (const QString& n : zip.entryNames())
+                if (n.startsWith(QLatin1String("media/"))) ++media;
+            QCOMPARE(media, 1);
+        }
+
+        // A computer without the photo: its row is left out, with a note.
+        const QString bare = root(QStringLiteral("sched-bare"));
+        QString err;
+        QVERIFY(profile::initProfileRoot(bare, &err));
+        const auto a = profile::importArchive(file, profile::kSchedulePartMask, bare, false, staging());
+        QVERIFY2(a.ok, qPrintable(a.error));
+        QVERIFY(a.warnings.join("\n").contains(QLatin1String("Photo")));
+        {
+            Connection app(DbPaths::appDbPathIn(bare), crater::db::OpenMode::ReadOnly);
+            const QJsonArray items = scheduleItems(app, a.scheduleIds.first());
+            QCOMPARE(items.size(), 3);
+            for (const QJsonValue& v : items)
+                QVERIFY(v.toObject().value("title").toString() != QLatin1String("Photo"));
+            QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM media WHERE title = 'Photo'")), 0);
+        }
+
+        // A computer that has the same photo in its library: it is used.
+        const QString has = root(QStringLiteral("sched-has"));
+        QVERIFY(profile::initProfileRoot(has, &err));
+        const QString theirs = QDir(DbPaths::mediaDirIn(has)).filePath("their-copy.png");
+        QVERIFY(writeFile(theirs, x.photoBytes));
+        qint64 theirId = 0;
+        {
+            Connection app(DbPaths::appDbPathIn(has));
+            auto m = app.prepare(QStringLiteral(
+                "INSERT INTO media (path, title, type, is_favorite, added_at, page_count, fit_mode) "
+                "VALUES (?, 'Their copy', 'image', 0, 1000, 1, 'cover')"));
+            m.bind(1, theirs);
+            m.step();
+            theirId = app.lastInsertRowId();
+        }
+        const auto b = profile::importArchive(file, profile::kSchedulePartMask, has, false, staging());
+        QVERIFY2(b.ok, qPrintable(b.error));
+        QVERIFY(!b.warnings.join("\n").contains(QLatin1String("Photo")));
+        Connection app(DbPaths::appDbPathIn(has), crater::db::OpenMode::ReadOnly);
+        const QJsonArray items = scheduleItems(app, b.scheduleIds.first());
+        QCOMPARE(items.size(), 4);
+        QCOMPARE(items[2].toObject().value("mediaId").toVariant().toLongLong(), theirId);
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM media WHERE title = 'Photo'")), 0);
+    }
+
+    void testScheduleFileOpenedTwiceMatches()
+    {
+        const QString src = root(QStringLiteral("sched-src3"));
+        const SchedSource x = seedScheduleSource(src);
+        const QString file = root(QStringLiteral("twice.craterschedule"));
+        QVERIFY(exportSched(src, x.items, true, file).ok);
+        const QString dst = root(QStringLiteral("sched-twice"));
+        QString err;
+        QVERIFY(profile::initProfileRoot(dst, &err));
+        const auto first = profile::importArchive(file, profile::kSchedulePartMask, dst, false, staging());
+        const auto again = profile::importArchive(file, profile::kSchedulePartMask, dst, false, staging());
+        QVERIFY(first.ok && again.ok);
+        QCOMPARE(again.scheduleIds, first.scheduleIds);
+        QCOMPARE(again.added.value("schedules").toLongLong(), 0);
+        QCOMPARE(again.added.value("songs").toLongLong(), 0);
+        QCOMPARE(again.added.value("themes").toLongLong(), 0);
+        QCOMPARE(again.added.value("media").toLongLong(), 0);
+        Connection app(DbPaths::appDbPathIn(dst), crater::db::OpenMode::ReadOnly);
+        QCOMPARE(scalar(app, QStringLiteral("SELECT count(*) FROM schedules")), 1);
     }
 
     void testDuplicateRebasesPathsOntoTheCopy()

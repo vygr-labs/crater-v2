@@ -548,9 +548,121 @@ bool duplicateProfileData(const QString& sourceRoot, const QString& destRoot,
 // Export
 // ═══════════════════════════════════════════════════════════════════════
 
+namespace {
+
+// Every positive integer under `key` anywhere in a JSON tree.
+void collectIds(const QJsonValue& v, const QString& key, QSet<qint64>& out)
+{
+    if (v.isArray()) {
+        for (const QJsonValue& e : v.toArray()) collectIds(e, key, out);
+        return;
+    }
+    if (!v.isObject()) return;
+    const QJsonObject o = v.toObject();
+    for (auto it = o.begin(); it != o.end(); ++it) {
+        if (it.key() == key) {
+            const qint64 id = it.value().toVariant().toLongLong();
+            if (id > 0) out.insert(id);
+        } else if (it.value().isArray() || it.value().isObject()) {
+            collectIds(it.value(), key, out);
+        }
+    }
+}
+
+// Every fontFamily a theme's tokens name, lowercased.
+void collectFamilies(const QJsonValue& v, QSet<QString>& out)
+{
+    if (v.isArray()) {
+        for (const QJsonValue& e : v.toArray()) collectFamilies(e, out);
+        return;
+    }
+    if (!v.isObject()) return;
+    const QJsonObject o = v.toObject();
+    for (auto it = o.begin(); it != o.end(); ++it) {
+        if (it.key() == QLatin1String("fontFamily") && it.value().isString())
+            out.insert(it.value().toString().trimmed().toLower());
+        else if (it.value().isArray() || it.value().isObject())
+            collectFamilies(it.value(), out);
+    }
+}
+
+// "1,2,3" for an IN (...) list. Ids are integers, so nothing to escape.
+QString idList(const QSet<qint64>& ids)
+{
+    QStringList parts;
+    parts.reserve(ids.size());
+    for (qint64 id : ids) parts.append(QString::number(id));
+    return parts.join(QLatin1Char(','));
+}
+
+// Keep only the rows of `table` whose id is in `keep`.
+void keepOnly(db::Connection& c, const QString& table, const QSet<qint64>& keep)
+{
+    if (keep.isEmpty()) c.exec(QStringLiteral("DELETE FROM %1").arg(table));
+    else c.exec(QStringLiteral("DELETE FROM %1 WHERE id NOT IN (%2)").arg(table, idList(keep)));
+}
+
+bool isScheduleMediaKind(const QString& kind)
+{
+    return kind == QLatin1String("image") || kind == QLatin1String("video")
+        || kind == QLatin1String("pdf");
+}
+
+// The schedule's own references, read from its items before the snapshot
+// is cut down.
+struct ScheduleRefs
+{
+    QJsonArray    items;
+    QSet<qint64>  themes, media, presentations, songs;
+    QSet<qint64>  ownMedia;   // pictures, videos and PDFs placed in the schedule
+};
+
+ScheduleRefs scheduleRefs(const QString& itemsJson)
+{
+    ScheduleRefs refs;
+    const QJsonDocument doc = QJsonDocument::fromJson(itemsJson.toUtf8());
+    refs.items = doc.isArray() ? doc.array() : QJsonArray();
+    collectIds(refs.items, QStringLiteral("themeId"), refs.themes);
+    collectIds(refs.items, QStringLiteral("mediaId"), refs.media);
+    collectIds(refs.items, QStringLiteral("presentationId"), refs.presentations);
+    collectIds(refs.items, QStringLiteral("songId"), refs.songs);
+    for (const QJsonValue& v : refs.items) {
+        const QJsonObject o = v.toObject();
+        if (!isScheduleMediaKind(o.value(QStringLiteral("kind")).toString())) continue;
+        const qint64 id = o.value(QStringLiteral("mediaId")).toVariant().toLongLong();
+        if (id > 0) refs.ownMedia.insert(id);
+    }
+    return refs;
+}
+
+ExportResult exportImpl(const QString& sourceRoot, const QString& profileName,
+                        unsigned parts, const QString& destPath,
+                        const QString& stagingParent, const ProgressFn& progress,
+                        const ScheduleExport* sched);
+
+}  // namespace
+
 ExportResult exportArchive(const QString& sourceRoot, const QString& profileName,
                            unsigned parts, const QString& destPath,
                            const QString& stagingParent, const ProgressFn& progress)
+{
+    return exportImpl(sourceRoot, profileName, parts, destPath, stagingParent, progress, nullptr);
+}
+
+ExportResult exportSchedule(const QString& sourceRoot, const ScheduleExport& schedule,
+                            const QString& destPath, const QString& stagingParent,
+                            const ProgressFn& progress)
+{
+    return exportImpl(sourceRoot, schedule.name, kSchedulePartMask, destPath,
+                      stagingParent, progress, &schedule);
+}
+
+namespace {
+
+ExportResult exportImpl(const QString& sourceRoot, const QString& profileName,
+                        unsigned parts, const QString& destPath,
+                        const QString& stagingParent, const ProgressFn& progress,
+                        const ScheduleExport* sched)
 {
     ExportResult r;
     const auto report = [&](double f, const QString& s) { if (progress) progress(f, s); };
@@ -565,10 +677,32 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
     QList<FileEntry> files;
     QSet<QString>    entryNames;
     QJsonArray       mediaIndex;
+    QJsonArray       linkedIndex;   // schedule media left out of the file
     QJsonArray       fontIndex;
     QJsonObject      counts;
     QJsonObject      schema;
     QByteArray       settingsJson;
+
+    // A schedule file reads its items first, and the themes its songs use,
+    // so the app snapshot below can be cut down to what the schedule needs.
+    ScheduleRefs  schedRefs;
+    QSet<qint64>  songThemes;
+    QSet<qint64>  linkedMedia;
+    if (sched) {
+        schedRefs = scheduleRefs(sched->itemsJson);
+        if (!schedRefs.songs.isEmpty()) {
+            try {
+                db::Connection songs(db::DbPaths::songsDbPathIn(sourceRoot), db::OpenMode::ReadOnly,
+                                     QStringLiteral("ScheduleExport-songs"));
+                auto st = songs.prepare(QStringLiteral("SELECT theme_id FROM songs WHERE id IN (%1)")
+                                            .arg(idList(schedRefs.songs)));
+                while (st.step())
+                    if (st.columnInt64(0) > 0) songThemes.insert(st.columnInt64(0));
+            } catch (const db::Error& e) {
+                qWarning().noquote() << "ProfileArchive::exportSchedule: song themes:" << e.message();
+            }
+        }
+    }
 
     try {
         // ── app.sqlite: themes, fonts, media, presentations, schedules ──
@@ -596,6 +730,65 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                 if (!(parts & PartPresentations)) c.exec(QStringLiteral("DELETE FROM presentations"));
                 if (!(parts & PartSchedules))     c.exec(QStringLiteral("DELETE FROM schedules"));
 
+                // A schedule file: this one schedule and what it uses.
+                if (sched) {
+                    report(0.02, QStringLiteral("Finding what the schedule uses"));
+                    c.exec(QStringLiteral("DELETE FROM kv"));
+                    c.exec(QStringLiteral("DELETE FROM schedules"));
+                    {
+                        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                        auto ins = c.prepare(QStringLiteral(
+                            "INSERT INTO schedules (name, items_json, item_count, created_at, modified_at) "
+                            "VALUES (?, ?, ?, ?, ?)"));
+                        ins.bind(1, sched->name.left(200));
+                        ins.bind(2, compactJson(schedRefs.items));
+                        ins.bind(3, qint64(schedRefs.items.size()));
+                        ins.bind(4, now);
+                        ins.bind(5, now);
+                        ins.step();
+                    }
+
+                    QSet<qint64> themes = schedRefs.themes + songThemes;
+                    QSet<qint64> media  = schedRefs.media;
+                    QSet<qint64> designMedia;   // shown by a kept theme or deck
+
+                    keepOnly(c, QStringLiteral("presentations"), schedRefs.presentations);
+                    {
+                        auto st = c.prepare(QStringLiteral("SELECT theme_id, slides_json FROM presentations"));
+                        while (st.step()) {
+                            if (st.columnInt64(0) > 0) themes.insert(st.columnInt64(0));
+                            const QJsonDocument doc = QJsonDocument::fromJson(st.columnText(1).toUtf8());
+                            if (doc.isArray()) collectIds(doc.array(), QStringLiteral("mediaId"), designMedia);
+                        }
+                    }
+
+                    keepOnly(c, QStringLiteral("themes"), themes);
+                    QSet<QString> families;
+                    {
+                        auto st = c.prepare(QStringLiteral("SELECT tokens_json FROM themes"));
+                        while (st.step()) {
+                            const QJsonDocument doc = QJsonDocument::fromJson(st.columnText(0).toUtf8());
+                            if (!doc.isObject()) continue;
+                            collectIds(doc.object(), QStringLiteral("mediaId"), designMedia);
+                            collectFamilies(doc.object(), families);
+                        }
+                    }
+
+                    media += designMedia;
+                    if (!sched->includeMedia)
+                        linkedMedia = schedRefs.ownMedia - designMedia;
+                    keepOnly(c, QStringLiteral("media"), media);
+
+                    QSet<qint64> fonts;
+                    {
+                        auto st = c.prepare(QStringLiteral("SELECT id, family FROM user_fonts"));
+                        while (st.step())
+                            if (families.contains(st.columnText(1).trimmed().toLower()))
+                                fonts.insert(st.columnInt64(0));
+                    }
+                    keepOnly(c, QStringLiteral("user_fonts"), fonts);
+                }
+
                 // Media files: hash each one, index it by row id, and
                 // replace the row's path with a reference into the archive.
                 if (parts & PartMedia) {
@@ -618,6 +811,22 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                         if (sha.isEmpty()) {
                             r.warnings.append(QStringLiteral("\"%1\" is missing on disk and was left out").arg(row.title));
                             del.reset(); del.bind(1, row.id); del.step();
+                            continue;
+                        }
+                        if (linkedMedia.contains(row.id)) {
+                            // Left out of the file: named by content only, so
+                            // opening it can find a copy already on that
+                            // computer (importArchive, linkedMedia).
+                            linkedIndex.append(QJsonObject{
+                                { QStringLiteral("id"),     row.id },
+                                { QStringLiteral("name"),   QFileInfo(actual).fileName() },
+                                { QStringLiteral("bytes"),  size },
+                                { QStringLiteral("sha256"), sha },
+                            });
+                            upd.reset();
+                            upd.bind(1, QStringLiteral("crater-archive:linked/%1").arg(row.id));
+                            upd.bind(2, row.id);
+                            upd.step();
                             continue;
                         }
                         const QString ext = safeExt(actual);
@@ -746,6 +955,12 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
             db::Connection c(snap, db::OpenMode::ReadWrite, QStringLiteral("ProfileExport-songs"));
             // A theme id only means something with the themes alongside it.
             if (!(parts & PartThemes)) c.exec(QStringLiteral("UPDATE songs SET theme_id = NULL"));
+            // A schedule file carries only the songs it plays, and no
+            // collections (a collection is how this library is organised).
+            if (sched) {
+                keepOnly(c, QStringLiteral("songs"), schedRefs.songs);
+                c.exec(QStringLiteral("DELETE FROM collections"));
+            }
             // The search index is rebuilt on import; shipping it only adds size.
             c.exec(QStringLiteral("INSERT INTO songs_fts(songs_fts) VALUES('delete-all')"));
             counts.insert(QStringLiteral("songs"), countRows(c, QStringLiteral("SELECT count(*) FROM songs")));
@@ -793,7 +1008,7 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
     for (const PartName& p : kPartNames)
         if (parts & p.part) partList.append(QString::fromLatin1(p.key));
 
-    const QJsonObject manifest{
+    QJsonObject manifest{
         { QStringLiteral("kind"),          QString::fromLatin1(kKind) },
         { QStringLiteral("formatVersion"), kArchiveFormatVersion },
         { QStringLiteral("appVersion"),    crater::versionString() },
@@ -805,6 +1020,11 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
         { QStringLiteral("media"),         mediaIndex },
         { QStringLiteral("fonts"),         fontIndex },
     };
+    if (sched) {
+        manifest.insert(QStringLiteral("contents"),     QStringLiteral("schedule"));
+        manifest.insert(QStringLiteral("scheduleName"), sched->name.left(200));
+        manifest.insert(QStringLiteral("linkedMedia"),  linkedIndex);
+    }
 
     // Free space for the archive itself. QSaveFile writes beside the target.
     {
@@ -852,6 +1072,8 @@ ExportResult exportArchive(const QString& sourceRoot, const QString& profileName
                       << files.size() << "files," << totalBytes << "bytes to" << destPath;
     return r;
 }
+
+}  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
 // Inspect
@@ -997,6 +1219,8 @@ ArchiveInfo inspectArchive(const QString& archivePath)
     info.manifest    = m;
     info.parts       = listed & present;
     info.profileName = m.value(QStringLiteral("profileName")).toString().left(200);
+    info.isSchedule   = m.value(QStringLiteral("contents")).toString() == QLatin1String("schedule");
+    info.scheduleName = m.value(QStringLiteral("scheduleName")).toString().left(200);
     info.appVersion  = m.value(QStringLiteral("appVersion")).toString().left(40);
     info.exportedAt  = m.value(QStringLiteral("exportedAt")).toVariant().toLongLong();
     const QJsonObject counts = m.value(QStringLiteral("counts")).toObject();
@@ -1202,6 +1426,22 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                                   o.value(QStringLiteral("sha256")).toString(),
                                   o.value(QStringLiteral("bytes")).toVariant().toLongLong() });
     }
+    // A schedule file's own pictures and videos that were left out of it
+    // (ScheduleExport::includeMedia). Named by content only: one is used
+    // when the same file is already in this media library.
+    QHash<qint64, FileRef> linkedRefs;
+    {
+        static const QRegularExpression shaRe(QStringLiteral("^[0-9a-f]{64}$"));
+        for (const QJsonValue& v : info.manifest.value(QStringLiteral("linkedMedia")).toArray()) {
+            const QJsonObject o = v.toObject();
+            const QString sha = o.value(QStringLiteral("sha256")).toString();
+            const qint64 bytes = o.value(QStringLiteral("bytes")).toVariant().toLongLong();
+            if (!shaRe.match(sha).hasMatch() || bytes < 0) continue;
+            linkedRefs.insert(o.value(QStringLiteral("id")).toVariant().toLongLong(),
+                              FileRef{ QString(), o.value(QStringLiteral("name")).toString().left(260),
+                                       sha, bytes });
+        }
+    }
     for (const QJsonValue& v : info.manifest.value(QStringLiteral("fonts")).toArray()) {
         const QJsonObject o = v.toObject();
         fontRefs.insert(o.value(QStringLiteral("id")).toVariant().toLongLong(),
@@ -1391,7 +1631,16 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                 const QString title = st.columnText(1);
                 const auto ref = mediaRefs.constFind(id);
                 if (ref == mediaRefs.constEnd()) {
-                    r.warnings.append(QStringLiteral("\"%1\" was not in the file").arg(title));
+                    const auto linked = linkedRefs.constFind(id);
+                    if (linked == linkedRefs.constEnd()) {
+                        r.warnings.append(QStringLiteral("\"%1\" was not in the file").arg(title));
+                    } else if (const qint64 existing = existingFor(*linked)) {
+                        mediaMap.insert(id, existing);
+                        addCount(r.skipped, "media", 1);
+                    } else {
+                        r.warnings.append(QStringLiteral("\"%1\" was left out of the file and isn't in this media library")
+                                              .arg(title));
+                    }
                     continue;
                 }
                 doneBytes += ref->bytes;
@@ -1850,11 +2099,18 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
             };
 
             db::Transaction tx(dst);
-            QList<QPair<QString, QString>> have;
+            struct Have { QString name; QString items; qint64 id; };
+            QList<Have> have;
             {
-                auto st = dst.prepare(QStringLiteral("SELECT name, items_json FROM schedules"));
-                while (st.step()) have.append({ st.columnText(0), canonicalJson(st.columnText(1)) });
+                auto st = dst.prepare(QStringLiteral("SELECT name, items_json, id FROM schedules"));
+                while (st.step())
+                    have.append({ st.columnText(0), canonicalJson(st.columnText(1)), st.columnInt64(2) });
             }
+            const auto findHave = [&](const QString& name, const QString& items) -> qint64 {
+                for (const Have& h : have)
+                    if (h.name == name && h.items == items) return h.id;
+                return 0;
+            };
             auto ins = dst.prepare(QStringLiteral(
                 "INSERT INTO schedules (name, items_json, item_count, created_at, modified_at) "
                 "VALUES (?, ?, ?, ?, ?)"));
@@ -1867,10 +2123,28 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                     r.warnings.append(QStringLiteral("Schedule \"%1\" is damaged and was skipped").arg(name));
                     continue;
                 }
-                const QJsonArray items = remapItem(doc.array()).toArray();
+                // A schedule file leaves out a picture, video or PDF it could
+                // not bring (left out of the file and not in this library):
+                // a row with nothing to show would only fail on Go Live. The
+                // media loop above already named each one.
+                QJsonArray source = doc.array();
+                if (info.isSchedule) {
+                    QJsonArray kept;
+                    for (const QJsonValue& v : source) {
+                        const QJsonObject o = v.toObject();
+                        const qint64 mid = o.value(QStringLiteral("mediaId")).toVariant().toLongLong();
+                        if (isScheduleMediaKind(o.value(QStringLiteral("kind")).toString())
+                            && mid > 0 && !mediaMap.contains(mid))
+                            continue;
+                        kept.append(v);
+                    }
+                    source = kept;
+                }
+                const QJsonArray items = remapItem(source).toArray();
                 const QString itemsJson = compactJson(items);
-                if (have.contains(qMakePair(name, itemsJson))) {
+                if (const qint64 same = findHave(name, itemsJson)) {
                     addCount(r.skipped, "schedules", 1);
+                    r.scheduleIds.append(same);
                     continue;
                 }
                 ins.reset();
@@ -1880,7 +2154,9 @@ ImportResult importArchive(const QString& archivePath, unsigned parts,
                 ins.bind(4, st.columnInt64(2));
                 ins.bind(5, st.columnInt64(3));
                 ins.step();
-                have.append(qMakePair(name, itemsJson));
+                const qint64 newId = dst.lastInsertRowId();
+                have.append({ name, itemsJson, newId });
+                r.scheduleIds.append(newId);
                 addCount(r.added, "schedules", 1);
             }
             tx.commit();

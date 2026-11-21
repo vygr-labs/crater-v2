@@ -393,4 +393,24 @@ QString FontService::lastError() const
     return m_lastError;
 }
 
+void FontService::reload()
+{
+    if (!m_impl) return;
+    m_impl->cachedAll.reset();
+    // Same as the startup pass, for rows added since: a theme that names one
+    // of these families renders in it straight away.
+    for (const UserFont& f : allFonts()) {
+        if (m_impl->regIdByDbId.contains(f.id)) continue;
+        QFile file(f.path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            qWarning().noquote() << "FontService::reload: cannot open font" << f.path;
+            continue;
+        }
+        const int id = QFontDatabase::addApplicationFontFromData(file.readAll());
+        if (id >= 0) m_impl->regIdByDbId.insert(f.id, id);
+        else qWarning().noquote() << "FontService::reload: register failed for" << f.path;
+    }
+    emit allFontsChanged();
+}
+
 }  // namespace crater

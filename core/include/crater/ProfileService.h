@@ -131,6 +131,31 @@ public:
     // "<current profile name>.craterprofile", safe as a file name.
     Q_INVOKABLE QString suggestedExportName() const;
 
+    // ── Schedule files (.craterschedule) ────────────────────────────────
+    // One schedule and what it uses (profile::exportSchedule), for moving a
+    // service plan to another computer.
+    //
+    // Save `items` (the working schedule, as ScheduleService holds it)
+    // under `name`. includeMedia false leaves the schedule's own pictures,
+    // videos and PDFs out of the file. Async; reports through
+    // operationFinished("scheduleExport", ...).
+    Q_INVOKABLE bool exportSchedule(QString path, QString name, QVariantList items,
+                                    bool includeMedia);
+
+    // The schedule's own pictures, videos and PDFs, for the save dialog:
+    // { count, bytes }. Read only; stats the files the items point at.
+    Q_INVOKABLE QVariantMap scheduleMediaSize(QVariantList items) const;
+
+    // Merge a schedule file into the current profile: its themes, songs,
+    // decks, pictures and fonts are added (or matched to ones already
+    // here), then librariesChanged() tells the running services to re-read.
+    // Async; reports through operationFinished("scheduleOpen", ...) with
+    // details.scheduleId, the schedule to load, and details.scheduleName.
+    Q_INVOKABLE bool openScheduleFile(QString path);
+
+    // "<name>.craterschedule", safe as a file name.
+    Q_INVOKABLE QString suggestedScheduleFileName(QString name) const;
+
     Q_INVOKABLE QString lastError() const;
 
 signals:
@@ -144,6 +169,11 @@ signals:
     void operationFinished(QString operation, bool ok, QString message, QVariantMap details);
     // The app should relaunch itself with --profile=<profileId>.
     void restartRequested(QString profileId);
+    // A schedule file was merged into the current profile's databases from
+    // a worker thread. main.cpp has every library service reload. Emitted
+    // before the matching operationFinished, so the schedule it reports
+    // loads against libraries that already have its items.
+    void librariesChanged();
 
 private:
     struct Impl;

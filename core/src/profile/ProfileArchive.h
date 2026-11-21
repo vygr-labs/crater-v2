@@ -65,6 +65,9 @@ struct ArchiveInfo
 {
     bool        ok = false;
     QString     error;            // operator-facing, when !ok
+    // True for a schedule file (exportSchedule), and then its name.
+    bool        isSchedule = false;
+    QString     scheduleName;
     QString     profileName;
     QString     appVersion;
     qint64      exportedAt = 0;   // unix ms
@@ -102,6 +105,36 @@ ExportResult exportArchive(const QString&    sourceRoot,
                            const QString&    stagingParent,
                            const ProgressFn& progress = {});
 
+// A schedule file (.craterschedule): the same archive, cut down to one
+// schedule and what it uses, so it opens complete on another computer.
+// Kept: the songs, decks and per-item themes the items name, the themes
+// those songs and decks use, the pictures those themes and decks show, and
+// the user fonts the kept themes name. Everything else in the profile is
+// left out.
+//
+// includeMedia false leaves the schedule's own pictures, videos and PDFs
+// out of the file to keep it small. The manifest still lists each one by
+// content hash ("linkedMedia"), so opening the file finds a copy that is
+// already in the other computer's media library. Pictures a theme or a
+// deck shows are always carried, since the design is broken without them.
+struct ScheduleExport
+{
+    QString name;                 // stored as the schedule's name
+    QString itemsJson;            // the schedule's items, as stored
+    bool    includeMedia = true;
+};
+
+ExportResult exportSchedule(const QString&        sourceRoot,
+                            const ScheduleExport& schedule,
+                            const QString&        destPath,
+                            const QString&        stagingParent,
+                            const ProgressFn&     progress = {});
+
+// The parts a schedule file is opened with (see openSchedule in
+// ProfileService). Everything a schedule file can carry.
+constexpr unsigned kSchedulePartMask =
+    PartThemes | PartFonts | PartMedia | PartPresentations | PartSongs | PartSchedules;
+
 struct ImportResult
 {
     bool        ok = false;
@@ -109,6 +142,9 @@ struct ImportResult
     QVariantMap added;            // per part: items written
     QVariantMap skipped;          // per part: items matched to existing ones
     QStringList warnings;
+    // Every schedule in the file, as its id in the target: the row added,
+    // or the existing one it matched. In the file's order.
+    QList<qint64> scheduleIds;
 };
 
 // Import the selected parts of an archive into the profile rooted at
