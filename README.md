@@ -108,5 +108,9 @@ version. See [`LICENSE`](LICENSE).
 
 Copyright (C) 2024-2026 Eyetu Kingsley.
 
+Under section 7(b) of the license, every copy and modified version must keep
+the author attribution "Crater, created by Eyetu Kingsley" in the program's
+About block and in [`NOTICE`](NOTICE). See that file for the exact term.
+
 Third-party components and their licenses are listed in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

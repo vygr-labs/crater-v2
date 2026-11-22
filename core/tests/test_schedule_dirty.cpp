@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // The unsaved dot on the schedule (issue #70).
 //
 // QML shows the dot from ScheduleService.isDirty and only re-reads it when

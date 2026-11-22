@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // EasyWorship 2009 song import.
 //
 // EasyWorship 2007/2009 keep songs in a Paradox table (Songs.DB) with the

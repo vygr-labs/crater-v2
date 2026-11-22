@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 import QtQuick
 import QtQuick.Layouts
 
@@ -102,6 +105,32 @@ Item {
                     iconName: "external-link"
                     text: qsTr("Open form")
                     onClicked: Qt.openUrlExternally(HelpLinks.stayInTouch)
+                }
+            }
+
+            // The program's Appropriate Legal Notices (GPL section 5(d)), and the
+            // author attribution that NOTICE asks every version to keep.
+            SettingsSectionHeader { title: qsTr("About Crater") }
+
+            SettingRow {
+                title: qsTr("Crater %1").arg(UpdateService.currentVersion)
+                description: qsTr("Created by Eyetu Kingsley. Copyright (C) 2024-2026 Eyetu Kingsley. "
+                                  + "Free software under the GNU General Public License, version 3 or later, "
+                                  + "with no warranty.")
+                GhostButton {
+                    iconName: "external-link"
+                    text: qsTr("View license")
+                    onClicked: Qt.openUrlExternally("https://www.gnu.org/licenses/gpl-3.0.html")
+                }
+            }
+
+            SettingRow {
+                title: qsTr("Source code")
+                description: qsTr("You can get, change and share Crater's source under the same license")
+                GhostButton {
+                    iconName: "external-link"
+                    text: qsTr("View source")
+                    onClicked: Qt.openUrlExternally("https://github.com/vygr-labs/crater-v2")
                 }
             }
 

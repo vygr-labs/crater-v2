@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Song credits survive the editor's save paths (issue #20).
 //
 // Author, copyright and CCLI used to be settable only by an EasyWorship

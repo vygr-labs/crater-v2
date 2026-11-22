@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Tests for crater::sha256ForName — the SHA256SUMS.txt lookup the in-app
 // updater uses to decide whether a downloaded installer may be run.
 //

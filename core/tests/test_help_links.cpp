@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Tests for crater::HelpLinks, the addresses behind the Help section, the
 // F1 dialog's video link and the empty schedule's Getting started link.
 //

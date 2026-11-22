@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // BibleService verse cache and row index.
 //
 // A translation switch used to re-read a whole Bible and then walk it in
