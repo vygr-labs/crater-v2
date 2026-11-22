@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Tests for theme token LAYOUTS (crater/ThemeTokens.h) — the v3 shape that
 // lets one presentation theme carry several designs the way a PowerPoint
 // template does.

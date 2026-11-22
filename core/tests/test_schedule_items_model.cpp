@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // ScheduleItemsModel turns a whole new schedule list into row moves, inserts
 // and removes. These pin that the rows always end up matching the list, that
 // a drag reports one move instead of a reset (which is what scrolled the

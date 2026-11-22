@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Tests for crater::compareVersions / isNewerVersion — the ordering the
 // in-app updater uses to decide whether a GitHub release is an upgrade.
 //

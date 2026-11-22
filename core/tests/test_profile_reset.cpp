@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Resetting a profile (ProfileService::resetProfile).
 //
 // The Default profile can't be deleted: its folder is the app root, which

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // A data folder restored somewhere else must keep its media (issue #14).
 //
 // Rows store the absolute path a managed file had at import time. Restoring

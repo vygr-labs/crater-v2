@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Eyetu Kingsley. Part of Crater, see LICENSE and NOTICE.
+
 // Batch service calls behind the library and schedule multi-select.
 //
 // Each one replaces a QML loop over a single-item call, so these pin that the
